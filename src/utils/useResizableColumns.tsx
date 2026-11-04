@@ -223,7 +223,7 @@ export const ColumnResizeHandle: React.FC<ColumnResizeHandleProps> = ({
         if (onAutoFit) onAutoFit(colKey);
       }}
       title={title}
-      className={`absolute top-0 right-0 bottom-0 w-2.5 cursor-col-resize select-none z-10 hover:bg-sky-400/50 transition-colors ${className}`}
+      className={`absolute top-0 right-0 bottom-0 w-2.5 cursor-col-resize select-none z-10 ${className}`}
     />
   );
 };

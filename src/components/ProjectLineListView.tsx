@@ -1548,7 +1548,7 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                           );
                         }}
                         title="Потяните для изменения ширины. Двойной клик — автоподбор"
-                        className="absolute top-0 right-0 bottom-0 w-2.5 cursor-col-resize select-none z-10 hover:bg-sky-400/50 transition-colors"
+                        className="absolute top-0 right-0 bottom-0 w-2.5 cursor-col-resize select-none z-10"
                       />
 
                       {isFilterOpen && (
