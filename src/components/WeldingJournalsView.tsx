@@ -816,48 +816,54 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
               onClick={() => setIsRdOpen((prev) => !prev)}
               aria-haspopup="listbox"
               aria-expanded={isRdOpen}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer select-none ${
+              className={`inline-flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer select-none min-w-[280px] sm:min-w-[420px] max-w-[92vw] sm:max-w-[480px] ${
                 currentRdCode !== 'ALL'
                   ? 'border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] font-semibold shadow-2xs'
                   : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900'
               }`}
-              title="Выбор комплекта рабочей документации (шифра РД)"
+              title={
+                currentRdCode === 'ALL'
+                  ? 'Выбор комплекта рабочей документации (шифра РД)'
+                  : `Выбран шифр РД: ${currentRdCode}`
+              }
             >
-              <FileCode2
-                className={`w-4 h-4 shrink-0 ${
-                  currentRdCode !== 'ALL' ? 'text-[#1e3799]' : 'text-slate-500'
-                }`}
-              />
-              <span className="max-w-[150px] sm:max-w-[210px] truncate font-mono">
-                {currentRdCode === 'ALL'
-                  ? 'Все шифры РД'
-                  : extractRdSuffix(currentRdCode) || currentRdCode}
-              </span>
-              {currentRdCode !== 'ALL' && (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSelectRd('ALL');
-                  }}
-                  className="hover:bg-[#1e3799]/15 rounded p-0.5 text-[#1e3799]"
-                  title="Сбросить фильтр по шифру РД (показать все шифры РД)"
-                >
-                  <X className="w-3 h-3" />
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <FileCode2
+                  className={`w-4 h-4 shrink-0 ${
+                    currentRdCode !== 'ALL' ? 'text-[#1e3799]' : 'text-slate-500'
+                  }`}
+                />
+                <span className="font-mono text-xs whitespace-nowrap overflow-x-hidden text-ellipsis flex-1 text-left tracking-tight">
+                  {currentRdCode === 'ALL' ? 'Все шифры РД' : currentRdCode}
                 </span>
-              )}
-              <ChevronDown
-                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                  isRdOpen ? 'rotate-180 text-[#1e3799]' : ''
-                }`}
-              />
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {currentRdCode !== 'ALL' && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectRd('ALL');
+                    }}
+                    className="hover:bg-[#1e3799]/15 rounded p-0.5 text-[#1e3799]"
+                    title="Сбросить фильтр по шифру РД (показать все шифры РД)"
+                  >
+                    <X className="w-3 h-3" />
+                  </span>
+                )}
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                    isRdOpen ? 'rotate-180 text-[#1e3799]' : ''
+                  }`}
+                />
+              </div>
             </button>
 
             {isRdOpen && (
               <div
                 ref={rdDropdownRef}
-                className="absolute left-0 top-full mt-1.5 z-40 w-84 sm:w-[440px] bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col"
+                className="absolute left-0 top-full mt-1.5 z-40 w-[92vw] sm:w-[580px] max-w-[620px] bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col"
                 onKeyDown={handleRdKeyDown}
               >
                 <div className="p-2 border-b border-slate-100 bg-[#f8fafd] flex items-center gap-2">
@@ -871,7 +877,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                         setRdSearch(e.target.value);
                         setRdHighlightIndex(0);
                       }}
-                      placeholder="Поиск шифра РД (номер, суффикс)..."
+                      placeholder="Поиск шифра РД (номер до 40 символов, суффикс)..."
                       className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#1e3799] focus:ring-1 focus:ring-[#1e3799]"
                     />
                     {rdSearch && (
@@ -929,8 +935,8 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                         }`}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 truncate">
-                            <span className="font-mono font-bold text-slate-900 truncate">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-slate-900 select-all whitespace-normal sm:whitespace-nowrap break-all sm:break-normal">
                               {opt.rdCode === 'ALL' ? 'Все шифры РД' : opt.rdCode}
                             </span>
                             {opt.suffix && (
@@ -939,7 +945,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                               </span>
                             )}
                             {opt.rdCode === 'ALL' && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/70 text-slate-600 font-sans">
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/70 text-slate-600 font-sans shrink-0">
                                 сводный
                               </span>
                             )}
