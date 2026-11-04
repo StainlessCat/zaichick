@@ -13,6 +13,12 @@ import {
   WeldJoint,
 } from '../types/welding';
 import { DEFAULT_COLUMN_KEYS } from '../utils/weldingLogic';
+import {
+  KHARASAVEY_FACILITY,
+  KHARASAVEY_LINES,
+  KHARASAVEY_LRV,
+  KHARASAVEY_JOINTS,
+} from './kharasaveyDemoData';
 
 export const FACILITY_OBJECTS: FacilityObject[] = [
   {
@@ -62,6 +68,7 @@ export const FACILITY_OBJECTS: FacilityObject[] = [
       },
     ],
   },
+  KHARASAVEY_FACILITY,
 ];
 
 export const INITIAL_LRV_CATALOG: LRVItem[] = [
@@ -411,6 +418,7 @@ export const INITIAL_LRV_CATALOG: LRVItem[] = [
     specQty: 18,
     unit: 'шт',
   },
+  ...KHARASAVEY_LRV,
 ];
 
 export const WELDERS_DIRECTORY: WelderProfile[] = [
@@ -1944,6 +1952,7 @@ export const INITIAL_JOINTS: WeldJoint[] = [
     updatedAt: '2026-10-22T11:10:00Z',
     updatedBy: 'Соколов Алексей Владимирович',
   },
+  ...KHARASAVEY_JOINTS,
 ];
 
 export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
@@ -2158,5 +2167,6 @@ export const INITIAL_PROJECT_LINELIST: ProjectLineItem[] = [
     pvkPercent: 0,
     testDate: '2026-10-25',
   },
+  ...KHARASAVEY_LINES,
 ];
 
