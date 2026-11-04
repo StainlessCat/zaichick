@@ -11,6 +11,9 @@ import {
   deriveFacilitiesFromLineList,
   detectLrvConnectionType,
   detectLrvElementType,
+  DN_TO_INCH_MAP,
+  dnToInchDiameter,
+  dnToOuterDiameterMm,
   estimateAmbientTempByCoordsAndDate,
   extractRdSuffix,
   extractSurnameOnly,
@@ -40,6 +43,7 @@ import {
   parseProjectLineListRecords,
   performRedoStep,
   performUndoStep,
+  PIPE_DN_SPEC_TABLE,
   pushHistorySnapshot,
   resolveLrvConnectionType,
   resolveLrvItemCategory,
@@ -2287,4 +2291,146 @@ test('Категория ЗРА, типы подсоединения (фланц
     gostFlangedRow.col4.includes('Фланец крана DN50'),
     `Ожидалось «Фланец крана DN50» в графе 4 ГОСТ 32569, получено: «${gostFlangedRow.col4}»`
   );
+});
+
+test('Расчет условных проходов DN [мм], DN [дюймы] и наружных диаметров строго по приложенной таблице', () => {
+  // 1. Проверка структуры PIPE_DN_SPEC_TABLE (48 позиций)
+  assert.equal(PIPE_DN_SPEC_TABLE.length, 48);
+
+  // 2. Сплошная проверка соответствия Dн [мм] -> DN [мм]
+  assert.equal(mmToNominalBoreDn(16), 10);
+  assert.equal(mmToNominalBoreDn(20), 15);
+  assert.equal(mmToNominalBoreDn(26), 20);
+  assert.equal(mmToNominalBoreDn(32), 25);
+  assert.equal(mmToNominalBoreDn(42), 32);
+  assert.equal(mmToNominalBoreDn(45), 40);
+  assert.equal(mmToNominalBoreDn(57), 50);
+  assert.equal(mmToNominalBoreDn(76), 65);
+  assert.equal(mmToNominalBoreDn(89), 80);
+  assert.equal(mmToNominalBoreDn(102), 90);
+  assert.equal(mmToNominalBoreDn(108), 100);
+  assert.equal(mmToNominalBoreDn(133), 125);
+  assert.equal(mmToNominalBoreDn(165), 150);
+  assert.equal(mmToNominalBoreDn(180), 160);
+  assert.equal(mmToNominalBoreDn(219), 200);
+  assert.equal(mmToNominalBoreDn(245), 225);
+  assert.equal(mmToNominalBoreDn(273), 250);
+  assert.equal(mmToNominalBoreDn(325), 300);
+  assert.equal(mmToNominalBoreDn(377), 350);
+  assert.equal(mmToNominalBoreDn(426), 400);
+  assert.equal(mmToNominalBoreDn(530), 500);
+  assert.equal(mmToNominalBoreDn(630), 600);
+  assert.equal(mmToNominalBoreDn(720), 700);
+  assert.equal(mmToNominalBoreDn(820), 800);
+  assert.equal(mmToNominalBoreDn(920), 900);
+  assert.equal(mmToNominalBoreDn(1020), 1000);
+  assert.equal(mmToNominalBoreDn(1220), 1200);
+  assert.equal(mmToNominalBoreDn(1320), 1300);
+  assert.equal(mmToNominalBoreDn(1420), 1400);
+  assert.equal(mmToNominalBoreDn(1520), 1500);
+  assert.equal(mmToNominalBoreDn(1620), 1600);
+  assert.equal(mmToNominalBoreDn(1720), 1700);
+  assert.equal(mmToNominalBoreDn(1820), 1800);
+  assert.equal(mmToNominalBoreDn(1920), 1900);
+  assert.equal(mmToNominalBoreDn(2120), 2100);
+  assert.equal(mmToNominalBoreDn(2220), 2200);
+  assert.equal(mmToNominalBoreDn(2320), 2300);
+  assert.equal(mmToNominalBoreDn(2420), 2400);
+  assert.equal(mmToNominalBoreDn(2520), 2500);
+  assert.equal(mmToNominalBoreDn(2620), 2600);
+  assert.equal(mmToNominalBoreDn(2720), 2700);
+  assert.equal(mmToNominalBoreDn(2820), 2800);
+  assert.equal(mmToNominalBoreDn(2920), 2900);
+  assert.equal(mmToNominalBoreDn(3000), 3000);
+
+  // Сохранение поддержки стандартных стальных труб ГОСТ
+  assert.equal(mmToNominalBoreDn(159), 150);
+  assert.equal(mmToNominalBoreDn(114), 100);
+  assert.equal(mmToNominalBoreDn(48.3), 40);
+
+  // 3. Проверка конвертации наружного диаметра в дюйм-диаметр (mmToInchDiameter)
+  assert.equal(mmToInchDiameter(16), '3/8"');
+  assert.equal(mmToInchDiameter(20), '1/2"');
+  assert.equal(mmToInchDiameter(26), '3/4"');
+  assert.equal(mmToInchDiameter(32), '1"');
+  assert.equal(mmToInchDiameter(42), '1 1/4"');
+  assert.equal(mmToInchDiameter(45), '1 1/2"');
+  assert.equal(mmToInchDiameter(57), '2"');
+  assert.equal(mmToInchDiameter(76), '2 1/2"');
+  assert.equal(mmToInchDiameter(89), '3"');
+  assert.equal(mmToInchDiameter(102), '3 1/2"');
+  assert.equal(mmToInchDiameter(108), '4"');
+  assert.equal(mmToInchDiameter(133), '5"');
+  assert.equal(mmToInchDiameter(165), '6"');
+  assert.equal(mmToInchDiameter(180), '6 1/2"');
+  assert.equal(mmToInchDiameter(219), '8"');
+  assert.equal(mmToInchDiameter(245), '9"');
+  assert.equal(mmToInchDiameter(273), '10"');
+  assert.equal(mmToInchDiameter(325), '12"');
+  assert.equal(mmToInchDiameter(377), '14"');
+  assert.equal(mmToInchDiameter(426), '16"');
+  assert.equal(mmToInchDiameter(530), '20"');
+  assert.equal(mmToInchDiameter(630), '24"');
+  assert.equal(mmToInchDiameter(720), '28"');
+  assert.equal(mmToInchDiameter(820), '32"');
+  assert.equal(mmToInchDiameter(920), '36"');
+  assert.equal(mmToInchDiameter(1020), '40"');
+  assert.equal(mmToInchDiameter(1220), '48"');
+  assert.equal(mmToInchDiameter(1320), '52"');
+  assert.equal(mmToInchDiameter(1420), '56"');
+  assert.equal(mmToInchDiameter(1520), '60"');
+  assert.equal(mmToInchDiameter(1620), '64"');
+  assert.equal(mmToInchDiameter(1720), '68"');
+  assert.equal(mmToInchDiameter(1820), '72"');
+  assert.equal(mmToInchDiameter(1920), '76"');
+  assert.equal(mmToInchDiameter(2120), '88"');
+  assert.equal(mmToInchDiameter(159), '6"');
+
+  // 4. Проверка прямого перевода DN [мм] в дюйм-диаметр (dnToInchDiameter)
+  assert.equal(dnToInchDiameter(10), '3/8"');
+  assert.equal(dnToInchDiameter(15), '1/2"');
+  assert.equal(dnToInchDiameter(20), '3/4"');
+  assert.equal(dnToInchDiameter(25), '1"');
+  assert.equal(dnToInchDiameter(32), '1 1/4"');
+  assert.equal(dnToInchDiameter(40), '1 1/2"');
+  assert.equal(dnToInchDiameter(50), '2"');
+  assert.equal(dnToInchDiameter(65), '2 1/2"');
+  assert.equal(dnToInchDiameter(80), '3"');
+  assert.equal(dnToInchDiameter(90), '3 1/2"');
+  assert.equal(dnToInchDiameter(100), '4"');
+  assert.equal(dnToInchDiameter(125), '5"');
+  assert.equal(dnToInchDiameter(150), '6"');
+  assert.equal(dnToInchDiameter(160), '6 1/2"');
+  assert.equal(dnToInchDiameter(175), '7"');
+  assert.equal(dnToInchDiameter(200), '8"');
+  assert.equal(dnToInchDiameter(225), '9"');
+  assert.equal(dnToInchDiameter(250), '10"');
+  assert.equal(dnToInchDiameter(300), '12"');
+  assert.equal(dnToInchDiameter(350), '14"');
+  assert.equal(dnToInchDiameter(400), '16"');
+  assert.equal(dnToInchDiameter(450), '18"');
+  assert.equal(dnToInchDiameter(500), '20"');
+  assert.equal(dnToInchDiameter(600), '24"');
+  assert.equal(dnToInchDiameter(700), '28"');
+  assert.equal(dnToInchDiameter(800), '32"');
+  assert.equal(dnToInchDiameter(900), '36"');
+  assert.equal(dnToInchDiameter(1000), '40"');
+  assert.equal(dnToInchDiameter(1100), '44"');
+  assert.equal(dnToInchDiameter(1200), '48"');
+  assert.equal(dnToInchDiameter(1300), '52"');
+  assert.equal(dnToInchDiameter(1400), '56"');
+  assert.equal(dnToInchDiameter(1500), '60"');
+  assert.equal(dnToInchDiameter(1600), '64"');
+  assert.equal(dnToInchDiameter(1700), '68"');
+  assert.equal(dnToInchDiameter(1800), '72"');
+  assert.equal(dnToInchDiameter(1900), '76"');
+  assert.equal(dnToInchDiameter(2000), '80"');
+  assert.equal(dnToInchDiameter(2100), '88"');
+
+  // 5. Проверка dnToOuterDiameterMm
+  assert.equal(dnToOuterDiameterMm(10), 16);
+  assert.equal(dnToOuterDiameterMm(50), 57);
+  assert.equal(dnToOuterDiameterMm(150), 165);
+  assert.equal(dnToOuterDiameterMm(300), 325);
+  assert.equal(dnToOuterDiameterMm(175), undefined);
 });

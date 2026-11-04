@@ -289,22 +289,152 @@ export function buildUniqueLineId(rdCode: string, lineNumber: string): string {
   return `${suffix}-${cleanLine}`;
 }
 
+export interface PipeDnMappingRecord {
+  dnMm: number; // DN [мм]
+  dnInch: string | null; // DN [дюймы]
+  outerDiameterMm: number | null; // Диаметр наружный Dн [мм]
+}
+
+/**
+ * Эталонная таблица соответствия условных проходов (DN [мм]),
+ * дюймовых условных проходов (DN [""]) и наружных диаметров (Dн [мм]).
+ */
+export const PIPE_DN_SPEC_TABLE: PipeDnMappingRecord[] = [
+  { dnMm: 10, dnInch: '3/8"', outerDiameterMm: 16 },
+  { dnMm: 15, dnInch: '1/2"', outerDiameterMm: 20 },
+  { dnMm: 20, dnInch: '3/4"', outerDiameterMm: 26 },
+  { dnMm: 25, dnInch: '1"', outerDiameterMm: 32 },
+  { dnMm: 32, dnInch: '1 1/4"', outerDiameterMm: 42 },
+  { dnMm: 40, dnInch: '1 1/2"', outerDiameterMm: 45 },
+  { dnMm: 50, dnInch: '2"', outerDiameterMm: 57 },
+  { dnMm: 65, dnInch: '2 1/2"', outerDiameterMm: 76 },
+  { dnMm: 80, dnInch: '3"', outerDiameterMm: 89 },
+  { dnMm: 90, dnInch: '3 1/2"', outerDiameterMm: 102 },
+  { dnMm: 100, dnInch: '4"', outerDiameterMm: 108 },
+  { dnMm: 125, dnInch: '5"', outerDiameterMm: 133 },
+  { dnMm: 150, dnInch: '6"', outerDiameterMm: 165 },
+  { dnMm: 160, dnInch: '6 1/2"', outerDiameterMm: 180 },
+  { dnMm: 175, dnInch: '7"', outerDiameterMm: null },
+  { dnMm: 200, dnInch: '8"', outerDiameterMm: 219 },
+  { dnMm: 225, dnInch: '9"', outerDiameterMm: 245 },
+  { dnMm: 250, dnInch: '10"', outerDiameterMm: 273 },
+  { dnMm: 300, dnInch: '12"', outerDiameterMm: 325 },
+  { dnMm: 350, dnInch: '14"', outerDiameterMm: 377 },
+  { dnMm: 400, dnInch: '16"', outerDiameterMm: 426 },
+  { dnMm: 450, dnInch: '18"', outerDiameterMm: null },
+  { dnMm: 500, dnInch: '20"', outerDiameterMm: 530 },
+  { dnMm: 600, dnInch: '24"', outerDiameterMm: 630 },
+  { dnMm: 700, dnInch: '28"', outerDiameterMm: 720 },
+  { dnMm: 800, dnInch: '32"', outerDiameterMm: 820 },
+  { dnMm: 900, dnInch: '36"', outerDiameterMm: 920 },
+  { dnMm: 1000, dnInch: '40"', outerDiameterMm: 1020 },
+  { dnMm: 1100, dnInch: '44"', outerDiameterMm: null },
+  { dnMm: 1200, dnInch: '48"', outerDiameterMm: 1220 },
+  { dnMm: 1300, dnInch: '52"', outerDiameterMm: 1320 },
+  { dnMm: 1400, dnInch: '56"', outerDiameterMm: 1420 },
+  { dnMm: 1500, dnInch: '60"', outerDiameterMm: 1520 },
+  { dnMm: 1600, dnInch: '64"', outerDiameterMm: 1620 },
+  { dnMm: 1700, dnInch: '68"', outerDiameterMm: 1720 },
+  { dnMm: 1800, dnInch: '72"', outerDiameterMm: 1820 },
+  { dnMm: 1900, dnInch: '76"', outerDiameterMm: 1920 },
+  { dnMm: 2000, dnInch: '80"', outerDiameterMm: 2220 },
+  { dnMm: 2100, dnInch: '88"', outerDiameterMm: 2120 },
+  { dnMm: 2200, dnInch: null, outerDiameterMm: 2220 },
+  { dnMm: 2300, dnInch: null, outerDiameterMm: 2320 },
+  { dnMm: 2400, dnInch: null, outerDiameterMm: 2420 },
+  { dnMm: 2500, dnInch: null, outerDiameterMm: 2520 },
+  { dnMm: 2600, dnInch: null, outerDiameterMm: 2620 },
+  { dnMm: 2700, dnInch: null, outerDiameterMm: 2720 },
+  { dnMm: 2800, dnInch: null, outerDiameterMm: 2820 },
+  { dnMm: 2900, dnInch: null, outerDiameterMm: 2920 },
+  { dnMm: 3000, dnInch: null, outerDiameterMm: 3000 },
+];
+
+/**
+ * Словарь перевода условного прохода DN [мм] в дюйм-диаметр по приложенной таблице
+ */
+export const DN_TO_INCH_MAP: Record<number, string> = {
+  10: '3/8"',
+  15: '1/2"',
+  20: '3/4"',
+  25: '1"',
+  32: '1 1/4"',
+  40: '1 1/2"',
+  50: '2"',
+  65: '2 1/2"',
+  80: '3"',
+  90: '3 1/2"',
+  100: '4"',
+  125: '5"',
+  150: '6"',
+  160: '6 1/2"',
+  175: '7"',
+  200: '8"',
+  225: '9"',
+  250: '10"',
+  300: '12"',
+  350: '14"',
+  400: '16"',
+  450: '18"',
+  500: '20"',
+  600: '24"',
+  700: '28"',
+  800: '32"',
+  900: '36"',
+  1000: '40"',
+  1100: '44"',
+  1200: '48"',
+  1300: '52"',
+  1400: '56"',
+  1500: '60"',
+  1600: '64"',
+  1700: '68"',
+  1800: '72"',
+  1900: '76"',
+  2000: '80"',
+  2100: '88"',
+};
+
+/**
+ * Возвращает дюймовый размер по значению условного прохода DN [мм]
+ */
+export function dnToInchDiameter(dnMm: number): string | undefined {
+  return DN_TO_INCH_MAP[dnMm];
+}
+
+/**
+ * Возвращает стандартный наружный диаметр Dн [мм] по значению условного прохода DN [мм]
+ */
+export function dnToOuterDiameterMm(dnMm: number): number | undefined {
+  const rec = PIPE_DN_SPEC_TABLE.find((r) => r.dnMm === dnMm);
+  return rec?.outerDiameterMm ?? undefined;
+}
+
 /**
  * Конвертация диаметра трубопровода из мм в дюйм-диаметр (DN/NPS)
+ * строго в соответствии с эталонной таблицей соответствия условных проходов.
  */
 export function mmToInchDiameter(diameterMm: number): string {
-  const map: Record<number, string> = {
-    18: '1/2"',
-    25: '3/4"',
+  const d = Number(diameterMm);
+  if (!d || Number.isNaN(d) || d <= 0) return '';
+
+  const outerToInchMap: Record<number, string> = {
+    16: '3/8"',
+    20: '1/2"',
+    26: '3/4"',
     32: '1"',
+    42: '1 1/4"',
     45: '1 1/2"',
     57: '2"',
     76: '2 1/2"',
     89: '3"',
+    102: '3 1/2"',
     108: '4"',
     133: '5"',
-    159: '6"',
+    165: '6"',
+    180: '6 1/2"',
     219: '8"',
+    245: '9"',
     273: '10"',
     325: '12"',
     377: '14"',
@@ -313,48 +443,81 @@ export function mmToInchDiameter(diameterMm: number): string {
     630: '24"',
     720: '28"',
     820: '32"',
+    920: '36"',
     1020: '40"',
     1220: '48"',
+    1320: '52"',
     1420: '56"',
+    1520: '60"',
+    1620: '64"',
+    1720: '68"',
+    1820: '72"',
+    1920: '76"',
+    2020: '80"',
+    2120: '88"',
+    2220: '80"',
+
+    // Дополнительные сопутствующие диаметры ГОСТ
+    14: '3/8"',
+    18: '1/2"',
+    21.3: '1/2"',
+    22: '1/2"',
+    25: '3/4"',
+    26.9: '3/4"',
+    28: '3/4"',
+    33.7: '1"',
+    38: '1 1/4"',
+    42.4: '1 1/4"',
+    48.3: '1 1/2"',
+    60.3: '2"',
+    114: '4"',
+    140: '5"',
+    159: '6"',
+    168: '6"',
   };
-  if (map[diameterMm]) return map[diameterMm];
-  const approxInches = Math.max(0.5, Math.round((diameterMm / 25.4) * 2) / 2);
+
+  if (outerToInchMap[d]) return outerToInchMap[d];
+
+  const rounded = Math.round(d);
+  if (outerToInchMap[rounded]) return outerToInchMap[rounded];
+
+  // Через условный проход DN из таблицы
+  const dn = mmToNominalBoreDn(d);
+  if (dn && DN_TO_INCH_MAP[dn]) {
+    return DN_TO_INCH_MAP[dn];
+  }
+
+  const approxInches = Math.max(0.5, Math.round((d / 25.4) * 2) / 2);
   return `${approxInches}"`;
 }
 
 /**
- * Определяет условный проход DN по наружному диаметру трубы/детали в мм (по ГОСТ 28338 / ГОСТ 8732 / ГОСТ 17375).
+ * Определяет условный проход DN [мм] по наружному диаметру трубы/детали в мм
+ * строго в соответствии с эталонной таблицей соответствия условных проходов.
  * Если диаметр не указан или равен 0, возвращает undefined.
  */
 export function mmToNominalBoreDn(diameterMm?: number | null): number | undefined {
   const d = Number(diameterMm);
   if (!d || Number.isNaN(d) || d <= 0) return undefined;
+
   const dnMap: Record<number, number> = {
-    14: 10,
-    18: 15,
+    // Из предоставленной таблицы спецификации: Dн [мм] -> DN [мм]
+    16: 10,
     20: 15,
-    21.3: 15,
-    22: 15,
-    25: 20,
-    26.9: 20,
-    28: 20,
+    26: 20,
     32: 25,
-    33.7: 25,
-    38: 32,
-    42.4: 32,
+    42: 32,
     45: 40,
-    48.3: 40,
     57: 50,
-    60.3: 50,
     76: 65,
     89: 80,
+    102: 90,
     108: 100,
-    114: 100,
     133: 125,
-    140: 125,
-    159: 150,
-    168: 150,
+    165: 150,
+    180: 160,
     219: 200,
+    245: 225,
     273: 250,
     325: 300,
     377: 350,
@@ -366,9 +529,64 @@ export function mmToNominalBoreDn(diameterMm?: number | null): number | undefine
     920: 900,
     1020: 1000,
     1220: 1200,
+    1320: 1300,
     1420: 1400,
+    1520: 1500,
+    1620: 1600,
+    1720: 1700,
+    1820: 1800,
+    1920: 1900,
+    2120: 2100,
+    2220: 2200,
+    2320: 2300,
+    2420: 2400,
+    2520: 2500,
+    2620: 2600,
+    2720: 2700,
+    2820: 2800,
+    2920: 2900,
+    3000: 3000,
+
+    // Дополнительные сопутствующие диаметры ГОСТ для труб (для совместимости)
+    14: 10,
+    18: 15,
+    21.3: 15,
+    22: 15,
+    25: 20,
+    26.9: 20,
+    28: 20,
+    33.7: 25,
+    38: 32,
+    42.4: 32,
+    48.3: 40,
+    60.3: 50,
+    114: 100,
+    140: 125,
+    159: 150,
+    168: 150,
+    2020: 2000,
   };
+
   if (dnMap[d] !== undefined) return dnMap[d];
+
+  const rounded = Math.round(d);
+  if (dnMap[rounded] !== undefined) return dnMap[rounded];
+
+  // Поиск ближайшего значения наружного диаметра из таблицы при минимальной погрешности
+  const knownDiameters = Object.keys(dnMap).map(Number);
+  let bestMatch: number | undefined;
+  let minDiff = Infinity;
+  for (const kd of knownDiameters) {
+    const diff = Math.abs(d - kd);
+    if (diff < minDiff && (diff <= 1.0 || diff / kd < 0.02)) {
+      minDiff = diff;
+      bestMatch = kd;
+    }
+  }
+  if (bestMatch !== undefined) {
+    return dnMap[bestMatch];
+  }
+
   return Math.round(d / 10) * 10;
 }
 
