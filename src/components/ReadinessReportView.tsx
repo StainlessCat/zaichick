@@ -17,6 +17,10 @@ import {
   applyTableColumnFiltersAndSort,
   TableColumnFilterHeader,
 } from './TableColumnFilterPopover';
+import {
+  useResizableColumns,
+  ColumnResizeHandle,
+} from '../utils/useResizableColumns';
 
 interface ReadinessReportViewProps {
   joints: WeldJoint[];
@@ -34,6 +38,29 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
     direction: 'asc' | 'desc';
   } | null>(null);
   const [exportToast, setExportToast] = useState<string>('');
+
+  // Регулирование ширины столбцов сводного отчёта готовности
+  const {
+    columnWidths,
+    getColumnWidth,
+    handleResizeStart,
+    handleAutoFit,
+    handleResetWidths,
+    hasCustomWidths,
+  } = useResizableColumns({
+    storageKey: 'zaychick_col_widths_readiness',
+    defaultWidths: {
+      groupKey: 230,
+      totalJoints: 130,
+      weldedCount: 130,
+      vikPassedCount: 110,
+      ndtPassedCount: 110,
+      dupNdtPassedCount: 120,
+      repairCount: 120,
+      readinessPct: 220,
+      action: 95,
+    },
+  });
 
   const baseRows = useMemo(
     () => calculateReadinessReport(joints, condition),
@@ -290,6 +317,10 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   onApplyFilter={handleApplyFilter}
                   sortConfig={sortConfig}
                   onSort={handleSort}
+                  width={getColumnWidth('groupKey')}
+                  minWidth={140}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('groupKey', 230)}
                 />
                 <TableColumnFilterHeader
                   columnKey="totalJoints"
@@ -301,6 +332,10 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSort}
                   align="right"
+                  width={getColumnWidth('totalJoints')}
+                  minWidth={95}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('totalJoints', 130)}
                 />
                 <TableColumnFilterHeader
                   columnKey="weldedCount"
@@ -312,6 +347,10 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSort}
                   align="right"
+                  width={getColumnWidth('weldedCount')}
+                  minWidth={95}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('weldedCount', 130)}
                 />
                 <TableColumnFilterHeader
                   columnKey="vikPassedCount"
@@ -323,6 +362,10 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSort}
                   align="right"
+                  width={getColumnWidth('vikPassedCount')}
+                  minWidth={85}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('vikPassedCount', 110)}
                 />
                 <TableColumnFilterHeader
                   columnKey="ndtPassedCount"
@@ -334,6 +377,10 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSort}
                   align="right"
+                  width={getColumnWidth('ndtPassedCount')}
+                  minWidth={85}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('ndtPassedCount', 110)}
                 />
                 <TableColumnFilterHeader
                   columnKey="dupNdtPassedCount"
@@ -345,6 +392,10 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSort}
                   align="right"
+                  width={getColumnWidth('dupNdtPassedCount')}
+                  minWidth={95}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('dupNdtPassedCount', 120)}
                 />
                 <TableColumnFilterHeader
                   columnKey="repairCount"
@@ -356,6 +407,10 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSort}
                   align="right"
+                  width={getColumnWidth('repairCount')}
+                  minWidth={95}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('repairCount', 120)}
                 />
                 <TableColumnFilterHeader
                   columnKey="readinessPct"
@@ -366,9 +421,27 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   onApplyFilter={handleApplyFilter}
                   sortConfig={sortConfig}
                   onSort={handleSort}
-                  className="w-56"
+                  width={getColumnWidth('readinessPct')}
+                  minWidth={140}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('readinessPct', 220)}
                 />
-                <th className="py-3 px-3 font-semibold text-center">Переход</th>
+                <th
+                  style={{
+                    width: getColumnWidth('action'),
+                    minWidth: getColumnWidth('action'),
+                  }}
+                  className="relative py-3 px-3 font-semibold text-center whitespace-nowrap"
+                >
+                  Переход
+                  <ColumnResizeHandle
+                    onResizeStart={handleResizeStart}
+                    onAutoFit={() => handleAutoFit('action', 95)}
+                    colKey="action"
+                    currentWidth={getColumnWidth('action')}
+                    minWidth={70}
+                  />
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -377,11 +450,23 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   key={row.groupKey}
                   className="hover:bg-[#e8f1fc]/50 transition-colors odd:bg-white even:bg-slate-50/60"
                 >
-                  <td className="py-3 px-4 border-r border-slate-200">
+                  <td
+                    style={{
+                      width: getColumnWidth('groupKey'),
+                      minWidth: getColumnWidth('groupKey'),
+                    }}
+                    className="py-3 px-4 border-r border-slate-200"
+                  >
                     <div className="font-mono font-bold text-slate-900">{row.groupKey}</div>
                     <div className="text-[11px] text-slate-500 mt-0.5">{row.subLabel}</div>
                   </td>
-                  <td className="py-3 px-3 border-r border-slate-200 font-mono text-right">
+                  <td
+                    style={{
+                      width: getColumnWidth('totalJoints'),
+                      minWidth: getColumnWidth('totalJoints'),
+                    }}
+                    className="py-3 px-3 border-r border-slate-200 font-mono text-right"
+                  >
                     <span className="font-bold text-slate-900">{row.totalJoints}</span>
                     {row.supplementaryJoints > 0 && (
                       <span className="text-slate-500 ml-1">
@@ -389,27 +474,63 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                       </span>
                     )}
                   </td>
-                  <td className="py-3 px-3 border-r border-slate-200 font-mono text-right">
+                  <td
+                    style={{
+                      width: getColumnWidth('weldedCount'),
+                      minWidth: getColumnWidth('weldedCount'),
+                    }}
+                    className="py-3 px-3 border-r border-slate-200 font-mono text-right"
+                  >
                     <span className="font-semibold text-slate-900">{row.weldedCount}</span>{' '}
                     <span className="text-slate-500">({row.weldingPct}%)</span>
                   </td>
-                  <td className="py-3 px-3 border-r border-slate-200 font-mono text-right">
+                  <td
+                    style={{
+                      width: getColumnWidth('vikPassedCount'),
+                      minWidth: getColumnWidth('vikPassedCount'),
+                    }}
+                    className="py-3 px-3 border-r border-slate-200 font-mono text-right"
+                  >
                     {row.vikPassedCount}
                   </td>
-                  <td className="py-3 px-3 border-r border-slate-200 font-mono text-right">
+                  <td
+                    style={{
+                      width: getColumnWidth('ndtPassedCount'),
+                      minWidth: getColumnWidth('ndtPassedCount'),
+                    }}
+                    className="py-3 px-3 border-r border-slate-200 font-mono text-right"
+                  >
                     {row.ndtPassedCount}
                   </td>
-                  <td className="py-3 px-3 border-r border-slate-200 font-mono text-right">
+                  <td
+                    style={{
+                      width: getColumnWidth('dupNdtPassedCount'),
+                      minWidth: getColumnWidth('dupNdtPassedCount'),
+                    }}
+                    className="py-3 px-3 border-r border-slate-200 font-mono text-right"
+                  >
                     {row.dupNdtPassedCount}
                   </td>
-                  <td className="py-3 px-3 border-r border-slate-200 font-mono text-right">
+                  <td
+                    style={{
+                      width: getColumnWidth('repairCount'),
+                      minWidth: getColumnWidth('repairCount'),
+                    }}
+                    className="py-3 px-3 border-r border-slate-200 font-mono text-right"
+                  >
                     {row.repairCount > 0 ? (
                       <span className="font-bold text-amber-700">{row.repairCount} (ремонт)</span>
                     ) : (
                       <span className="text-slate-400">0</span>
                     )}
                   </td>
-                  <td className="py-3 px-4 border-r border-slate-200">
+                  <td
+                    style={{
+                      width: getColumnWidth('readinessPct'),
+                      minWidth: getColumnWidth('readinessPct'),
+                    }}
+                    className="py-3 px-4 border-r border-slate-200"
+                  >
                     <div className="flex items-center justify-between text-[11px] font-mono mb-1">
                       <span className="font-bold text-[#1e3799]">{row.readinessPct}% сдано</span>
                       <span className="text-slate-500">
@@ -423,7 +544,13 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                       />
                     </div>
                   </td>
-                  <td className="py-3 px-3 text-center">
+                  <td
+                    style={{
+                      width: getColumnWidth('action'),
+                      minWidth: getColumnWidth('action'),
+                    }}
+                    className="py-3 px-3 text-center"
+                  >
                     <button
                       type="button"
                       onClick={() => onFilterRegistryByCondition(condition, row.groupKey)}
@@ -437,6 +564,29 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="px-4 py-2.5 bg-[#f8fafd] border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <div className="flex items-center gap-3">
+            <div>
+              Строк в сводном отчёте:{' '}
+              <span className="font-mono font-bold text-slate-800">{rows.length}</span>
+            </div>
+            {hasCustomWidths && (
+              <button
+                type="button"
+                onClick={handleResetWidths}
+                title="Сбросить ширину столбцов отчёта готовности к заводской"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] transition-colors shadow-2xs cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3 text-slate-400" />
+                <span>Сбросить ширину столбцов</span>
+              </button>
+            )}
+          </div>
+          <div>
+            Ширина столбцов регулируется перетаскиванием правой границы заголовка (двойной клик — автоподбор)
+          </div>
         </div>
       </div>
     </div>

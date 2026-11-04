@@ -25,6 +25,10 @@ import {
   applyTableColumnFiltersAndSort,
   TableColumnFilterHeader,
 } from './TableColumnFilterPopover';
+import {
+  useResizableColumns,
+  ColumnResizeHandle,
+} from '../utils/useResizableColumns';
 
 interface LrvCatalogViewProps {
   catalog: LRVItem[];
@@ -79,6 +83,34 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
     key: string;
     direction: 'asc' | 'desc';
   } | null>(null);
+
+  // Настраиваемая курсором ширина столбцов справочника ЛРВ с сохранением в localStorage
+  const {
+    columnWidths,
+    getColumnWidth,
+    handleResizeStart,
+    handleAutoFit,
+    handleResetWidths,
+    hasCustomWidths,
+  } = useResizableColumns({
+    storageKey: 'zaychick_col_widths_lrv',
+    defaultWidths: {
+      lrvCode: 140,
+      rdCode: 180,
+      shortName: 220,
+      material: 130,
+      ntd: 140,
+      manufacturer: 160,
+      dn1: 95,
+      diameterMm: 110,
+      wallThickness: 110,
+      dn2: 95,
+      diameterMm2: 110,
+      wallThickness2: 110,
+      specQty: 110,
+      action: 95,
+    },
+  });
 
   // Форма новой или редактируемой позиции ЛРВ (с поддержкой DN1/DN2, двух диаметров Ø1/Ø2 и двух толщин S1/S2)
   const [newRd, setNewRd] = useState(allRds[0]?.code || '');
@@ -811,6 +843,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   onApplyFilter={handleApplyColumnFilter}
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
+                  width={getColumnWidth('lrvCode')}
+                  minWidth={90}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('lrvCode', 140)}
                 />
                 <TableColumnFilterHeader
                   columnKey="rdCode"
@@ -821,6 +857,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   onApplyFilter={handleApplyColumnFilter}
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
+                  width={getColumnWidth('rdCode')}
+                  minWidth={110}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('rdCode', 180)}
                 />
                 <TableColumnFilterHeader
                   columnKey="shortName"
@@ -831,6 +871,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   onApplyFilter={handleApplyColumnFilter}
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
+                  width={getColumnWidth('shortName')}
+                  minWidth={130}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('shortName', 220)}
                 />
                 <TableColumnFilterHeader
                   columnKey="material"
@@ -841,6 +885,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   onApplyFilter={handleApplyColumnFilter}
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
+                  width={getColumnWidth('material')}
+                  minWidth={90}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('material', 130)}
                 />
                 <TableColumnFilterHeader
                   columnKey="ntd"
@@ -851,6 +899,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   onApplyFilter={handleApplyColumnFilter}
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
+                  width={getColumnWidth('ntd')}
+                  minWidth={90}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('ntd', 140)}
                 />
                 <TableColumnFilterHeader
                   columnKey="manufacturer"
@@ -861,6 +913,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   onApplyFilter={handleApplyColumnFilter}
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
+                  width={getColumnWidth('manufacturer')}
+                  minWidth={100}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('manufacturer', 160)}
                 />
                 <TableColumnFilterHeader
                   columnKey="dn1"
@@ -872,6 +928,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
                   align="right"
+                  width={getColumnWidth('dn1')}
+                  minWidth={80}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('dn1', 95)}
                 />
                 <TableColumnFilterHeader
                   columnKey="diameterMm"
@@ -883,6 +943,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
                   align="right"
+                  width={getColumnWidth('diameterMm')}
+                  minWidth={80}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('diameterMm', 110)}
                 />
                 <TableColumnFilterHeader
                   columnKey="wallThickness"
@@ -894,6 +958,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
                   align="right"
+                  width={getColumnWidth('wallThickness')}
+                  minWidth={80}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('wallThickness', 110)}
                 />
                 <TableColumnFilterHeader
                   columnKey="dn2"
@@ -905,6 +973,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
                   align="right"
+                  width={getColumnWidth('dn2')}
+                  minWidth={80}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('dn2', 95)}
                 />
                 <TableColumnFilterHeader
                   columnKey="diameterMm2"
@@ -916,6 +988,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
                   align="right"
+                  width={getColumnWidth('diameterMm2')}
+                  minWidth={80}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('diameterMm2', 110)}
                 />
                 <TableColumnFilterHeader
                   columnKey="wallThickness2"
@@ -927,6 +1003,10 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
                   align="right"
+                  width={getColumnWidth('wallThickness2')}
+                  minWidth={80}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('wallThickness2', 110)}
                 />
                 <TableColumnFilterHeader
                   columnKey="specQty"
@@ -938,10 +1018,27 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   sortConfig={sortConfig}
                   onSort={handleSortColumn}
                   align="right"
+                  width={getColumnWidth('specQty')}
+                  minWidth={85}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('specQty', 110)}
                 />
                 {onDeleteLrvItems && (
-                  <th className="py-2.5 px-3 font-semibold text-center whitespace-nowrap">
+                  <th
+                    style={{
+                      width: getColumnWidth('action'),
+                      minWidth: getColumnWidth('action'),
+                    }}
+                    className="relative py-2.5 px-3 font-semibold text-center whitespace-nowrap"
+                  >
                     Действие
+                    <ColumnResizeHandle
+                      onResizeStart={handleResizeStart}
+                      onAutoFit={() => handleAutoFit('action', 95)}
+                      colKey="action"
+                      currentWidth={getColumnWidth('action')}
+                      minWidth={70}
+                    />
                   </th>
                 )}
               </tr>
@@ -978,55 +1075,139 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                         />
                       </td>
                     )}
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono font-bold text-[#1e3799] whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getColumnWidth('lrvCode'),
+                        minWidth: getColumnWidth('lrvCode'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono font-bold text-[#1e3799] whitespace-nowrap"
+                    >
                       {item.lrvCode}
                     </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-slate-900 whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getColumnWidth('rdCode'),
+                        minWidth: getColumnWidth('rdCode'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono text-slate-900 whitespace-nowrap"
+                    >
                       {item.rdCode}
                     </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-semibold text-slate-900">
+                    <td
+                      style={{
+                        width: getColumnWidth('shortName'),
+                        minWidth: getColumnWidth('shortName'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-semibold text-slate-900"
+                    >
                       {item.shortName}
                     </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-slate-800 whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getColumnWidth('material'),
+                        minWidth: getColumnWidth('material'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono text-slate-800 whitespace-nowrap"
+                    >
                       {item.material}
                     </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 text-slate-700 whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getColumnWidth('ntd'),
+                        minWidth: getColumnWidth('ntd'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 text-slate-700 whitespace-nowrap"
+                    >
                       {item.ntd}
                     </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 text-slate-700 whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getColumnWidth('manufacturer'),
+                        minWidth: getColumnWidth('manufacturer'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 text-slate-700 whitespace-nowrap"
+                    >
                       {item.manufacturer || '—'}
                     </td>
                     {/* Условный проход DN 1 */}
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-slate-900">
+                    <td
+                      style={{
+                        width: getColumnWidth('dn1'),
+                        minWidth: getColumnWidth('dn1'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-slate-900"
+                    >
                       {dn1Val !== undefined ? dn1Val : ''}
                     </td>
                     {/* Диаметр Ø1, мм */}
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-right text-slate-900">
+                    <td
+                      style={{
+                        width: getColumnWidth('diameterMm'),
+                        minWidth: getColumnWidth('diameterMm'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono text-right text-slate-900"
+                    >
                       {item.diameterMm}
                     </td>
                     {/* Толщина стенки S1, мм */}
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-right text-slate-900">
+                    <td
+                      style={{
+                        width: getColumnWidth('wallThickness'),
+                        minWidth: getColumnWidth('wallThickness'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono text-right text-slate-900"
+                    >
                       {item.wallThickness.toFixed(1)}
                     </td>
                     {/* Условный проход DN 2 — для элементов с одним диаметром строго пусто */}
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-[#1e3799]">
+                    <td
+                      style={{
+                        width: getColumnWidth('dn2'),
+                        minWidth: getColumnWidth('dn2'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-[#1e3799]"
+                    >
                       {dn2Val !== undefined ? dn2Val : ''}
                     </td>
                     {/* Диаметр Ø2, мм — для элементов с одним диаметром строго пусто */}
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-[#1e3799]">
+                    <td
+                      style={{
+                        width: getColumnWidth('diameterMm2'),
+                        minWidth: getColumnWidth('diameterMm2'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-[#1e3799]"
+                    >
                       {item.diameterMm2 !== undefined ? item.diameterMm2 : ''}
                     </td>
                     {/* Толщина стенки S2, мм — для элементов с одним диаметром строго пусто */}
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-[#1e3799]">
+                    <td
+                      style={{
+                        width: getColumnWidth('wallThickness2'),
+                        minWidth: getColumnWidth('wallThickness2'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-[#1e3799]"
+                    >
                       {item.wallThickness2 !== undefined
                         ? item.wallThickness2.toFixed(1)
                         : ''}
                     </td>
-                    <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-slate-900 whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getColumnWidth('specQty'),
+                        minWidth: getColumnWidth('specQty'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 font-mono text-right font-semibold text-slate-900 whitespace-nowrap"
+                    >
                       {item.specQty} {item.unit}
                     </td>
                     {onDeleteLrvItems && (
-                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      <td
+                        style={{
+                          width: getColumnWidth('action'),
+                          minWidth: getColumnWidth('action'),
+                        }}
+                        className="py-2.5 px-3 text-center whitespace-nowrap"
+                      >
                         {!canEdit ? (
                           <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                             <Lock className="w-3.5 h-3.5" />
@@ -1083,6 +1264,32 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
               })}
             </tbody>
           </table>
+        </div>
+
+        <div className="px-4 py-2.5 bg-[#f8fafd] border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <div className="flex items-center gap-3">
+            <div>
+              Показано позиций ЛРВ:{' '}
+              <span className="font-mono font-bold text-slate-800">
+                {filteredCatalog.length}
+              </span>{' '}
+              из <span className="font-mono">{catalog.length}</span>
+            </div>
+            {hasCustomWidths && (
+              <button
+                type="button"
+                onClick={handleResetWidths}
+                title="Сбросить пользовательские ширины столбцов справочника ЛРВ"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] transition-colors shadow-2xs cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3 text-slate-400" />
+                <span>Сбросить ширину столбцов</span>
+              </button>
+            )}
+          </div>
+          <div>
+            Ширину столбцов можно регулировать перетаскиванием правой границы заголовка (двойной клик — автоподбор)
+          </div>
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@ import {
   Lock,
   PackageCheck,
   Plus,
+  RotateCcw,
   ShieldCheck,
   ThermometerSnowflake,
   Trash2,
@@ -27,6 +28,10 @@ import {
   applyTableColumnFiltersAndSort,
   TableColumnFilterHeader,
 } from './TableColumnFilterPopover';
+import {
+  useResizableColumns,
+  ColumnResizeHandle,
+} from '../utils/useResizableColumns';
 
 interface WeldingTechViewProps {
   welders: WelderProfile[];
@@ -76,6 +81,52 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
     key: string;
     direction: 'asc' | 'desc';
   } | null>(null);
+
+  // Регулирование ширины столбцов таблицы сварщиков
+  const {
+    columnWidths: welderColumnWidths,
+    getColumnWidth: getWelderColWidth,
+    handleResizeStart: handleWelderResizeStart,
+    handleAutoFit: handleWelderAutoFit,
+    handleResetWidths: handleResetWelderWidths,
+    hasCustomWidths: hasCustomWelderWidths,
+  } = useResizableColumns({
+    storageKey: 'zaychick_col_widths_welders',
+    defaultWidths: {
+      stamp: 100,
+      type: 120,
+      fullName: 240,
+      certNumber: 180,
+      dates: 180,
+      attestationArea: 220,
+      admissionSheet: 180,
+      crewForeman: 170,
+      action: 95,
+    },
+  });
+
+  // Регулирование ширины столбцов таблицы сварочных материалов
+  const {
+    columnWidths: materialColumnWidths,
+    getColumnWidth: getMaterialColWidth,
+    handleResizeStart: handleMaterialResizeStart,
+    handleAutoFit: handleMaterialAutoFit,
+    handleResetWidths: handleResetMaterialWidths,
+    hasCustomWidths: hasCustomMaterialWidths,
+  } = useResizableColumns({
+    storageKey: 'zaychick_col_widths_materials',
+    defaultWidths: {
+      brandAndDiameter: 200,
+      materialType: 140,
+      weldingMethod: 130,
+      batchNumber: 150,
+      certificateNumber: 170,
+      incomingControlAct: 160,
+      incomingControlDate: 130,
+      status: 120,
+      action: 95,
+    },
+  });
 
   const welderGetters: Record<string, (w: WelderProfile) => string> = {
     stamp: (w) => w.stamp,
@@ -590,6 +641,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyWelderFilter}
                     sortConfig={welderSort}
                     onSort={(k, dir) => setWelderSort({ key: k, direction: dir })}
+                    width={getWelderColWidth('stamp')}
+                    minWidth={75}
+                    onResizeStart={handleWelderResizeStart}
+                    onAutoFit={() => handleWelderAutoFit('stamp', 100)}
                   />
                   <TableColumnFilterHeader
                     columnKey="type"
@@ -600,6 +655,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyWelderFilter}
                     sortConfig={welderSort}
                     onSort={(k, dir) => setWelderSort({ key: k, direction: dir })}
+                    width={getWelderColWidth('type')}
+                    minWidth={90}
+                    onResizeStart={handleWelderResizeStart}
+                    onAutoFit={() => handleWelderAutoFit('type', 120)}
                   />
                   <TableColumnFilterHeader
                     columnKey="fullName"
@@ -610,6 +669,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyWelderFilter}
                     sortConfig={welderSort}
                     onSort={(k, dir) => setWelderSort({ key: k, direction: dir })}
+                    width={getWelderColWidth('fullName')}
+                    minWidth={140}
+                    onResizeStart={handleWelderResizeStart}
+                    onAutoFit={() => handleWelderAutoFit('fullName', 240)}
                   />
                   <TableColumnFilterHeader
                     columnKey="certNumber"
@@ -620,6 +683,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyWelderFilter}
                     sortConfig={welderSort}
                     onSort={(k, dir) => setWelderSort({ key: k, direction: dir })}
+                    width={getWelderColWidth('certNumber')}
+                    minWidth={120}
+                    onResizeStart={handleWelderResizeStart}
+                    onAutoFit={() => handleWelderAutoFit('certNumber', 180)}
                   />
                   <TableColumnFilterHeader
                     columnKey="dates"
@@ -630,6 +697,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyWelderFilter}
                     sortConfig={welderSort}
                     onSort={(k, dir) => setWelderSort({ key: k, direction: dir })}
+                    width={getWelderColWidth('dates')}
+                    minWidth={130}
+                    onResizeStart={handleWelderResizeStart}
+                    onAutoFit={() => handleWelderAutoFit('dates', 180)}
                   />
                   <TableColumnFilterHeader
                     columnKey="attestationArea"
@@ -640,6 +711,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyWelderFilter}
                     sortConfig={welderSort}
                     onSort={(k, dir) => setWelderSort({ key: k, direction: dir })}
+                    width={getWelderColWidth('attestationArea')}
+                    minWidth={130}
+                    onResizeStart={handleWelderResizeStart}
+                    onAutoFit={() => handleWelderAutoFit('attestationArea', 220)}
                   />
                   <TableColumnFilterHeader
                     columnKey="admissionSheet"
@@ -650,6 +725,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyWelderFilter}
                     sortConfig={welderSort}
                     onSort={(k, dir) => setWelderSort({ key: k, direction: dir })}
+                    width={getWelderColWidth('admissionSheet')}
+                    minWidth={120}
+                    onResizeStart={handleWelderResizeStart}
+                    onAutoFit={() => handleWelderAutoFit('admissionSheet', 180)}
                   />
                   <TableColumnFilterHeader
                     columnKey="crewForeman"
@@ -660,17 +739,48 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyWelderFilter}
                     sortConfig={welderSort}
                     onSort={(k, dir) => setWelderSort({ key: k, direction: dir })}
+                    width={getWelderColWidth('crewForeman')}
+                    minWidth={110}
+                    onResizeStart={handleWelderResizeStart}
+                    onAutoFit={() => handleWelderAutoFit('crewForeman', 170)}
                   />
-                  <th className="py-2.5 px-3 font-semibold text-center">Действие</th>
+                  <th
+                    style={{
+                      width: getWelderColWidth('action'),
+                      minWidth: getWelderColWidth('action'),
+                    }}
+                    className="relative py-2.5 px-3 font-semibold text-center whitespace-nowrap"
+                  >
+                    Действие
+                    <ColumnResizeHandle
+                      onResizeStart={handleWelderResizeStart}
+                      onAutoFit={() => handleWelderAutoFit('action', 95)}
+                      colKey="action"
+                      currentWidth={getWelderColWidth('action')}
+                      minWidth={70}
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs">
                 {filteredWelders.map((w) => (
                   <tr key={w.stamp} className="hover:bg-sky-50/40">
-                    <td className="py-2.5 px-3 font-mono font-bold text-[#1e3799]">
+                    <td
+                      style={{
+                        width: getWelderColWidth('stamp'),
+                        minWidth: getWelderColWidth('stamp'),
+                      }}
+                      className="py-2.5 px-3 font-mono font-bold text-[#1e3799]"
+                    >
                       {w.stamp}
                     </td>
-                    <td className="py-2.5 px-3">
+                    <td
+                      style={{
+                        width: getWelderColWidth('type'),
+                        minWidth: getWelderColWidth('type'),
+                      }}
+                      className="py-2.5 px-3"
+                    >
                       {w.isBrigade ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-300 font-semibold text-[11px]">
                           Бригада ({(w.brigadeMembers || []).join(', ')})
@@ -681,13 +791,31 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-900">
+                    <td
+                      style={{
+                        width: getWelderColWidth('fullName'),
+                        minWidth: getWelderColWidth('fullName'),
+                      }}
+                      className="py-2.5 px-3 font-semibold text-slate-900"
+                    >
                       {w.fullName}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-800">
+                    <td
+                      style={{
+                        width: getWelderColWidth('certNumber'),
+                        minWidth: getWelderColWidth('certNumber'),
+                      }}
+                      className="py-2.5 px-3 font-mono text-slate-800"
+                    >
                       {w.certNumber}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getWelderColWidth('dates'),
+                        minWidth: getWelderColWidth('dates'),
+                      }}
+                      className="py-2.5 px-3 font-mono text-slate-700 whitespace-nowrap"
+                    >
                       <div>
                         <span>{formatDateDDMMYY(w.certIssueDate) || '—'} — </span>
                         <span className="font-semibold text-slate-900">
@@ -723,17 +851,43 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                         return null;
                       })()}
                     </td>
-                    <td className="py-2.5 px-3 text-slate-700 max-w-xs">
+                    <td
+                      style={{
+                        width: getWelderColWidth('attestationArea'),
+                        minWidth: getWelderColWidth('attestationArea'),
+                      }}
+                      className="py-2.5 px-3 text-slate-700 max-w-xs"
+                    >
                       {w.attestationArea || w.allowedMethods.join(', ')}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getWelderColWidth('admissionSheet'),
+                        minWidth: getWelderColWidth('admissionSheet'),
+                      }}
+                      className="py-2.5 px-3 font-mono text-slate-800 whitespace-nowrap"
+                    >
                       {w.admissionSheetNumber || '—'}{' '}
                       {w.admissionSheetDate
                         ? `от ${formatDateDDMMYY(w.admissionSheetDate)}`
                         : ''}
                     </td>
-                    <td className="py-2.5 px-3 text-slate-700">{w.crewForeman}</td>
-                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getWelderColWidth('crewForeman'),
+                        minWidth: getWelderColWidth('crewForeman'),
+                      }}
+                      className="py-2.5 px-3 text-slate-700"
+                    >
+                      {w.crewForeman}
+                    </td>
+                    <td
+                      style={{
+                        width: getWelderColWidth('action'),
+                        minWidth: getWelderColWidth('action'),
+                      }}
+                      className="py-2.5 px-3 text-center whitespace-nowrap"
+                    >
                       {!canEdit ? (
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                           <Lock className="w-3.5 h-3.5" />
@@ -785,6 +939,32 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="px-4 py-2 bg-[#f8fafd] border border-t-0 border-slate-200 rounded-b-xl flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <div className="flex items-center gap-3">
+              <div>
+                Всего сварщиков и бригад:{' '}
+                <span className="font-mono font-bold text-slate-800">
+                  {filteredWelders.length}
+                </span>{' '}
+                из <span className="font-mono">{welders.length}</span>
+              </div>
+              {hasCustomWelderWidths && (
+                <button
+                  type="button"
+                  onClick={handleResetWelderWidths}
+                  title="Сбросить ширину столбцов таблицы сварщиков к заводской"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] transition-colors shadow-2xs cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3 text-slate-400" />
+                  <span>Сбросить ширину столбцов</span>
+                </button>
+              )}
+            </div>
+            <div>
+              Ширина столбцов регулируется перетаскиванием правой границы заголовка (двойной клик — автоподбор)
+            </div>
           </div>
         </div>
       )}
@@ -981,6 +1161,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyMaterialFilter}
                     sortConfig={materialSort}
                     onSort={(k, dir) => setMaterialSort({ key: k, direction: dir })}
+                    width={getMaterialColWidth('brandAndDiameter')}
+                    minWidth={130}
+                    onResizeStart={handleMaterialResizeStart}
+                    onAutoFit={() => handleMaterialAutoFit('brandAndDiameter', 200)}
                   />
                   <TableColumnFilterHeader
                     columnKey="materialType"
@@ -991,6 +1175,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyMaterialFilter}
                     sortConfig={materialSort}
                     onSort={(k, dir) => setMaterialSort({ key: k, direction: dir })}
+                    width={getMaterialColWidth('materialType')}
+                    minWidth={90}
+                    onResizeStart={handleMaterialResizeStart}
+                    onAutoFit={() => handleMaterialAutoFit('materialType', 140)}
                   />
                   <TableColumnFilterHeader
                     columnKey="weldingMethod"
@@ -1001,6 +1189,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyMaterialFilter}
                     sortConfig={materialSort}
                     onSort={(k, dir) => setMaterialSort({ key: k, direction: dir })}
+                    width={getMaterialColWidth('weldingMethod')}
+                    minWidth={90}
+                    onResizeStart={handleMaterialResizeStart}
+                    onAutoFit={() => handleMaterialAutoFit('weldingMethod', 130)}
                   />
                   <TableColumnFilterHeader
                     columnKey="batchNumber"
@@ -1011,6 +1203,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyMaterialFilter}
                     sortConfig={materialSort}
                     onSort={(k, dir) => setMaterialSort({ key: k, direction: dir })}
+                    width={getMaterialColWidth('batchNumber')}
+                    minWidth={95}
+                    onResizeStart={handleMaterialResizeStart}
+                    onAutoFit={() => handleMaterialAutoFit('batchNumber', 150)}
                   />
                   <TableColumnFilterHeader
                     columnKey="certificateNumber"
@@ -1021,6 +1217,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyMaterialFilter}
                     sortConfig={materialSort}
                     onSort={(k, dir) => setMaterialSort({ key: k, direction: dir })}
+                    width={getMaterialColWidth('certificateNumber')}
+                    minWidth={110}
+                    onResizeStart={handleMaterialResizeStart}
+                    onAutoFit={() => handleMaterialAutoFit('certificateNumber', 170)}
                   />
                   <TableColumnFilterHeader
                     columnKey="incomingControlAct"
@@ -1031,6 +1231,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyMaterialFilter}
                     sortConfig={materialSort}
                     onSort={(k, dir) => setMaterialSort({ key: k, direction: dir })}
+                    width={getMaterialColWidth('incomingControlAct')}
+                    minWidth={110}
+                    onResizeStart={handleMaterialResizeStart}
+                    onAutoFit={() => handleMaterialAutoFit('incomingControlAct', 160)}
                   />
                   <TableColumnFilterHeader
                     columnKey="incomingControlDate"
@@ -1041,6 +1245,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyMaterialFilter}
                     sortConfig={materialSort}
                     onSort={(k, dir) => setMaterialSort({ key: k, direction: dir })}
+                    width={getMaterialColWidth('incomingControlDate')}
+                    minWidth={90}
+                    onResizeStart={handleMaterialResizeStart}
+                    onAutoFit={() => handleMaterialAutoFit('incomingControlDate', 130)}
                   />
                   <TableColumnFilterHeader
                     columnKey="status"
@@ -1051,37 +1259,114 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                     onApplyFilter={handleApplyMaterialFilter}
                     sortConfig={materialSort}
                     onSort={(k, dir) => setMaterialSort({ key: k, direction: dir })}
+                    width={getMaterialColWidth('status')}
+                    minWidth={90}
+                    onResizeStart={handleMaterialResizeStart}
+                    onAutoFit={() => handleMaterialAutoFit('status', 120)}
                   />
-                  <th className="py-2.5 px-3 font-semibold text-center">Действие</th>
+                  <th
+                    style={{
+                      width: getMaterialColWidth('action'),
+                      minWidth: getMaterialColWidth('action'),
+                    }}
+                    className="relative py-2.5 px-3 font-semibold text-center whitespace-nowrap"
+                  >
+                    Действие
+                    <ColumnResizeHandle
+                      onResizeStart={handleMaterialResizeStart}
+                      onAutoFit={() => handleMaterialAutoFit('action', 95)}
+                      colKey="action"
+                      currentWidth={getMaterialColWidth('action')}
+                      minWidth={70}
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-xs">
                 {filteredMaterials.map((m) => (
                   <tr key={m.id} className="hover:bg-sky-50/40">
-                    <td className="py-2.5 px-3 font-mono font-bold text-[#1e3799]">
+                    <td
+                      style={{
+                        width: getMaterialColWidth('brandAndDiameter'),
+                        minWidth: getMaterialColWidth('brandAndDiameter'),
+                      }}
+                      className="py-2.5 px-3 font-mono font-bold text-[#1e3799]"
+                    >
                       {m.brandAndDiameter}
                     </td>
-                    <td className="py-2.5 px-3 text-slate-700">{m.materialType}</td>
-                    <td className="py-2.5 px-3 font-mono font-semibold text-slate-800">
+                    <td
+                      style={{
+                        width: getMaterialColWidth('materialType'),
+                        minWidth: getMaterialColWidth('materialType'),
+                      }}
+                      className="py-2.5 px-3 text-slate-700"
+                    >
+                      {m.materialType}
+                    </td>
+                    <td
+                      style={{
+                        width: getMaterialColWidth('weldingMethod'),
+                        minWidth: getMaterialColWidth('weldingMethod'),
+                      }}
+                      className="py-2.5 px-3 font-mono font-semibold text-slate-800"
+                    >
                       {m.weldingMethod}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-700">{m.batchNumber}</td>
-                    <td className="py-2.5 px-3 font-mono font-semibold text-slate-900">
+                    <td
+                      style={{
+                        width: getMaterialColWidth('batchNumber'),
+                        minWidth: getMaterialColWidth('batchNumber'),
+                      }}
+                      className="py-2.5 px-3 font-mono text-slate-700"
+                    >
+                      {m.batchNumber}
+                    </td>
+                    <td
+                      style={{
+                        width: getMaterialColWidth('certificateNumber'),
+                        minWidth: getMaterialColWidth('certificateNumber'),
+                      }}
+                      className="py-2.5 px-3 font-mono font-semibold text-slate-900"
+                    >
                       {m.certificateNumber}
                     </td>
-                    <td className="py-2.5 px-3 font-mono text-slate-700">
+                    <td
+                      style={{
+                        width: getMaterialColWidth('incomingControlAct'),
+                        minWidth: getMaterialColWidth('incomingControlAct'),
+                      }}
+                      className="py-2.5 px-3 font-mono text-slate-700"
+                    >
                       {m.incomingControlAct}
                     </td>
-                    <td className="py-2.5 px-3 font-mono font-bold text-[#1e3799]">
+                    <td
+                      style={{
+                        width: getMaterialColWidth('incomingControlDate'),
+                        minWidth: getMaterialColWidth('incomingControlDate'),
+                      }}
+                      className="py-2.5 px-3 font-mono font-bold text-[#1e3799]"
+                    >
                       {formatDateDDMMYY(m.incomingControlDate)}
                     </td>
-                    <td className="py-2.5 px-3">
+                    <td
+                      style={{
+                        width: getMaterialColWidth('status'),
+                        minWidth: getMaterialColWidth('status'),
+                      }}
+                      className="py-2.5 px-3"
+                    >
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold text-[11px]">
                         <ShieldCheck className="w-3 h-3" />
                         {m.status}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getMaterialColWidth('action'),
+                        minWidth: getMaterialColWidth('action'),
+                      }}
+                      className="py-2.5 px-3 text-center whitespace-nowrap"
+                    >
                       {!canEdit ? (
                         <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                           <Lock className="w-3.5 h-3.5" />
@@ -1133,6 +1418,32 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="px-4 py-2 bg-[#f8fafd] border border-t-0 border-slate-200 rounded-b-xl flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <div className="flex items-center gap-3">
+              <div>
+                Всего сварочных материалов:{' '}
+                <span className="font-mono font-bold text-slate-800">
+                  {filteredMaterials.length}
+                </span>{' '}
+                из <span className="font-mono">{materials.length}</span>
+              </div>
+              {hasCustomMaterialWidths && (
+                <button
+                  type="button"
+                  onClick={handleResetMaterialWidths}
+                  title="Сбросить ширину столбцов таблицы сварочных материалов к заводской"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] transition-colors shadow-2xs cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3 text-slate-400" />
+                  <span>Сбросить ширину столбцов</span>
+                </button>
+              )}
+            </div>
+            <div>
+              Ширина столбцов регулируется перетаскиванием правой границы заголовка (двойной клик — автоподбор)
+            </div>
           </div>
         </div>
       )}

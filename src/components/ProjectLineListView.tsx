@@ -43,6 +43,7 @@ import {
   exportProjectLineListToExcel,
   readProjectLineListFromExcelFile,
 } from '../utils/excelUtils';
+import { useResizableColumns } from '../utils/useResizableColumns';
 
 interface ProjectLineListViewProps {
   lineList: ProjectLineItem[];
@@ -483,6 +484,21 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
 
   const [isCustomObject, setIsCustomObject] = useState(false);
   const [isCustomRd, setIsCustomRd] = useState(false);
+
+  // Настраиваемая курсором ширина столбцов лайнлиста с сохранением в localStorage
+  const {
+    columnWidths,
+    getColumnWidth,
+    handleResizeStart,
+    handleAutoFit,
+    handleResetWidths,
+    hasCustomWidths,
+  } = useResizableColumns({
+    storageKey: 'zaychick_col_widths_linelist',
+    defaultWidths: Object.fromEntries(
+      LINELIST_COLUMNS.map((col) => [col.key, col.minWidth])
+    ),
+  });
 
   // Список всех доступных объектов (из facilities + из lineList)
   const availableObjectOptions = useMemo(() => {
@@ -1465,18 +1481,19 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                   const isFiltered = columnFilters[col.key] !== undefined;
                   const isSorted = sortConfig?.key === col.key;
                   const isFilterOpen = openFilterColumnKey === col.key;
+                  const colWidth = getColumnWidth(col.key, col.minWidth);
 
                   return (
                     <th
                       key={col.key}
-                      style={{ minWidth: col.minWidth }}
+                      style={{ width: colWidth, minWidth: colWidth }}
                       className={`relative py-2.5 px-2.5 border-r border-white/15 text-left font-semibold align-middle transition-colors ${
                         isFiltered || isFilterOpen
                           ? 'bg-[#15276e]'
                           : 'bg-[#1e3799] hover:bg-[#192f85]'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center justify-between gap-1.5 pr-1.5">
                         <button
                           type="button"
                           onClick={() =>
@@ -1486,10 +1503,10 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                                 : { key: col.key, direction: 'asc' }
                             )
                           }
-                          className="text-left font-semibold text-white hover:text-sky-200 truncate flex items-center gap-1"
+                          className="text-left font-semibold text-white hover:text-sky-200 truncate flex items-center gap-1 min-w-0 cursor-pointer"
                           title={`Сортировать по столбцу «${col.label}»`}
                         >
-                          <span>{col.shortLabel || col.label}</span>
+                          <span className="truncate">{col.shortLabel || col.label}</span>
                           {isSorted &&
                             (sortConfig.direction === 'asc' ? (
                               <ArrowUp className="w-3 h-3 text-sky-300 shrink-0" />
@@ -1517,6 +1534,22 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                           <Filter className="w-3.5 h-3.5" />
                         </button>
                       </div>
+
+                      {/* Интерактивная ручка изменения ширины столбца */}
+                      <div
+                        onPointerDown={(e) =>
+                          handleResizeStart(e, col.key, colWidth, col.minWidth)
+                        }
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleAutoFit(
+                            col.key,
+                            Math.max(col.minWidth, (col.shortLabel || col.label).length * 10 + 65)
+                          );
+                        }}
+                        title="Потяните для изменения ширины. Двойной клик — автоподбор"
+                        className="absolute top-0 right-0 bottom-0 w-2.5 cursor-col-resize select-none z-10 hover:bg-sky-400/50 transition-colors"
+                      />
 
                       {isFilterOpen && (
                         <LineListExcelFilterPopover
@@ -1571,7 +1604,13 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                           className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799] cursor-pointer disabled:opacity-40"
                         />
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 font-medium text-slate-800">
+                      <td
+                        style={{
+                          width: getColumnWidth('objectName'),
+                          minWidth: getColumnWidth('objectName'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 font-medium text-slate-800"
+                      >
                         {onOpenFacilityLocation && canEdit ? (
                           <button
                             type="button"
@@ -1586,10 +1625,22 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                           item.objectName
                         )}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 font-mono text-[11px] text-slate-700">
+                      <td
+                        style={{
+                          width: getColumnWidth('rdCode'),
+                          minWidth: getColumnWidth('rdCode'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 font-mono text-[11px] text-slate-700"
+                      >
                         {item.rdCode}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 font-mono font-bold text-[#1e3799] whitespace-nowrap">
+                      <td
+                        style={{
+                          width: getColumnWidth('lineNumber'),
+                          minWidth: getColumnWidth('lineNumber'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 font-mono font-bold text-[#1e3799] whitespace-nowrap"
+                      >
                         <div className="flex items-center justify-between gap-1">
                           {canEdit ? (
                             <button
@@ -1673,47 +1724,125 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                           </div>
                         </div>
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-slate-900 font-medium">
+                      <td
+                        style={{
+                          width: getColumnWidth('lineName'),
+                          minWidth: getColumnWidth('lineName'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 text-slate-900 font-medium"
+                      >
                         {item.lineName}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700">
+                      <td
+                        style={{
+                          width: getColumnWidth('product'),
+                          minWidth: getColumnWidth('product'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700"
+                      >
                         {item.product}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700">
+                      <td
+                        style={{
+                          width: getColumnWidth('testContour'),
+                          minWidth: getColumnWidth('testContour'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700"
+                      >
                         {item.testContour}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700">
+                      <td
+                        style={{
+                          width: getColumnWidth('weldingNtd'),
+                          minWidth: getColumnWidth('weldingNtd'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700"
+                      >
                         {item.weldingNtd}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700">
+                      <td
+                        style={{
+                          width: getColumnWidth('controlNtd'),
+                          minWidth: getColumnWidth('controlNtd'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700"
+                      >
                         {item.controlNtd}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-center font-semibold text-[#1e3799] whitespace-nowrap">
+                      <td
+                        style={{
+                          width: getColumnWidth('qualityLevel'),
+                          minWidth: getColumnWidth('qualityLevel'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 text-center font-semibold text-[#1e3799] whitespace-nowrap"
+                      >
                         {item.qualityLevel || (
                           <span className="text-slate-300 font-normal">—</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-center font-mono font-semibold text-slate-800">
+                      <td
+                        style={{
+                          width: getColumnWidth('pipelineCategory'),
+                          minWidth: getColumnWidth('pipelineCategory'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 text-center font-mono font-semibold text-slate-800"
+                      >
                         {item.pipelineCategory || (
                           <span className="text-slate-300 font-normal">—</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-right font-mono text-slate-800 whitespace-nowrap">
+                      <td
+                        style={{
+                          width: getColumnWidth('workingPressure'),
+                          minWidth: getColumnWidth('workingPressure'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 text-right font-mono text-slate-800 whitespace-nowrap"
+                      >
                         {item.workingPressure}
                       </td>
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-right font-mono text-slate-800 whitespace-nowrap">
+                      <td
+                        style={{
+                          width: getColumnWidth('workingTemperature'),
+                          minWidth: getColumnWidth('workingTemperature'),
+                        }}
+                        className="py-2.5 px-2.5 border-r border-slate-200 text-right font-mono text-slate-800 whitespace-nowrap"
+                      >
                         {item.workingTemperature}
                       </td>
-                      <td className="py-2.5 px-2 border-r border-slate-200 text-right font-mono font-semibold text-slate-800">
+                      <td
+                        style={{
+                          width: getColumnWidth('rkPercent'),
+                          minWidth: getColumnWidth('rkPercent'),
+                        }}
+                        className="py-2.5 px-2 border-r border-slate-200 text-right font-mono font-semibold text-slate-800"
+                      >
                         {item.rkPercent}%
                       </td>
-                      <td className="py-2.5 px-2 border-r border-slate-200 text-right font-mono font-semibold text-slate-800">
+                      <td
+                        style={{
+                          width: getColumnWidth('uzkPercent'),
+                          minWidth: getColumnWidth('uzkPercent'),
+                        }}
+                        className="py-2.5 px-2 border-r border-slate-200 text-right font-mono font-semibold text-slate-800"
+                      >
                         {item.uzkPercent}%
                       </td>
-                      <td className="py-2.5 px-2 border-r border-slate-200 text-right font-mono font-semibold text-slate-800">
+                      <td
+                        style={{
+                          width: getColumnWidth('pvkPercent'),
+                          minWidth: getColumnWidth('pvkPercent'),
+                        }}
+                        className="py-2.5 px-2 border-r border-slate-200 text-right font-mono font-semibold text-slate-800"
+                      >
                         {item.pvkPercent}%
                       </td>
-                      <td className="py-2.5 px-3 border-r border-slate-200">
+                      <td
+                        style={{
+                          width: getColumnWidth('computedStatus'),
+                          minWidth: getColumnWidth('computedStatus'),
+                        }}
+                        className="py-2.5 px-3 border-r border-slate-200"
+                      >
                         {status.isCompleted ? (
                           <div className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold">
                             <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -1726,7 +1855,13 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                           </div>
                         )}
                       </td>
-                      <td className="py-2.5 px-2.5 text-center font-mono font-semibold text-slate-800 whitespace-nowrap">
+                      <td
+                        style={{
+                          width: getColumnWidth('testDate'),
+                          minWidth: getColumnWidth('testDate'),
+                        }}
+                        className="py-2.5 px-2.5 text-center font-mono font-semibold text-slate-800 whitespace-nowrap"
+                      >
                         {canEdit ? (
                           <button
                             type="button"
@@ -1749,12 +1884,25 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
         </div>
 
         <div className="px-4 py-2.5 bg-[#f8fafd] border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-          <div>
-            Отображено технологических линий:{' '}
-            <span className="font-mono font-bold text-slate-800">
-              {filteredAndSortedList.length}
-            </span>{' '}
-            из <span className="font-mono">{lineList.length}</span>
+          <div className="flex items-center gap-3">
+            <div>
+              Отображено технологических линий:{' '}
+              <span className="font-mono font-bold text-slate-800">
+                {filteredAndSortedList.length}
+              </span>{' '}
+              из <span className="font-mono">{lineList.length}</span>
+            </div>
+            {hasCustomWidths && (
+              <button
+                type="button"
+                onClick={handleResetWidths}
+                title="Сбросить пользовательские ширины столбцов лайнлиста к исходным"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] transition-colors shadow-2xs cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3 text-slate-400" />
+                <span>Сбросить ширину столбцов</span>
+              </button>
+            )}
           </div>
           <div>
             Нажмите на номер линии (или дважды на строку) для редактирования строки лайнлиста

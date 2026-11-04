@@ -6,6 +6,7 @@ import {
   applyTableColumnFiltersAndSort,
   TableColumnFilterHeader,
 } from './TableColumnFilterPopover';
+import { useResizableColumns } from '../utils/useResizableColumns';
 
 interface AuditHistoryViewProps {
   logs: AuditLogEntry[];
@@ -28,6 +29,27 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
     direction: 'asc' | 'desc';
   } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+
+  // Регулирование ширины столбцов журнала аудита с сохранением в localStorage
+  const {
+    columnWidths,
+    getColumnWidth,
+    handleResizeStart,
+    handleAutoFit,
+    handleResetWidths,
+    hasCustomWidths,
+  } = useResizableColumns({
+    storageKey: 'zaychick_col_widths_audit',
+    defaultWidths: {
+      timestamp: 150,
+      user: 230,
+      joint: 190,
+      fieldLabel: 170,
+      oldValue: 180,
+      newValue: 180,
+      operationType: 140,
+    },
+  });
 
   const opLabelMap: Record<AuditLogEntry['operationType'], string> = {
     single_edit: 'Редактирование паспорта / ячейки',
@@ -223,6 +245,10 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
                   onApplyFilter={handleApplyFilter}
                   sortConfig={sortConfig}
                   onSort={handleSort}
+                  width={getColumnWidth('timestamp')}
+                  minWidth={110}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('timestamp', 150)}
                 />
                 <TableColumnFilterHeader
                   columnKey="user"
@@ -233,6 +259,10 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
                   onApplyFilter={handleApplyFilter}
                   sortConfig={sortConfig}
                   onSort={handleSort}
+                  width={getColumnWidth('user')}
+                  minWidth={140}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('user', 230)}
                 />
                 <TableColumnFilterHeader
                   columnKey="joint"
@@ -243,6 +273,10 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
                   onApplyFilter={handleApplyFilter}
                   sortConfig={sortConfig}
                   onSort={handleSort}
+                  width={getColumnWidth('joint')}
+                  minWidth={130}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('joint', 190)}
                 />
                 <TableColumnFilterHeader
                   columnKey="fieldLabel"
@@ -253,6 +287,10 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
                   onApplyFilter={handleApplyFilter}
                   sortConfig={sortConfig}
                   onSort={handleSort}
+                  width={getColumnWidth('fieldLabel')}
+                  minWidth={120}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('fieldLabel', 170)}
                 />
                 <TableColumnFilterHeader
                   columnKey="oldValue"
@@ -263,6 +301,10 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
                   onApplyFilter={handleApplyFilter}
                   sortConfig={sortConfig}
                   onSort={handleSort}
+                  width={getColumnWidth('oldValue')}
+                  minWidth={120}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('oldValue', 180)}
                 />
                 <TableColumnFilterHeader
                   columnKey="newValue"
@@ -273,6 +315,10 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
                   onApplyFilter={handleApplyFilter}
                   sortConfig={sortConfig}
                   onSort={handleSort}
+                  width={getColumnWidth('newValue')}
+                  minWidth={120}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('newValue', 180)}
                 />
                 <TableColumnFilterHeader
                   columnKey="operationType"
@@ -283,6 +329,10 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
                   onApplyFilter={handleApplyFilter}
                   sortConfig={sortConfig}
                   onSort={handleSort}
+                  width={getColumnWidth('operationType')}
+                  minWidth={100}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('operationType', 140)}
                   className="border-r-0"
                 />
               </tr>
@@ -302,32 +352,74 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
                     key={entry.id}
                     className="hover:bg-[#e8f1fc]/50 transition-colors odd:bg-white even:bg-slate-50/60"
                   >
-                    <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-700 whitespace-nowrap">
+                    <td
+                      style={{
+                        width: getColumnWidth('timestamp'),
+                        minWidth: getColumnWidth('timestamp'),
+                      }}
+                      className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-700 whitespace-nowrap"
+                    >
                       {formatTimestampDDMMYY(entry.timestamp)}
                     </td>
-                    <td className="py-2.5 px-4 border-r border-slate-200">
+                    <td
+                      style={{
+                        width: getColumnWidth('user'),
+                        minWidth: getColumnWidth('user'),
+                      }}
+                      className="py-2.5 px-4 border-r border-slate-200"
+                    >
                       <div className="font-semibold text-slate-900">{entry.userFullName}</div>
                       <div className="text-[11px] text-slate-500">
                         <span className="font-mono text-[#1e3799]">{entry.userLogin}</span> ·{' '}
                         {entry.userRole}
                       </div>
                     </td>
-                    <td className="py-2.5 px-4 border-r border-slate-200">
+                    <td
+                      style={{
+                        width: getColumnWidth('joint'),
+                        minWidth: getColumnWidth('joint'),
+                      }}
+                      className="py-2.5 px-4 border-r border-slate-200"
+                    >
                       <div className="font-mono font-bold text-slate-900">
                         {entry.uniqueLineId} · ст. {entry.jointNumber}
                       </div>
                       <div className="font-mono text-[11px] text-slate-500">{entry.rdCode}</div>
                     </td>
-                    <td className="py-2.5 px-4 border-r border-slate-200 font-semibold text-slate-800">
+                    <td
+                      style={{
+                        width: getColumnWidth('fieldLabel'),
+                        minWidth: getColumnWidth('fieldLabel'),
+                      }}
+                      className="py-2.5 px-4 border-r border-slate-200 font-semibold text-slate-800"
+                    >
                       {entry.fieldLabel}
                     </td>
-                    <td className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-500 line-through">
+                    <td
+                      style={{
+                        width: getColumnWidth('oldValue'),
+                        minWidth: getColumnWidth('oldValue'),
+                      }}
+                      className="py-2.5 px-4 border-r border-slate-200 font-mono text-slate-500 line-through"
+                    >
                       {oldValFormatted || '—'}
                     </td>
-                    <td className="py-2.5 px-4 border-r border-slate-200 font-mono font-semibold text-[#1e3799]">
+                    <td
+                      style={{
+                        width: getColumnWidth('newValue'),
+                        minWidth: getColumnWidth('newValue'),
+                      }}
+                      className="py-2.5 px-4 border-r border-slate-200 font-mono font-semibold text-[#1e3799]"
+                    >
                       {newValFormatted || '—'}
                     </td>
-                    <td className="py-2.5 px-4 text-slate-600">
+                    <td
+                      style={{
+                        width: getColumnWidth('operationType'),
+                        minWidth: getColumnWidth('operationType'),
+                      }}
+                      className="py-2.5 px-4 text-slate-600"
+                    >
                       {opLabelMap[entry.operationType]}
                     </td>
                   </tr>
@@ -335,6 +427,32 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
               })}
             </tbody>
           </table>
+        </div>
+
+        <div className="px-4 py-2.5 bg-[#f8fafd] border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+          <div className="flex items-center gap-3">
+            <div>
+              Отображено записей аудита:{' '}
+              <span className="font-mono font-bold text-slate-800">
+                {filtered.length}
+              </span>{' '}
+              из <span className="font-mono">{logs.length}</span>
+            </div>
+            {hasCustomWidths && (
+              <button
+                type="button"
+                onClick={handleResetWidths}
+                title="Сбросить ширину столбцов журнала аудита к заводской"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] transition-colors shadow-2xs cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3 text-slate-400" />
+                <span>Сбросить ширину столбцов</span>
+              </button>
+            )}
+          </div>
+          <div>
+            Ширина столбцов регулируется перетаскиванием правой границы заголовка (двойной клик — автоподбор)
+          </div>
         </div>
       </div>
     </div>

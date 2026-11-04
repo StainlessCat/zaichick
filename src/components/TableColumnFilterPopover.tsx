@@ -22,6 +22,19 @@ interface TableColumnFilterHeaderProps<T> {
   colSpan?: number;
   style?: React.CSSProperties;
   title?: string;
+  /** Настраиваемая ширина столбца (в px) */
+  width?: number;
+  /** Минимальная ширина столбца при регулировке */
+  minWidth?: number;
+  /** Функция начала перетаскивания границы столбца */
+  onResizeStart?: (
+    e: React.PointerEvent,
+    columnKey: string,
+    currentWidth: number,
+    minWidth?: number
+  ) => void;
+  /** Функция автоподбора ширины (двойной клик на разделитель) */
+  onAutoFit?: (columnKey: string) => void;
 }
 
 export function TableColumnFilterHeader<T>({
@@ -39,6 +52,10 @@ export function TableColumnFilterHeader<T>({
   colSpan,
   style,
   title,
+  width,
+  minWidth,
+  onResizeStart,
+  onAutoFit,
 }: TableColumnFilterHeaderProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -135,11 +152,19 @@ export function TableColumnFilterHeader<T>({
     setIsOpen(false);
   };
 
+  const colWidth = width ?? (typeof style?.width === 'number' ? style.width : undefined);
+  const colMinWidth = minWidth ?? (typeof style?.minWidth === 'number' ? style.minWidth : 60);
+
+  const mergedStyle: React.CSSProperties = {
+    ...style,
+    ...(colWidth ? { width: colWidth, minWidth: colWidth } : {}),
+  };
+
   return (
     <th
       rowSpan={rowSpan}
       colSpan={colSpan}
-      style={style}
+      style={mergedStyle}
       title={title}
       className={`px-2.5 py-2.5 font-semibold border-r border-[#162a78] relative select-none group ${className}`}
     >
@@ -176,6 +201,26 @@ export function TableColumnFilterHeader<T>({
           <Filter className="w-3 h-3" />
         </button>
       </div>
+
+      {/* Интерактивная ручка изменения ширины столбца */}
+      {onResizeStart && (
+        <div
+          onPointerDown={(e) => {
+            const currentW =
+              colWidth ??
+              (e.currentTarget.parentElement?.getBoundingClientRect().width || 120);
+            onResizeStart(e, columnKey, currentW, colMinWidth);
+          }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            if (onAutoFit) {
+              onAutoFit(columnKey);
+            }
+          }}
+          title="Потяните для изменения ширины. Двойной клик — автоподбор"
+          className="absolute top-0 right-0 bottom-0 w-2.5 cursor-col-resize select-none z-10 hover:bg-sky-400/50 transition-colors"
+        />
+      )}
 
       {isOpen && (
         <div
