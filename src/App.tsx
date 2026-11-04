@@ -2742,11 +2742,16 @@ export default function App() {
         {/* РАЗДЕЛ 2: ЖУРНАЛЫ СВАРОЧНЫХ РАБОТ (СТО ГАЗПРОМ 15-1.1-002-2023 И ГОСТ 32569-2013) */}
         {activeSection === 'journals' && (
           <WeldingJournalsView
-            joints={scopedJoints}
+            joints={joints}
+            allJoints={joints}
+            lines={projectLineList}
+            facilities={derivedFacilities}
             materials={weldingMaterials}
             lrvCatalog={lrvCatalog}
             selectedObjectName={selectedObjectName}
             selectedRdCode={selectedRdCode}
+            onSelectObjectName={setSelectedObjectName}
+            onSelectRdCode={setSelectedRdCode}
             onEditJoint={(j) =>
               setPassportModal({
                 isOpen: true,

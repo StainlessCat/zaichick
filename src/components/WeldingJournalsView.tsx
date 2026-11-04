@@ -1,18 +1,25 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
+  Building2,
   CalendarClock,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Download,
   FileSpreadsheet,
   FileText,
+  FolderKanban,
   Printer,
   RotateCcw,
   Search,
+  X,
 } from 'lucide-react';
 import {
+  FacilityObject,
   JournalStandard,
   LRVItem,
+  ProjectLineItem,
   WeldingMaterialCertificate,
   WeldJoint,
 } from '../types/welding';
@@ -40,11 +47,16 @@ import { useResizableColumns } from '../utils/useResizableColumns';
 
 interface WeldingJournalsViewProps {
   joints: WeldJoint[];
+  allJoints?: WeldJoint[];
+  lines?: ProjectLineItem[];
+  facilities?: FacilityObject[];
   materials?: WeldingMaterialCertificate[];
   lrvCatalog?: LRVItem[];
   selectedObjectName: string;
-  selectedRdCode: string;
+  selectedRdCode?: string;
   onEditJoint: (joint: WeldJoint) => void;
+  onSelectObjectName?: (name: string) => void;
+  onSelectRdCode?: (rd: string) => void;
 }
 
 const STO_COL_MAP: Record<StoGazpromColumnKey, StoGazpromJournalColumnDef> =
@@ -54,24 +66,448 @@ const STO_COL_MAP: Record<StoGazpromColumnKey, StoGazpromJournalColumnDef> =
 
 export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
   joints,
+  allJoints,
+  lines = [],
+  facilities = [],
   materials = [],
   lrvCatalog = [],
   selectedObjectName,
-  selectedRdCode,
+  selectedRdCode = 'ALL',
   onEditJoint,
+  onSelectObjectName,
+  onSelectRdCode,
 }) => {
   // По умолчанию открываем форму по СТО Газпром 15-1.1-002-2023 (49 граф)
   const [standard, setStandard] = useState<JournalStandard>(
     'СТО Газпром 15-1.1-002-2023'
   );
   const [onlyWelded, setOnlyWelded] = useState<boolean>(true);
-  const [lineSearch, setLineSearch] = useState<string>('');
+  const [tableSearch, setTableSearch] = useState<string>('');
   const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
   const [sortConfig, setSortConfig] = useState<{
     key: string;
     direction: 'asc' | 'desc';
   } | null>(null);
   const [actionToast, setActionToast] = useState<string>('');
+
+  // 1. Состояние выбора объекта (синхронизируется с пропом selectedObjectName)
+  const [currentObjectName, setCurrentObjectName] = useState<string>(
+    selectedObjectName || 'ALL'
+  );
+
+  useEffect(() => {
+    if (selectedObjectName) {
+      setCurrentObjectName(selectedObjectName);
+    }
+  }, [selectedObjectName]);
+
+  // Состояние и рефы выпадающего списка объекта
+  const [isObjectOpen, setIsObjectOpen] = useState(false);
+  const [objectSearch, setObjectSearch] = useState('');
+  const [objectHighlightIndex, setObjectHighlightIndex] = useState(0);
+  const objectTriggerRef = useRef<HTMLButtonElement>(null);
+  const objectInputRef = useRef<HTMLInputElement>(null);
+  const objectDropdownRef = useRef<HTMLDivElement>(null);
+
+  // 2. Состояние выбора линии
+  const [selectedLineKey, setSelectedLineKey] = useState<string>('ALL');
+
+  // Состояние и рефы выпадающего списка линии
+  const [isLineOpen, setIsLineOpen] = useState(false);
+  const [lineDropdownSearch, setLineDropdownSearch] = useState('');
+  const [lineHighlightIndex, setLineHighlightIndex] = useState(0);
+  const lineTriggerRef = useRef<HTMLButtonElement>(null);
+  const lineInputRef = useRef<HTMLInputElement>(null);
+  const lineDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Переключение фокуса в поле поиска при открытии списка объектов
+  useEffect(() => {
+    if (isObjectOpen) {
+      setObjectSearch('');
+      setObjectHighlightIndex(0);
+      const timer = setTimeout(() => {
+        objectInputRef.current?.focus();
+        objectInputRef.current?.select();
+      }, 30);
+      return () => clearTimeout(timer);
+    }
+  }, [isObjectOpen]);
+
+  // Переключение фокуса в поле поиска при открытии списка линий
+  useEffect(() => {
+    if (isLineOpen) {
+      setLineDropdownSearch('');
+      setLineHighlightIndex(0);
+      const timer = setTimeout(() => {
+        lineInputRef.current?.focus();
+        lineInputRef.current?.select();
+      }, 30);
+      return () => clearTimeout(timer);
+    }
+  }, [isLineOpen]);
+
+  // Закрытие выпадающих списков при клике вне их области
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        isObjectOpen &&
+        objectDropdownRef.current &&
+        !objectDropdownRef.current.contains(target) &&
+        !objectTriggerRef.current?.contains(target)
+      ) {
+        setIsObjectOpen(false);
+      }
+      if (
+        isLineOpen &&
+        lineDropdownRef.current &&
+        !lineDropdownRef.current.contains(target) &&
+        !lineTriggerRef.current?.contains(target)
+      ) {
+        setIsLineOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isObjectOpen, isLineOpen]);
+
+  // Все доступные стыки (если передан allJoints, используем его, иначе joints)
+  const effectiveAllJoints = useMemo(() => {
+    return allJoints && allJoints.length > 0 ? allJoints : joints;
+  }, [allJoints, joints]);
+
+  // Список доступных линий с подсчётом стыков
+  const availableLines = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        id: string;
+        lineNumber: string;
+        uniqueLineId: string;
+        lineName: string;
+        product: string;
+        objectName: string;
+        pipelineCategory: string;
+        qualityLevel: string;
+        jointsCount: number;
+      }
+    >();
+
+    // Добавляем линии из реестра линий
+    for (const pl of lines) {
+      if (currentObjectName !== 'ALL' && pl.objectName !== currentObjectName) continue;
+      const key = pl.uniqueLineId || pl.lineNumber;
+      if (!key) continue;
+      map.set(key, {
+        id: pl.id || key,
+        lineNumber: pl.lineNumber,
+        uniqueLineId: pl.uniqueLineId || pl.lineNumber,
+        lineName: pl.lineName || '',
+        product: pl.product || '',
+        objectName: pl.objectName,
+        pipelineCategory: pl.pipelineCategory || '',
+        qualityLevel: pl.qualityLevel || '',
+        jointsCount: 0,
+      });
+    }
+
+    // Стыки объекта для подсчёта и выявления линий, отсутствующих в лайн-листе
+    const relevantJoints =
+      currentObjectName !== 'ALL'
+        ? effectiveAllJoints.filter((j) => j.objectName === currentObjectName)
+        : effectiveAllJoints;
+
+    for (const j of relevantJoints) {
+      if (!j.lineNumber) continue;
+      const key = j.uniqueLineId || j.lineNumber;
+      const existing =
+        map.get(key) ||
+        (j.lineNumber ? map.get(j.lineNumber) : undefined) ||
+        (j.uniqueLineId ? map.get(j.uniqueLineId) : undefined);
+      if (existing) {
+        existing.jointsCount += 1;
+      } else {
+        map.set(key, {
+          id: key,
+          lineNumber: j.lineNumber,
+          uniqueLineId: j.uniqueLineId || j.lineNumber,
+          lineName: '',
+          product: '',
+          objectName: j.objectName,
+          pipelineCategory: '',
+          qualityLevel: '',
+          jointsCount: 1,
+        });
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.lineNumber.localeCompare(b.lineNumber, 'ru', { numeric: true })
+    );
+  }, [lines, currentObjectName, effectiveAllJoints]);
+
+  // Выбранный объект линии
+  const selectedLineItem = useMemo(() => {
+    if (selectedLineKey === 'ALL') return null;
+    return (
+      availableLines.find(
+        (l) =>
+          l.id === selectedLineKey ||
+          l.uniqueLineId === selectedLineKey ||
+          l.lineNumber === selectedLineKey
+      ) || null
+    );
+  }, [selectedLineKey, availableLines]);
+
+  // Человекочитаемая метка выбранной линии
+  const activeLineDisplayLabel = useMemo(() => {
+    if (selectedLineKey === 'ALL') return 'Все линии';
+    if (!selectedLineItem) return selectedLineKey;
+    if (
+      selectedLineItem.lineNumber &&
+      selectedLineItem.uniqueLineId &&
+      selectedLineItem.uniqueLineId !== selectedLineItem.lineNumber
+    ) {
+      return `${selectedLineItem.lineNumber} (${selectedLineItem.uniqueLineId})`;
+    }
+    return (
+      selectedLineItem.lineNumber ||
+      selectedLineItem.uniqueLineId ||
+      selectedLineKey
+    );
+  }, [selectedLineItem, selectedLineKey]);
+
+  // Обработчики выбора объекта и линии
+  const handleSelectObject = (objName: string) => {
+    setCurrentObjectName(objName);
+    onSelectObjectName?.(objName);
+    onSelectRdCode?.('ALL');
+    setIsObjectOpen(false);
+    objectTriggerRef.current?.focus();
+
+    // Проверяем, принадлежит ли ранее выбранная линия новому объекту
+    if (selectedLineKey !== 'ALL' && objName !== 'ALL') {
+      const lineExistsInNewObj =
+        lines.some(
+          (l) =>
+            l.objectName === objName &&
+            (l.id === selectedLineKey ||
+              l.uniqueLineId === selectedLineKey ||
+              l.lineNumber === selectedLineKey)
+        ) ||
+        effectiveAllJoints.some(
+          (j) =>
+            j.objectName === objName &&
+            (j.uniqueLineId === selectedLineKey || j.lineNumber === selectedLineKey)
+        );
+      if (!lineExistsInNewObj) {
+        setSelectedLineKey('ALL');
+      }
+    }
+  };
+
+  const handleSelectLine = (lineKey: string) => {
+    setSelectedLineKey(lineKey);
+    setIsLineOpen(false);
+    lineTriggerRef.current?.focus();
+  };
+
+  // Варианты выбора объекта для выпадающего списка
+  const objectOptions = useMemo(() => {
+    const allOption = {
+      name: 'ALL',
+      displayName: 'Все объекты (сводный)',
+      shortName: 'Все',
+      region: '',
+      linesCount: lines.length,
+      jointsCount: effectiveAllJoints.length,
+    };
+
+    const objMap = new Map<
+      string,
+      {
+        name: string;
+        displayName: string;
+        shortName: string;
+        region: string;
+        linesCount: number;
+        jointsCount: number;
+      }
+    >();
+
+    for (const f of facilities) {
+      if (!f.name || f.name === 'ALL') continue;
+      objMap.set(f.name, {
+        name: f.name,
+        displayName: f.name,
+        shortName: f.shortName || f.name,
+        region: f.region || '',
+        linesCount: 0,
+        jointsCount: 0,
+      });
+    }
+
+    for (const j of effectiveAllJoints) {
+      if (!j.objectName) continue;
+      const ex = objMap.get(j.objectName);
+      if (ex) {
+        ex.jointsCount += 1;
+      } else {
+        objMap.set(j.objectName, {
+          name: j.objectName,
+          displayName: j.objectName,
+          shortName: j.objectName,
+          region: '',
+          linesCount: 0,
+          jointsCount: 1,
+        });
+      }
+    }
+
+    for (const l of lines) {
+      if (!l.objectName) continue;
+      const ex = objMap.get(l.objectName);
+      if (ex) {
+        ex.linesCount += 1;
+      }
+    }
+
+    const sorted = Array.from(objMap.values()).sort((a, b) =>
+      a.displayName.localeCompare(b.displayName, 'ru', { numeric: true })
+    );
+
+    return [allOption, ...sorted];
+  }, [facilities, lines, effectiveAllJoints]);
+
+  const filteredObjectOptions = useMemo(() => {
+    if (!objectSearch.trim()) return objectOptions;
+    const q = objectSearch.trim().toLowerCase();
+    return objectOptions.filter(
+      (opt) =>
+        opt.displayName.toLowerCase().includes(q) ||
+        opt.shortName.toLowerCase().includes(q) ||
+        opt.region.toLowerCase().includes(q)
+    );
+  }, [objectOptions, objectSearch]);
+
+  // Варианты выбора линии для выпадающего списка
+  const filteredLineOptions = useMemo(() => {
+    const relevantJointsCount = (
+      currentObjectName === 'ALL'
+        ? effectiveAllJoints
+        : effectiveAllJoints.filter((j) => j.objectName === currentObjectName)
+    ).length;
+
+    const allOption = {
+      id: 'ALL',
+      lineNumber: 'Все линии',
+      uniqueLineId: '',
+      lineName:
+        currentObjectName === 'ALL'
+          ? 'Сводный перечень по всем объектам'
+          : `Все линии объекта «${currentObjectName}»`,
+      product: '',
+      objectName: currentObjectName,
+      pipelineCategory: '',
+      qualityLevel: '',
+      jointsCount: relevantJointsCount,
+    };
+
+    const list = [allOption, ...availableLines];
+    if (!lineDropdownSearch.trim()) return list;
+
+    const q = lineDropdownSearch.trim().toLowerCase();
+    return list.filter((l) => {
+      if (l.id === 'ALL') return 'все линии'.includes(q);
+      return (
+        l.lineNumber.toLowerCase().includes(q) ||
+        l.uniqueLineId.toLowerCase().includes(q) ||
+        l.lineName.toLowerCase().includes(q) ||
+        l.product.toLowerCase().includes(q) ||
+        l.pipelineCategory.toLowerCase().includes(q)
+      );
+    });
+  }, [availableLines, lineDropdownSearch, currentObjectName, effectiveAllJoints]);
+
+  // Клавиатурная навигация в списке объектов (ArrowUp/Down, Enter, Escape)
+  const handleObjectKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsObjectOpen(false);
+      objectTriggerRef.current?.focus();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setObjectHighlightIndex((prev) =>
+        prev < filteredObjectOptions.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setObjectHighlightIndex((prev) =>
+        prev > 0 ? prev - 1 : filteredObjectOptions.length - 1
+      );
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const item = filteredObjectOptions[objectHighlightIndex];
+      if (item) {
+        handleSelectObject(item.name);
+      }
+    }
+  };
+
+  // Клавиатурная навигация в списке линий (ArrowUp/Down, Enter, Escape)
+  const handleLineKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsLineOpen(false);
+      lineTriggerRef.current?.focus();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setLineHighlightIndex((prev) =>
+        prev < filteredLineOptions.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setLineHighlightIndex((prev) =>
+        prev > 0 ? prev - 1 : filteredLineOptions.length - 1
+      );
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const item = filteredLineOptions[lineHighlightIndex];
+      if (item) {
+        handleSelectLine(item.id);
+      }
+    }
+  };
+
+  // Стыки с фильтрацией по выбранному объекту и выбранной линии
+  const lineScopedJoints = useMemo(() => {
+    let list =
+      currentObjectName === 'ALL'
+        ? effectiveAllJoints
+        : effectiveAllJoints.filter((j) => j.objectName === currentObjectName);
+
+    if (selectedLineKey !== 'ALL') {
+      if (selectedLineItem) {
+        list = list.filter((j) => {
+          if (
+            selectedLineItem.uniqueLineId &&
+            j.uniqueLineId &&
+            j.uniqueLineId === selectedLineItem.uniqueLineId
+          ) {
+            return true;
+          }
+          return j.lineNumber === selectedLineItem.lineNumber;
+        });
+      } else {
+        list = list.filter(
+          (j) =>
+            j.uniqueLineId === selectedLineKey || j.lineNumber === selectedLineKey
+        );
+      }
+    }
+
+    return list;
+  }, [effectiveAllJoints, currentObjectName, selectedLineKey, selectedLineItem]);
 
   // Регулирование ширины столбцов журнала по ГОСТ 32569-2013
   const {
@@ -116,10 +552,10 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
 
   // Сортировка строго в хронологическом порядке по дате сварки
   const baseChronologicalJoints = useMemo(() => {
-    const base = joints.filter((j) => {
+    const base = lineScopedJoints.filter((j) => {
       if (onlyWelded && !j.weldingDate) return false;
-      if (lineSearch.trim()) {
-        const q = lineSearch.trim().toLowerCase();
+      if (tableSearch.trim()) {
+        const q = tableSearch.trim().toLowerCase();
         return (
           j.lineNumber.toLowerCase().includes(q) ||
           j.jointNumber.toLowerCase().includes(q) ||
@@ -131,7 +567,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
       return true;
     });
     return sortJointsChronologically(base);
-  }, [joints, onlyWelded, lineSearch]);
+  }, [lineScopedJoints, onlyWelded, tableSearch]);
 
   // Геттеры для всех 49 граф формы СТО Газпром 15-1.1-002-2023
   const stoGazpromGetters = useMemo<
@@ -211,7 +647,15 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         )
         .join('\n');
 
-    const fileName = `Журнал_сварки_${standard.replace(/\s+/g, '_')}.csv`;
+    const lineSuffix =
+      selectedLineKey !== 'ALL' && selectedLineItem
+        ? `_Линия_${selectedLineItem.lineNumber.replace(/[\\/:*?"<>|]/g, '_')}`
+        : '';
+    const objSuffix =
+      currentObjectName !== 'ALL'
+        ? `_${currentObjectName.replace(/[\\/:*?"<>|]/g, '_').slice(0, 25)}`
+        : '';
+    const fileName = `Журнал_сварки_${standard.replace(/\s+/g, '_')}${objSuffix}${lineSuffix}.csv`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     triggerBlobDownload(blob, fileName);
     showToast(`Журнал (${chronologicalJoints.length} зап.) выгружен в файл «${fileName}».`);
@@ -244,10 +688,16 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         : formatStoGazpromJournalRow(j, idx, lrvCatalog).cells
     );
 
+    const displayObjectName =
+      (currentObjectName === 'ALL' ? 'Сводный реестр' : currentObjectName) +
+      (selectedLineKey !== 'ALL' && selectedLineItem
+        ? ` (Линия: ${selectedLineItem.lineNumber})`
+        : '');
+
     exportWeldingJournalToPdfA3(
       standard,
-      selectedObjectName,
-      selectedRdCode,
+      displayObjectName,
+      selectedRdCode || 'ALL',
       headers,
       colNumbers,
       rows
@@ -313,10 +763,328 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         </div>
       )}
 
-      {/* Панель управления журналом */}
-      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3 no-print">
-        {/* Переключатель формы журнала: СТО Газпром 15-1.1-002-2023 или ГОСТ 32569-2013 */}
+      {/* Панель управления журналом (Блок 1) */}
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2.5 no-print">
+        {/* Селекторы объекта и линии, и переключатель нормативной формы */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* 1. Выбор объекта (выпадающий список с переключением фокуса и поиском) */}
+          <div className="relative">
+            <button
+              ref={objectTriggerRef}
+              type="button"
+              onClick={() => setIsObjectOpen((prev) => !prev)}
+              aria-haspopup="listbox"
+              aria-expanded={isObjectOpen}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer select-none ${
+                currentObjectName !== 'ALL'
+                  ? 'border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] font-semibold shadow-2xs'
+                  : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900'
+              }`}
+              title="Выбор объекта строительства для формирования журнала"
+            >
+              <Building2
+                className={`w-4 h-4 shrink-0 ${
+                  currentObjectName !== 'ALL' ? 'text-[#1e3799]' : 'text-slate-500'
+                }`}
+              />
+              <span className="max-w-[150px] sm:max-w-[200px] truncate">
+                {currentObjectName === 'ALL' ? 'Все объекты' : currentObjectName}
+              </span>
+              {currentObjectName !== 'ALL' && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectObject('ALL');
+                  }}
+                  className="hover:bg-[#1e3799]/15 rounded p-0.5 text-[#1e3799]"
+                  title="Сбросить фильтр по объекту (показать все объекты)"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              )}
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                  isObjectOpen ? 'rotate-180 text-[#1e3799]' : ''
+                }`}
+              />
+            </button>
+
+            {isObjectOpen && (
+              <div
+                ref={objectDropdownRef}
+                className="absolute left-0 top-full mt-1.5 z-40 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col"
+                onKeyDown={handleObjectKeyDown}
+              >
+                <div className="p-2 border-b border-slate-100 bg-[#f8fafd] flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      ref={objectInputRef}
+                      type="text"
+                      value={objectSearch}
+                      onChange={(e) => {
+                        setObjectSearch(e.target.value);
+                        setObjectHighlightIndex(0);
+                      }}
+                      placeholder="Поиск объекта..."
+                      className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#1e3799] focus:ring-1 focus:ring-[#1e3799]"
+                    />
+                    {objectSearch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setObjectSearch('');
+                          objectInputRef.current?.focus();
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  role="listbox"
+                  className="max-h-64 overflow-y-auto p-1.5 space-y-0.5"
+                >
+                  {filteredObjectOptions.map((opt, idx) => {
+                    const isSelected = currentObjectName === opt.name;
+                    const isHighlighted = objectHighlightIndex === idx;
+                    return (
+                      <button
+                        key={opt.name}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        onClick={() => handleSelectObject(opt.name)}
+                        onMouseEnter={() => setObjectHighlightIndex(idx)}
+                        ref={(el) => {
+                          if (isHighlighted && el) {
+                            el.scrollIntoView({ block: 'nearest' });
+                          }
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-left text-xs transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#e8f1fc] text-[#1e3799] font-semibold'
+                            : isHighlighted
+                            ? 'bg-slate-100 text-slate-900'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="truncate">{opt.displayName}</span>
+                            {opt.name === 'ALL' && (
+                              <span className="text-[10px] px-1 py-0.2 rounded bg-slate-200/70 text-slate-600">
+                                сводный
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                            <span>{opt.linesCount} лин.</span>
+                            <span>·</span>
+                            <span>{opt.jointsCount} ст.</span>
+                            {opt.region && (
+                              <>
+                                <span>·</span>
+                                <span className="truncate">{opt.region}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-[#1e3799] shrink-0" />}
+                      </button>
+                    );
+                  })}
+                  {filteredObjectOptions.length === 0 && (
+                    <div className="px-3 py-6 text-center text-xs text-slate-400">
+                      Объекты не найдены
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Выбор линии (выпадающий список с переключением фокуса и поиском) */}
+          <div className="relative">
+            <button
+              ref={lineTriggerRef}
+              type="button"
+              onClick={() => setIsLineOpen((prev) => !prev)}
+              aria-haspopup="listbox"
+              aria-expanded={isLineOpen}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer select-none ${
+                selectedLineKey !== 'ALL'
+                  ? 'border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] font-semibold shadow-2xs'
+                  : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900'
+              }`}
+              title="Выбор линии технологического трубопровода"
+            >
+              <FolderKanban
+                className={`w-4 h-4 shrink-0 ${
+                  selectedLineKey !== 'ALL' ? 'text-[#1e3799]' : 'text-slate-500'
+                }`}
+              />
+              <span className="max-w-[150px] sm:max-w-[200px] truncate">
+                {selectedLineKey === 'ALL' ? 'Все линии' : activeLineDisplayLabel}
+              </span>
+              {selectedLineKey !== 'ALL' && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectLine('ALL');
+                  }}
+                  className="hover:bg-[#1e3799]/15 rounded p-0.5 text-[#1e3799]"
+                  title="Сбросить фильтр по линии (показать все линии)"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              )}
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                  isLineOpen ? 'rotate-180 text-[#1e3799]' : ''
+                }`}
+              />
+            </button>
+
+            {isLineOpen && (
+              <div
+                ref={lineDropdownRef}
+                className="absolute left-0 top-full mt-1.5 z-40 w-84 sm:w-[440px] bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col"
+                onKeyDown={handleLineKeyDown}
+              >
+                <div className="p-2 border-b border-slate-100 bg-[#f8fafd] flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      ref={lineInputRef}
+                      type="text"
+                      value={lineDropdownSearch}
+                      onChange={(e) => {
+                        setLineDropdownSearch(e.target.value);
+                        setLineHighlightIndex(0);
+                      }}
+                      placeholder="Поиск линии (номер, шифр, продукт, контур)..."
+                      className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#1e3799] focus:ring-1 focus:ring-[#1e3799]"
+                    />
+                    {lineDropdownSearch && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLineDropdownSearch('');
+                          lineInputRef.current?.focus();
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="px-3 py-1 bg-slate-50 border-b border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
+                  <span className="truncate">
+                    {currentObjectName === 'ALL'
+                      ? 'Все линии всех объектов'
+                      : `Объект: ${currentObjectName}`}
+                  </span>
+                  <span className="font-mono text-slate-400 shrink-0">
+                    Найдено: {filteredLineOptions.length}
+                  </span>
+                </div>
+
+                <div
+                  role="listbox"
+                  className="max-h-72 overflow-y-auto p-1.5 space-y-0.5"
+                >
+                  {filteredLineOptions.map((opt, idx) => {
+                    const isSelected = selectedLineKey === opt.id;
+                    const isHighlighted = lineHighlightIndex === idx;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        onClick={() => handleSelectLine(opt.id)}
+                        onMouseEnter={() => setLineHighlightIndex(idx)}
+                        ref={(el) => {
+                          if (isHighlighted && el) {
+                            el.scrollIntoView({ block: 'nearest' });
+                          }
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-left text-xs transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#e8f1fc] text-[#1e3799] font-semibold'
+                            : isHighlighted
+                            ? 'bg-slate-100 text-slate-900'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="font-mono font-bold text-slate-900">
+                              {opt.lineNumber}
+                            </span>
+                            {opt.uniqueLineId && opt.uniqueLineId !== opt.lineNumber && (
+                              <span className="font-mono text-[10px] text-slate-500 px-1 py-0.2 rounded bg-slate-100 truncate">
+                                {opt.uniqueLineId}
+                              </span>
+                            )}
+                            {opt.id === 'ALL' && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/70 text-slate-600 font-sans">
+                                все
+                              </span>
+                            )}
+                          </div>
+                          {(opt.lineName || opt.product || opt.jointsCount !== undefined) && (
+                            <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5 truncate">
+                              <span className="font-medium text-[#1e3799]">
+                                {opt.jointsCount}{' '}
+                                {opt.jointsCount === 1
+                                  ? 'стык'
+                                  : opt.jointsCount > 1 && opt.jointsCount < 5
+                                  ? 'стыка'
+                                  : 'стыков'}
+                              </span>
+                              {opt.lineName && (
+                                <>
+                                  <span>·</span>
+                                  <span className="truncate">{opt.lineName}</span>
+                                </>
+                              )}
+                              {opt.product && (
+                                <>
+                                  <span>·</span>
+                                  <span className="text-slate-400 truncate">{opt.product}</span>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-[#1e3799] shrink-0" />}
+                      </button>
+                    );
+                  })}
+                  {filteredLineOptions.length === 0 && (
+                    <div className="px-3 py-6 text-center text-xs text-slate-400">
+                      Линии не найдены
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="h-5 w-px bg-slate-200 hidden sm:block mx-0.5" />
+
+          {/* 3. Переключатель нормативной формы журнала */}
           <div
             className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200"
             role="group"
@@ -325,7 +1093,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
             <button
               type="button"
               onClick={() => handleSwitchStandard('СТО Газпром 15-1.1-002-2023')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
                 standard === 'СТО Газпром 15-1.1-002-2023'
                   ? 'bg-[#1e3799] text-white shadow-xs'
                   : 'text-slate-700 hover:text-slate-900'
@@ -336,7 +1104,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
             <button
               type="button"
               onClick={() => handleSwitchStandard('ГОСТ 32569-2013')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
                 standard === 'ГОСТ 32569-2013'
                   ? 'bg-[#1e3799] text-white shadow-xs'
                   : 'text-slate-700 hover:text-slate-900'
@@ -345,11 +1113,14 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
               Форма ГОСТ 32569-2013 (17 граф)
             </button>
           </div>
+        </div>
 
+        {/* Экспорт и печать */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handleExportXlsx}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] transition-colors whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
           >
             <FileSpreadsheet className="w-4 h-4" />
             <span>Выгрузить (.XLSX)</span>
@@ -358,7 +1129,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
           <button
             type="button"
             onClick={handleExportCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#1e3799]/30 bg-[#f0f5fc] text-[#1e3799] text-xs font-semibold hover:bg-sky-100 transition-colors whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e3799]/30 bg-[#f0f5fc] text-[#1e3799] text-xs font-semibold hover:bg-sky-100 transition-colors whitespace-nowrap cursor-pointer"
           >
             <Download className="w-4 h-4" />
             <span>.CSV</span>
@@ -367,7 +1138,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
           <button
             type="button"
             onClick={handlePrintOrExportPdfA3}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
             title="Скачать готовый PDF-лист формата А3 Альбомная и вызвать диалог печати"
           >
             <Printer className="w-4 h-4 text-[#1e3799]" />
@@ -377,7 +1148,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         </div>
       </div>
 
-      {/* Полоса фильтрации и статуса хронологии */}
+      {/* Полоса фильтрации и статуса хронологии (Блок 2) */}
       <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3 no-print">
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1e3799] bg-[#e8f1fc] px-3 py-1.5 rounded-md border border-sky-200">
@@ -411,9 +1182,9 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            value={lineSearch}
-            onChange={(e) => setLineSearch(e.target.value)}
-            placeholder="Поиск по линии, стыку, клейму..."
+            value={tableSearch}
+            onChange={(e) => setTableSearch(e.target.value)}
+            placeholder="Поиск по стыку, клейму..."
             className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3799] focus:bg-white"
           />
         </div>
@@ -433,15 +1204,26 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                 ? 'ЖУРНАЛ СВАРКИ ТЕХНОЛОГИЧЕСКИХ СТАЛЬНЫХ ТРУБОПРОВОДОВ (ПО ГОСТ 32569-2013)'
                 : 'ЖУРНАЛ СВАРОЧНЫХ РАБОТ (ПО ФОРМЕ СТО ГАЗПРОМ 15-1.1-002-2023)'}
             </h3>
-            <p className="text-xs text-slate-600 mt-0.5">
-              Объект:{' '}
-              <span className="font-medium">
-                {selectedObjectName === 'ALL' ? 'Сводный реестр' : selectedObjectName}
+            <p className="text-xs text-slate-600 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>
+                Объект:{' '}
+                <span className="font-medium text-slate-900">
+                  {currentObjectName === 'ALL' ? 'Сводный реестр (все объекты)' : currentObjectName}
+                </span>
               </span>
-              {selectedRdCode !== 'ALL' && (
+              <span>·</span>
+              <span>
+                Линия:{' '}
+                <span className="font-mono font-medium text-[#1e3799]">
+                  {selectedLineKey === 'ALL' ? 'Все линии' : activeLineDisplayLabel}
+                </span>
+              </span>
+              {selectedRdCode && selectedRdCode !== 'ALL' && (
                 <>
-                  {' '}
-                  · Шифр РД: <span className="font-mono">{selectedRdCode}</span>
+                  <span>·</span>
+                  <span>
+                    Шифр РД: <span className="font-mono text-slate-900">{selectedRdCode}</span>
+                  </span>
                 </>
               )}
             </p>
