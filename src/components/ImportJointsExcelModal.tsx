@@ -460,7 +460,7 @@ export const ImportJointsExcelModal: React.FC<ImportJointsExcelModalProps> = ({
                   </div>
                 </div>
 
-                <div className="max-h-[380px] overflow-auto">
+                <div className="max-h-[380px] overflow-auto table-scroll-container">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-[#1e3799]/10 text-slate-800 sticky top-0 z-10 font-bold border-b border-slate-200">
                       <tr>

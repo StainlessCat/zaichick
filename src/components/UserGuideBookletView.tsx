@@ -771,7 +771,7 @@ export const UserGuideBookletView: React.FC = () => {
                 <h3 className="text-sm font-bold text-slate-900">
                   Сводная памятка: кто, в каком разделе и в какой последовательности работает
                 </h3>
-                <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                <div className="overflow-x-auto border border-slate-200 rounded-lg table-scroll-container">
                   <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="bg-[#1e3799] text-white text-left">

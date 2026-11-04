@@ -292,9 +292,9 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
 
       {/* Таблица отчёта готовности с шапкой #1e3799 и Excel-фильтрами */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-        <div className="overflow-x-auto min-h-[340px]">
+        <div className="overflow-x-auto overflow-y-auto min-h-[340px] max-h-[calc(100vh-250px)] table-scroll-container">
           <table className="w-full text-xs border-collapse">
-            <thead>
+            <thead className="sticky top-0 z-20 shadow-xs">
               <tr className="bg-[#1e3799] text-white text-left">
                 <TableColumnFilterHeader
                   columnKey="groupKey"

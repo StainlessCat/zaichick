@@ -793,12 +793,12 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
 
       {/* Таблица каталога ЛРВ с шапкой #1e3799, Excel-фильтрами и раздельными столбцами DN 1/DN 2, Ø1/Ø2 и S1/S2 */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-        <div className="overflow-x-auto min-h-[380px]">
+        <div className="overflow-x-auto overflow-y-auto min-h-[380px] max-h-[calc(100vh-250px)] table-scroll-container">
           <table className="w-full text-xs border-collapse">
-            <thead>
+            <thead className="sticky top-0 z-20 shadow-xs">
               <tr className="bg-[#1e3799] text-white text-left">
                 {onDeleteLrvItems && (
-                  <th className="py-2.5 px-2.5 border-r border-white/15 w-9 text-center">
+                  <th className="py-2.5 px-2.5 border-r border-white/15 w-9 text-center sticky left-0 top-0 z-30 bg-[#1e3799]">
                     <input
                       type="checkbox"
                       aria-label="Выбрать все материалы в ЛРВ"
@@ -1052,7 +1052,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                     }`}
                   >
                     {onDeleteLrvItems && (
-                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-center">
+                      <td className="py-2.5 px-2.5 border-r border-slate-200 text-center sticky left-0 z-10 bg-inherit">
                         <input
                           type="checkbox"
                           aria-label={`Выбрать позицию ЛРВ ${item.lrvCode}`}

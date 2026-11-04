@@ -1388,7 +1388,7 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                 )}
               </div>
 
-              <div className="flex-1 max-h-56 overflow-y-auto border border-slate-200 rounded-lg bg-slate-50">
+              <div className="flex-1 max-h-56 overflow-y-auto overflow-x-auto border border-slate-200 rounded-lg bg-slate-50 table-scroll-container">
                 {previewItems.length === 0 ? (
                   <div className="p-6 text-center text-xs text-slate-400">
                     Выберите файл .xlsx / .csv слева или нажмите «Распознать строки из поля» для предпросмотра.
@@ -1447,12 +1447,12 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
 
       {/* Таблица «Проект (лайнлист)» со всеми 17 полями, Excel-фильтрами и шапкой #1e3799 */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto min-h-[420px]">
+        <div className="overflow-x-auto overflow-y-auto min-h-[420px] max-h-[calc(100vh-250px)] table-scroll-container">
           <table className="w-full text-xs border-collapse">
-            <thead>
+            <thead className="sticky top-0 z-20 shadow-xs">
               <tr className="bg-[#1e3799] text-white select-none">
                 {/* Чекбокс выбора всех строк лайнлиста */}
-                <th className="py-2.5 px-2.5 border-r border-white/15 w-9 text-center sticky left-0 z-20 bg-[#1e3799]">
+                <th className="py-2.5 px-2.5 border-r border-white/15 w-9 text-center sticky left-0 top-0 z-30 bg-[#1e3799]">
                   <input
                     type="checkbox"
                     aria-label="Выбрать все линии в таблице"

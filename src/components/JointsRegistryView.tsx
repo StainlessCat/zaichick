@@ -423,7 +423,7 @@ export const JointsRegistryView: React.FC<JointsRegistryViewProps> = ({
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         <div
           ref={parentRef}
-          className="overflow-x-auto min-h-[460px] max-h-[calc(100vh-270px)] overflow-y-auto"
+          className="overflow-x-auto min-h-[460px] max-h-[calc(100vh-270px)] overflow-y-auto table-scroll-container"
         >
           <table className="w-full text-xs border-collapse">
             <thead>

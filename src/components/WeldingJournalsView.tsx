@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   BookOpen,
-  CalendarClock,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -82,13 +82,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
   const [standard, setStandard] = useState<JournalStandard>(
     'СТО Газпром 15-1.1-002-2023'
   );
-  const [onlyWelded, setOnlyWelded] = useState<boolean>(true);
-  const [tableSearch, setTableSearch] = useState<string>('');
   const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
-  const [sortConfig, setSortConfig] = useState<{
-    key: string;
-    direction: 'asc' | 'desc';
-  } | null>(null);
   const [actionToast, setActionToast] = useState<string>('');
 
   // 1. Состояние выбора шифра РД (синхронизируется с пропом selectedRdCode)
@@ -367,6 +361,52 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     );
   }, [selectedLineItem, selectedLineKey]);
 
+  // Оповещение: проверка полной завершённости сварочных работ по выбранной линии (для Блока 1)
+  const lineWeldingAlert = useMemo(() => {
+    if (selectedLineKey === 'ALL') return null;
+
+    // Все стыки выбранной линии в рамках текущего объекта
+    const lineJoints = objectScopedJoints.filter((j) => {
+      if (
+        selectedLineItem?.uniqueLineId &&
+        j.uniqueLineId &&
+        j.uniqueLineId === selectedLineItem.uniqueLineId
+      ) {
+        return true;
+      }
+      if (
+        selectedLineItem?.lineNumber &&
+        j.lineNumber === selectedLineItem.lineNumber
+      ) {
+        return true;
+      }
+      return (
+        j.lineNumber === selectedLineKey || j.uniqueLineId === selectedLineKey
+      );
+    });
+
+    const total = lineJoints.length;
+    const weldedJoints = lineJoints.filter((j) =>
+      Boolean(j.weldingDate && j.weldingDate.trim() !== '')
+    );
+    const welded = weldedJoints.length;
+    const unweldedJoints = lineJoints.filter(
+      (j) => !j.weldingDate || !j.weldingDate.trim()
+    );
+    const unweldedCount = unweldedJoints.length;
+    const isFullyWelded = total > 0 && welded === total;
+
+    return {
+      total,
+      welded,
+      unweldedCount,
+      isFullyWelded,
+      unweldedJointNumbers: unweldedJoints
+        .map((j) => j.jointNumber)
+        .filter(Boolean),
+    };
+  }, [objectScopedJoints, selectedLineKey, selectedLineItem]);
+
   // Обработчики выбора шифра РД и линии
   const handleSelectRd = (rd: string) => {
     setCurrentRdCode(rd);
@@ -584,27 +624,15 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
   const handleSwitchStandard = (nextStd: JournalStandard) => {
     setStandard(nextStd);
     setColumnFilters({});
-    setSortConfig(null);
   };
 
-  // Сортировка строго в хронологическом порядке по дате сварки
+  // Сортировка стыков всегда производится исключительно по хронологии
   const baseChronologicalJoints = useMemo(() => {
-    const base = lineScopedJoints.filter((j) => {
-      if (onlyWelded && !j.weldingDate) return false;
-      if (tableSearch.trim()) {
-        const q = tableSearch.trim().toLowerCase();
-        return (
-          j.lineNumber.toLowerCase().includes(q) ||
-          j.jointNumber.toLowerCase().includes(q) ||
-          j.welderStamp.toLowerCase().includes(q) ||
-          j.welderFullName.toLowerCase().includes(q) ||
-          (j.gostJointType || '').toLowerCase().includes(q)
-        );
-      }
-      return true;
-    });
-    return sortJointsChronologically(base);
-  }, [lineScopedJoints, onlyWelded, tableSearch]);
+    const welded = lineScopedJoints.filter(
+      (j) => Boolean(j.weldingDate && j.weldingDate.trim() !== '')
+    );
+    return sortJointsChronologically(welded);
+  }, [lineScopedJoints]);
 
   // Геттеры для всех 49 граф формы СТО Газпром 15-1.1-002-2023
   const stoGazpromGetters = useMemo<
@@ -639,15 +667,16 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
   const activeGetters =
     standard === 'ГОСТ 32569-2013' ? gost32569Getters : stoGazpromGetters;
 
+  // Применяем фильтры столбцов, сохраняя строгий хронологический порядок
   const chronologicalJoints = useMemo(
     () =>
       applyTableColumnFiltersAndSort(
         baseChronologicalJoints,
         columnFilters,
         activeGetters,
-        sortConfig
+        null
       ),
-    [baseChronologicalJoints, columnFilters, activeGetters, sortConfig]
+    [baseChronologicalJoints, columnFilters, activeGetters]
   );
 
   const handleApplyFilter = (colKey: string, vals: string[] | undefined) => {
@@ -657,10 +686,6 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
       else next[colKey] = vals;
       return next;
     });
-  };
-
-  const handleSort = (colKey: string, direction: 'asc' | 'desc') => {
-    setSortConfig({ key: colKey, direction });
   };
 
   const handleExportCsv = () => {
@@ -774,8 +799,6 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         getValue={stoGazpromGetters[col.key]}
         activeFilters={columnFilters}
         onApplyFilter={handleApplyFilter}
-        sortConfig={sortConfig}
-        onSort={handleSort}
         rowSpan={rowSpan}
         width={width}
         minWidth={col.minWidth}
@@ -1152,6 +1175,23 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
             )}
           </div>
 
+          {/* Оповещение: выбранная линия заварена не полностью (иконка в первом блоке) */}
+          {lineWeldingAlert && !lineWeldingAlert.isFullyWelded && (
+            <div
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold shadow-2xs select-none"
+              title={`Внимание: выбранная линия заварена не полностью!\n• Всего стыков на линии: ${lineWeldingAlert.total}\n• Сварено: ${lineWeldingAlert.welded}\n• Не заварено: ${lineWeldingAlert.unweldedCount}${
+                lineWeldingAlert.unweldedJointNumbers.length > 0
+                  ? ` (№: ${lineWeldingAlert.unweldedJointNumbers.slice(0, 10).join(', ')}${lineWeldingAlert.unweldedJointNumbers.length > 10 ? '...' : ''})`
+                  : ''
+              }`}
+            >
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span className="whitespace-nowrap font-medium">
+                Линия не заварена ({lineWeldingAlert.welded}/{lineWeldingAlert.total})
+              </span>
+            </div>
+          )}
+
           <div className="h-5 w-px bg-slate-200 hidden sm:block mx-0.5" />
 
           {/* 3. Переключатель нормативной формы журнала */}
@@ -1218,48 +1258,6 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         </div>
       </div>
 
-      {/* Полоса фильтрации и статуса хронологии (Блок 2) */}
-      <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3 no-print">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1e3799] bg-[#e8f1fc] px-3 py-1.5 rounded-md border border-sky-200">
-            <CalendarClock className="w-4 h-4" />
-            <span>Хронологический порядок по дате сварки (ДД.ММ.ГГ)</span>
-          </div>
-          <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={onlyWelded}
-              onChange={(e) => setOnlyWelded(e.target.checked)}
-              className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
-            />
-            <span>Только сваренные стыки</span>
-          </label>
-          {Object.keys(columnFilters).length > 0 && (
-            <button
-              type="button"
-              onClick={() => setColumnFilters({})}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-sky-50 border border-sky-200 text-xs font-semibold text-[#1e3799] hover:bg-sky-100"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>
-                Сбросить фильтры столбцов ({Object.keys(columnFilters).length})
-              </span>
-            </button>
-          )}
-        </div>
-
-        <div className="relative w-64">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={tableSearch}
-            onChange={(e) => setTableSearch(e.target.value)}
-            placeholder="Поиск по стыку, клейму..."
-            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3799] focus:bg-white"
-          />
-        </div>
-      </div>
-
       {/* Официальный нормативный бланк выбранного журнала */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
         <div className="px-6 py-4 bg-[#f8fafd] border-b border-slate-200 flex flex-wrap items-start justify-between gap-4">
@@ -1297,17 +1295,35 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
               </span>
             </p>
           </div>
-          <div className="text-right text-xs text-slate-500 font-mono">
-            <div>Записей в журнале: {chronologicalJoints.length}</div>
+          <div className="text-right text-xs text-slate-500 font-mono flex flex-col sm:items-end gap-1">
+            <div className="flex items-center gap-2">
+              {Object.keys(columnFilters).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setColumnFilters({})}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-sky-50 border border-sky-200 text-xs font-semibold text-[#1e3799] hover:bg-sky-100 cursor-pointer font-sans"
+                  title="Сбросить все фильтры столбцов"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Сбросить фильтры ({Object.keys(columnFilters).length})</span>
+                </button>
+              )}
+              <span>
+                Записей в журнале:{' '}
+                <strong className="text-slate-800 font-bold">
+                  {chronologicalJoints.length}
+                </strong>
+              </span>
+            </div>
             <div>Дата формирования: {currentFormationDate}</div>
           </div>
         </div>
 
-        <div className="overflow-x-auto min-h-[380px] print-journal-scroll">
+        <div className="overflow-x-auto overflow-y-auto min-h-[380px] max-h-[calc(100vh-235px)] print-journal-scroll table-scroll-container">
           {standard === 'ГОСТ 32569-2013' ? (
             <div>
               <table className="w-full text-xs border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-20 shadow-xs">
                 <tr className="bg-[#1e3799] text-white text-left">
                   {GOST_32569_2013_JOURNAL_COLUMNS.map((col, idx) => {
                     const colWidth = getGostColWidth(col.key, col.minWidth);
@@ -1320,8 +1336,6 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                         getValue={gost32569Getters[col.key]}
                         activeFilters={columnFilters}
                         onApplyFilter={handleApplyFilter}
-                        sortConfig={sortConfig}
-                        onSort={handleSort}
                         width={colWidth}
                         minWidth={col.minWidth}
                         onResizeStart={handleGostResizeStart}
@@ -1356,6 +1370,26 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
+                {chronologicalJoints.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={17}
+                      className="py-14 text-center text-xs text-slate-400 bg-white"
+                    >
+                      <div className="flex flex-col items-center justify-center gap-1.5">
+                        <BookOpen className="w-8 h-8 text-slate-300 stroke-1" />
+                        <span className="font-semibold text-slate-700">
+                          В журнале пока нет записей
+                        </span>
+                        <span className="text-[11px] text-slate-400 max-w-md">
+                          {selectedLineKey !== 'ALL'
+                            ? `По выбранной линии «${activeLineDisplayLabel}» ещё не внесены выполненные сварочные работы с датами сварки.`
+                            : 'В текущей выборке отсутствуют сваренные стыки с заполненной датой сварки.'}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 {chronologicalJoints.map((j, index) => {
                   const row = formatGost32569JournalRow(j, index, materials);
                   const gostType = j.gostJointType?.trim() || 'С17';
@@ -1592,7 +1626,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         ) : (
             <div>
               <table className="w-full text-xs border-collapse">
-                <thead>
+                <thead className="sticky top-0 z-20 shadow-xs">
                   {/* УРОВЕНЬ 1 ШАПКИ СТО ГАЗПРОМ 15-1.1-002-2023 (49 ГРАФ) */}
                   <tr className="bg-[#1e3799] text-white text-left">
                     {/* Графы 1..10 (rowSpan=3) */}
@@ -1767,6 +1801,26 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                 </thead>
 
                 <tbody className="divide-y divide-slate-200">
+                  {chronologicalJoints.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={49}
+                        className="py-14 text-center text-xs text-slate-400 bg-white"
+                      >
+                        <div className="flex flex-col items-center justify-center gap-1.5">
+                          <BookOpen className="w-8 h-8 text-slate-300 stroke-1" />
+                          <span className="font-semibold text-slate-700">
+                            В журнале пока нет записей
+                          </span>
+                          <span className="text-[11px] text-slate-400 max-w-md">
+                            {selectedLineKey !== 'ALL'
+                              ? `По выбранной линии «${activeLineDisplayLabel}» ещё не внесены выполненные сварочные работы с датами сварки.`
+                              : 'В текущей выборке отсутствуют сваренные стыки с заполненной датой сварки.'}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {chronologicalJoints.map((j, index) => {
                     const row = formatStoGazpromJournalRow(j, index, lrvCatalog);
                     return (

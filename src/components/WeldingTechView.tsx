@@ -616,9 +616,9 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
             )}
           </div>
 
-          <div className="overflow-x-auto min-h-[340px]">
+          <div className="overflow-x-auto overflow-y-auto min-h-[340px] max-h-[calc(100vh-250px)] table-scroll-container">
             <table className="w-full border-collapse text-left">
-              <thead>
+              <thead className="sticky top-0 z-20 shadow-xs">
                 <tr className="bg-[#1e3799] text-white text-xs">
                   <TableColumnFilterHeader
                     columnKey="stamp"
@@ -1136,9 +1136,9 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
             )}
           </div>
 
-          <div className="overflow-x-auto min-h-[340px]">
+          <div className="overflow-x-auto overflow-y-auto min-h-[340px] max-h-[calc(100vh-250px)] table-scroll-container">
             <table className="w-full border-collapse text-left">
-              <thead>
+              <thead className="sticky top-0 z-20 shadow-xs">
                 <tr className="bg-[#1e3799] text-white text-xs">
                   <TableColumnFilterHeader
                     columnKey="brandAndDiameter"

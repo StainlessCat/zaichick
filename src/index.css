@@ -27,23 +27,61 @@
   }
 }
 
-/* Custom subtle scrollbars for high-density engineering tables */
+/* Custom distinct scrollbars for high-density engineering tables */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #eef2f6;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 12px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #eef2f6;
+  border-top: 1px solid #cbd5e1;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
+  background: #94a3b8;
+  border-radius: 6px;
+  border: 2px solid #eef2f6;
 }
 
 ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Всегда видимый горизонтальный скроллинг для таблиц */
+.table-scroll-container,
+.overflow-x-auto {
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: #94a3b8 #eef2f6;
+}
+
+.table-scroll-container::-webkit-scrollbar,
+.overflow-x-auto::-webkit-scrollbar {
+  height: 12px;
+}
+
+.table-scroll-container::-webkit-scrollbar-track,
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: #eef2f6;
+  border-top: 1px solid #cbd5e1;
+}
+
+.table-scroll-container::-webkit-scrollbar-thumb,
+.overflow-x-auto::-webkit-scrollbar-thumb {
   background: #94a3b8;
+  border-radius: 6px;
+  border: 2px solid #eef2f6;
+}
+
+.table-scroll-container::-webkit-scrollbar-thumb:hover,
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }
 
 @media print {

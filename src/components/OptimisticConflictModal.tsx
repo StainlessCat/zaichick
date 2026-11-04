@@ -148,7 +148,7 @@ export const OptimisticConflictModal: React.FC<OptimisticConflictModalProps> = (
                 В серверной СУБД обновился номер версии записи (v{conflict.actualServerVersion}), но значения бизнес-полей совпадают.
               </div>
             ) : (
-              <div className="overflow-x-auto max-h-64">
+              <div className="overflow-x-auto max-h-64 table-scroll-container">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
