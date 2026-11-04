@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
-  Building2,
   CalendarClock,
   Check,
   CheckCircle2,
   ChevronDown,
   Download,
+  FileCode2,
   FileSpreadsheet,
   FileText,
   FolderKanban,
@@ -24,6 +24,7 @@ import {
   WeldJoint,
 } from '../types/welding';
 import {
+  extractRdSuffix,
   formatDateDDMMYY,
   formatGost32569JournalRow,
   formatStoGazpromJournalRow,
@@ -90,24 +91,24 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
   } | null>(null);
   const [actionToast, setActionToast] = useState<string>('');
 
-  // 1. Состояние выбора объекта (синхронизируется с пропом selectedObjectName)
-  const [currentObjectName, setCurrentObjectName] = useState<string>(
-    selectedObjectName || 'ALL'
+  // 1. Состояние выбора шифра РД (синхронизируется с пропом selectedRdCode)
+  const [currentRdCode, setCurrentRdCode] = useState<string>(
+    selectedRdCode || 'ALL'
   );
 
   useEffect(() => {
-    if (selectedObjectName) {
-      setCurrentObjectName(selectedObjectName);
+    if (selectedRdCode !== undefined) {
+      setCurrentRdCode(selectedRdCode);
     }
-  }, [selectedObjectName]);
+  }, [selectedRdCode]);
 
-  // Состояние и рефы выпадающего списка объекта
-  const [isObjectOpen, setIsObjectOpen] = useState(false);
-  const [objectSearch, setObjectSearch] = useState('');
-  const [objectHighlightIndex, setObjectHighlightIndex] = useState(0);
-  const objectTriggerRef = useRef<HTMLButtonElement>(null);
-  const objectInputRef = useRef<HTMLInputElement>(null);
-  const objectDropdownRef = useRef<HTMLDivElement>(null);
+  // Состояние и рефы выпадающего списка шифра РД
+  const [isRdOpen, setIsRdOpen] = useState(false);
+  const [rdSearch, setRdSearch] = useState('');
+  const [rdHighlightIndex, setRdHighlightIndex] = useState(0);
+  const rdTriggerRef = useRef<HTMLButtonElement>(null);
+  const rdInputRef = useRef<HTMLInputElement>(null);
+  const rdDropdownRef = useRef<HTMLDivElement>(null);
 
   // 2. Состояние выбора линии
   const [selectedLineKey, setSelectedLineKey] = useState<string>('ALL');
@@ -120,18 +121,18 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
   const lineInputRef = useRef<HTMLInputElement>(null);
   const lineDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Переключение фокуса в поле поиска при открытии списка объектов
+  // Переключение фокуса в поле поиска при открытии списка шифров РД
   useEffect(() => {
-    if (isObjectOpen) {
-      setObjectSearch('');
-      setObjectHighlightIndex(0);
+    if (isRdOpen) {
+      setRdSearch('');
+      setRdHighlightIndex(0);
       const timer = setTimeout(() => {
-        objectInputRef.current?.focus();
-        objectInputRef.current?.select();
+        rdInputRef.current?.focus();
+        rdInputRef.current?.select();
       }, 30);
       return () => clearTimeout(timer);
     }
-  }, [isObjectOpen]);
+  }, [isRdOpen]);
 
   // Переключение фокуса в поле поиска при открытии списка линий
   useEffect(() => {
@@ -151,12 +152,12 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (
-        isObjectOpen &&
-        objectDropdownRef.current &&
-        !objectDropdownRef.current.contains(target) &&
-        !objectTriggerRef.current?.contains(target)
+        isRdOpen &&
+        rdDropdownRef.current &&
+        !rdDropdownRef.current.contains(target) &&
+        !rdTriggerRef.current?.contains(target)
       ) {
-        setIsObjectOpen(false);
+        setIsRdOpen(false);
       }
       if (
         isLineOpen &&
@@ -169,14 +170,100 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isObjectOpen, isLineOpen]);
+  }, [isRdOpen, isLineOpen]);
 
-  // Все доступные стыки (если передан allJoints, используем его, иначе joints)
+  // Все доступные стыки
   const effectiveAllJoints = useMemo(() => {
     return allJoints && allJoints.length > 0 ? allJoints : joints;
   }, [allJoints, joints]);
 
-  // Список доступных линий с подсчётом стыков
+  // Стыки объекта, выбранного в глобальном меню-гамбургере (или всех объектов, если ALL)
+  const objectScopedJoints = useMemo(() => {
+    if (!selectedObjectName || selectedObjectName === 'ALL') return effectiveAllJoints;
+    return effectiveAllJoints.filter((j) => j.objectName === selectedObjectName);
+  }, [effectiveAllJoints, selectedObjectName]);
+
+  // Линии объекта, выбранного в глобальном меню-гамбургере
+  const objectScopedLines = useMemo(() => {
+    if (!selectedObjectName || selectedObjectName === 'ALL') return lines;
+    return lines.filter((l) => l.objectName === selectedObjectName);
+  }, [lines, selectedObjectName]);
+
+  // Варианты выбора шифра РД для текущего объекта
+  const rdOptions = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        rdCode: string;
+        suffix: string;
+        linesCount: number;
+        jointsCount: number;
+      }
+    >();
+
+    // Добавляем шифры из проектных линий объекта
+    for (const l of objectScopedLines) {
+      if (!l.rdCode) continue;
+      const key = l.rdCode.trim();
+      if (!key) continue;
+      const ex = map.get(key);
+      if (ex) {
+        ex.linesCount += 1;
+      } else {
+        map.set(key, {
+          rdCode: key,
+          suffix: extractRdSuffix(key),
+          linesCount: 1,
+          jointsCount: 0,
+        });
+      }
+    }
+
+    // Подсчитываем стыки по каждому шифру РД
+    for (const j of objectScopedJoints) {
+      if (!j.rdCode) continue;
+      const key = j.rdCode.trim();
+      if (!key) continue;
+      const ex = map.get(key);
+      if (ex) {
+        ex.jointsCount += 1;
+      } else {
+        map.set(key, {
+          rdCode: key,
+          suffix: extractRdSuffix(key),
+          linesCount: 0,
+          jointsCount: 1,
+        });
+      }
+    }
+
+    const allOption = {
+      rdCode: 'ALL',
+      suffix: '',
+      linesCount: objectScopedLines.length,
+      jointsCount: objectScopedJoints.length,
+    };
+
+    const sorted = Array.from(map.values()).sort((a, b) =>
+      a.rdCode.localeCompare(b.rdCode, 'ru', { numeric: true })
+    );
+
+    return [allOption, ...sorted];
+  }, [objectScopedLines, objectScopedJoints]);
+
+  const filteredRdOptions = useMemo(() => {
+    if (!rdSearch.trim()) return rdOptions;
+    const q = rdSearch.trim().toLowerCase();
+    return rdOptions.filter((opt) => {
+      if (opt.rdCode === 'ALL') return 'все шифры рд сводный'.includes(q);
+      return (
+        opt.rdCode.toLowerCase().includes(q) ||
+        opt.suffix.toLowerCase().includes(q)
+      );
+    });
+  }, [rdOptions, rdSearch]);
+
+  // Список доступных линий для текущего объекта и шифра РД
   const availableLines = useMemo(() => {
     const map = new Map<
       string,
@@ -187,15 +274,16 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         lineName: string;
         product: string;
         objectName: string;
+        rdCode: string;
         pipelineCategory: string;
         qualityLevel: string;
         jointsCount: number;
       }
     >();
 
-    // Добавляем линии из реестра линий
-    for (const pl of lines) {
-      if (currentObjectName !== 'ALL' && pl.objectName !== currentObjectName) continue;
+    // 1. Линии из projectLineList
+    for (const pl of objectScopedLines) {
+      if (currentRdCode !== 'ALL' && pl.rdCode !== currentRdCode) continue;
       const key = pl.uniqueLineId || pl.lineNumber;
       if (!key) continue;
       map.set(key, {
@@ -205,17 +293,18 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         lineName: pl.lineName || '',
         product: pl.product || '',
         objectName: pl.objectName,
+        rdCode: pl.rdCode,
         pipelineCategory: pl.pipelineCategory || '',
         qualityLevel: pl.qualityLevel || '',
         jointsCount: 0,
       });
     }
 
-    // Стыки объекта для подсчёта и выявления линий, отсутствующих в лайн-листе
+    // 2. Стыки объекта и шифра РД для подсчёта и выявления линий, отсутствующих в лайн-листе
     const relevantJoints =
-      currentObjectName !== 'ALL'
-        ? effectiveAllJoints.filter((j) => j.objectName === currentObjectName)
-        : effectiveAllJoints;
+      currentRdCode !== 'ALL'
+        ? objectScopedJoints.filter((j) => j.rdCode === currentRdCode)
+        : objectScopedJoints;
 
     for (const j of relevantJoints) {
       if (!j.lineNumber) continue;
@@ -234,6 +323,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
           lineName: '',
           product: '',
           objectName: j.objectName,
+          rdCode: j.rdCode,
           pipelineCategory: '',
           qualityLevel: '',
           jointsCount: 1,
@@ -244,7 +334,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     return Array.from(map.values()).sort((a, b) =>
       a.lineNumber.localeCompare(b.lineNumber, 'ru', { numeric: true })
     );
-  }, [lines, currentObjectName, effectiveAllJoints]);
+  }, [objectScopedLines, objectScopedJoints, currentRdCode]);
 
   // Выбранный объект линии
   const selectedLineItem = useMemo(() => {
@@ -277,30 +367,29 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     );
   }, [selectedLineItem, selectedLineKey]);
 
-  // Обработчики выбора объекта и линии
-  const handleSelectObject = (objName: string) => {
-    setCurrentObjectName(objName);
-    onSelectObjectName?.(objName);
-    onSelectRdCode?.('ALL');
-    setIsObjectOpen(false);
-    objectTriggerRef.current?.focus();
+  // Обработчики выбора шифра РД и линии
+  const handleSelectRd = (rd: string) => {
+    setCurrentRdCode(rd);
+    onSelectRdCode?.(rd);
+    setIsRdOpen(false);
+    rdTriggerRef.current?.focus();
 
-    // Проверяем, принадлежит ли ранее выбранная линия новому объекту
-    if (selectedLineKey !== 'ALL' && objName !== 'ALL') {
-      const lineExistsInNewObj =
-        lines.some(
+    // Если выбранная линия не принадлежит новому шифру РД, сбрасываем линию на 'ALL'
+    if (selectedLineKey !== 'ALL' && rd !== 'ALL') {
+      const lineExistsInNewRd =
+        objectScopedLines.some(
           (l) =>
-            l.objectName === objName &&
+            l.rdCode === rd &&
             (l.id === selectedLineKey ||
               l.uniqueLineId === selectedLineKey ||
               l.lineNumber === selectedLineKey)
         ) ||
-        effectiveAllJoints.some(
+        objectScopedJoints.some(
           (j) =>
-            j.objectName === objName &&
+            j.rdCode === rd &&
             (j.uniqueLineId === selectedLineKey || j.lineNumber === selectedLineKey)
         );
-      if (!lineExistsInNewObj) {
+      if (!lineExistsInNewRd) {
         setSelectedLineKey('ALL');
       }
     }
@@ -312,90 +401,34 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     lineTriggerRef.current?.focus();
   };
 
-  // Варианты выбора объекта для выпадающего списка
-  const objectOptions = useMemo(() => {
-    const allOption = {
-      name: 'ALL',
-      displayName: 'Все объекты (сводный)',
-      shortName: 'Все',
-      region: '',
-      linesCount: lines.length,
-      jointsCount: effectiveAllJoints.length,
-    };
-
-    const objMap = new Map<
-      string,
-      {
-        name: string;
-        displayName: string;
-        shortName: string;
-        region: string;
-        linesCount: number;
-        jointsCount: number;
-      }
-    >();
-
-    for (const f of facilities) {
-      if (!f.name || f.name === 'ALL') continue;
-      objMap.set(f.name, {
-        name: f.name,
-        displayName: f.name,
-        shortName: f.shortName || f.name,
-        region: f.region || '',
-        linesCount: 0,
-        jointsCount: 0,
-      });
-    }
-
-    for (const j of effectiveAllJoints) {
-      if (!j.objectName) continue;
-      const ex = objMap.get(j.objectName);
-      if (ex) {
-        ex.jointsCount += 1;
-      } else {
-        objMap.set(j.objectName, {
-          name: j.objectName,
-          displayName: j.objectName,
-          shortName: j.objectName,
-          region: '',
-          linesCount: 0,
-          jointsCount: 1,
-        });
+  // Проверка валидности шифра РД при смене объекта в меню-гамбургере
+  useEffect(() => {
+    if (currentRdCode !== 'ALL') {
+      const rdStillValid =
+        lines.some(
+          (l) =>
+            (selectedObjectName === 'ALL' || l.objectName === selectedObjectName) &&
+            l.rdCode === currentRdCode
+        ) ||
+        joints.some(
+          (j) =>
+            (selectedObjectName === 'ALL' || j.objectName === selectedObjectName) &&
+            j.rdCode === currentRdCode
+        );
+      if (!rdStillValid) {
+        setCurrentRdCode('ALL');
+        onSelectRdCode?.('ALL');
+        setSelectedLineKey('ALL');
       }
     }
-
-    for (const l of lines) {
-      if (!l.objectName) continue;
-      const ex = objMap.get(l.objectName);
-      if (ex) {
-        ex.linesCount += 1;
-      }
-    }
-
-    const sorted = Array.from(objMap.values()).sort((a, b) =>
-      a.displayName.localeCompare(b.displayName, 'ru', { numeric: true })
-    );
-
-    return [allOption, ...sorted];
-  }, [facilities, lines, effectiveAllJoints]);
-
-  const filteredObjectOptions = useMemo(() => {
-    if (!objectSearch.trim()) return objectOptions;
-    const q = objectSearch.trim().toLowerCase();
-    return objectOptions.filter(
-      (opt) =>
-        opt.displayName.toLowerCase().includes(q) ||
-        opt.shortName.toLowerCase().includes(q) ||
-        opt.region.toLowerCase().includes(q)
-    );
-  }, [objectOptions, objectSearch]);
+  }, [selectedObjectName, lines, joints, currentRdCode, onSelectRdCode]);
 
   // Варианты выбора линии для выпадающего списка
   const filteredLineOptions = useMemo(() => {
     const relevantJointsCount = (
-      currentObjectName === 'ALL'
-        ? effectiveAllJoints
-        : effectiveAllJoints.filter((j) => j.objectName === currentObjectName)
+      currentRdCode === 'ALL'
+        ? objectScopedJoints
+        : objectScopedJoints.filter((j) => j.rdCode === currentRdCode)
     ).length;
 
     const allOption = {
@@ -403,11 +436,14 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
       lineNumber: 'Все линии',
       uniqueLineId: '',
       lineName:
-        currentObjectName === 'ALL'
-          ? 'Сводный перечень по всем объектам'
-          : `Все линии объекта «${currentObjectName}»`,
+        currentRdCode === 'ALL'
+          ? (selectedObjectName === 'ALL'
+              ? 'Сводный перечень по всем объектам и шифрам РД'
+              : `Все линии объекта «${selectedObjectName}»`)
+          : `Все линии шифра РД «${extractRdSuffix(currentRdCode) || currentRdCode}»`,
       product: '',
-      objectName: currentObjectName,
+      objectName: selectedObjectName,
+      rdCode: currentRdCode,
       pipelineCategory: '',
       qualityLevel: '',
       jointsCount: relevantJointsCount,
@@ -427,29 +463,29 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         l.pipelineCategory.toLowerCase().includes(q)
       );
     });
-  }, [availableLines, lineDropdownSearch, currentObjectName, effectiveAllJoints]);
+  }, [availableLines, lineDropdownSearch, currentRdCode, objectScopedJoints, selectedObjectName]);
 
-  // Клавиатурная навигация в списке объектов (ArrowUp/Down, Enter, Escape)
-  const handleObjectKeyDown = (e: React.KeyboardEvent) => {
+  // Клавиатурная навигация в списке шифров РД (ArrowUp/Down, Enter, Escape)
+  const handleRdKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      setIsObjectOpen(false);
-      objectTriggerRef.current?.focus();
+      setIsRdOpen(false);
+      rdTriggerRef.current?.focus();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setObjectHighlightIndex((prev) =>
-        prev < filteredObjectOptions.length - 1 ? prev + 1 : 0
+      setRdHighlightIndex((prev) =>
+        prev < filteredRdOptions.length - 1 ? prev + 1 : 0
       );
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setObjectHighlightIndex((prev) =>
-        prev > 0 ? prev - 1 : filteredObjectOptions.length - 1
+      setRdHighlightIndex((prev) =>
+        prev > 0 ? prev - 1 : filteredRdOptions.length - 1
       );
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const item = filteredObjectOptions[objectHighlightIndex];
+      const item = filteredRdOptions[rdHighlightIndex];
       if (item) {
-        handleSelectObject(item.name);
+        handleSelectRd(item.rdCode);
       }
     }
   };
@@ -479,12 +515,13 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     }
   };
 
-  // Стыки с фильтрацией по выбранному объекту и выбранной линии
+  // Стыки с фильтрацией по объекту (из гамбургера), шифру РД и выбранной линии
   const lineScopedJoints = useMemo(() => {
-    let list =
-      currentObjectName === 'ALL'
-        ? effectiveAllJoints
-        : effectiveAllJoints.filter((j) => j.objectName === currentObjectName);
+    let list = objectScopedJoints;
+
+    if (currentRdCode !== 'ALL') {
+      list = list.filter((j) => j.rdCode === currentRdCode);
+    }
 
     if (selectedLineKey !== 'ALL') {
       if (selectedLineItem) {
@@ -507,7 +544,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     }
 
     return list;
-  }, [effectiveAllJoints, currentObjectName, selectedLineKey, selectedLineItem]);
+  }, [objectScopedJoints, currentRdCode, selectedLineKey, selectedLineItem]);
 
   // Регулирование ширины столбцов журнала по ГОСТ 32569-2013
   const {
@@ -647,15 +684,19 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         )
         .join('\n');
 
+    const rdSuffix =
+      currentRdCode !== 'ALL'
+        ? `_РД_${(extractRdSuffix(currentRdCode) || currentRdCode).replace(/[\\/:*?"<>|]/g, '_').slice(0, 15)}`
+        : '';
     const lineSuffix =
       selectedLineKey !== 'ALL' && selectedLineItem
         ? `_Линия_${selectedLineItem.lineNumber.replace(/[\\/:*?"<>|]/g, '_')}`
         : '';
     const objSuffix =
-      currentObjectName !== 'ALL'
-        ? `_${currentObjectName.replace(/[\\/:*?"<>|]/g, '_').slice(0, 25)}`
+      selectedObjectName !== 'ALL'
+        ? `_${selectedObjectName.replace(/[\\/:*?"<>|]/g, '_').slice(0, 25)}`
         : '';
-    const fileName = `Журнал_сварки_${standard.replace(/\s+/g, '_')}${objSuffix}${lineSuffix}.csv`;
+    const fileName = `Журнал_сварки_${standard.replace(/\s+/g, '_')}${objSuffix}${rdSuffix}${lineSuffix}.csv`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     triggerBlobDownload(blob, fileName);
     showToast(`Журнал (${chronologicalJoints.length} зап.) выгружен в файл «${fileName}».`);
@@ -689,7 +730,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     );
 
     const displayObjectName =
-      (currentObjectName === 'ALL' ? 'Сводный реестр' : currentObjectName) +
+      (selectedObjectName === 'ALL' ? 'Сводный реестр' : selectedObjectName) +
       (selectedLineKey !== 'ALL' && selectedLineItem
         ? ` (Линия: ${selectedLineItem.lineNumber})`
         : '');
@@ -697,7 +738,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     exportWeldingJournalToPdfA3(
       standard,
       displayObjectName,
-      selectedRdCode || 'ALL',
+      currentRdCode || 'ALL',
       headers,
       colNumbers,
       rows
@@ -765,78 +806,80 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
 
       {/* Панель управления журналом (Блок 1) */}
       <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2.5 no-print">
-        {/* Селекторы объекта и линии, и переключатель нормативной формы */}
+        {/* Селекторы шифра РД и линии, и переключатель нормативной формы */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* 1. Выбор объекта (выпадающий список с переключением фокуса и поиском) */}
+          {/* 1. Выбор шифра РД (выпадающий список с переключением фокуса и поиском) */}
           <div className="relative">
             <button
-              ref={objectTriggerRef}
+              ref={rdTriggerRef}
               type="button"
-              onClick={() => setIsObjectOpen((prev) => !prev)}
+              onClick={() => setIsRdOpen((prev) => !prev)}
               aria-haspopup="listbox"
-              aria-expanded={isObjectOpen}
+              aria-expanded={isRdOpen}
               className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer select-none ${
-                currentObjectName !== 'ALL'
+                currentRdCode !== 'ALL'
                   ? 'border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] font-semibold shadow-2xs'
                   : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900'
               }`}
-              title="Выбор объекта строительства для формирования журнала"
+              title="Выбор комплекта рабочей документации (шифра РД)"
             >
-              <Building2
+              <FileCode2
                 className={`w-4 h-4 shrink-0 ${
-                  currentObjectName !== 'ALL' ? 'text-[#1e3799]' : 'text-slate-500'
+                  currentRdCode !== 'ALL' ? 'text-[#1e3799]' : 'text-slate-500'
                 }`}
               />
-              <span className="max-w-[150px] sm:max-w-[200px] truncate">
-                {currentObjectName === 'ALL' ? 'Все объекты' : currentObjectName}
+              <span className="max-w-[150px] sm:max-w-[210px] truncate font-mono">
+                {currentRdCode === 'ALL'
+                  ? 'Все шифры РД'
+                  : extractRdSuffix(currentRdCode) || currentRdCode}
               </span>
-              {currentObjectName !== 'ALL' && (
+              {currentRdCode !== 'ALL' && (
                 <span
                   role="button"
                   tabIndex={0}
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleSelectObject('ALL');
+                    handleSelectRd('ALL');
                   }}
                   className="hover:bg-[#1e3799]/15 rounded p-0.5 text-[#1e3799]"
-                  title="Сбросить фильтр по объекту (показать все объекты)"
+                  title="Сбросить фильтр по шифру РД (показать все шифры РД)"
                 >
                   <X className="w-3 h-3" />
                 </span>
               )}
               <ChevronDown
                 className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                  isObjectOpen ? 'rotate-180 text-[#1e3799]' : ''
+                  isRdOpen ? 'rotate-180 text-[#1e3799]' : ''
                 }`}
               />
             </button>
 
-            {isObjectOpen && (
+            {isRdOpen && (
               <div
-                ref={objectDropdownRef}
-                className="absolute left-0 top-full mt-1.5 z-40 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col"
-                onKeyDown={handleObjectKeyDown}
+                ref={rdDropdownRef}
+                className="absolute left-0 top-full mt-1.5 z-40 w-84 sm:w-[440px] bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden flex flex-col"
+                onKeyDown={handleRdKeyDown}
               >
                 <div className="p-2 border-b border-slate-100 bg-[#f8fafd] flex items-center gap-2">
                   <div className="relative flex-1">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
-                      ref={objectInputRef}
+                      ref={rdInputRef}
                       type="text"
-                      value={objectSearch}
+                      value={rdSearch}
                       onChange={(e) => {
-                        setObjectSearch(e.target.value);
-                        setObjectHighlightIndex(0);
+                        setRdSearch(e.target.value);
+                        setRdHighlightIndex(0);
                       }}
-                      placeholder="Поиск объекта..."
+                      placeholder="Поиск шифра РД (номер, суффикс)..."
                       className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#1e3799] focus:ring-1 focus:ring-[#1e3799]"
                     />
-                    {objectSearch && (
+                    {rdSearch && (
                       <button
                         type="button"
                         onClick={() => {
-                          setObjectSearch('');
-                          objectInputRef.current?.focus();
+                          setRdSearch('');
+                          rdInputRef.current?.focus();
                         }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
                       >
@@ -846,21 +889,32 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                   </div>
                 </div>
 
+                <div className="px-3 py-1 bg-slate-50 border-b border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
+                  <span className="truncate">
+                    {selectedObjectName === 'ALL'
+                      ? 'Шифры РД всех объектов'
+                      : `Объект: ${selectedObjectName}`}
+                  </span>
+                  <span className="font-mono text-slate-400 shrink-0">
+                    Найдено: {filteredRdOptions.length}
+                  </span>
+                </div>
+
                 <div
                   role="listbox"
-                  className="max-h-64 overflow-y-auto p-1.5 space-y-0.5"
+                  className="max-h-72 overflow-y-auto p-1.5 space-y-0.5"
                 >
-                  {filteredObjectOptions.map((opt, idx) => {
-                    const isSelected = currentObjectName === opt.name;
-                    const isHighlighted = objectHighlightIndex === idx;
+                  {filteredRdOptions.map((opt, idx) => {
+                    const isSelected = currentRdCode === opt.rdCode;
+                    const isHighlighted = rdHighlightIndex === idx;
                     return (
                       <button
-                        key={opt.name}
+                        key={opt.rdCode}
                         type="button"
                         role="option"
                         aria-selected={isSelected}
-                        onClick={() => handleSelectObject(opt.name)}
-                        onMouseEnter={() => setObjectHighlightIndex(idx)}
+                        onClick={() => handleSelectRd(opt.rdCode)}
+                        onMouseEnter={() => setRdHighlightIndex(idx)}
                         ref={(el) => {
                           if (isHighlighted && el) {
                             el.scrollIntoView({ block: 'nearest' });
@@ -875,10 +929,17 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                         }`}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5 truncate">
-                            <span className="truncate">{opt.displayName}</span>
-                            {opt.name === 'ALL' && (
-                              <span className="text-[10px] px-1 py-0.2 rounded bg-slate-200/70 text-slate-600">
+                          <div className="flex items-center gap-2 truncate">
+                            <span className="font-mono font-bold text-slate-900 truncate">
+                              {opt.rdCode === 'ALL' ? 'Все шифры РД' : opt.rdCode}
+                            </span>
+                            {opt.suffix && (
+                              <span className="font-mono text-[10px] text-[#1e3799] font-semibold px-1.5 py-0.2 rounded bg-sky-100 shrink-0">
+                                {opt.suffix}
+                              </span>
+                            )}
+                            {opt.rdCode === 'ALL' && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/70 text-slate-600 font-sans">
                                 сводный
                               </span>
                             )}
@@ -886,22 +947,23 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                           <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
                             <span>{opt.linesCount} лин.</span>
                             <span>·</span>
-                            <span>{opt.jointsCount} ст.</span>
-                            {opt.region && (
-                              <>
-                                <span>·</span>
-                                <span className="truncate">{opt.region}</span>
-                              </>
-                            )}
+                            <span>
+                              {opt.jointsCount}{' '}
+                              {opt.jointsCount === 1
+                                ? 'стык'
+                                : opt.jointsCount > 1 && opt.jointsCount < 5
+                                ? 'стыка'
+                                : 'стыков'}
+                            </span>
                           </div>
                         </div>
                         {isSelected && <Check className="w-4 h-4 text-[#1e3799] shrink-0" />}
                       </button>
                     );
                   })}
-                  {filteredObjectOptions.length === 0 && (
+                  {filteredRdOptions.length === 0 && (
                     <div className="px-3 py-6 text-center text-xs text-slate-400">
-                      Объекты не найдены
+                      Шифры РД не найдены
                     </div>
                   )}
                 </div>
@@ -990,9 +1052,11 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
 
                 <div className="px-3 py-1 bg-slate-50 border-b border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
                   <span className="truncate">
-                    {currentObjectName === 'ALL'
-                      ? 'Все линии всех объектов'
-                      : `Объект: ${currentObjectName}`}
+                    {currentRdCode === 'ALL'
+                      ? (selectedObjectName === 'ALL'
+                          ? 'Все линии всех объектов'
+                          : `Линии объекта «${selectedObjectName}»`)
+                      : `Шифр: ${extractRdSuffix(currentRdCode) || currentRdCode}`}
                   </span>
                   <span className="font-mono text-slate-400 shrink-0">
                     Найдено: {filteredLineOptions.length}
@@ -1208,7 +1272,14 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
               <span>
                 Объект:{' '}
                 <span className="font-medium text-slate-900">
-                  {currentObjectName === 'ALL' ? 'Сводный реестр (все объекты)' : currentObjectName}
+                  {selectedObjectName === 'ALL' ? 'Сводный реестр (все объекты)' : selectedObjectName}
+                </span>
+              </span>
+              <span>·</span>
+              <span>
+                Шифр РД:{' '}
+                <span className="font-mono font-medium text-[#1e3799]">
+                  {currentRdCode === 'ALL' ? 'Все шифры' : currentRdCode}
                 </span>
               </span>
               <span>·</span>
@@ -1218,14 +1289,6 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                   {selectedLineKey === 'ALL' ? 'Все линии' : activeLineDisplayLabel}
                 </span>
               </span>
-              {selectedRdCode && selectedRdCode !== 'ALL' && (
-                <>
-                  <span>·</span>
-                  <span>
-                    Шифр РД: <span className="font-mono text-slate-900">{selectedRdCode}</span>
-                  </span>
-                </>
-              )}
             </p>
           </div>
           <div className="text-right text-xs text-slate-500 font-mono">
