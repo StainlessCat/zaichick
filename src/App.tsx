@@ -7,10 +7,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
+  BarChart3,
   BookOpen,
   Bookmark,
   Calendar,
   CheckSquare,
+  ClipboardList,
   CloudSun,
   Columns,
   Database,
@@ -18,6 +20,7 @@ import {
   FilePlus2,
   FileSpreadsheet,
   Filter,
+  FolderKanban,
   HardDriveDownload,
   History,
   Layers,
@@ -30,6 +33,7 @@ import {
   SlidersHorizontal,
   Trash2,
   Undo2,
+  Wrench,
 } from 'lucide-react';
 import {
   AppSection,
@@ -2224,6 +2228,17 @@ export default function App() {
     user_guide: 'Руководство пользователя (Иллюстрированный буклет PDF)',
   };
 
+  const sectionIcons: Record<AppSection, React.ReactNode> = {
+    registry: <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
+    project_linelist: <FolderKanban className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
+    welding_tech: <Wrench className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
+    journals: <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
+    readiness: <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
+    lrv_catalog: <Database className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
+    audit_log: <History className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
+    user_guide: <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
+  };
+
   const renderStatusText = (val: string) => {
     if (val === 'Годен') {
       return <span className="font-semibold text-emerald-700">Годен</span>;
@@ -2251,11 +2266,14 @@ export default function App() {
             <ZaychickLogo variant="header" size={38} />
           </div>
 
-          {/* Середина чердака: Название текущего раздела (полностью прописными буквами) */}
+          {/* Середина чердака: Название текущего раздела с иконкой (полностью прописными буквами) */}
           <div className="flex items-center justify-center flex-1 min-w-0 px-2 text-center">
-            <h1 className="font-display text-xs sm:text-sm md:text-base font-bold text-white uppercase tracking-wider truncate">
-              {sectionLabels[activeSection]?.toUpperCase()}
-            </h1>
+            <div className="inline-flex items-center justify-center gap-2 max-w-full">
+              {sectionIcons[activeSection]}
+              <h1 className="font-display text-xs sm:text-sm md:text-base font-bold text-white uppercase tracking-wider truncate">
+                {sectionLabels[activeSection]?.toUpperCase()}
+              </h1>
+            </div>
           </div>
 
           {/* Правый верхний угол: Иконочные кнопки Undo / Redo и Кнопка-бутерброд */}

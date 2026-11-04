@@ -525,19 +525,7 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Верхняя панель с переключателями 3 подразделов технологии сварки */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-[#1e3799] font-bold text-sm">
-            <Wrench className="w-4 h-4" />
-            <span>
-              Технология сварочного производства — Сварщики (НАКС), Технологические карты (ТК) и Сварочные материалы
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Автоподстановка ФИО и удостоверений по клейму (включая бригадные клейма) · Контроль температуры подогрева по ТК · Сертификаты и входной контроль СМ
-          </p>
-        </div>
-
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 shadow-2xs flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
           <button
             type="button"

@@ -314,19 +314,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
       )}
 
       {/* Панель управления журналом */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-4 no-print">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-[#1e3799]" />
-            <h2 className="font-display text-base font-bold text-slate-900">
-              Журналы сварочных работ (строгое соответствие НТД)
-            </h2>
-          </div>
-          <p className="text-xs text-slate-500">
-            Хронологический порядок по дате сварки (ДД.ММ.ГГ) · Форма СТО Газпром 15-1.1-002-2023 (49 граф) и ГОСТ 32569-2013 (17 граф) · Фильтрация как в Excel
-          </p>
-        </div>
-
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3 no-print">
         {/* Переключатель формы журнала: СТО Газпром 15-1.1-002-2023 или ГОСТ 32569-2013 */}
         <div className="flex flex-wrap items-center gap-2">
           <div

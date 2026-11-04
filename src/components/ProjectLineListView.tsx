@@ -957,18 +957,8 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
       )}
 
       {/* Верхняя панель управления разделом «Проект (лайнлист)» */}
-      <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-[#1e3799] font-bold text-sm">
-            <FolderKanban className="w-4 h-4" />
-            <span>Проект (лайнлист) — Единый источник данных по объектам, шифрам РД и линиям</span>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            17 параметров линии (включая Уровень качества) · Excel-фильтры по каждому столбцу · Одиночное и групповое редактирование
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 shadow-2xs flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full justify-end">
           {canEdit && (
             <button
               type="button"

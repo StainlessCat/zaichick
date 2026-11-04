@@ -124,23 +124,14 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <History className="w-5 h-5 text-[#1e3799]" />
-            <h2 className="font-display text-base font-bold text-slate-900">
-              Журнал изменений и аудита действий пользователей
-            </h2>
-            {isAdmin && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-[11px] font-semibold text-[#1e3799]">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Режим администратора</span>
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Полное протоколирование корректировок данных подготовки производства и сварки (формат дат: ДД.ММ.ГГ · Фильтрация как в Excel)
-          </p>
+          {isAdmin && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-xs font-semibold text-[#1e3799]">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Режим администратора</span>
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

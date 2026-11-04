@@ -212,17 +212,29 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
         </div>
       )}
       {/* Шапка отчёта и переключатель условий группировки */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-[#1e3799]" />
-            <h2 className="font-display text-base font-bold text-slate-900">
-              Отчётность по физической готовности сварочно-монтажных работ и НК
-            </h2>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Выберите условие агрегации данных: «Объект», «Шифр РД», «Линия» или «Контур» · Поддерживается фильтрация столбцов как в Excel
-          </p>
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3">
+        <div
+          className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200"
+          role="group"
+          aria-label="Условия формирования отчётности"
+        >
+          {conditionOptions.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                setCondition(opt.id);
+                setColumnFilters({});
+              }}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                condition === opt.id
+                  ? 'bg-[#1e3799] text-white shadow-xs'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -236,30 +248,6 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
               <span>Сбросить фильтры ({Object.keys(columnFilters).length})</span>
             </button>
           )}
-
-          <div
-            className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200"
-            role="group"
-            aria-label="Условия формирования отчётности"
-          >
-            {conditionOptions.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => {
-                  setCondition(opt.id);
-                  setColumnFilters({});
-                }}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
-                  condition === opt.id
-                    ? 'bg-[#1e3799] text-white shadow-xs'
-                    : 'text-slate-700 hover:text-slate-900'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
 
           <button
             type="button"

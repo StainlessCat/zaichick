@@ -405,15 +405,8 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
       )}
 
       {/* Верхняя панель каталога ЛРВ */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <Database className="w-5 h-5 text-[#1e3799]" />
-          <h2 className="font-display text-base font-bold text-slate-900">
-            Каталог кодов ЛРВ и спецификаций
-          </h2>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 shadow-2xs flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full justify-end">
           <button
             type="button"
             onClick={() => exportLrvCatalogToExcel(filteredCatalog, false)}

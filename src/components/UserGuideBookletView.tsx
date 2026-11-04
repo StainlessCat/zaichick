@@ -79,20 +79,8 @@ export const UserGuideBookletView: React.FC = () => {
       )}
 
       {/* Панель управления буклетом (скрывается при печати) */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-4 shadow-2xs no-print">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-[#1e3799]" />
-            <h2 className="font-display text-base font-bold text-slate-900">
-              Иллюстрированный буклет-руководство «ZAYCHICK» (по ролям специалистов)
-            </h2>
-          </div>
-          <p className="text-xs text-slate-500">
-            Пошаговый регламент работы без участия линейных ИТР · Инженер ПТО · Технолог по сварке · Дефектоскопист ЛНК · Формат А4
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-end gap-2.5 shadow-2xs no-print">
+        <div className="flex flex-wrap items-center gap-2.5 w-full justify-end">
           <a
             href="/ZAYCHICK_Install_Package.zip"
             download="ZAYCHICK_Install_Package.zip"
