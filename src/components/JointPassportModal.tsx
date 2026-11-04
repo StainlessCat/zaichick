@@ -46,6 +46,7 @@ import {
 import {
   buildUniqueLineId,
   checkNaksCertStatus,
+  detectLrvConnectionType,
   detectLrvElementType,
   estimateAmbientTempByCoordsAndDate,
   filterLrvByDiameter,
@@ -60,6 +61,8 @@ import {
   NAKS_WELDING_POSITIONS,
   normalizeDecimalInput,
   normalizeStampString,
+  resolveLrvConnectionType,
+  resolveLrvItemCategory,
   resolveWeldersSelection,
   searchLrvCatalogItems,
   searchWeldersByStampOrName,
@@ -1258,8 +1261,12 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     const dims = item.diameterMm2
       ? `Ø1:${item.diameterMm}×${item.wallThickness} / Ø2:${item.diameterMm2}×${item.wallThickness2 ?? item.wallThickness}`
       : `Ø${item.diameterMm}×${item.wallThickness}`;
-    const typeLabel = detectLrvElementType(item.shortName);
-    return `${item.lrvCode} · [${typeLabel}] ${item.shortName} (${dims}, ${item.material}, ${item.ntd})`;
+    const typeLabel = resolveLrvItemCategory(item);
+    const connBadge =
+      typeLabel === 'ЗРА'
+        ? ` · ${resolveLrvConnectionType(item)}`
+        : '';
+    return `${item.lrvCode} · [${typeLabel}${connBadge}] ${item.shortName} (${dims}, ${item.material}, ${item.ntd})`;
   };
 
   return (
@@ -2470,7 +2477,13 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                           <div className="flex items-center justify-between text-[11px] text-slate-500 mb-0.5">
                             <span>Краткое наименование (из ЛРВ)</span>
                             <span className="font-mono text-[10px] text-[#1e3799] font-semibold">
-                              {detectLrvElementType(form.elem1Name)}
+                              {selectedLrv1Item
+                                ? `${resolveLrvItemCategory(selectedLrv1Item)}${
+                                    resolveLrvItemCategory(selectedLrv1Item) === 'ЗРА'
+                                      ? ` (${resolveLrvConnectionType(selectedLrv1Item)})`
+                                      : ''
+                                  }`
+                                : detectLrvElementType(form.elem1Name)}
                             </span>
                           </div>
                           <div
@@ -2717,7 +2730,13 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                           <div className="flex items-center justify-between text-[11px] text-slate-500 mb-0.5">
                             <span>Краткое наименование (из ЛРВ)</span>
                             <span className="font-mono text-[10px] text-[#1e3799] font-semibold">
-                              {detectLrvElementType(form.elem2Name)}
+                              {selectedLrv2Item
+                                ? `${resolveLrvItemCategory(selectedLrv2Item)}${
+                                    resolveLrvItemCategory(selectedLrv2Item) === 'ЗРА'
+                                      ? ` (${resolveLrvConnectionType(selectedLrv2Item)})`
+                                      : ''
+                                  }`
+                                : detectLrvElementType(form.elem2Name)}
                             </span>
                           </div>
                           <div

@@ -9,6 +9,7 @@ import {
   checkNaksCertStatus,
   computeLineListItemStatus,
   deriveFacilitiesFromLineList,
+  detectLrvConnectionType,
   detectLrvElementType,
   estimateAmbientTempByCoordsAndDate,
   extractRdSuffix,
@@ -17,7 +18,9 @@ import {
   filterLrvCatalogByRd,
   findWelderByStamp,
   formatDateDDMMYY,
+  formatFlangedZraName,
   formatGost32569JournalRow,
+  formatJournalElementName,
   formatStoGazpromJournalRow,
   formatTimestampDDMMYY,
   getFacilityWeatherStationName,
@@ -26,6 +29,7 @@ import {
   GOST_16037_JOINT_TYPES,
   GOST_32569_2013_JOURNAL_COLUMNS,
   isAngularWeldJoint,
+  isFlangedZraElement,
   isWeldingDateInRange,
   MAX_HISTORY_STEPS,
   mmToInchDiameter,
@@ -37,6 +41,8 @@ import {
   performRedoStep,
   performUndoStep,
   pushHistorySnapshot,
+  resolveLrvConnectionType,
+  resolveLrvItemCategory,
   resolveWeldersSelection,
   searchLrvCatalogItems,
   searchWeldersByStampOrName,
@@ -584,11 +590,12 @@ test('resolveWeldersSelection, validatePreheatTemperature, validateElementsDiame
   };
   const catalogList = [reducerLrv, valveLrv, pipeLrv];
 
-  assert.equal(detectLrvElementType(valveLrv.shortName), 'Кран');
+  assert.equal(detectLrvElementType(valveLrv.shortName), 'ЗРА');
   assert.equal(detectLrvElementType(reducerLrv.shortName), 'Переход');
   assert.equal(detectLrvElementType(pipeLrv.shortName), 'Труба');
 
-  // Поиск по типу элемента "Кран"
+  // Поиск по типу элемента "ЗРА" и поддержка алиаса "Кран"
+  assert.equal(searchLrvCatalogItems(catalogList, '', 'ЗРА').length, 1);
   assert.equal(searchLrvCatalogItems(catalogList, '', 'Кран').length, 1);
   // Поиск по НТД "21345"
   assert.equal(searchLrvCatalogItems(catalogList, '21345', 'Все типы').length, 1);
@@ -2136,4 +2143,148 @@ test('authSecurity: соленое хеширование паролей, кри
     expiresAt: new Date(Date.now() - 1000).toISOString(),
   };
   assert.equal(isSessionActive(expiredSession), false);
+});
+
+test('Категория ЗРА, типы подсоединения (фланцевый/приварной) и форматирование фланцевой ЗРА в журналах', () => {
+  // 1. Авто-определение категории «ЗРА» по ключевым словам арматуры
+  assert.equal(detectLrvElementType('Кран шаровый DN150 159х8'), 'ЗРА');
+  assert.equal(detectLrvElementType('кран DN50'), 'ЗРА');
+  assert.equal(detectLrvElementType('Задвижка клиновая DN100'), 'ЗРА');
+  assert.equal(detectLrvElementType('Клапан обратный DN50'), 'ЗРА');
+  assert.equal(detectLrvElementType('Вентиль запорный игольчатый DN25'), 'ЗРА');
+  assert.equal(detectLrvElementType('Фильтр сетчатый фланцевый DN80'), 'ЗРА');
+  assert.equal(detectLrvElementType('Переключающее устройство DN50'), 'ЗРА');
+  assert.equal(detectLrvElementType('Заслонка поворотная DN150'), 'ЗРА');
+  assert.equal(detectLrvElementType('Дисковый затвор DN200'), 'ЗРА');
+  assert.equal(detectLrvElementType('Регулятор давления газа DN50'), 'ЗРА');
+  assert.equal(detectLrvElementType('Арматура предохранительная'), 'ЗРА');
+
+  // Другие категории не должны классифицироваться как ЗРА
+  assert.equal(detectLrvElementType('Труба БШ 159х8'), 'Труба');
+  assert.equal(detectLrvElementType('Отвод 90° 159х8'), 'Отвод');
+  assert.equal(detectLrvElementType('Фланец воротниковый 159х8'), 'Фланец');
+  assert.equal(detectLrvElementType('Заглушка эллиптическая 159х8'), 'Заглушка');
+
+  // 2. Ручное переопределение категории (resolveLrvItemCategory)
+  const customItem: LRVItem = {
+    id: 'lrv-custom',
+    lrvCode: 'ЛРВ-CUSTOM-01',
+    rdCode: '0092-TX3',
+    objectName: 'Объект-1',
+    shortName: 'Нетипичный регулирующий узел',
+    category: 'ЗРА',
+    connectionType: 'фланцевый',
+    material: '09Г2С',
+    ntd: 'ТУ 3742-001',
+    diameterMm: 57,
+    wallThickness: 3.5,
+    specQty: 2,
+    unit: 'шт',
+  };
+  assert.equal(resolveLrvItemCategory(customItem), 'ЗРА');
+  assert.equal(resolveLrvConnectionType(customItem), 'фланцевый');
+
+  // 3. Авто-определение типа подсоединения ЗРА (фланцевый vs приварной)
+  assert.equal(detectLrvConnectionType('Кран шаровый фланцевый DN50'), 'фланцевый');
+  assert.equal(detectLrvConnectionType('Задвижка под фланец DN100'), 'фланцевый');
+  assert.equal(detectLrvConnectionType('Кран шаровый под приварку DN50'), 'приварной');
+  assert.equal(detectLrvConnectionType('Кран шаровый сварной DN50'), 'приварной');
+  assert.equal(detectLrvConnectionType('Кран DN50'), 'приварной'); // по умолчанию приварной
+
+  // 4. Форматирование наименования фланцевой ЗРА (formatFlangedZraName)
+  assert.equal(formatFlangedZraName('Кран DN50'), 'Фланец крана DN50');
+  assert.equal(formatFlangedZraName('кран DN50'), 'фланец крана DN50');
+  assert.equal(formatFlangedZraName('Кран шаровый DN50'), 'Фланец крана шарового DN50');
+  assert.equal(formatFlangedZraName('Кран шаровый фланцевый DN50'), 'Фланец крана шарового DN50');
+  assert.equal(formatFlangedZraName('Задвижка клиновая DN100'), 'Фланец задвижки клиновой DN100');
+  assert.equal(formatFlangedZraName('Задвижка DN100'), 'Фланец задвижки DN100');
+  assert.equal(formatFlangedZraName('Клапан обратный DN50'), 'Фланец клапана обратного DN50');
+  assert.equal(formatFlangedZraName('Клапан DN50'), 'Фланец клапана DN50');
+  assert.equal(formatFlangedZraName('Фильтр сетчатый DN80'), 'Фланец фильтра сетчатого DN80');
+  assert.equal(formatFlangedZraName('Фильтр DN80'), 'Фланец фильтра DN80');
+  assert.equal(
+    formatFlangedZraName('Переключающее устройство DN50'),
+    'Фланец переключающего устройства DN50'
+  );
+  // Если слово «Фланец» уже присутствует, не должно быть дублирования
+  assert.equal(formatFlangedZraName('Фланец крана DN50'), 'Фланец крана DN50');
+  assert.equal(formatFlangedZraName('Фланец воротниковый DN50'), 'Фланец воротниковый DN50');
+
+  // 5. Проверка стыка с фланцевой ЗРА в Журнале сварочных работ СТО Газпром 15-1.1-002-2023 (Графа 8)
+  const lrvCatalogWithZra: LRVItem[] = [
+    {
+      id: 'lrv-flanged-valve',
+      lrvCode: 'ЛРВ-ЗРА-01',
+      rdCode: '0092.049.Р.13/1 0004 УКПГ.045.0077.001-TX3',
+      objectName: 'УКПГ-2В',
+      shortName: 'Кран DN50',
+      category: 'ЗРА',
+      connectionType: 'фланцевый',
+      material: '09Г2С',
+      ntd: 'ГОСТ 21345-2005',
+      manufacturer: 'АО «Тяжпромарматура»',
+      dn1: 50,
+      diameterMm: 57,
+      wallThickness: 3.5,
+      specQty: 4,
+      unit: 'шт',
+    },
+    {
+      id: 'lrv-welded-valve',
+      lrvCode: 'ЛРВ-ЗРА-02',
+      rdCode: '0092.049.Р.13/1 0004 УКПГ.045.0077.001-TX3',
+      objectName: 'УКПГ-2В',
+      shortName: 'Кран DN50',
+      category: 'ЗРА',
+      connectionType: 'приварной',
+      material: '09Г2С',
+      ntd: 'ГОСТ 21345-2005',
+      manufacturer: 'АО «Тяжпромарматура»',
+      dn1: 50,
+      diameterMm: 57,
+      wallThickness: 3.5,
+      specQty: 4,
+      unit: 'шт',
+    },
+  ];
+
+  // Стык с фланцевой ЗРА -> в журнале выводится «Фланец крана DN50»
+  const flangedJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-flanged-zra',
+    jointNumber: '050',
+    elem1Name: 'Кран DN50',
+    lrv1Code: 'ЛРВ-ЗРА-01',
+    elem2Name: 'Труба БШ 57х3.5',
+    elem2Material: '09Г2С',
+  };
+
+  const stoFlangedRow = formatStoGazpromJournalRow(flangedJoint, 0, lrvCatalogWithZra);
+  assert.ok(
+    stoFlangedRow.col8.includes('Фланец крана DN50'),
+    `Ожидалось «Фланец крана DN50» в графе 8 СТО Газпром, получено: «${stoFlangedRow.col8}»`
+  );
+
+  // Стык с приварной ЗРА -> в журнале сохраняется «Кран DN50»
+  const weldedJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-welded-zra',
+    jointNumber: '060',
+    elem1Name: 'Кран DN50',
+    lrv1Code: 'ЛРВ-ЗРА-02',
+    elem2Name: 'Труба БШ 57х3.5',
+  };
+  const stoWeldedRow = formatStoGazpromJournalRow(weldedJoint, 0, lrvCatalogWithZra);
+  assert.ok(
+    stoWeldedRow.col8.includes('Кран DN50'),
+    `Ожидалось «Кран DN50» в графе 8 СТО Газпром для приварной ЗРА, получено: «${stoWeldedRow.col8}»`
+  );
+  assert.equal(stoWeldedRow.col8.includes('Фланец крана'), false);
+
+  // 6. Проверка стыка с фланцевой ЗРА в Журнале сварочных работ ГОСТ 32569-2013 (Графа 4)
+  const gostFlangedRow = formatGost32569JournalRow(flangedJoint, 0, [], lrvCatalogWithZra);
+  assert.ok(
+    gostFlangedRow.col4.includes('Фланец крана DN50'),
+    `Ожидалось «Фланец крана DN50» в графе 4 ГОСТ 32569, получено: «${gostFlangedRow.col4}»`
+  );
 });

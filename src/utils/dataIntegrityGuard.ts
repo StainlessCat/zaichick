@@ -304,6 +304,7 @@ export function getMaxWeldEndsForElement(elementName: string): number {
       return 3;
     case 'Отвод':
     case 'Переход':
+    case 'ЗРА':
     case 'Кран':
     case 'Труба':
     default:

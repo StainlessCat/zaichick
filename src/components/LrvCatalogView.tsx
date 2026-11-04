@@ -11,15 +11,20 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
-import { FacilityObject, LRVItem } from '../types/welding';
+import { FacilityObject, LRVItem, LrvElementCategory } from '../types/welding';
 import {
   exportLrvCatalogToExcel,
   readLrvCatalogFromExcelFile,
 } from '../utils/excelUtils';
 import {
+  detectLrvConnectionType,
+  detectLrvElementType,
   getLrvItemDn1,
   getLrvItemDn2,
+  LRV_ELEMENT_TYPE_OPTIONS,
   mmToNominalBoreDn,
+  resolveLrvConnectionType,
+  resolveLrvItemCategory,
 } from '../utils/weldingLogic';
 import {
   applyTableColumnFiltersAndSort,
@@ -98,6 +103,8 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
       lrvCode: 140,
       rdCode: 180,
       shortName: 220,
+      category: 110,
+      connectionType: 120,
       material: 130,
       ntd: 140,
       manufacturer: 160,
@@ -116,6 +123,9 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
   const [newRd, setNewRd] = useState(allRds[0]?.code || '');
   const [newLrvCode, setNewLrvCode] = useState('ЛРВ-001ТХ3-0501');
   const [newShortName, setNewShortName] = useState('Переход К 219х10-159х8');
+  const [newCategory, setNewCategory] = useState<LrvElementCategory>('Переход');
+  const [newConnectionType, setNewConnectionType] = useState<'приварной' | 'фланцевый'>('приварной');
+  const [isCategoryManuallySet, setIsCategoryManuallySet] = useState(false);
   const [newMaterial, setNewMaterial] = useState('09Г2С');
   const [newNtd, setNewNtd] = useState('ГОСТ 17378-2001');
   const [newManufacturer, setNewManufacturer] = useState('ПАО «ЧТПЗ»');
@@ -135,12 +145,25 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
     }
   }, [allRds, editingLrvId, newRd]);
 
+  const handleShortNameChange = (val: string) => {
+    setNewShortName(val);
+    if (!isCategoryManuallySet) {
+      const autoCat = detectLrvElementType(val);
+      setNewCategory(autoCat);
+      setNewConnectionType(detectLrvConnectionType(val));
+    }
+  };
+
   const handleStartEditLrv = (item: LRVItem) => {
     setFormError('');
     setEditingLrvId(item.id);
     setNewRd(item.rdCode);
     setNewLrvCode(item.lrvCode);
     setNewShortName(item.shortName);
+    const cat = resolveLrvItemCategory(item);
+    setNewCategory(cat);
+    setNewConnectionType(resolveLrvConnectionType(item));
+    setIsCategoryManuallySet(true);
     setNewMaterial(item.material);
     setNewNtd(item.ntd);
     setNewManufacturer(item.manufacturer || '');
@@ -170,6 +193,13 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
       lrvCode: (item) => item.lrvCode,
       rdCode: (item) => item.rdCode,
       shortName: (item) => item.shortName,
+      category: (item) => resolveLrvItemCategory(item),
+      connectionType: (item) =>
+        resolveLrvItemCategory(item) === 'ЗРА'
+          ? resolveLrvConnectionType(item) === 'фланцевый'
+            ? 'Фланцевый'
+            : 'Приварной'
+          : '',
       material: (item) => item.material,
       ntd: (item) => item.ntd,
       manufacturer: (item) => item.manufacturer || '',
@@ -197,6 +227,8 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
     lrvCode: 'Код ЛРВ',
     rdCode: 'Шифр РД',
     shortName: 'Краткое наименование',
+    category: 'Категория',
+    connectionType: 'Подсоединение',
     material: 'Материал (Сталь)',
     ntd: 'НТД',
     manufacturer: 'Завод-изготовитель',
@@ -315,6 +347,8 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
       rdCode: rdEntry?.code || newRd.trim() || 'НОВЫЙ-ШИФР-РД',
       objectName: rdEntry?.objectName || 'Новый объект',
       shortName: newShortName.trim(),
+      category: newCategory,
+      connectionType: newCategory === 'ЗРА' ? newConnectionType : undefined,
       material: newMaterial.trim(),
       ntd: newNtd.trim(),
       manufacturer: newManufacturer.trim() || undefined,
@@ -484,6 +518,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                 type="button"
                 onClick={() => {
                   setEditingLrvId(null);
+                  setIsCategoryManuallySet(false);
                   setShowAddForm((v) => !v);
                 }}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] transition-colors"
@@ -543,8 +578,8 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
             </label>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <div className="sm:col-span-2">
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+            <div className="sm:col-span-4">
               <label className="block text-xs text-slate-600 mb-1">Шифр РД *</label>
               {allRds.length > 0 ? (
                 <select
@@ -569,7 +604,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                 />
               )}
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-xs text-slate-600 mb-1">Код ЛРВ *</label>
               <input
                 type="text"
@@ -579,16 +614,50 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                 className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
               />
             </div>
-            <div>
+            <div className={newCategory === 'ЗРА' ? 'sm:col-span-3' : 'sm:col-span-4'}>
               <label className="block text-xs text-slate-600 mb-1">Краткое наименование *</label>
               <input
                 type="text"
                 required
                 value={newShortName}
-                onChange={(e) => setNewShortName(e.target.value)}
+                onChange={(e) => handleShortNameChange(e.target.value)}
                 className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-xs"
               />
             </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-slate-600 mb-1">Категория *</label>
+              <select
+                value={newCategory}
+                onChange={(e) => {
+                  setNewCategory(e.target.value as LrvElementCategory);
+                  setIsCategoryManuallySet(true);
+                }}
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold text-[#1e3799]"
+              >
+                {LRV_ELEMENT_TYPE_OPTIONS.filter((t) => t !== 'Все типы').map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {newCategory === 'ЗРА' && (
+              <div className="sm:col-span-1">
+                <label className="block text-xs text-amber-800 font-semibold mb-1">Подсоед.</label>
+                <select
+                  value={newConnectionType}
+                  onChange={(e) =>
+                    setNewConnectionType(
+                      e.target.value as 'приварной' | 'фланцевый'
+                    )
+                  }
+                  className="w-full px-1.5 py-1.5 bg-amber-50 border border-amber-300 rounded text-xs font-semibold text-amber-900"
+                >
+                  <option value="приварной">Приварн.</option>
+                  <option value="фланцевый">Фланц.</option>
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-9 gap-3">
@@ -870,6 +939,34 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                   onAutoFit={() => handleAutoFit('shortName', 220)}
                 />
                 <TableColumnFilterHeader
+                  columnKey="category"
+                  label="Категория"
+                  rows={rdScopedCatalog}
+                  getValue={lrvColumnGetters.category}
+                  activeFilters={columnFilters}
+                  onApplyFilter={handleApplyColumnFilter}
+                  sortConfig={sortConfig}
+                  onSort={handleSortColumn}
+                  width={getColumnWidth('category')}
+                  minWidth={90}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('category', 110)}
+                />
+                <TableColumnFilterHeader
+                  columnKey="connectionType"
+                  label="Подсоединение"
+                  rows={rdScopedCatalog}
+                  getValue={lrvColumnGetters.connectionType}
+                  activeFilters={columnFilters}
+                  onApplyFilter={handleApplyColumnFilter}
+                  sortConfig={sortConfig}
+                  onSort={handleSortColumn}
+                  width={getColumnWidth('connectionType')}
+                  minWidth={90}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('connectionType', 120)}
+                />
+                <TableColumnFilterHeader
                   columnKey="material"
                   label="Материал (Сталь)"
                   rows={rdScopedCatalog}
@@ -1094,6 +1191,40 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                       className="py-2.5 px-3 border-r border-slate-200 font-semibold text-slate-900"
                     >
                       {item.shortName}
+                    </td>
+                    <td
+                      style={{
+                        width: getColumnWidth('category'),
+                        minWidth: getColumnWidth('category'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 text-center whitespace-nowrap"
+                    >
+                      <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-800 border border-slate-200">
+                        {resolveLrvItemCategory(item)}
+                      </span>
+                    </td>
+                    <td
+                      style={{
+                        width: getColumnWidth('connectionType'),
+                        minWidth: getColumnWidth('connectionType'),
+                      }}
+                      className="py-2.5 px-3 border-r border-slate-200 text-center whitespace-nowrap"
+                    >
+                      {resolveLrvItemCategory(item) === 'ЗРА' ? (
+                        <span
+                          className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold border ${
+                            resolveLrvConnectionType(item) === 'фланцевый'
+                              ? 'bg-amber-50 text-amber-900 border-amber-300'
+                              : 'bg-sky-50 text-[#1e3799] border-sky-300'
+                          }`}
+                        >
+                          {resolveLrvConnectionType(item) === 'фланцевый'
+                            ? 'Фланцевый'
+                            : 'Приварной'}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">—</span>
+                      )}
                     </td>
                     <td
                       style={{

@@ -1592,12 +1592,38 @@ export function parseLrvCatalogRecords(
         ? 'м'
         : 'шт';
 
+    const rawCategory = getField(row, [
+      'категория элемента',
+      'категория',
+      'тип элемента',
+      'тип детали',
+      'вид элемента',
+    ]);
+    const rawConnectionType = getField(row, [
+      'тип подсоединения',
+      'тип присоединения',
+      'подсоединение',
+      'присоединение',
+      'тип соединения',
+    ]);
+
+    const itemCategory = resolveLrvItemCategory({
+      shortName,
+      category: rawCategory,
+    });
+    const connectionType =
+      itemCategory === 'ЗРА'
+        ? detectLrvConnectionType(shortName, rawConnectionType)
+        : undefined;
+
     result.push({
       id: `lrv-xls-${Date.now()}-${idx}`,
       lrvCode: finalCode,
       rdCode,
       objectName,
       shortName: shortName || 'Деталь трубопровода',
+      category: itemCategory,
+      connectionType,
       material,
       ntd,
       manufacturer,
@@ -2136,7 +2162,9 @@ export function validateWeldingTypeWithTechCard(
 
 /**
  * Определяет тип элемента трубопровода по краткому наименованию из базы ЛРВ
- * (Труба, Отвод, Переход, Тройник, Кран, Фланец, Заглушка, Прочее)
+ * (Труба, Отвод, Переход, Тройник, ЗРА, Фланец, Заглушка, Прочее).
+ * В категорию «ЗРА» (запорно-регулирующая арматура) включаются краны, задвижки, клапаны, вентили,
+ * заслонки, дисковые затворы, переключающие устройства, фильтры, регуляторы давления и прочая арматура.
  */
 export function detectLrvElementType(shortName: string): LrvElementCategory {
   const s = (shortName || '').toLowerCase();
@@ -2148,13 +2176,184 @@ export function detectLrvElementType(shortName: string): LrvElementCategory {
     s.includes('кран') ||
     s.includes('задвижк') ||
     s.includes('клапан') ||
-    s.includes('вентиль')
+    s.includes('вентиль') ||
+    s.includes('заслонк') ||
+    s.includes('затвор') ||
+    s.includes('переключающ') ||
+    s.includes('фильтр') ||
+    s.includes('регулятор') ||
+    s.includes('арматур')
   ) {
-    return 'Кран';
+    return 'ЗРА';
   }
   if (s.includes('флан')) return 'Фланец';
   if (s.includes('заглуш') || s.includes('днищ')) return 'Заглушка';
   return 'Прочее';
+}
+
+/**
+ * Получает категорию элемента ЛРВ с учетом явно заданной категории (если указана)
+ * или автоматического распознавания по краткому наименованию.
+ */
+export function resolveLrvItemCategory(
+  item: { shortName?: string; category?: string } | undefined | null
+): LrvElementCategory {
+  if (!item) return 'Прочее';
+  if (item.category && item.category !== 'Все типы') {
+    if (item.category === 'Кран') return 'ЗРА';
+    return item.category as LrvElementCategory;
+  }
+  return detectLrvElementType(item.shortName || '');
+}
+
+/**
+ * Определяет тип подсоединения элемента ЛРВ (для ЗРА: приварной или фланцевый).
+ */
+export function detectLrvConnectionType(
+  shortName: string,
+  explicitType?: string
+): 'приварной' | 'фланцевый' {
+  if (explicitType) {
+    const clean = explicitType.trim().toLowerCase();
+    if (clean.includes('фланц')) return 'фланцевый';
+    if (clean.includes('привар') || clean.includes('свар')) return 'приварной';
+  }
+  const s = (shortName || '').toLowerCase();
+  if (
+    s.includes('фланц') ||
+    s.includes('флан.') ||
+    s.includes('под фланец') ||
+    s.includes('исп. b') ||
+    s.includes('исп. 1')
+  ) {
+    return 'фланцевый';
+  }
+  return 'приварной';
+}
+
+/**
+ * Получает тип подсоединения элемента ЛРВ
+ */
+export function resolveLrvConnectionType(
+  item: { shortName?: string; connectionType?: string } | undefined | null
+): 'приварной' | 'фланцевый' {
+  if (!item) return 'приварной';
+  return detectLrvConnectionType(item.shortName || '', item.connectionType);
+}
+
+/**
+ * Преобразует наименование элемента запорно-регулирующей арматуры (ЗРА)
+ * с фланцевым типом подсоединения для журнала сварочных работ:
+ * например, «Кран DN50» -> «Фланец крана DN50», «Задвижка DN100» -> «Фланец задвижки DN100».
+ */
+export function formatFlangedZraName(rawName: string): string {
+  if (!rawName) return '';
+  const trimmed = rawName.trim();
+  if (!trimmed) return '';
+
+  const WB = '(?=\\s|$|[^а-яёa-z0-9])';
+
+  // Если в наименовании уже присутствует слово «Фланец» / «фланец», не дублируем его
+  if (new RegExp(`^флан(?:ец|ца|цем|цу)?${WB}`, 'i').test(trimmed)) {
+    return trimmed;
+  }
+
+  // Очищаем слово «фланцевый/фланцевая/фланцевое» из середины/конца, если оно есть, чтобы избежать тавтологии («Фланец крана фланцевого»)
+  const cleanBase = trimmed
+    .replace(new RegExp(`\\s+фланцев(?:ый|ая|ое|ому|ом|ых|ым)${WB}`, 'gi'), '')
+    .trim();
+
+  const isUpper = /^[А-ЯЁA-Z]/.test(cleanBase);
+
+  // Словарь сопоставлений для начальных слов ЗРА
+  const replacements: [RegExp, string, string][] = [
+    [new RegExp(`^кран\\s+шаров(?:ый|ой)${WB}`, 'i'), 'фланец крана шарового', 'Фланец крана шарового'],
+    [new RegExp(`^кран${WB}`, 'i'), 'фланец крана', 'Фланец крана'],
+    [new RegExp(`^крана${WB}`, 'i'), 'фланец крана', 'Фланец крана'],
+    [new RegExp(`^задвижк[аеиуой]?\\s+клинов(?:ая|ой)${WB}`, 'i'), 'фланец задвижки клиновой', 'Фланец задвижки клиновой'],
+    [new RegExp(`^задвижк[аеиуой]?\\s+шиберн(?:ая|ой)${WB}`, 'i'), 'фланец задвижки шиберной', 'Фланец задвижки шиберной'],
+    [new RegExp(`^задвижк[аеиуой]?${WB}`, 'i'), 'фланец задвижки', 'Фланец задвижки'],
+    [new RegExp(`^клапан[аеуом]?\\s+обратн(?:ый|ого|ому|ым)${WB}`, 'i'), 'фланец клапана обратного', 'Фланец клапана обратного'],
+    [new RegExp(`^клапан[аеуом]?\\s+предохранительн(?:ый|ого|ому|ым)${WB}`, 'i'), 'фланец клапана предохранительного', 'Фланец клапана предохранительного'],
+    [new RegExp(`^клапан[аеуом]?\\s+регулирующ(?:ий|его|ему|им)${WB}`, 'i'), 'фланец клапана регулирующего', 'Фланец клапана регулирующего'],
+    [new RegExp(`^клапан[аеуом]?\\s+запорн(?:ый|ого|ому|ым)${WB}`, 'i'), 'фланец клапана запорного', 'Фланец клапана запорного'],
+    [new RegExp(`^клапан[аеуом]?${WB}`, 'i'), 'фланец клапана', 'Фланец клапана'],
+    [new RegExp(`^вентил[ьяеюем]?\\s+игольчат(?:ый|ого|ому|ым)${WB}`, 'i'), 'фланец вентиля игольчатого', 'Фланец вентиля игольчатого'],
+    [new RegExp(`^вентил[ьяеюем]?\\s+запорн(?:ый|ого|ому|ым)${WB}`, 'i'), 'фланец вентиля запорного', 'Фланец вентиля запорного'],
+    [new RegExp(`^вентил[ьяеюем]?${WB}`, 'i'), 'фланец вентиля', 'Фланец вентиля'],
+    [new RegExp(`^фильтр[аеуом]?\\s+сетчат(?:ый|ого|ому|ым)${WB}`, 'i'), 'фланец фильтра сетчатого', 'Фланец фильтра сетчатого'],
+    [new RegExp(`^фильтр[аеуом]?\\s+жидкостн(?:ый|ого|ому|ым)${WB}`, 'i'), 'фланец фильтра жидкостного', 'Фланец фильтра жидкостного'],
+    [new RegExp(`^фильтр[аеуом]?${WB}`, 'i'), 'фланец фильтра', 'Фланец фильтра'],
+    [new RegExp(`^заслонк[аеиуой]?\\s+дроссельн(?:ая|ой)${WB}`, 'i'), 'фланец заслонки дроссельной', 'Фланец заслонки дроссельной'],
+    [new RegExp(`^заслонк[аеиуой]?${WB}`, 'i'), 'фланец заслонки', 'Фланец заслонки'],
+    [new RegExp(`^затвор[аеуом]?\\s+дисков(?:ый|ого|ому|ым)${WB}`, 'i'), 'фланец затвора дискового', 'Фланец затвора дискового'],
+    [new RegExp(`^затвор[аеуом]?\\s+поворотн(?:ый|ого|ому|ым)${WB}`, 'i'), 'фланец затвора поворотного', 'Фланец затвора поворотного'],
+    [new RegExp(`^затвор[аеуом]?${WB}`, 'i'), 'фланец затвора', 'Фланец затвора'],
+    [new RegExp(`^регулятор[аеуом]?\\s+давлен(?:ия|ие|ием|ию)${WB}`, 'i'), 'фланец регулятора давления', 'Фланец регулятора давления'],
+    [new RegExp(`^регулятор[аеуом]?${WB}`, 'i'), 'фланец регулятора', 'Фланец регулятора'],
+    [new RegExp(`^переключающ(?:ее|его|ему|им|ем)?\\s+устройств[оаеуом]?${WB}`, 'i'), 'фланец переключающего устройства', 'Фланец переключающего устройства'],
+    [new RegExp(`^арматур[аеиуой]?${WB}`, 'i'), 'фланец арматуры', 'Фланец арматуры'],
+  ];
+
+  for (const [regex, lowerRepl, upperRepl] of replacements) {
+    if (regex.test(cleanBase)) {
+      const repl = isUpper ? upperRepl : lowerRepl;
+      return cleanBase.replace(regex, repl);
+    }
+  }
+
+  const prefix = isUpper ? 'Фланец ' : 'фланец ';
+  const lowercasedHead = cleanBase.charAt(0).toLowerCase() + cleanBase.slice(1);
+  return `${prefix}${lowercasedHead}`;
+}
+
+/**
+ * Проверяет, является ли элемент фланцевой запорно-регулирующей арматурой (ЗРА)
+ */
+export function isFlangedZraElement(
+  elementName: string | undefined | null,
+  lrvCode?: string | null,
+  rdCode?: string | null,
+  lrvCatalog: LRVItem[] = []
+): boolean {
+  if (lrvCode) {
+    const lrv =
+      lrvCatalog.find((i) => i.lrvCode === lrvCode && i.rdCode === rdCode) ||
+      lrvCatalog.find((i) => i.lrvCode === lrvCode);
+    if (lrv) {
+      const cat = resolveLrvItemCategory(lrv);
+      const conn = resolveLrvConnectionType(lrv);
+      if (cat === 'ЗРА' && conn === 'фланцевый') {
+        return true;
+      }
+      if (cat === 'ЗРА' && conn === 'приварной') {
+        return false;
+      }
+    }
+  }
+
+  const raw = elementName || '';
+  const cat = detectLrvElementType(raw);
+  const conn = detectLrvConnectionType(raw);
+  return cat === 'ЗРА' && conn === 'фланцевый';
+}
+
+/**
+ * Форматирует наименование элемента для журнала сварочных работ (СТО Газпром / ГОСТ 32569)
+ * с учетом правила: для фланцевой ЗРА указывать «фланец крана DN50», а не «кран DN50».
+ */
+export function formatJournalElementName(
+  elementName: string | undefined | null,
+  lrvCode?: string | null,
+  rdCode?: string | null,
+  lrvCatalog: LRVItem[] = []
+): string {
+  if (!elementName) return '';
+  const stripped = stripElementDimensionsFromName(elementName) || elementName;
+  if (isFlangedZraElement(elementName, lrvCode, rdCode, lrvCatalog)) {
+    return formatFlangedZraName(stripped);
+  }
+  return stripped;
 }
 
 export const LRV_ELEMENT_TYPE_OPTIONS: LrvElementCategory[] = [
@@ -2163,14 +2362,15 @@ export const LRV_ELEMENT_TYPE_OPTIONS: LrvElementCategory[] = [
   'Отвод',
   'Переход',
   'Тройник',
-  'Кран',
+  'ЗРА',
   'Фланец',
   'Заглушка',
+  'Прочее',
 ];
 
 /**
  * Комплексный поиск элемента в базе ЛРВ:
- * по коду ЛРВ, краткому наименованию, НТД, диаметру (Ø1 / Ø2), марке стали и типу элемента (труба, отвод, переход, кран и т.п.)
+ * по коду ЛРВ, краткому наименованию, НТД, диаметру (Ø1 / Ø2), марке стали и типу элемента (труба, отвод, переход, зра и т.п.)
  */
 export function searchLrvCatalogItems(
   items: LRVItem[],
@@ -2181,9 +2381,11 @@ export function searchLrvCatalogItems(
   const cleanQuery = (searchQuery || '').trim().toLowerCase();
 
   return items.filter((item) => {
-    const itemCategory = detectLrvElementType(item.shortName);
+    const itemCategory = resolveLrvItemCategory(item);
     if (cleanType && cleanType !== 'Все типы' && cleanType !== 'ALL') {
-      if (itemCategory.toLowerCase() !== cleanType.toLowerCase()) {
+      const targetType = cleanType === 'Кран' ? 'ЗРА' : cleanType;
+      const actualType = itemCategory === 'Кран' ? 'ЗРА' : itemCategory;
+      if (actualType.toLowerCase() !== targetType.toLowerCase()) {
         return false;
       }
     }
@@ -2192,6 +2394,7 @@ export function searchLrvCatalogItems(
 
     const dn1Val = getLrvItemDn1(item);
     const dn2Val = getLrvItemDn2(item);
+    const connType = resolveLrvConnectionType(item);
 
     const searchableFields = [
       item.lrvCode,
@@ -2209,11 +2412,12 @@ export function searchLrvCatalogItems(
       `${item.diameterMm}х${item.wallThickness}`,
       `${item.diameterMm}x${item.wallThickness}`,
       itemCategory,
+      connType,
     ]
       .join(' ')
       .toLowerCase();
 
-    // Поддержка нескольких поисковых слов через пробел (например "отвод 159" или "кран гост")
+    // Поддержка нескольких поисковых слов через пробел (например "отвод 159" или "кран гост" или "зра фланцевый")
     const tokens = cleanQuery.split(/\s+/).filter(Boolean);
     return tokens.every((tok) => searchableFields.includes(tok));
   });
@@ -2776,7 +2980,6 @@ export function stripElementDimensionsFromName(
       /(?:^|\s)(?:Ø|Дн\s*)?\d+(?:[.,]\d+)?\s*[хx×ХX*]\s*\d+(?:[.,]\d+)?(?:\s*[-–/]\s*(?:Ø|Дн\s*)?\d+(?:[.,]\d+)?\s*[хx×ХX*]\s*\d+(?:[.,]\d+)?)?(?=\s|$|,)/gi,
       ' '
     )
-    .replace(/(?:^|\s)(?:DN|Ду|PN|Ру)\s*\d+(?:[.,]\d+)?(?=\s|$|,)/gi, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -2794,7 +2997,8 @@ export function stripElementDimensionsFromName(
 export function formatGost32569JournalRow(
   joint: WeldJoint,
   rowIndex: number,
-  materials: WeldingMaterialCertificate[] = []
+  materials: WeldingMaterialCertificate[] = [],
+  lrvCatalog: LRVItem[] = []
 ): Record<Gost32569ColumnKey, string> & { cells: string[] } {
   const col1 = String(rowIndex + 1);
 
@@ -2828,8 +3032,18 @@ export function formatGost32569JournalRow(
 
   const cert1 = String(joint.elem1FactoryNumber ?? '').replace(/[()]/g, '').trim();
   const cert2 = String(joint.elem2FactoryNumber ?? '').replace(/[()]/g, '').trim();
-  const shortName1 = stripElementDimensionsFromName(joint.elem1Name);
-  const shortName2 = stripElementDimensionsFromName(joint.elem2Name);
+  const shortName1 = formatJournalElementName(
+    joint.elem1Name,
+    joint.lrv1Code,
+    joint.rdCode,
+    lrvCatalog
+  );
+  const shortName2 = formatJournalElementName(
+    joint.elem2Name,
+    joint.lrv2Code,
+    joint.rdCode,
+    lrvCatalog
+  );
   const cleanElem1Title = `${joint.elem1Material || ''} ${shortName1}`
     .replace(/[()]/g, '')
     .trim();
@@ -3594,9 +3808,23 @@ export function formatStoGazpromJournalRow(
 
   // Графа 8: Наименование свариваемого элемента трубопровода (каждый элемент с новой строки)
   const name1 =
-    stripElementDimensionsFromName(joint.elem1Name) || joint.elem1Name || 'н/п';
+    formatJournalElementName(
+      joint.elem1Name,
+      joint.lrv1Code,
+      joint.rdCode,
+      lrvCatalog
+    ) ||
+    joint.elem1Name ||
+    'н/п';
   const name2 =
-    stripElementDimensionsFromName(joint.elem2Name) || joint.elem2Name || 'н/п';
+    formatJournalElementName(
+      joint.elem2Name,
+      joint.lrv2Code,
+      joint.rdCode,
+      lrvCatalog
+    ) ||
+    joint.elem2Name ||
+    'н/п';
   const col8 = `${name1}\n${name2}`;
 
   // Графа 9: Заводской номер элемента (каждый элемент с новой строки)

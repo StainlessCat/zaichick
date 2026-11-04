@@ -18,6 +18,8 @@ import {
   isDateColumnKey,
   parseLrvCatalogRecords,
   parseProjectLineListRecords,
+  resolveLrvConnectionType,
+  resolveLrvItemCategory,
   STO_GAZPROM_15_1_1_002_2023_COLUMNS,
 } from './weldingLogic';
 
@@ -121,7 +123,7 @@ export function exportWeldingJournalToExcel(
 
   const dataRows = joints.map((j, idx) =>
     isGost
-      ? formatGost32569JournalRow(j, idx, materials).cells
+      ? formatGost32569JournalRow(j, idx, materials, lrvCatalog).cells
       : formatStoGazpromJournalRow(j, idx, lrvCatalog).cells
   );
 
@@ -329,6 +331,12 @@ export function exportLrvCatalogToExcel(
       'Шифр РД': item.rdCode,
       Объект: item.objectName,
       'Краткое наименование': item.shortName,
+      Категория: item.category || resolveLrvItemCategory(item),
+      'Тип подсоединения':
+        item.connectionType ||
+        (resolveLrvItemCategory(item) === 'ЗРА'
+          ? resolveLrvConnectionType(item)
+          : ''),
       'Материал (Сталь)': item.material,
       'НТД (ГОСТ / ТУ)': item.ntd,
       'Завод-изготовитель': item.manufacturer || '',

@@ -659,10 +659,10 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     >;
     for (const col of GOST_32569_2013_JOURNAL_COLUMNS) {
       map[col.key] = (j: WeldJoint, idx: number) =>
-        formatGost32569JournalRow(j, idx, materials)[col.key];
+        formatGost32569JournalRow(j, idx, materials, lrvCatalog)[col.key];
     }
     return map;
-  }, [materials]);
+  }, [materials, lrvCatalog]);
 
   const activeGetters =
     standard === 'ГОСТ 32569-2013' ? gost32569Getters : stoGazpromGetters;
@@ -696,7 +696,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
 
     const rows = chronologicalJoints.map((j, idx) => {
       if (standard === 'ГОСТ 32569-2013') {
-        return formatGost32569JournalRow(j, idx, materials).cells;
+        return formatGost32569JournalRow(j, idx, materials, lrvCatalog).cells;
       }
       return formatStoGazpromJournalRow(j, idx, lrvCatalog).cells;
     });
@@ -750,7 +750,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         : STO_GAZPROM_15_1_1_002_2023_COLUMNS.map((c) => String(c.colNumber));
     const rows = chronologicalJoints.map((j, idx) =>
       standard === 'ГОСТ 32569-2013'
-        ? formatGost32569JournalRow(j, idx, materials).cells
+        ? formatGost32569JournalRow(j, idx, materials, lrvCatalog).cells
         : formatStoGazpromJournalRow(j, idx, lrvCatalog).cells
     );
 
@@ -1391,7 +1391,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                   </tr>
                 )}
                 {chronologicalJoints.map((j, index) => {
-                  const row = formatGost32569JournalRow(j, index, materials);
+                  const row = formatGost32569JournalRow(j, index, materials, lrvCatalog);
                   const gostType = j.gostJointType?.trim() || 'С17';
                   return (
                     <tr
