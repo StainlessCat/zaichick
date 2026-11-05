@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { memo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   AlertTriangle,
@@ -94,7 +94,7 @@ export interface JointsRegistryViewProps {
   onHideColumnInline: (key: WeldJointFieldKey) => void;
 }
 
-export const JointsRegistryView: React.FC<JointsRegistryViewProps> = ({
+const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
   joints,
   filteredAndSortedJoints,
   selectedJointIds,
@@ -793,3 +793,5 @@ export const JointsRegistryView: React.FC<JointsRegistryViewProps> = ({
     </div>
   );
 };
+
+export const JointsRegistryView = memo(JointsRegistryViewComponent);

@@ -1066,27 +1066,30 @@ export default function App() {
   }, [scopedJoints, columnFilters, globalSearch, weldingDateFrom, weldingDateTo, sortConfig]);
 
   // Уникальные значения для открытого Excel-фильтра столбца
-  const getUniqueValuesForColumn = (colKey: WeldJointFieldKey) => {
-    const counts = new Map<string, number>();
-    for (const j of scopedJoints) {
-      const raw = colKey === 'equivDiameterInch' ? getJointEquivDiaInch(j) : j[colKey];
-      const val = String(raw ?? '');
-      counts.set(val, (counts.get(val) || 0) + 1);
-    }
-    return Array.from(counts.entries())
-      .map(([value, count]) => ({ value, count }))
-      .sort((a, b) => a.value.localeCompare(b.value, 'ru', { numeric: true }));
-  };
+  const getUniqueValuesForColumn = useCallback(
+    (colKey: WeldJointFieldKey) => {
+      const counts = new Map<string, number>();
+      for (const j of scopedJoints) {
+        const raw = colKey === 'equivDiameterInch' ? getJointEquivDiaInch(j) : j[colKey];
+        const val = String(raw ?? '');
+        counts.set(val, (counts.get(val) || 0) + 1);
+      }
+      return Array.from(counts.entries())
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => a.value.localeCompare(b.value, 'ru', { numeric: true }));
+    },
+    [scopedJoints]
+  );
 
   // Применение шаблона столбцов
-  const handleApplyTemplate = (tpl: ColumnTemplate) => {
+  const handleApplyTemplate = useCallback((tpl: ColumnTemplate) => {
     setActiveTemplateId(tpl.id);
     setColumnOrder([...tpl.columnOrder]);
     setVisibleColumns([...tpl.visibleColumns]);
     if (tpl.customWidths && Object.keys(tpl.customWidths).length > 0) {
       setColumnWidths({ ...tpl.customWidths });
     }
-  };
+  }, []);
 
   const handleSaveNewTemplate = (name: string, description: string) => {
     const newTpl: ColumnTemplate = {
@@ -1111,28 +1114,33 @@ export default function App() {
   };
 
   // Перемещение столбца влево/вправо прямо из шапки таблицы
-  const handleMoveColumnInline = (key: WeldJointFieldKey, dir: 'left' | 'right') => {
-    const activeKeys = activeColumnDefs.map((c) => c.key);
-    const currentVisIdx = activeKeys.indexOf(key);
-    if (currentVisIdx === -1) return;
-    const neighborVisIdx = dir === 'left' ? currentVisIdx - 1 : currentVisIdx + 1;
-    if (neighborVisIdx < 0 || neighborVisIdx >= activeKeys.length) return;
+  const handleMoveColumnInline = useCallback(
+    (key: WeldJointFieldKey, dir: 'left' | 'right') => {
+      const activeKeys = activeColumnDefs.map((c) => c.key);
+      const currentVisIdx = activeKeys.indexOf(key);
+      if (currentVisIdx === -1) return;
+      const neighborVisIdx = dir === 'left' ? currentVisIdx - 1 : currentVisIdx + 1;
+      if (neighborVisIdx < 0 || neighborVisIdx >= activeKeys.length) return;
 
-    const neighborKey = activeKeys[neighborVisIdx];
-    const nextOrder = [...columnOrder];
-    const idxA = nextOrder.indexOf(key);
-    const idxB = nextOrder.indexOf(neighborKey);
-    if (idxA !== -1 && idxB !== -1) {
-      nextOrder[idxA] = neighborKey;
-      nextOrder[idxB] = key;
-      setColumnOrder(nextOrder);
-    }
-  };
+      const neighborKey = activeKeys[neighborVisIdx];
+      setColumnOrder((prevOrder) => {
+        const nextOrder = [...prevOrder];
+        const idxA = nextOrder.indexOf(key);
+        const idxB = nextOrder.indexOf(neighborKey);
+        if (idxA !== -1 && idxB !== -1) {
+          nextOrder[idxA] = neighborKey;
+          nextOrder[idxB] = key;
+        }
+        return nextOrder;
+      });
+    },
+    [activeColumnDefs]
+  );
 
-  const handleHideColumnInline = (key: WeldJointFieldKey) => {
+  const handleHideColumnInline = useCallback((key: WeldJointFieldKey) => {
     if (key === 'jointNumber') return;
     setVisibleColumns((prev) => prev.filter((k) => k !== key));
-  };
+  }, []);
 
   // Сохранение базового снимка стыка при открытии паспорта для 3-стороннего слияния (OCC)
   useEffect(() => {
@@ -1647,37 +1655,40 @@ export default function App() {
   };
 
   // Быстрое создание дополнительного стыка (011, 012...) на основе выбранного стыка
-  const handleQuickAddSupplementaryJoint = (baseJoint?: WeldJoint) => {
-    const refJoint = baseJoint || filteredAndSortedJoints[0] || joints[0];
-    if (!refJoint) return;
+  const handleQuickAddSupplementaryJoint = useCallback(
+    (baseJoint?: WeldJoint) => {
+      const refJoint = baseJoint || filteredAndSortedJoints[0] || joints[0];
+      if (!refJoint) return;
 
-    const lineJointNumbers = joints
-      .filter((j) => j.uniqueLineId === refJoint.uniqueLineId)
-      .map((j) => j.jointNumber);
+      const lineJointNumbers = joints
+        .filter((j) => j.uniqueLineId === refJoint.uniqueLineId)
+        .map((j) => j.jointNumber);
 
-    const nextSuppNumber = suggestNextJointNumber(
-      lineJointNumbers,
-      refJoint.jointNumber
-    );
+      const nextSuppNumber = suggestNextJointNumber(
+        lineJointNumbers,
+        refJoint.jointNumber
+      );
 
-    const draftSupp: WeldJoint = {
-      ...refJoint,
-      id: `j-supp-${Date.now()}`,
-      jointNumber: nextSuppNumber,
-      isSupplementary: true,
-      weldingDate: new Date().toISOString().slice(0, 10),
-      ambientTemp: siteWeather.tempC,
-      vikResult: 'В работе',
-      ndtResult: 'Не проводился',
-      dupNdtResult: 'Не проводился',
-    };
+      const draftSupp: WeldJoint = {
+        ...refJoint,
+        id: `j-supp-${Date.now()}`,
+        jointNumber: nextSuppNumber,
+        isSupplementary: true,
+        weldingDate: new Date().toISOString().slice(0, 10),
+        ambientTemp: siteWeather.tempC,
+        vikResult: 'В работе',
+        ndtResult: 'Не проводился',
+        dupNdtResult: 'Не проводился',
+      };
 
-    setPassportModal({
-      isOpen: true,
-      mode: 'create',
-      joint: draftSupp,
-    });
-  };
+      setPassportModal({
+        isOpen: true,
+        mode: 'create',
+        joint: draftSupp,
+      });
+    },
+    [filteredAndSortedJoints, joints, siteWeather.tempC]
+  );
 
   // Применение массового редактирования (за исключением номера стыка) с учётом Field-Level RBAC
   const handleApplyBulkUpdate = (rawPatch: Partial<WeldJoint>) => {
@@ -2053,7 +2064,7 @@ export default function App() {
   };
 
   // 9. Массовое удаление выбранных сварных стыков из Реестра
-  const handleBulkDeleteSelectedJoints = () => {
+  const handleBulkDeleteSelectedJoints = useCallback(() => {
     if (selectedJointIds.length === 0) return;
     const idSet = new Set(selectedJointIds);
     const removedJoints = joints.filter((j) => idSet.has(j.id));
@@ -2075,7 +2086,7 @@ export default function App() {
         .join(', '),
       'Удалены'
     );
-  };
+  }, [selectedJointIds, joints]);
 
   // 10. Восстановление полного функционала и данных из резервной копии (.JSON Бэкап)
   const handleRestoreFullBackup = (payload: FullSystemBackupPayload) => {
@@ -2233,7 +2244,7 @@ export default function App() {
     }
   };
 
-  const toggleSelectAllVisible = () => {
+  const toggleSelectAllVisible = useCallback(() => {
     const visibleIds = filteredAndSortedJoints.map((j) => j.id);
     const allSelected =
       visibleIds.length > 0 &&
@@ -2244,17 +2255,62 @@ export default function App() {
     } else {
       setSelectedJointIds(Array.from(new Set([...selectedJointIds, ...visibleIds])));
     }
-  };
+  }, [filteredAndSortedJoints, selectedJointIds]);
 
-  const toggleSelectRow = (id: string) => {
+  const toggleSelectRow = useCallback((id: string) => {
     setSelectedJointIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
-  };
+  }, []);
 
-  const activeFilterKeys = Object.keys(columnFilters).filter(
-    (k) => columnFilters[k as WeldJointFieldKey] !== undefined
-  ) as WeldJointFieldKey[];
+  const handleClearSelection = useCallback(() => setSelectedJointIds([]), []);
+  const handleWeldingDateFromChange = useCallback((val: string) => setWeldingDateFrom(val), []);
+  const handleWeldingDateToChange = useCallback((val: string) => setWeldingDateTo(val), []);
+  const handleResetDateRange = useCallback(() => {
+    setWeldingDateFrom('');
+    setWeldingDateTo('');
+  }, []);
+  const handleSetConfirmBulkDeleteJoints = useCallback((val: boolean) => setConfirmBulkDeleteJoints(val), []);
+  const handleOpenBulkEdit = useCallback(() => {
+    if (selectedJointIds.length === 0) {
+      const ids = filteredAndSortedJoints.map((j) => j.id);
+      setSelectedJointIds(ids);
+    }
+    setIsBulkEditOpen(true);
+  }, [selectedJointIds, filteredAndSortedJoints]);
+  const handleOpenImportExcel = useCallback(() => setIsImportExcelOpen(true), []);
+  const handleOpenCreatePassport = useCallback(
+    () => setPassportModal({ isOpen: true, mode: 'create', joint: null }),
+    []
+  );
+  const handleOpenEditPassport = useCallback(
+    (joint: WeldJoint) => setPassportModal({ isOpen: true, mode: 'edit', joint }),
+    []
+  );
+  const handleOpenColumnsModal = useCallback(() => setIsColumnsModalOpen(true), []);
+  const handleSetColumnFilter = useCallback(
+    (k: WeldJointFieldKey, vals: string[] | undefined) =>
+      setColumnFilters((prev) => ({ ...prev, [k]: vals })),
+    []
+  );
+  const handleResetAllFilters = useCallback(() => {
+    setColumnFilters({});
+    setGlobalSearch('');
+    setWeldingDateFrom('');
+    setWeldingDateTo('');
+  }, []);
+  const handleSetOpenFilterColumnKey = useCallback(
+    (key: WeldJointFieldKey | null) => setOpenFilterColumnKey(key),
+    []
+  );
+
+  const activeFilterKeys = useMemo(
+    () =>
+      Object.keys(columnFilters).filter(
+        (k) => columnFilters[k as WeldJointFieldKey] !== undefined
+      ) as WeldJointFieldKey[],
+    [columnFilters]
+  );
 
   const sectionLabels: Record<AppSection, string> = {
     registry: 'Реестр стыков и ввод данных',
@@ -2459,64 +2515,36 @@ export default function App() {
             selectedJointIds={selectedJointIds}
             onToggleSelectRow={toggleSelectRow}
             onToggleSelectAll={toggleSelectAllVisible}
-            onClearSelection={() => setSelectedJointIds([])}
+            onClearSelection={handleClearSelection}
             weldingDateFrom={weldingDateFrom}
             weldingDateTo={weldingDateTo}
-            onWeldingDateFromChange={setWeldingDateFrom}
-            onWeldingDateToChange={setWeldingDateTo}
-            onResetDateRange={() => {
-              setWeldingDateFrom('');
-              setWeldingDateTo('');
-            }}
+            onWeldingDateFromChange={handleWeldingDateFromChange}
+            onWeldingDateToChange={handleWeldingDateToChange}
+            onResetDateRange={handleResetDateRange}
             userPermissions={userPermissions}
             confirmBulkDeleteJoints={confirmBulkDeleteJoints}
-            onSetConfirmBulkDeleteJoints={setConfirmBulkDeleteJoints}
+            onSetConfirmBulkDeleteJoints={handleSetConfirmBulkDeleteJoints}
             onBulkDeleteSelectedJoints={handleBulkDeleteSelectedJoints}
-            onOpenBulkEdit={() => {
-              if (selectedJointIds.length === 0) {
-                const ids = filteredAndSortedJoints.map((j) => j.id);
-                setSelectedJointIds(ids);
-              }
-              setIsBulkEditOpen(true);
-            }}
+            onOpenBulkEdit={handleOpenBulkEdit}
             onQuickAddSupplementaryJoint={handleQuickAddSupplementaryJoint}
-            onOpenImportExcel={() => setIsImportExcelOpen(true)}
-            onOpenCreatePassport={() =>
-              setPassportModal({
-                isOpen: true,
-                mode: 'create',
-                joint: null,
-              })
-            }
-            onOpenEditPassport={(joint) =>
-              setPassportModal({
-                isOpen: true,
-                mode: 'edit',
-                joint,
-              })
-            }
+            onOpenImportExcel={handleOpenImportExcel}
+            onOpenCreatePassport={handleOpenCreatePassport}
+            onOpenEditPassport={handleOpenEditPassport}
             activeTemplateId={activeTemplateId}
             templates={templates}
             onApplyTemplate={handleApplyTemplate}
             visibleColumns={visibleColumns}
             activeColumnDefs={activeColumnDefs}
             columnWidths={columnWidths}
-            onOpenColumnsModal={() => setIsColumnsModalOpen(true)}
+            onOpenColumnsModal={handleOpenColumnsModal}
             columnFilters={columnFilters}
             activeFilterKeys={activeFilterKeys}
-            onSetColumnFilter={(k, vals) =>
-              setColumnFilters((prev) => ({ ...prev, [k]: vals }))
-            }
-            onResetAllFilters={() => {
-              setColumnFilters({});
-              setGlobalSearch('');
-              setWeldingDateFrom('');
-              setWeldingDateTo('');
-            }}
+            onSetColumnFilter={handleSetColumnFilter}
+            onResetAllFilters={handleResetAllFilters}
             sortConfig={sortConfig}
             onSetSortConfig={setSortConfig}
             openFilterColumnKey={openFilterColumnKey}
-            onSetOpenFilterColumnKey={setOpenFilterColumnKey}
+            onSetOpenFilterColumnKey={handleSetOpenFilterColumnKey}
             getUniqueValuesForColumn={getUniqueValuesForColumn}
             onColumnResizeStart={handleColumnResizeStart}
             onColumnAutoFit={handleColumnAutoFit}
