@@ -63,9 +63,11 @@ import {
   validatePreheatTemperature,
   validateWeldingTypeWithTechCard,
   isJointCurrentlyInRepair,
+  isJointDefective,
   isJointFullyAccepted,
   FIELD_LABELS_MAP,
 } from './weldingLogic';
+import { sanitizeWeldJointRecord } from './dataIntegrityGuard';
 import {
   AuditLogEntry,
   LRVItem,
@@ -2565,4 +2567,177 @@ test('Эквивалентные дюймы (Метод А / EDI): расчет 
   assert.equal(row.equivWeldingPct, 50);
   // Номинальные дюймы: 6 + 8 = 14
   assert.equal(row.totalNominalInches, 14);
+});
+
+test('Специализированные графы контроля после ремонта дефектных стыков (СТО Газпром графы 32–48, ALL_COLUMNS, RBAC)', () => {
+  // 1. Проверка наличия специализированных колонок ремонта в ALL_COLUMNS
+  const repairActionCol = ALL_COLUMNS.find((c) => c.key === 'repairAction');
+  const repairDateCol = ALL_COLUMNS.find((c) => c.key === 'repairDate');
+  const repairTechCardCol = ALL_COLUMNS.find((c) => c.key === 'repairTechCard');
+  const repairWelderCol = ALL_COLUMNS.find((c) => c.key === 'repairWelderStamp');
+  const repairForemanCol = ALL_COLUMNS.find((c) => c.key === 'repairForeman');
+  const repairVikResultCol = ALL_COLUMNS.find((c) => c.key === 'repairVikResult');
+  const repairVikDateCol = ALL_COLUMNS.find((c) => c.key === 'repairVikDate');
+  const repairNdtTypeCol = ALL_COLUMNS.find((c) => c.key === 'repairNdtType');
+  const repairNdtResultCol = ALL_COLUMNS.find((c) => c.key === 'repairNdtResult');
+  const repairNdtDateCol = ALL_COLUMNS.find((c) => c.key === 'repairNdtDate');
+
+  assert.ok(repairActionCol, 'Столбец repairAction должен быть в ALL_COLUMNS');
+  assert.equal(repairActionCol?.group, 'repair');
+  assert.ok(repairDateCol?.isNumeric, 'Столбец repairDate должен быть numeric');
+  assert.ok(repairTechCardCol, 'Столбец repairTechCard должен быть в ALL_COLUMNS');
+  assert.ok(repairWelderCol, 'Столбец repairWelderStamp должен быть в ALL_COLUMNS');
+  assert.ok(repairForemanCol, 'Столбец repairForeman должен быть в ALL_COLUMNS');
+
+  assert.ok(repairVikResultCol, 'Столбец repairVikResult должен быть в ALL_COLUMNS');
+  assert.equal(repairVikResultCol?.group, 'repair_ndt');
+  assert.ok(repairNdtTypeCol, 'Столбец repairNdtType должен быть в ALL_COLUMNS');
+  assert.ok(repairNdtResultCol, 'Столбец repairNdtResult должен быть в ALL_COLUMNS');
+  assert.ok(repairNdtDateCol, 'Столбец repairNdtDate должен быть в ALL_COLUMNS');
+
+  // 2. Тестовый стык с дефектом по РК и последующим устранением и переконтролем
+  const defectiveAndRepairedJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-defect-repair-spec',
+    jointNumber: '088',
+    weldingDate: '2026-10-10',
+    welderStamp: 'А142',
+    responsiblePerson: 'Мастер СМР Громов И.А.',
+    techCardNumber: 'ТК-045-РАД/РД-01',
+    // Первичный контроль
+    vikResult: 'Годен',
+    vikDate: '2026-10-11',
+    vikInspector: 'Кузнецова Е.В.',
+    ndtType: 'РК',
+    ndtResult: 'Ремонт', // Дефект!
+    ndtDate: '2026-10-12',
+    ndtInspector: 'Лебедев С.А.',
+    // Первичный дублирующий контроль шва (УЗК — также проводился в рамках проектных требований)
+    dupNdtType: 'УЗК',
+    dupNdtDate: '2026-10-12',
+    dupNdtResult: 'Годен',
+    dupNdtInspector: 'Лебедев С.А.',
+    // Специализированные графы устранения дефекта (графы 32–37)
+    repairAction: 'Ремонт',
+    repairDate: '2026-10-14',
+    repairTechCard: 'ТК-045-РАД/РД-01-Р',
+    repairWelderStamp: 'Б105',
+    repairForeman: 'Тимофеев В.П.',
+    // Специализированные графы контроля после ремонта (графы 38–48)
+    repairVikNumber: 'ВИК-Р-088',
+    repairVikDate: '2026-10-15',
+    repairVikResult: 'Годен',
+    repairVikInspector: 'Кузнецова Е.В.',
+    repairNdtType: 'РК',
+    repairNdtNumber: 'РК-Р-088',
+    repairNdtDate: '2026-10-16',
+    repairNdtResult: 'Годен',
+    repairNdtInspector: 'Лебедев С.А.',
+    repairDupNdtType: 'УЗК',
+    repairDupNdtNumber: 'УЗК-РД-088',
+    repairDupNdtDate: '2026-10-16',
+    repairDupNdtResult: 'Годен',
+    repairDupNdtInspector: 'Лебедев С.А.',
+  };
+
+  // Проверка предикатов дефектности и готовности
+  assert.equal(isJointDefective(defectiveAndRepairedJoint), true, 'Стык должен квалифицироваться как дефектный');
+  assert.equal(isJointFullyAccepted(defectiveAndRepairedJoint), true, 'После успешного переконтроля стык должен быть полностью принят');
+  assert.equal(isJointCurrentlyInRepair(defectiveAndRepairedJoint), false, 'Ремонт должен быть закрыт');
+
+  // Если убрать положительный переконтроль, стык снова должен стать незакрытым ремонтом
+  const pendingRepairJoint: WeldJoint = {
+    ...defectiveAndRepairedJoint,
+    repairVikResult: 'В работе',
+    repairNdtResult: 'Не проводился',
+  };
+  assert.equal(isJointCurrentlyInRepair(pendingRepairJoint), true, 'Стык с незавершенным переконтролем должен быть в ремонте');
+  assert.equal(isJointFullyAccepted(pendingRepairJoint), false);
+
+  // 3. Формирование строки СТО Газпром (49 граф)
+  const stoRow = formatStoGazpromJournalRow(defectiveAndRepairedJoint, 0, INITIAL_LRV_CATALOG);
+
+  // Графы 24–27: Первичный НК (РК, Ремонт)
+  assert.equal(stoRow.col24, 'РК');
+  assert.equal(stoRow.col27, 'Ремонт');
+
+  // Графы 28–31: Первичный дублирующий контроль шва (УЗК, Годен) — НЕ затерт ремонтом!
+  assert.equal(stoRow.col28, 'УЗК');
+  assert.equal(stoRow.col29, 'УЗК-Д-088');
+  assert.equal(stoRow.col30, '12.10.26');
+  assert.equal(stoRow.col31, 'Годен');
+
+  // Графы 32–37: Сведения о проведении ремонта
+  assert.equal(stoRow.col32, 'Ремонт');
+  assert.equal(stoRow.col33, '14.10.26');
+  assert.equal(stoRow.col34, 'ТК-045-РАД/РД-01-Р');
+  assert.equal(stoRow.col35, 'Б105');
+  assert.equal(stoRow.col36, 'Тимофеев');
+  assert.equal(stoRow.col37, ''); // пустая ячейка под роспись
+
+  // Графы 38–40: ВИК после ремонта
+  assert.equal(stoRow.col38, 'ВИК-Р-088');
+  assert.equal(stoRow.col39, '15.10.26');
+  assert.equal(stoRow.col40, 'Годен');
+
+  // Графы 41–44: НК (основной) после ремонта
+  assert.equal(stoRow.col41, 'РК');
+  assert.equal(stoRow.col42, 'РК-Р-088');
+  assert.equal(stoRow.col43, '16.10.26');
+  assert.equal(stoRow.col44, 'Годен');
+
+  // Графы 45–48: НК (дублирующий) после ремонта
+  assert.equal(stoRow.col45, 'УЗК');
+  assert.equal(stoRow.col46, 'УЗК-РД-088');
+  assert.equal(stoRow.col47, '16.10.26');
+  assert.equal(stoRow.col48, 'Годен');
+
+  // 4. Проверка ролевой изоляции RBAC
+  const ptoUser: UserAccount = {
+    login: 'pto_ivanov',
+    fullName: 'Иванов Иван Иванович',
+    role: 'Инженер ПТО',
+    department: 'ПТО',
+    password: '',
+    passwordHash: '',
+    sessionNumber: 1,
+  };
+  const ndtUser: UserAccount = {
+    login: 'ndt_petrov',
+    fullName: 'Петров Петр Петрович',
+    role: 'Специалист ЛНК',
+    department: 'ЛНК',
+    password: '',
+    passwordHash: '',
+    sessionNumber: 1,
+  };
+
+  // ПТО может вносить сведения о ремонте (32–37)
+  assert.equal(canUserEditJointField(ptoUser, 'repairAction'), true);
+  assert.equal(canUserEditJointField(ptoUser, 'repairDate'), true);
+  assert.equal(canUserEditJointField(ptoUser, 'repairTechCard'), true);
+  assert.equal(canUserEditJointField(ptoUser, 'repairWelderStamp'), true);
+  assert.equal(canUserEditJointField(ptoUser, 'repairForeman'), true);
+
+  // ПТО ЗАБЛОКИРОВАН от внесения результатов контроля после ремонта (38–48)
+  assert.equal(canUserEditJointField(ptoUser, 'repairVikResult'), false);
+  assert.equal(canUserEditJointField(ptoUser, 'repairNdtResult'), false);
+  assert.equal(canUserEditJointField(ptoUser, 'repairDupNdtResult'), false);
+
+  // ЛНК МОЖЕТ вносить результаты контроля после ремонта (38–48)
+  assert.equal(canUserEditJointField(ndtUser, 'repairVikResult'), true);
+  assert.equal(canUserEditJointField(ndtUser, 'repairNdtResult'), true);
+  assert.equal(canUserEditJointField(ndtUser, 'repairDupNdtResult'), true);
+
+  // ЛНК ЗАБЛОКИРОВАН от внесения сведений о ремонте (32–37)
+  assert.equal(canUserEditJointField(ndtUser, 'repairAction'), false);
+  assert.equal(canUserEditJointField(ndtUser, 'repairTechCard'), false);
+
+  // 5. Проверка санитизации через sanitizeWeldJointRecord
+  const sanitized = sanitizeWeldJointRecord(defectiveAndRepairedJoint);
+  assert.equal(sanitized.repairAction, 'Ремонт');
+  assert.equal(sanitized.repairDate, '2026-10-14');
+  assert.equal(sanitized.repairTechCard, 'ТК-045-РАД/РД-01-Р');
+  assert.equal(sanitized.repairVikResult, 'Годен');
+  assert.equal(sanitized.repairNdtResult, 'Годен');
 });

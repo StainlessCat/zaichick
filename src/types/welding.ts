@@ -252,6 +252,34 @@ export interface WeldJoint {
   ndtReportNumber?: string; // Графа 16: № заключения неразрушающего контроля
   ferritePhaseInfo?: string; // Графа 17: Результаты измерения ферритной фазы в металле шва, N заключения, дата
 
+  // 7. Сведения о проведении ремонта (СТО Газпром графы 32–37, ГОСТ 32569 графа 15)
+  repairAction?: 'Ремонт' | 'Вырезано' | string; // Графа 32: Отремонтировано, вырезано
+  repairDate?: string; // Графа 33: Дата устранения дефекта (YYYY-MM-DD)
+  repairTechCard?: string; // Графа 34: Номер ОТК ремонта (техкарта на ремонт)
+  repairWelderStamp?: string; // Графа 35: Номер шифра (клеймо) ремонтного сварщика
+  repairForeman?: string; // Графа 36: Фамилия мастера (прораба) ремонта
+
+  // 8. Приемка сварного соединения после ремонта (СТО Газпром графы 38–48)
+  // Контроль ВИК после ремонта (графы 38–40)
+  repairVikNumber?: string; // Графа 38: № заключения ВИК после ремонта
+  repairVikDate?: string; // Графа 39: Дата ВИК после ремонта (YYYY-MM-DD)
+  repairVikResult?: ControlResult; // Графа 40: Результат ВИК после ремонта
+  repairVikInspector?: string; // Дефектоскопист ВИК после ремонта
+
+  // Контроль физическими методами (основной) после ремонта (графы 41–44)
+  repairNdtType?: NdtMethod; // Графа 41: Вид НК после ремонта (РК, УЗК, ПВК и т.д.)
+  repairNdtNumber?: string; // Графа 42: № заключения НК после ремонта
+  repairNdtDate?: string; // Графа 43: Дата НК после ремонта (YYYY-MM-DD)
+  repairNdtResult?: ControlResult; // Графа 44: Результат НК после ремонта
+  repairNdtInspector?: string; // Дефектоскопист НК после ремонта
+
+  // Контроль физическими методами (дублирующий) после ремонта (графы 45–48)
+  repairDupNdtType?: NdtMethod; // Графа 45: Вид дублирующего НК после ремонта
+  repairDupNdtNumber?: string; // Графа 46: № заключения дубл. НК после ремонта
+  repairDupNdtDate?: string; // Графа 47: Дата дубл. НК после ремонта (YYYY-MM-DD)
+  repairDupNdtResult?: ControlResult; // Графа 48: Результат дубл. НК после ремонта
+  repairDupNdtInspector?: string; // Дефектоскопист дубл. НК после ремонта
+
   // Метаданные и оптимистическая блокировка (OCC)
   version?: number;
   updatedAt: string;
@@ -335,7 +363,7 @@ export interface ColumnDefinition {
   key: WeldJointFieldKey;
   label: string;
   shortLabel?: string;
-  group: 'project_id' | 'prep' | 'welding' | 'vik' | 'ndt' | 'dup_ndt';
+  group: 'project_id' | 'prep' | 'welding' | 'vik' | 'ndt' | 'dup_ndt' | 'repair' | 'repair_ndt';
   groupLabel: string;
   minWidth: number;
   isNumeric?: boolean;

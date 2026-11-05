@@ -294,6 +294,48 @@ export function sanitizeWeldJointRecord(joint: Partial<WeldJoint>): WeldJoint {
     dupNdtResult: dupNdtRes,
     dupNdtInspector: cleanDupInsp,
 
+    // Дополнительные графы ГОСТ 32569
+    rootWeldControl: sanitizeCleanString(joint.rootWeldControl),
+    steeloscopyInfo: sanitizeCleanString(joint.steeloscopyInfo),
+    heatTreatOperator: sanitizeCleanString(joint.heatTreatOperator),
+    heatTreatDiagramNumber: sanitizeCleanString(joint.heatTreatDiagramNumber),
+    hardnessTestInfo: sanitizeCleanString(joint.hardnessTestInfo),
+    ndtReportNumber: sanitizeCleanString(joint.ndtReportNumber),
+    ferritePhaseInfo: sanitizeCleanString(joint.ferritePhaseInfo),
+
+    // Сведения о проведении ремонта (графы 32–37 СТО Газпром)
+    repairAction: sanitizeCleanString(joint.repairAction),
+    repairDate:
+      sanitizeAndParseDateISO(joint.repairDate).isoDate ||
+      sanitizeCleanString(joint.repairDate),
+    repairTechCard: sanitizeCleanString(joint.repairTechCard),
+    repairWelderStamp: sanitizeCleanString(joint.repairWelderStamp),
+    repairForeman: sanitizeCleanString(joint.repairForeman),
+
+    // Контроль после ремонта (графы 38–48 СТО Газпром)
+    repairVikNumber: sanitizeCleanString(joint.repairVikNumber),
+    repairVikDate:
+      sanitizeAndParseDateISO(joint.repairVikDate).isoDate ||
+      sanitizeCleanString(joint.repairVikDate),
+    repairVikResult: (joint.repairVikResult as ControlResult) || 'Не проводился',
+    repairVikInspector: sanitizeCleanString(joint.repairVikInspector),
+
+    repairNdtType: (joint.repairNdtType as NdtMethod) || 'Не требуется',
+    repairNdtNumber: sanitizeCleanString(joint.repairNdtNumber),
+    repairNdtDate:
+      sanitizeAndParseDateISO(joint.repairNdtDate).isoDate ||
+      sanitizeCleanString(joint.repairNdtDate),
+    repairNdtResult: (joint.repairNdtResult as ControlResult) || 'Не проводился',
+    repairNdtInspector: sanitizeCleanString(joint.repairNdtInspector),
+
+    repairDupNdtType: (joint.repairDupNdtType as NdtMethod) || 'Не требуется',
+    repairDupNdtNumber: sanitizeCleanString(joint.repairDupNdtNumber),
+    repairDupNdtDate:
+      sanitizeAndParseDateISO(joint.repairDupNdtDate).isoDate ||
+      sanitizeCleanString(joint.repairDupNdtDate),
+    repairDupNdtResult: (joint.repairDupNdtResult as ControlResult) || 'Не проводился',
+    repairDupNdtInspector: sanitizeCleanString(joint.repairDupNdtInspector),
+
     updatedAt: joint.updatedAt || new Date().toISOString(),
     updatedBy: sanitizeCleanString(joint.updatedBy),
   };

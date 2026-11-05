@@ -58,6 +58,7 @@ import {
   getEpcWallThicknessFactor,
   getFacilityWeatherStationName,
   GOST_16037_JOINT_TYPES,
+  isJointDefective,
   LRV_ELEMENT_TYPE_OPTIONS,
   mmToInchDiameter,
   NAKS_WELDING_POSITIONS,
@@ -573,6 +574,25 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       dupNdtDate: '',
       dupNdtResult: 'Не проводился',
       dupNdtInspector: '',
+      repairAction: '',
+      repairDate: '',
+      repairTechCard: '',
+      repairWelderStamp: '',
+      repairForeman: '',
+      repairVikNumber: '',
+      repairVikDate: '',
+      repairVikResult: 'Не проводился',
+      repairVikInspector: '',
+      repairNdtType: 'Не требуется',
+      repairNdtNumber: '',
+      repairNdtDate: '',
+      repairNdtResult: 'Не проводился',
+      repairNdtInspector: '',
+      repairDupNdtType: 'Не требуется',
+      repairDupNdtNumber: '',
+      repairDupNdtDate: '',
+      repairDupNdtResult: 'Не проводился',
+      repairDupNdtInspector: '',
       updatedAt: new Date().toISOString(),
       updatedBy: '',
     };
@@ -874,6 +894,25 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       dupNdtDate: '',
       dupNdtResult: 'Не проводился',
       dupNdtInspector: '',
+      repairAction: '',
+      repairDate: '',
+      repairTechCard: '',
+      repairWelderStamp: '',
+      repairForeman: '',
+      repairVikNumber: '',
+      repairVikDate: '',
+      repairVikResult: 'Не проводился',
+      repairVikInspector: '',
+      repairNdtType: 'Не требуется',
+      repairNdtNumber: '',
+      repairNdtDate: '',
+      repairNdtResult: 'Не проводился',
+      repairNdtInspector: '',
+      repairDupNdtType: 'Не требуется',
+      repairDupNdtNumber: '',
+      repairDupNdtDate: '',
+      repairDupNdtResult: 'Не проводился',
+      repairDupNdtInspector: '',
     }));
   }, [isOpen, mode, initialJoint]);
 
@@ -2957,19 +2996,36 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       value={form.vikResult}
                       onChange={(e) => {
                         const nextVik = e.target.value as ControlResult;
-                        setForm((prev) => ({
-                          ...prev,
-                          vikResult: nextVik,
-                          vikDate: nextVik === 'Не проводился' ? '' : prev.vikDate,
-                          vikInspector:
-                            nextVik === 'Не проводился' ? '' : prev.vikInspector,
-                          dupNdtType:
-                            nextVik === 'Ремонт' && prev.dupNdtType === 'Не требуется'
-                              ? prev.ndtType !== 'Не требуется'
-                                ? prev.ndtType
-                                : 'РК'
-                              : prev.dupNdtType,
-                        }));
+                        setForm((prev) => {
+                          const isDef = nextVik === 'Ремонт' || nextVik === 'Вырезать';
+                          return {
+                            ...prev,
+                            vikResult: nextVik,
+                            vikDate: nextVik === 'Не проводился' ? '' : prev.vikDate,
+                            vikInspector:
+                              nextVik === 'Не проводился' ? '' : prev.vikInspector,
+                            repairAction:
+                              isDef && !prev.repairAction
+                                ? nextVik === 'Вырезать'
+                                  ? 'Вырезано'
+                                  : 'Ремонт'
+                                : prev.repairAction,
+                            repairTechCard:
+                              isDef && !prev.repairTechCard
+                                ? prev.techCardNumber
+                                  ? `${prev.techCardNumber}-Р`
+                                  : 'ТК-Р'
+                                : prev.repairTechCard,
+                            repairWelderStamp:
+                              isDef && !prev.repairWelderStamp
+                                ? prev.welderStamp
+                                : prev.repairWelderStamp,
+                            repairForeman:
+                              isDef && !prev.repairForeman
+                                ? prev.responsiblePerson
+                                : prev.repairForeman,
+                          };
+                        });
                       }}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium"
                     >
@@ -3066,19 +3122,44 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                         disabled={form.ndtType === 'Не требуется'}
                         onChange={(e) => {
                           const nextRes = e.target.value as ControlResult;
-                          setForm((prev) => ({
-                            ...prev,
-                            ndtResult: nextRes,
-                            ndtDate: nextRes === 'Не проводился' ? '' : prev.ndtDate,
-                            ndtInspector:
-                              nextRes === 'Не проводился' ? '' : prev.ndtInspector,
-                            dupNdtType:
-                              nextRes === 'Ремонт' && prev.dupNdtType === 'Не требуется'
-                                ? prev.ndtType !== 'Не требуется'
-                                  ? prev.ndtType
-                                  : 'РК'
-                                : prev.dupNdtType,
-                          }));
+                          setForm((prev) => {
+                            const isDef = nextRes === 'Ремонт' || nextRes === 'Вырезать';
+                            return {
+                              ...prev,
+                              ndtResult: nextRes,
+                              ndtDate: nextRes === 'Не проводился' ? '' : prev.ndtDate,
+                              ndtInspector:
+                                nextRes === 'Не проводился' ? '' : prev.ndtInspector,
+                              repairAction:
+                                isDef && !prev.repairAction
+                                  ? nextRes === 'Вырезать'
+                                    ? 'Вырезано'
+                                    : 'Ремонт'
+                                  : prev.repairAction,
+                              repairTechCard:
+                                isDef && !prev.repairTechCard
+                                  ? prev.techCardNumber
+                                    ? `${prev.techCardNumber}-Р`
+                                    : 'ТК-Р'
+                                  : prev.repairTechCard,
+                              repairWelderStamp:
+                                isDef && !prev.repairWelderStamp
+                                  ? prev.welderStamp
+                                  : prev.repairWelderStamp,
+                              repairForeman:
+                                isDef && !prev.repairForeman
+                                  ? prev.responsiblePerson
+                                  : prev.repairForeman,
+                              repairNdtType:
+                                isDef &&
+                                (!prev.repairNdtType ||
+                                  prev.repairNdtType === 'Не требуется')
+                                  ? prev.ndtType !== 'Не требуется'
+                                    ? prev.ndtType
+                                    : 'РК'
+                                  : prev.repairNdtType,
+                            };
+                          });
                         }}
                         className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium disabled:bg-slate-100 disabled:text-slate-400"
                       >
@@ -3184,16 +3265,40 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                         disabled={form.dupNdtType === 'Не требуется'}
                         onChange={(e) => {
                           const nextDupRes = e.target.value as ControlResult;
-                          setForm((prev) => ({
-                            ...prev,
-                            dupNdtResult: nextDupRes,
-                            dupNdtDate:
-                              nextDupRes === 'Не проводился' ? '' : prev.dupNdtDate,
-                            dupNdtInspector:
-                              nextDupRes === 'Не проводился'
-                                ? ''
-                                : prev.dupNdtInspector,
-                          }));
+                          setForm((prev) => {
+                            const isDef =
+                              nextDupRes === 'Ремонт' || nextDupRes === 'Вырезать';
+                            return {
+                              ...prev,
+                              dupNdtResult: nextDupRes,
+                              dupNdtDate:
+                                nextDupRes === 'Не проводился' ? '' : prev.dupNdtDate,
+                              dupNdtInspector:
+                                nextDupRes === 'Не проводился'
+                                  ? ''
+                                  : prev.dupNdtInspector,
+                              repairAction:
+                                isDef && !prev.repairAction
+                                  ? nextDupRes === 'Вырезать'
+                                    ? 'Вырезано'
+                                    : 'Ремонт'
+                                  : prev.repairAction,
+                              repairTechCard:
+                                isDef && !prev.repairTechCard
+                                  ? prev.techCardNumber
+                                    ? `${prev.techCardNumber}-Р`
+                                    : 'ТК-Р'
+                                  : prev.repairTechCard,
+                              repairWelderStamp:
+                                isDef && !prev.repairWelderStamp
+                                  ? prev.welderStamp
+                                  : prev.repairWelderStamp,
+                              repairForeman:
+                                isDef && !prev.repairForeman
+                                  ? prev.responsiblePerson
+                                  : prev.repairForeman,
+                            };
+                          });
                         }}
                         className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium disabled:bg-slate-100 disabled:text-slate-400"
                       >
@@ -3254,6 +3359,373 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 </div>
               </div>
               </fieldset>
+
+              {/* СПЕЦИАЛИЗИРОВАННЫЙ БЛОК: СВЕДЕНИЯ О РЕМОНТЕ И КОНТРОЛЬ ПОСЛЕ РЕМОНТА (СТО Газпром графы 32–48) */}
+              {(isJointDefective(form) ||
+                Boolean(form.repairAction) ||
+                Boolean(form.repairDate) ||
+                Boolean(form.repairVikResult && form.repairVikResult !== 'Не проводился') ||
+                Boolean(form.repairNdtResult && form.repairNdtResult !== 'Не проводился')) && (
+                <div className="p-4 rounded-xl bg-amber-50/70 border-2 border-amber-300 space-y-3.5 shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                      <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wide">
+                        Устранение дефекта и контроль после ремонта (СТО Газпром графы 32–48)
+                      </h4>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200/80 text-amber-900 border border-amber-300">
+                        Дефектный стык
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-amber-800 font-medium">
+                      Графы 32–37: Инженер ПТО / Мастер · Графы 38–48: Специалист ЛНК
+                    </div>
+                  </div>
+
+                  {/* Блок 1: Сведения о проведении ремонта (графы 32–37) */}
+                  <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">
+                        1. Сведения о проведении ремонта (графы 32–37)
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Заполняет: Инженер ПТО / Мастер СМР
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Гр. 32: Статус ремонта
+                        </label>
+                        <select
+                          disabled={!rbac.canEditPrepAndWeldingFields}
+                          value={form.repairAction || 'Ремонт'}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, repairAction: e.target.value }))
+                          }
+                          className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold"
+                        >
+                          <option value="Ремонт">Ремонт</option>
+                          <option value="Вырезано">Вырезано</option>
+                          <option value="Требуется ремонт">Требуется ремонт</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
+                          <span>Гр. 33: Дата ремонта</span>
+                          <span className="font-mono text-[#1e3799] font-semibold">
+                            {formatDateDDMMYY(form.repairDate) || '—'}
+                          </span>
+                        </label>
+                        <input
+                          type="date"
+                          disabled={!rbac.canEditPrepAndWeldingFields}
+                          value={form.repairDate || ''}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, repairDate: e.target.value }))
+                          }
+                          className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Гр. 34: ТК ремонта (ОТК)
+                        </label>
+                        <input
+                          type="text"
+                          disabled={!rbac.canEditPrepAndWeldingFields}
+                          value={form.repairTechCard || ''}
+                          placeholder={`${form.techCardNumber || 'ТК'}-Р`}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairTechCard: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Гр. 35: Клеймо ремонтника
+                        </label>
+                        <input
+                          type="text"
+                          disabled={!rbac.canEditPrepAndWeldingFields}
+                          value={form.repairWelderStamp || ''}
+                          placeholder={form.welderStamp || 'Клеймо'}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairWelderStamp: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-[#1e3799] disabled:bg-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Гр. 36: Мастер ремонта
+                        </label>
+                        <input
+                          type="text"
+                          disabled={!rbac.canEditPrepAndWeldingFields}
+                          value={form.repairForeman || ''}
+                          placeholder={form.responsiblePerson || 'Мастер СМР'}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairForeman: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Блок 2: Контроль ВИК после ремонта (графы 38–40) */}
+                  <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">
+                        2. Приемка после ремонта — Контроль ВИК (графы 38–40)
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Заполняет: Специалист ЛНК
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Гр. 40: Результат ВИК ремонта
+                        </label>
+                        <select
+                          disabled={!rbac.canEditNdtFields}
+                          value={form.repairVikResult || 'Не проводился'}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairVikResult: e.target.value as ControlResult,
+                            }))
+                          }
+                          className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-bold"
+                        >
+                          <option value="Не проводился">Не проводился</option>
+                          <option value="Годен">Годен</option>
+                          <option value="Ремонт">Ремонт</option>
+                          <option value="Вырезать">Вырезать</option>
+                          <option value="В работе">В работе</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
+                          <span>Гр. 39: Дата ВИК ремонта</span>
+                          <span className="font-mono text-[#1e3799] font-semibold">
+                            {formatDateDDMMYY(form.repairVikDate) || '—'}
+                          </span>
+                        </label>
+                        <input
+                          type="date"
+                          disabled={
+                            !rbac.canEditNdtFields ||
+                            form.repairVikResult === 'Не проводился'
+                          }
+                          value={form.repairVikDate || ''}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairVikDate: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Гр. 38: № заключения ВИК
+                        </label>
+                        <input
+                          type="text"
+                          disabled={
+                            !rbac.canEditNdtFields ||
+                            form.repairVikResult === 'Не проводился'
+                          }
+                          value={form.repairVikNumber || ''}
+                          placeholder={`ВИК-Р-${form.jointNumber}`}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairVikNumber: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Дефектоскопист ВИК
+                        </label>
+                        <select
+                          disabled={
+                            !rbac.canEditNdtFields ||
+                            form.repairVikResult === 'Не проводился'
+                          }
+                          value={form.repairVikInspector || ''}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairVikInspector: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100"
+                        >
+                          <option value="">— Не указан —</option>
+                          {inspectors.map((ins) => (
+                            <option key={ins.fullName} value={ins.fullName}>
+                              {ins.fullName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Блок 3: Контроль физическими методами НК после ремонта (графы 41–44) */}
+                  <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">
+                        3. Приемка после ремонта — Неразрушающий контроль НК (графы 41–44)
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Заполняет: Специалист ЛНК
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Гр. 41: Тип НК ремонта
+                        </label>
+                        <select
+                          disabled={!rbac.canEditNdtFields}
+                          value={form.repairNdtType || 'Не требуется'}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairNdtType: e.target.value as NdtMethod,
+                            }))
+                          }
+                          className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
+                        >
+                          <option value="РК">РК</option>
+                          <option value="УЗК">УЗК</option>
+                          <option value="РК+УЗК">РК+УЗК</option>
+                          <option value="ПВК">ПВК</option>
+                          <option value="МК">МК</option>
+                          <option value="Не требуется">Не требуется</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Гр. 44: Результат НК ремонта
+                        </label>
+                        <select
+                          disabled={
+                            !rbac.canEditNdtFields ||
+                            form.repairNdtType === 'Не требуется'
+                          }
+                          value={form.repairNdtResult || 'Не проводился'}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairNdtResult: e.target.value as ControlResult,
+                            }))
+                          }
+                          className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-bold"
+                        >
+                          <option value="Не проводился">Не проводился</option>
+                          <option value="Годен">Годен</option>
+                          <option value="Ремонт">Ремонт</option>
+                          <option value="Вырезать">Вырезать</option>
+                          <option value="В работе">В работе</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
+                          <span>Гр. 43: Дата НК ремонта</span>
+                          <span className="font-mono text-[#1e3799] font-semibold">
+                            {formatDateDDMMYY(form.repairNdtDate) || '—'}
+                          </span>
+                        </label>
+                        <input
+                          type="date"
+                          disabled={
+                            !rbac.canEditNdtFields ||
+                            form.repairNdtType === 'Не требуется' ||
+                            form.repairNdtResult === 'Не проводился'
+                          }
+                          value={form.repairNdtDate || ''}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairNdtDate: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Гр. 42: № заключения НК
+                        </label>
+                        <input
+                          type="text"
+                          disabled={
+                            !rbac.canEditNdtFields ||
+                            form.repairNdtType === 'Не требуется' ||
+                            form.repairNdtResult === 'Не проводился'
+                          }
+                          value={form.repairNdtNumber || ''}
+                          placeholder={`${form.repairNdtType || 'НК'}-Р-${form.jointNumber}`}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairNdtNumber: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Дефектоскопист НК
+                        </label>
+                        <select
+                          disabled={
+                            !rbac.canEditNdtFields ||
+                            form.repairNdtType === 'Не требуется' ||
+                            form.repairNdtResult === 'Не проводился'
+                          }
+                          value={form.repairNdtInspector || ''}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              repairNdtInspector: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100"
+                        >
+                          <option value="">— Не указан —</option>
+                          {inspectors.map((ins) => (
+                            <option key={ins.fullName} value={ins.fullName}>
+                              {ins.fullName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* ДОПОЛНИТЕЛЬНЫЕ ДАННЫЕ ДЛЯ ФОРМЫ ЖУРНАЛА ПО ГОСТ 32569-2013 (ГРАФЫ 10–14, 16, 17) */}
               <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-3">

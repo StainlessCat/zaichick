@@ -52,6 +52,21 @@ export const NDT_EDITABLE_JOINT_FIELDS = new Set<keyof WeldJoint>([
   'dupNdtResult',
   'dupNdtDate',
   'dupNdtInspector',
+  // Контроль после ремонта (СТО Газпром графы 38–48)
+  'repairVikNumber',
+  'repairVikDate',
+  'repairVikResult',
+  'repairVikInspector',
+  'repairNdtType',
+  'repairNdtNumber',
+  'repairNdtDate',
+  'repairNdtResult',
+  'repairNdtInspector',
+  'repairDupNdtType',
+  'repairDupNdtNumber',
+  'repairDupNdtDate',
+  'repairDupNdtResult',
+  'repairDupNdtInspector',
 ]);
 
 /**
@@ -110,6 +125,12 @@ export const PTO_EDITABLE_JOINT_FIELDS = new Set<keyof WeldJoint>([
   'heatTreatOperator',
   'heatTreatDiagramNumber',
   'hardnessTestInfo',
+  // Сведения о проведении ремонта (СТО Газпром графы 32–37, ГОСТ 32569 графа 15)
+  'repairAction',
+  'repairDate',
+  'repairTechCard',
+  'repairWelderStamp',
+  'repairForeman',
 ]);
 
 /**

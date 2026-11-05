@@ -154,14 +154,14 @@ export const JointsRegistryView: React.FC<JointsRegistryViewProps> = ({
       : 0;
 
   const renderStatusText = (val: string) => {
-    if (val === 'Годен') {
-      return <span className="font-semibold text-emerald-700">Годен</span>;
+    if (val === 'Годен' || val === 'Отремонтировано') {
+      return <span className="font-semibold text-emerald-700">{val}</span>;
     }
-    if (val === 'Ремонт' || val === 'Вырезать') {
+    if (val === 'Ремонт' || val === 'Вырезать' || val === 'Требуется ремонт') {
       return <span className="font-bold text-red-700">{val}</span>;
     }
-    if (val === 'В работе') {
-      return <span className="font-medium text-amber-700">В работе</span>;
+    if (val === 'В работе' || val === 'В процессе устранения') {
+      return <span className="font-medium text-amber-700">{val}</span>;
     }
     return <span className="text-slate-400">{val || '—'}</span>;
   };
@@ -688,7 +688,11 @@ export const JointsRegistryView: React.FC<JointsRegistryViewProps> = ({
                           if (
                             col.key === 'vikResult' ||
                             col.key === 'ndtResult' ||
-                            col.key === 'dupNdtResult'
+                            col.key === 'dupNdtResult' ||
+                            col.key === 'repairVikResult' ||
+                            col.key === 'repairNdtResult' ||
+                            col.key === 'repairDupNdtResult' ||
+                            col.key === 'repairAction'
                           ) {
                             return (
                               <td

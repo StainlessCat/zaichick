@@ -91,7 +91,11 @@ export function isDateColumnKey(key: string): boolean {
     key === 'weldingDate' ||
     key === 'vikDate' ||
     key === 'ndtDate' ||
-    key === 'dupNdtDate'
+    key === 'dupNdtDate' ||
+    key === 'repairDate' ||
+    key === 'repairVikDate' ||
+    key === 'repairNdtDate' ||
+    key === 'repairDupNdtDate'
   );
 }
 
@@ -820,28 +824,77 @@ export interface ReadinessRow {
 }
 
 /**
+ * Проверяет, является ли стык дефектным (назначен «Ремонт» или «Вырезать» на любом этапе контроля
+ * либо начаты ремонтные работы).
+ */
+export function isJointDefective(
+  joint: Pick<WeldJoint, 'vikResult' | 'ndtResult' | 'dupNdtResult'> & {
+    repairAction?: string;
+  }
+): boolean {
+  if (
+    joint.vikResult === 'Ремонт' ||
+    joint.vikResult === 'Вырезать' ||
+    joint.ndtResult === 'Ремонт' ||
+    joint.ndtResult === 'Вырезать' ||
+    joint.dupNdtResult === 'Ремонт' ||
+    joint.dupNdtResult === 'Вырезать'
+  ) {
+    return true;
+  }
+  if (
+    joint.repairAction === 'Ремонт' ||
+    joint.repairAction === 'Вырезано' ||
+    joint.repairAction === 'Требуется ремонт'
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Проверяет, полностью ли принят стык (либо с первого раза по ВИК и НК,
  * либо после первичного ремонта с успешным повторным контролем после ремонта).
  */
 export function isJointFullyAccepted(joint: WeldJoint): boolean {
   if (!joint.weldingDate || !joint.welderStamp) return false;
 
-  // Если назначено «Вырезать» на любом этапе и не закрыто ремонтом
-  if (joint.dupNdtResult === 'Ремонт' || joint.dupNdtResult === 'Вырезать') {
-    return false;
+  const hadDefect = isJointDefective(joint);
+
+  if (!hadDefect) {
+    // Случай 1: Первичный контроль прошёл успешно без ремонта
+    const primaryVikOk = joint.vikResult === 'Годен';
+    const primaryNdtOk = joint.ndtResult === 'Годен';
+    const dupOkOrNotRequired =
+      joint.dupNdtType === 'Не требуется' || joint.dupNdtResult === 'Годен';
+
+    return primaryVikOk && primaryNdtOk && dupOkOrNotRequired;
   }
 
-  // Случай 1: Первичный контроль прошёл успешно без ремонта
-  const primaryVikOk = joint.vikResult === 'Годен';
-  const primaryNdtOk = joint.ndtResult === 'Годен';
-  const dupOkOrNotRequired =
-    joint.dupNdtType === 'Не требуется' || joint.dupNdtResult === 'Годен';
+  // Случай 2: Стык с дефектом — проверяем специализированный контроль после ремонта (СТО Газпром 38–48)
+  const hasRepairVik =
+    Boolean(joint.repairVikResult) && joint.repairVikResult !== 'Не проводился';
+  const hasRepairNdt =
+    Boolean(joint.repairNdtType) &&
+    joint.repairNdtType !== 'Не требуется' &&
+    Boolean(joint.repairNdtResult) &&
+    joint.repairNdtResult !== 'Не проводился';
 
-  if (primaryVikOk && primaryNdtOk && dupOkOrNotRequired) {
-    return true;
+  if (hasRepairVik || hasRepairNdt) {
+    const postVikOk = joint.repairVikResult === 'Годен';
+    const postNdtOk =
+      !joint.repairNdtType ||
+      joint.repairNdtType === 'Не требуется' ||
+      joint.repairNdtResult === 'Годен';
+    const postDupOk =
+      !joint.repairDupNdtType ||
+      joint.repairDupNdtType === 'Не требуется' ||
+      joint.repairDupNdtResult === 'Годен';
+
+    return postVikOk && postNdtOk && postDupOk;
   }
 
-  // Случай 2: Первичный контроль выявил дефект («Ремонт»), но проведён контроль после ремонта со статусом «Годен»
+  // 3. Обратная совместимость с legacy-записями
   const hadPrimaryRepair =
     joint.vikResult === 'Ремонт' || joint.ndtResult === 'Ремонт';
   const postRepairPassed =
@@ -858,27 +911,11 @@ export function isJointFullyAccepted(joint: WeldJoint): boolean {
  * Проверяет, находится ли стык в активном ремонте (дефект не закрыт повторным контролем).
  */
 export function isJointCurrentlyInRepair(joint: WeldJoint): boolean {
-  if (joint.dupNdtResult === 'Ремонт' || joint.dupNdtResult === 'Вырезать') {
-    return true;
-  }
-  const hadPrimaryDefect =
-    joint.vikResult === 'Ремонт' ||
-    joint.vikResult === 'Вырезать' ||
-    joint.ndtResult === 'Ремонт' ||
-    joint.ndtResult === 'Вырезать';
-
-  if (!hadPrimaryDefect) return false;
-
-  // Если был первичный ремонт, но повторный контроль уже проведён и дал «Годен» — ремонт закрыт
-  if (
-    (joint.vikResult === 'Ремонт' || joint.ndtResult === 'Ремонт') &&
-    joint.dupNdtType !== 'Не требуется' &&
-    joint.dupNdtResult === 'Годен'
-  ) {
+  if (!isJointDefective(joint)) {
     return false;
   }
-
-  return true;
+  // Если дефект зафиксирован, но стык уже успешно принят после переконтроля — ремонт закрыт
+  return !isJointFullyAccepted(joint);
 }
 
 /**
@@ -909,15 +946,15 @@ export function calculateReadinessReport(
       (i) =>
         i.vikResult === 'Годен' ||
         (i.vikResult === 'Ремонт' &&
-          i.dupNdtType !== 'Не требуется' &&
-          i.dupNdtResult === 'Годен')
+          (i.repairVikResult === 'Годен' ||
+            (i.dupNdtType !== 'Не требуется' && i.dupNdtResult === 'Годен')))
     ).length;
     const ndtPassedCount = items.filter(
       (i) =>
         i.ndtResult === 'Годен' ||
         (i.ndtResult === 'Ремонт' &&
-          i.dupNdtType !== 'Не требуется' &&
-          i.dupNdtResult === 'Годен')
+          (i.repairNdtResult === 'Годен' ||
+            (i.dupNdtType !== 'Не требуется' && i.dupNdtResult === 'Годен')))
     ).length;
     const dupNdtPassedCount = items.filter(
       (i) => i.dupNdtResult === 'Годен' || i.dupNdtType === 'Не требуется'
@@ -1579,6 +1616,145 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
     label: 'Дефектоскопист дубл. НК',
     group: 'dup_ndt',
     groupLabel: 'Дублирующий НК',
+    minWidth: 175,
+  },
+  // Сведения о проведении ремонта (СТО Газпром графы 32–37, ГОСТ 32569 графа 15)
+  {
+    key: 'repairAction',
+    label: 'Статус ремонта',
+    group: 'repair',
+    groupLabel: 'Сведения о ремонте',
+    minWidth: 130,
+  },
+  {
+    key: 'repairDate',
+    label: 'Дата ремонта',
+    group: 'repair',
+    groupLabel: 'Сведения о ремонте',
+    minWidth: 120,
+    isNumeric: true,
+  },
+  {
+    key: 'repairTechCard',
+    label: 'ТК на ремонт (ОТК)',
+    group: 'repair',
+    groupLabel: 'Сведения о ремонте',
+    minWidth: 145,
+  },
+  {
+    key: 'repairWelderStamp',
+    label: 'Клеймо ремонтника',
+    group: 'repair',
+    groupLabel: 'Сведения о ремонте',
+    minWidth: 140,
+  },
+  {
+    key: 'repairForeman',
+    label: 'Мастер ремонта',
+    group: 'repair',
+    groupLabel: 'Сведения о ремонте',
+    minWidth: 140,
+  },
+  // Приемка сварного соединения после ремонта (СТО Газпром графы 38–48)
+  {
+    key: 'repairVikResult',
+    label: 'Рез-т ВИК после ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 155,
+  },
+  {
+    key: 'repairVikDate',
+    label: 'Дата ВИК после ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 140,
+    isNumeric: true,
+  },
+  {
+    key: 'repairVikNumber',
+    label: '№ закл. ВИК ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 145,
+  },
+  {
+    key: 'repairVikInspector',
+    label: 'Дефектоскопист ВИК ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 165,
+  },
+  {
+    key: 'repairNdtType',
+    label: 'Тип НК после ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 140,
+  },
+  {
+    key: 'repairNdtResult',
+    label: 'Рез-т НК после ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 155,
+  },
+  {
+    key: 'repairNdtDate',
+    label: 'Дата НК после ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 140,
+    isNumeric: true,
+  },
+  {
+    key: 'repairNdtNumber',
+    label: '№ закл. НК ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 145,
+  },
+  {
+    key: 'repairNdtInspector',
+    label: 'Дефектоскопист НК ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 165,
+  },
+  {
+    key: 'repairDupNdtType',
+    label: 'Тип дубл. НК ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 145,
+  },
+  {
+    key: 'repairDupNdtResult',
+    label: 'Рез-т дубл. НК ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 155,
+  },
+  {
+    key: 'repairDupNdtDate',
+    label: 'Дата дубл. НК ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 140,
+    isNumeric: true,
+  },
+  {
+    key: 'repairDupNdtNumber',
+    label: '№ закл. дубл. НК ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
+    minWidth: 150,
+  },
+  {
+    key: 'repairDupNdtInspector',
+    label: 'Дефектоскопист дубл. НК ремонта',
+    group: 'repair_ndt',
+    groupLabel: 'Контроль после ремонта',
     minWidth: 175,
   },
 ];
@@ -4272,79 +4448,150 @@ export function formatStoGazpromJournalRow(
   const col27 = hasNdt ? joint.ndtResult : 'н/п';
 
   // Графы 28–31: Приемка по результатам второго/дублирующего физического контроля
-  // Если после первичного контроля назначен ремонт, нет смысла в дублирующем контроле -> "н/п".
-  // Нет статуса "в работе": либо "Годен", либо "Ремонт", либо "н/п".
+  // Если у стыка нет специализированных граф ремонта, но есть legacy-запись (первичный ремонт),
+  // то dupNdt использовался как переконтроль после ремонта и относится к графам 38–44 (в графах 28–31 ставится "н/п").
+  // Если же заполнены специализированные графы ремонта либо нет первичного брака —
+  // графы 28–31 отображают независимый дублирующий контроль первичного шва.
   let col28 = 'н/п';
   let col29 = 'н/п';
   let col30 = 'н/п';
   let col31 = 'н/п';
 
-  if (!isPrimaryRepair && joint.dupNdtType && joint.dupNdtType !== 'Не требуется') {
+  const hasSpecializedRepair = Boolean(
+    joint.repairAction ||
+      joint.repairDate ||
+      (joint.repairVikResult && joint.repairVikResult !== 'Не проводился') ||
+      (joint.repairNdtResult && joint.repairNdtResult !== 'Не проводился')
+  );
+
+  const isLegacyRepairUsingDup = isPrimaryRepair && !hasSpecializedRepair;
+
+  if (!isLegacyRepairUsingDup && joint.dupNdtType && joint.dupNdtType !== 'Не требуется') {
     col28 = joint.dupNdtType;
-    if (joint.dupNdtResult === 'Годен' || joint.dupNdtResult === 'Ремонт') {
+    if (
+      joint.dupNdtResult === 'Годен' ||
+      joint.dupNdtResult === 'Ремонт' ||
+      joint.dupNdtResult === 'Вырезать'
+    ) {
       col29 = `${joint.dupNdtType}-Д-${joint.jointNumber}`;
       col30 = formatDateDDMMYY(joint.dupNdtDate) || 'н/п';
-      col31 = joint.dupNdtResult;
+      col31 = joint.dupNdtResult === 'Вырезать' ? 'Ремонт' : joint.dupNdtResult;
     } else {
       // Статусы "В работе", "Не проводился" и т.п. отображаются как "н/п"
       col31 = 'н/п';
     }
   }
 
-  // Графы 32–37: Сведения о проведении ремонта
-  const isRepairNeeded =
-    isPrimaryRepair ||
-    joint.dupNdtResult === 'Ремонт' ||
-    joint.dupNdtResult === 'Вырезать';
+  // Признак дефектного стыка (брак по первичному ВИК, первичному НК, дублирующему контролю или зафиксированный ремонт)
+  const isDefect = isJointDefective(joint);
 
-  // Столбец 32: не "назначен ремонт", а просто "ремонт"
-  const col32 = isRepairNeeded
-    ? joint.ndtResult === 'Вырезать' || joint.vikResult === 'Вырезать'
-      ? 'Вырезано'
-      : 'Ремонт'
-    : 'н/п';
-  const col33 = isRepairNeeded
-    ? formatDateDDMMYY(joint.ndtDate || joint.vikDate) || 'н/п'
-    : 'н/п';
-  const col34 = isRepairNeeded
-    ? `${joint.techCardNumber || 'ТК'}-Р`
-    : 'н/п';
-  const col35 = isRepairNeeded ? col18 : 'н/п';
-  // Столбец 36: только фамилия
-  const col36 = isRepairNeeded ? extractSurnameOnly(joint.responsiblePerson) : 'н/п';
-  // Столбец 37: В ячейке, где нужна подпись не нужна надпись "подпись" -> пусто
-  const col37 = '';
+  // Графы 32–37: Сведения о проведении ремонта (заполняются при наличии дефекта/ремонта)
+  let col32 = 'н/п';
+  let col33 = 'н/п';
+  let col34 = 'н/п';
+  let col35 = 'н/п';
+  let col36 = 'н/п';
+  const col37 = ''; // подпись — оставляется пустой под живую роспись
 
-  // Графы 38–48: Приемка сварного соединения после ремонта (если по первичному контролю был Ремонт и проведен повторный/дублирующий контроль)
-  const hasPostRepairControl =
-    isPrimaryRepair &&
-    Boolean(joint.dupNdtType) &&
-    joint.dupNdtType !== 'Не требуется' &&
-    Boolean(joint.dupNdtResult) &&
-    joint.dupNdtResult !== 'Не проводился';
+  if (isDefect || joint.repairAction || joint.repairDate) {
+    col32 =
+      joint.repairAction ||
+      (joint.ndtResult === 'Вырезать' ||
+      joint.vikResult === 'Вырезать' ||
+      joint.dupNdtResult === 'Вырезать'
+        ? 'Вырезано'
+        : 'Ремонт');
+    col33 =
+      formatDateDDMMYY(joint.repairDate || joint.ndtDate || joint.vikDate) || 'н/п';
+    col34 = (
+      joint.repairTechCard ||
+      (joint.techCardNumber ? `${joint.techCardNumber}-Р` : 'ТК-Р')
+    ).trim();
+    col35 = (joint.repairWelderStamp || col18 || '').trim() || 'н/п';
+    col36 = extractSurnameOnly(joint.repairForeman || joint.responsiblePerson);
+  }
 
-  const postRepairDateFmt = hasPostRepairControl
-    ? formatDateDDMMYY(joint.dupNdtDate || joint.ndtDate || joint.vikDate) || 'н/п'
-    : 'н/п';
-  const postRepairResFmt =
-    hasPostRepairControl &&
-    (joint.dupNdtResult === 'Годен' || joint.dupNdtResult === 'Ремонт')
-      ? joint.dupNdtResult
-      : 'н/п';
+  // Графы 38–48: Приемка сварного соединения после ремонта
+  // Вынесены в отдельные специализированные графы при наличии дефектных стыков
+  let col38 = 'н/п';
+  let col39 = 'н/п';
+  let col40 = 'н/п';
+  let col41 = 'н/п';
+  let col42 = 'н/п';
+  let col43 = 'н/п';
+  let col44 = 'н/п';
+  let col45 = 'н/п';
+  let col46 = 'н/п';
+  let col47 = 'н/п';
+  let col48 = 'н/п';
 
-  const col38 = hasPostRepairControl ? `ВИК-Р-${joint.jointNumber}` : 'н/п';
-  const col39 = hasPostRepairControl ? postRepairDateFmt : 'н/п';
-  const col40 = hasPostRepairControl ? postRepairResFmt : 'н/п';
-  const col41 = hasPostRepairControl ? joint.dupNdtType : 'н/п';
-  const col42 = hasPostRepairControl
-    ? `${joint.dupNdtType}-Р-${joint.jointNumber}`
-    : 'н/п';
-  const col43 = hasPostRepairControl ? postRepairDateFmt : 'н/п';
-  const col44 = hasPostRepairControl ? postRepairResFmt : 'н/п';
-  const col45 = 'н/п';
-  const col46 = 'н/п';
-  const col47 = 'н/п';
-  const col48 = 'н/п';
+  if (isDefect || joint.repairAction) {
+    // 38–40: ВИК после ремонта
+    const hasRepairVik =
+      Boolean(joint.repairVikResult) && joint.repairVikResult !== 'Не проводился';
+    if (hasRepairVik) {
+      col38 = joint.repairVikNumber?.trim() || `ВИК-Р-${joint.jointNumber}`;
+      col39 = formatDateDDMMYY(joint.repairVikDate) || 'н/п';
+      col40 =
+        joint.repairVikResult === 'Годен' || joint.repairVikResult === 'Ремонт'
+          ? joint.repairVikResult
+          : 'н/п';
+    } else if (joint.dupNdtResult === 'Годен' && isPrimaryRepair) {
+      // Обратная совместимость с legacy-записями
+      col38 = `ВИК-Р-${joint.jointNumber}`;
+      col39 = formatDateDDMMYY(joint.dupNdtDate || joint.ndtDate) || 'н/п';
+      col40 = 'Годен';
+    }
+
+    // 41–44: НК (основной) после ремонта
+    const hasSpecializedNdt =
+      Boolean(joint.repairNdtType) &&
+      joint.repairNdtType !== 'Не требуется' &&
+      Boolean(joint.repairNdtResult) &&
+      joint.repairNdtResult !== 'Не проводился';
+
+    if (hasSpecializedNdt) {
+      col41 = joint.repairNdtType!;
+      col42 =
+        joint.repairNdtNumber?.trim() ||
+        `${joint.repairNdtType}-Р-${joint.jointNumber}`;
+      col43 = formatDateDDMMYY(joint.repairNdtDate) || 'н/п';
+      col44 =
+        joint.repairNdtResult === 'Годен' || joint.repairNdtResult === 'Ремонт'
+          ? joint.repairNdtResult
+          : 'н/п';
+    } else if (
+      isPrimaryRepair &&
+      joint.dupNdtType &&
+      joint.dupNdtType !== 'Не требуется' &&
+      (joint.dupNdtResult === 'Годен' || joint.dupNdtResult === 'Ремонт')
+    ) {
+      // Legacy-fallback
+      col41 = joint.dupNdtType;
+      col42 = `${joint.dupNdtType}-Р-${joint.jointNumber}`;
+      col43 = formatDateDDMMYY(joint.dupNdtDate) || 'н/п';
+      col44 = joint.dupNdtResult;
+    }
+
+    // 45–48: НК (дублирующий) после ремонта
+    const hasSpecializedDupNdt =
+      Boolean(joint.repairDupNdtType) &&
+      joint.repairDupNdtType !== 'Не требуется' &&
+      Boolean(joint.repairDupNdtResult) &&
+      joint.repairDupNdtResult !== 'Не проводился';
+
+    if (hasSpecializedDupNdt) {
+      col45 = joint.repairDupNdtType!;
+      col46 =
+        joint.repairDupNdtNumber?.trim() ||
+        `${joint.repairDupNdtType}-РД-${joint.jointNumber}`;
+      col47 = formatDateDDMMYY(joint.repairDupNdtDate) || 'н/п';
+      col48 =
+        joint.repairDupNdtResult === 'Годен' || joint.repairDupNdtResult === 'Ремонт'
+          ? joint.repairDupNdtResult
+          : 'н/п';
+    }
+  }
 
   // Графа 49: Примечание
   const col49 = 'н/п';
