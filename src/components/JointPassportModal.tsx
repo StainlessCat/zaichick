@@ -1318,6 +1318,12 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     return `${item.lrvCode} · [${typeLabel}${connBadge}] ${item.shortName} (${dims}, ${item.material}, ${item.ntd})`;
   };
 
+  const isPrimaryDefective =
+    form.vikResult === 'Ремонт' ||
+    form.vikResult === 'Вырезать' ||
+    form.ndtResult === 'Ремонт' ||
+    form.ndtResult === 'Вырезать';
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
@@ -2295,8 +2301,28 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   </div>
                 </div>
 
-                {/* Строка 4: Тип сварного соединения по ГОСТ 16037-80 и Положение при сварке по системе НАКС */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                {/* Строка 4: Тип стыка (монтажный/цеховой), Тип сварного соединения по ГОСТ 16037-80 и Положение при сварке по системе НАКС */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      Тип стыка *
+                    </label>
+                    <select
+                      value={form.jointType || 'Монтажный'}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          jointType: e.target.value as JointType,
+                        }))
+                      }
+                      aria-label="Тип стыка"
+                      className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-semibold text-[#1e3799]"
+                    >
+                      <option value="Монтажный">Монтажный</option>
+                      <option value="Цеховой">Цеховой</option>
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-xs font-bold text-slate-800 mb-1">
                       Тип сварного соединения (по ГОСТ 16037-80) *
@@ -2352,20 +2378,6 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     <h3 className="text-xs font-bold text-slate-900">
                       Свариваемые элементы («Элемент 1» и «Элемент 2»)
                     </h3>
-                    <select
-                      value={form.jointType}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          jointType: e.target.value as JointType,
-                        }))
-                      }
-                      aria-label="Тип стыка"
-                      className="px-2.5 py-1 bg-slate-50 border border-slate-300 rounded text-xs font-semibold text-[#1e3799]"
-                    >
-                      <option value="Монтажный">Тип стыка: Монтажный</option>
-                      <option value="Цеховой">Тип стыка: Цеховой</option>
-                    </select>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -3004,6 +3016,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                             vikDate: nextVik === 'Не проводился' ? '' : prev.vikDate,
                             vikInspector:
                               nextVik === 'Не проводился' ? '' : prev.vikInspector,
+                            // При браке первичного ВИК дублирующий контроль исходного шва не проводится:
+                            dupNdtType: isDef ? 'Не требуется' : prev.dupNdtType,
+                            dupNdtResult: isDef ? 'Не проводился' : prev.dupNdtResult,
+                            dupNdtDate: isDef ? '' : prev.dupNdtDate,
+                            dupNdtInspector: isDef ? '' : prev.dupNdtInspector,
                             repairAction:
                               isDef && !prev.repairAction
                                 ? nextVik === 'Вырезать'
@@ -3130,6 +3147,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                               ndtDate: nextRes === 'Не проводился' ? '' : prev.ndtDate,
                               ndtInspector:
                                 nextRes === 'Не проводился' ? '' : prev.ndtInspector,
+                              // При браке первичного НК дублирующий контроль исходного дефектного шва не проводится:
+                              dupNdtType: isDef ? 'Не требуется' : prev.dupNdtType,
+                              dupNdtResult: isDef ? 'Не проводился' : prev.dupNdtResult,
+                              dupNdtDate: isDef ? '' : prev.dupNdtDate,
+                              dupNdtInspector: isDef ? '' : prev.dupNdtInspector,
                               repairAction:
                                 isDef && !prev.repairAction
                                   ? nextRes === 'Вырезать'
@@ -3218,149 +3240,176 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
 
                 {/* Дублирующий контроль */}
                 <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2.5">
-                  <h4 className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-1.5">
-                    Дублирующий контроль (4 поля)
-                  </h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[11px] text-slate-600 mb-0.5">
-                        Тип дубл. НК
-                      </label>
-                      <select
-                        value={form.dupNdtType}
-                        onChange={(e) => {
-                          const nextDupType = e.target.value as NdtMethod;
-                          setForm((prev) => ({
-                            ...prev,
-                            dupNdtType: nextDupType,
-                            dupNdtResult:
-                              nextDupType === 'Не требуется'
-                                ? 'Не проводился'
-                                : prev.dupNdtResult === 'Не проводился'
-                                ? 'В работе'
-                                : prev.dupNdtResult,
-                            dupNdtDate:
-                              nextDupType === 'Не требуется' ? '' : prev.dupNdtDate,
-                            dupNdtInspector:
-                              nextDupType === 'Не требуется'
-                                ? ''
-                                : prev.dupNdtInspector,
-                          }));
-                        }}
-                        className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
-                      >
-                        <option value="Не требуется">Не требуется</option>
-                        <option value="УЗК">УЗК</option>
-                        <option value="РК">РК</option>
-                        <option value="ПВК">ПВК</option>
-                        <option value="МК">МК</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-600 mb-0.5">
-                        Результат дубл.
-                      </label>
-                      <select
-                        value={form.dupNdtResult}
-                        disabled={form.dupNdtType === 'Не требуется'}
-                        onChange={(e) => {
-                          const nextDupRes = e.target.value as ControlResult;
-                          setForm((prev) => {
-                            const isDef =
-                              nextDupRes === 'Ремонт' || nextDupRes === 'Вырезать';
-                            return {
-                              ...prev,
-                              dupNdtResult: nextDupRes,
-                              dupNdtDate:
-                                nextDupRes === 'Не проводился' ? '' : prev.dupNdtDate,
-                              dupNdtInspector:
-                                nextDupRes === 'Не проводился'
-                                  ? ''
-                                  : prev.dupNdtInspector,
-                              repairAction:
-                                isDef && !prev.repairAction
-                                  ? nextDupRes === 'Вырезать'
-                                    ? 'Вырезано'
-                                    : 'Ремонт'
-                                  : prev.repairAction,
-                              repairTechCard:
-                                isDef && !prev.repairTechCard
-                                  ? prev.techCardNumber
-                                    ? `${prev.techCardNumber}-Р`
-                                    : 'ТК-Р'
-                                  : prev.repairTechCard,
-                              repairWelderStamp:
-                                isDef && !prev.repairWelderStamp
-                                  ? prev.welderStamp
-                                  : prev.repairWelderStamp,
-                              repairForeman:
-                                isDef && !prev.repairForeman
-                                  ? prev.responsiblePerson
-                                  : prev.repairForeman,
-                            };
-                          });
-                        }}
-                        className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium disabled:bg-slate-100 disabled:text-slate-400"
-                      >
-                        <option value="Не проводился">Не проводился</option>
-                        <option value="Годен">Годен</option>
-                        <option value="Ремонт">Ремонт</option>
-                        <option value="Вырезать">Вырезать</option>
-                        <option value="В работе">В работе</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
-                      <span>Дата дубл. НК</span>
-                      <span className="font-mono text-[#1e3799] font-semibold">
-                        {formatDateDDMMYY(form.dupNdtDate) || '—'}
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                    <h4 className="text-xs font-bold text-slate-900">
+                      Дублирующий контроль
+                    </h4>
+                    {isPrimaryDefective && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800">
+                        Не требуется (первичный дефект)
                       </span>
-                    </label>
-                    <input
-                      type="date"
-                      value={form.dupNdtDate}
-                      disabled={
-                        form.dupNdtType === 'Не требуется' ||
-                        form.dupNdtResult === 'Не проводился'
-                      }
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, dupNdtDate: e.target.value }))
-                      }
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
-                    />
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-600 mb-0.5">
-                      Дефектоскопист дубл. НК
-                    </label>
-                    <select
-                      value={form.dupNdtInspector}
-                      disabled={
-                        form.dupNdtType === 'Не требуется' ||
-                        form.dupNdtResult === 'Не проводился'
-                      }
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          dupNdtInspector: e.target.value,
-                        }))
-                      }
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
-                    >
-                      <option value="">— Не указан —</option>
-                      {inspectors.map((ins) => (
-                        <option key={ins.fullName} value={ins.fullName}>
-                          {ins.fullName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+
+                  {isPrimaryDefective ? (
+                    <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-xs text-amber-900 space-y-1.5">
+                      <div className="font-semibold flex items-center gap-1.5 text-amber-800">
+                        <span>ℹ️</span> Дублирующий контроль не проводится
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-amber-700">
+                        По результатам первичного контроля зафиксирован неудовлетворительный результат (
+                        <span className="font-bold">
+                          {form.ndtResult === 'Ремонт' || form.ndtResult === 'Вырезать'
+                            ? `НК (${form.ndtType}): ${form.ndtResult}`
+                            : `ВИК: ${form.vikResult}`}
+                        </span>
+                        ). Согласно регламенту контроль дефектного шва не дублируется — соединение направлено на исправление (ремонт/вырезку). Приемка будет выполнена после устранения дефекта в блоке ниже.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[11px] text-slate-600 mb-0.5">
+                            Тип дубл. НК
+                          </label>
+                          <select
+                            value={form.dupNdtType}
+                            onChange={(e) => {
+                              const nextDupType = e.target.value as NdtMethod;
+                              setForm((prev) => ({
+                                ...prev,
+                                dupNdtType: nextDupType,
+                                dupNdtResult:
+                                  nextDupType === 'Не требуется'
+                                    ? 'Не проводился'
+                                    : prev.dupNdtResult === 'Не проводился'
+                                    ? 'В работе'
+                                    : prev.dupNdtResult,
+                                dupNdtDate:
+                                  nextDupType === 'Не требуется' ? '' : prev.dupNdtDate,
+                                dupNdtInspector:
+                                  nextDupType === 'Не требуется'
+                                    ? ''
+                                    : prev.dupNdtInspector,
+                              }));
+                            }}
+                            className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
+                          >
+                            <option value="Не требуется">Не требуется</option>
+                            <option value="УЗК">УЗК</option>
+                            <option value="РК">РК</option>
+                            <option value="ПВК">ПВК</option>
+                            <option value="МК">МК</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-slate-600 mb-0.5">
+                            Результат дубл.
+                          </label>
+                          <select
+                            value={form.dupNdtResult}
+                            disabled={form.dupNdtType === 'Не требуется'}
+                            onChange={(e) => {
+                              const nextDupRes = e.target.value as ControlResult;
+                              setForm((prev) => {
+                                const isDef =
+                                  nextDupRes === 'Ремонт' || nextDupRes === 'Вырезать';
+                                return {
+                                  ...prev,
+                                  dupNdtResult: nextDupRes,
+                                  dupNdtDate:
+                                    nextDupRes === 'Не проводился' ? '' : prev.dupNdtDate,
+                                  dupNdtInspector:
+                                    nextDupRes === 'Не проводился'
+                                      ? ''
+                                      : prev.dupNdtInspector,
+                                  repairAction:
+                                    isDef && !prev.repairAction
+                                      ? nextDupRes === 'Вырезать'
+                                        ? 'Вырезано'
+                                        : 'Ремонт'
+                                      : prev.repairAction,
+                                  repairTechCard:
+                                    isDef && !prev.repairTechCard
+                                      ? prev.techCardNumber
+                                        ? `${prev.techCardNumber}-Р`
+                                        : 'ТК-Р'
+                                      : prev.repairTechCard,
+                                  repairWelderStamp:
+                                    isDef && !prev.repairWelderStamp
+                                      ? prev.welderStamp
+                                      : prev.repairWelderStamp,
+                                  repairForeman:
+                                    isDef && !prev.repairForeman
+                                      ? prev.responsiblePerson
+                                      : prev.repairForeman,
+                                };
+                              });
+                            }}
+                            className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium disabled:bg-slate-100 disabled:text-slate-400"
+                          >
+                            <option value="Не проводился">Не проводился</option>
+                            <option value="Годен">Годен</option>
+                            <option value="Ремонт">Ремонт</option>
+                            <option value="Вырезать">Вырезать</option>
+                            <option value="В работе">В работе</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
+                          <span>Дата дубл. НК</span>
+                          <span className="font-mono text-[#1e3799] font-semibold">
+                            {formatDateDDMMYY(form.dupNdtDate) || '—'}
+                          </span>
+                        </label>
+                        <input
+                          type="date"
+                          value={form.dupNdtDate}
+                          disabled={
+                            form.dupNdtType === 'Не требуется' ||
+                            form.dupNdtResult === 'Не проводился'
+                          }
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, dupNdtDate: e.target.value }))
+                          }
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-600 mb-0.5">
+                          Дефектоскопист дубл. НК
+                        </label>
+                        <select
+                          value={form.dupNdtInspector}
+                          disabled={
+                            form.dupNdtType === 'Не требуется' ||
+                            form.dupNdtResult === 'Не проводился'
+                          }
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              dupNdtInspector: e.target.value,
+                            }))
+                          }
+                          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
+                        >
+                          <option value="">— Не указан —</option>
+                          {inspectors.map((ins) => (
+                            <option key={ins.fullName} value={ins.fullName}>
+                              {ins.fullName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
               </fieldset>
 
-              {/* СПЕЦИАЛИЗИРОВАННЫЙ БЛОК: СВЕДЕНИЯ О РЕМОНТЕ И КОНТРОЛЬ ПОСЛЕ РЕМОНТА (СТО Газпром графы 32–48) */}
+              {/* СПЕЦИАЛИЗИРОВАННЫЙ БЛОК: СВЕДЕНИЯ О РЕМОНТЕ И КОНТРОЛЬ ПОСЛЕ РЕМОНТА */}
               {(isJointDefective(form) ||
                 Boolean(form.repairAction) ||
                 Boolean(form.repairDate) ||
@@ -3371,22 +3420,22 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
                       <h4 className="text-xs font-bold text-amber-950 uppercase tracking-wide">
-                        Устранение дефекта и контроль после ремонта (СТО Газпром графы 32–48)
+                        Устранение дефекта и контроль после ремонта
                       </h4>
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200/80 text-amber-900 border border-amber-300">
                         Дефектный стык
                       </span>
                     </div>
                     <div className="text-[11px] text-amber-800 font-medium">
-                      Графы 32–37: Инженер ПТО / Мастер · Графы 38–48: Специалист ЛНК
+                      Инженер ПТО / Мастер СМР · Специалист ЛНК
                     </div>
                   </div>
 
-                  {/* Блок 1: Сведения о проведении ремонта (графы 32–37) */}
+                  {/* Блок 1: Сведения о проведении ремонта */}
                   <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-800">
-                        1. Сведения о проведении ремонта (графы 32–37)
+                        1. Сведения о проведении ремонта
                       </span>
                       <span className="text-[10px] text-slate-500">
                         Заполняет: Инженер ПТО / Мастер СМР
@@ -3395,7 +3444,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                       <div>
                         <label className="block text-[11px] text-slate-600 mb-0.5">
-                          Гр. 32: Статус ремонта
+                          Статус ремонта
                         </label>
                         <select
                           disabled={!rbac.canEditPrepAndWeldingFields}
@@ -3412,7 +3461,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                       <div>
                         <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
-                          <span>Гр. 33: Дата ремонта</span>
+                          <span>Дата ремонта</span>
                           <span className="font-mono text-[#1e3799] font-semibold">
                             {formatDateDDMMYY(form.repairDate) || '—'}
                           </span>
@@ -3429,7 +3478,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                       <div>
                         <label className="block text-[11px] text-slate-600 mb-0.5">
-                          Гр. 34: ТК ремонта (ОТК)
+                          ТК ремонта (ОТК)
                         </label>
                         <input
                           type="text"
@@ -3447,7 +3496,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                       <div>
                         <label className="block text-[11px] text-slate-600 mb-0.5">
-                          Гр. 35: Клеймо ремонтника
+                          Клеймо сварщика ремонта
                         </label>
                         <input
                           type="text"
@@ -3465,7 +3514,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                       <div>
                         <label className="block text-[11px] text-slate-600 mb-0.5">
-                          Гр. 36: Мастер ремонта
+                          Мастер / производитель работ
                         </label>
                         <input
                           type="text"
@@ -3484,11 +3533,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Блок 2: Контроль ВИК после ремонта (графы 38–40) */}
+                  {/* Блок 2: Контроль ВИК после ремонта */}
                   <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-800">
-                        2. Приемка после ремонта — Контроль ВИК (графы 38–40)
+                        2. Приемка после ремонта — Контроль ВИК
                       </span>
                       <span className="text-[10px] text-slate-500">
                         Заполняет: Специалист ЛНК
@@ -3497,7 +3546,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                       <div>
                         <label className="block text-[11px] text-slate-600 mb-0.5">
-                          Гр. 40: Результат ВИК ремонта
+                          Результат ВИК ремонта
                         </label>
                         <select
                           disabled={!rbac.canEditNdtFields}
@@ -3519,7 +3568,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                       <div>
                         <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
-                          <span>Гр. 39: Дата ВИК ремонта</span>
+                          <span>Дата ВИК ремонта</span>
                           <span className="font-mono text-[#1e3799] font-semibold">
                             {formatDateDDMMYY(form.repairVikDate) || '—'}
                           </span>
@@ -3542,7 +3591,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                       <div>
                         <label className="block text-[11px] text-slate-600 mb-0.5">
-                          Гр. 38: № заключения ВИК
+                          № заключения ВИК
                         </label>
                         <input
                           type="text"
@@ -3590,11 +3639,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Блок 3: Контроль физическими методами НК после ремонта (графы 41–44) */}
+                  {/* Блок 3: Контроль физическими методами НК после ремонта */}
                   <div className="p-3 bg-white rounded-lg border border-amber-200 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-800">
-                        3. Приемка после ремонта — Неразрушающий контроль НК (графы 41–44)
+                        3. Приемка после ремонта — Неразрушающий контроль НК
                       </span>
                       <span className="text-[10px] text-slate-500">
                         Заполняет: Специалист ЛНК
@@ -3603,7 +3652,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
                       <div>
                         <label className="block text-[11px] text-slate-600 mb-0.5">
-                          Гр. 41: Тип НК ремонта
+                          Метод НК ремонта
                         </label>
                         <select
                           disabled={!rbac.canEditNdtFields}
@@ -3626,7 +3675,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                       <div>
                         <label className="block text-[11px] text-slate-600 mb-0.5">
-                          Гр. 44: Результат НК ремонта
+                          Результат НК ремонта
                         </label>
                         <select
                           disabled={
@@ -3651,7 +3700,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                       <div>
                         <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
-                          <span>Гр. 43: Дата НК ремонта</span>
+                          <span>Дата НК ремонта</span>
                           <span className="font-mono text-[#1e3799] font-semibold">
                             {formatDateDDMMYY(form.repairNdtDate) || '—'}
                           </span>
@@ -3675,7 +3724,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                       <div>
                         <label className="block text-[11px] text-slate-600 mb-0.5">
-                          Гр. 42: № заключения НК
+                          № заключения НК
                         </label>
                         <input
                           type="text"

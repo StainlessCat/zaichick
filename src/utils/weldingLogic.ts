@@ -4448,25 +4448,14 @@ export function formatStoGazpromJournalRow(
   const col27 = hasNdt ? joint.ndtResult : 'н/п';
 
   // Графы 28–31: Приемка по результатам второго/дублирующего физического контроля
-  // Если у стыка нет специализированных граф ремонта, но есть legacy-запись (первичный ремонт),
-  // то dupNdt использовался как переконтроль после ремонта и относится к графам 38–44 (в графах 28–31 ставится "н/п").
-  // Если же заполнены специализированные графы ремонта либо нет первичного брака —
-  // графы 28–31 отображают независимый дублирующий контроль первичного шва.
+  // Если первичный контроль выявил брак (isPrimaryRepair), то дублирующий контроль первичного шва не проводится (графы 28–31 = "н/п").
+  // Контроль проводится только после устранения дефекта в графах 38–48.
   let col28 = 'н/п';
   let col29 = 'н/п';
   let col30 = 'н/п';
   let col31 = 'н/п';
 
-  const hasSpecializedRepair = Boolean(
-    joint.repairAction ||
-      joint.repairDate ||
-      (joint.repairVikResult && joint.repairVikResult !== 'Не проводился') ||
-      (joint.repairNdtResult && joint.repairNdtResult !== 'Не проводился')
-  );
-
-  const isLegacyRepairUsingDup = isPrimaryRepair && !hasSpecializedRepair;
-
-  if (!isLegacyRepairUsingDup && joint.dupNdtType && joint.dupNdtType !== 'Не требуется') {
+  if (!isPrimaryRepair && joint.dupNdtType && joint.dupNdtType !== 'Не требуется') {
     col28 = joint.dupNdtType;
     if (
       joint.dupNdtResult === 'Годен' ||

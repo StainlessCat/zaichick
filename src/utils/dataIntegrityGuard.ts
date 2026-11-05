@@ -203,7 +203,17 @@ export function sanitizeWeldJointRecord(joint: Partial<WeldJoint>): WeldJoint {
       ? ''
       : sanitizeCleanString(joint.ndtInspector);
 
-  const dupNdtType = (joint.dupNdtType || 'Не требуется') as NdtMethod;
+  // Отраслевое правило: если первичный контроль (ВИК или НК) признал шов дефектным ("Ремонт" / "Вырезать"),
+  // дублирующий контроль первичного дефектного шва не проводится (шов направляется на ремонт).
+  const isPrimaryDefective =
+    vikRes === 'Ремонт' ||
+    vikRes === 'Вырезать' ||
+    ndtRes === 'Ремонт' ||
+    ndtRes === 'Вырезать';
+
+  const dupNdtType = isPrimaryDefective
+    ? ('Не требуется' as NdtMethod)
+    : ((joint.dupNdtType || 'Не требуется') as NdtMethod);
   const dupNdtRes = (
     dupNdtType === 'Не требуется'
       ? 'Не проводился'
