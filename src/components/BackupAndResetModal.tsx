@@ -78,6 +78,7 @@ interface BackupAndResetModalProps {
   onRestoreBackup: (payload: FullSystemBackupPayload) => void;
   onAuthorZeroReset: (keepOnlyAdminAccount: boolean) => void;
   onAuthorRestoreDemoSeed: () => void;
+  onLoadKharasaveyDemo?: () => void;
 }
 
 const LOCAL_SNAPSHOTS_KEY = 'zaychick_local_snapshots_v1';
@@ -97,6 +98,7 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
   onRestoreBackup,
   onAuthorZeroReset,
   onAuthorRestoreDemoSeed,
+  onLoadKharasaveyDemo,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -787,6 +789,22 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
                       <RotateCcw className="w-4 h-4 text-[#1e3799]" />
                       <span>Загрузить эталонную демо-базу (для презентации)</span>
                     </button>
+
+                    {onLoadKharasaveyDemo && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onLoadKharasaveyDemo();
+                          setStatusBanner(
+                            'Демонстрационный датасет УКПГ-1С Харасавэйское ГКМ (1271 стык) успешно подгружен.'
+                          );
+                        }}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-sky-300 bg-sky-50 text-[#1e3799] font-bold hover:bg-sky-100 transition-colors cursor-pointer"
+                      >
+                        <HardDriveDownload className="w-4 h-4 text-[#1e3799]" />
+                        <span>Подгрузить массив Харасавэй (1271 стык)</span>
+                      </button>
+                    )}
                   </div>
 
                   <div className="pt-3 border-t border-slate-200">

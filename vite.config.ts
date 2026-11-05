@@ -32,6 +32,9 @@ export default defineConfig(() => {
             if (id.includes('node_modules/@tanstack')) {
               return 'tanstack-vendor';
             }
+            if (id.includes('kharasaveyDemoData')) {
+              return 'demo-kharasavey';
+            }
           },
         },
       },

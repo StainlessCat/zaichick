@@ -2196,6 +2196,43 @@ export default function App() {
     setSelectedRdCode('ALL');
   };
 
+  // 13. Ленивая подгрузка демонстрационного массива Харасавэй (1271 стык)
+  const [isLoadingDemoDataset, setIsLoadingDemoDataset] = useState(false);
+  const handleLoadKharasaveyDemo = async () => {
+    try {
+      setIsLoadingDemoDataset(true);
+      const mod = await import('./data/kharasaveyDemoData');
+      const data = {
+        joints: mod.KHARASAVEY_JOINTS,
+        projectLineList: mod.KHARASAVEY_LINES,
+        lrvCatalog: mod.KHARASAVEY_LRV,
+      };
+      recordUndoSnapshot('Загрузка демонстрационного массива Харасавэй (1271 стык)');
+
+      setJoints((prev) => {
+        const existingIds = new Set(prev.map((j) => j.id));
+        const newJoints = data.joints.filter((j) => !existingIds.has(j.id));
+        return [...prev, ...newJoints];
+      });
+      setLrvCatalog((prev) => {
+        const existingCodes = new Set(prev.map((l) => l.lrvCode));
+        const newLrv = data.lrvCatalog.filter((l) => !existingCodes.has(l.lrvCode));
+        return [...prev, ...newLrv];
+      });
+      setProjectLineList((prev) => {
+        const existingIds = new Set(prev.map((l) => l.uniqueLineId));
+        const newLines = data.projectLineList.filter((l) => !existingIds.has(l.uniqueLineId));
+        return [...prev, ...newLines];
+      });
+      setSelectedObjectName('УКПГ-1С Харасавэйское ГКМ');
+      setSelectedRdCode('ALL');
+    } catch (err) {
+      console.error('Ошибка загрузки демо-данных Харасавэя:', err);
+    } finally {
+      setIsLoadingDemoDataset(false);
+    }
+  };
+
   const toggleSelectAllVisible = () => {
     const visibleIds = filteredAndSortedJoints.map((j) => j.id);
     const allSelected =
@@ -2376,6 +2413,43 @@ export default function App() {
 
       {/* ОСНОВНАЯ РАБОЧАЯ ОБЛАСТЬ */}
       <main className="flex-1 max-w-[1920px] w-full mx-auto p-3 sm:p-4 space-y-3">
+        {/* Баннер ленивой загрузки демо-массива Харасавэя при отсутствии стыков по выбранному объекту */}
+        {selectedObjectName === 'УКПГ-1С Харасавэйское ГКМ' &&
+          joints.filter((j) => j.objectName === 'УКПГ-1С Харасавэйское ГКМ').length === 0 && (
+            <div className="p-3.5 sm:p-4 rounded-xl bg-gradient-to-r from-sky-50 via-indigo-50 to-blue-50 border border-sky-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#1e3799] text-white flex items-center justify-center font-bold text-sm shadow-2xs shrink-0">
+                  1С
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900">
+                    Демонстрационный массив «УКПГ-1С Харасавэйское ГКМ» (1271 стык)
+                  </h4>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    Датасет вынесен в отдельный асинхронный модуль и готов к загрузке: 4 шифра РД, 30 линий проекта, 1271 стык.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isLoadingDemoDataset}
+                onClick={handleLoadKharasaveyDemo}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e3799] hover:bg-[#15276e] text-white text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:bg-slate-400"
+              >
+                {isLoadingDemoDataset ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Загрузка данных...</span>
+                  </>
+                ) : (
+                  <>
+                    <HardDriveDownload className="w-4 h-4" />
+                    <span>Загрузить 1271 стык (Харасавэй)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
 
         {/* РАЗДЕЛ 1: РЕЕСТР СТЫКОВ И ТАБЛИЦА ВНЕСЕНИЯ ДАННЫХ (ДЕКОМПОЗИЦИЯ + ВИРТУАЛИЗАЦИЯ СТРОК) */}
         {activeSection === 'registry' && (
@@ -3026,6 +3100,7 @@ export default function App() {
         onRestoreBackup={handleRestoreFullBackup}
         onAuthorZeroReset={handleAuthorZeroReset}
         onAuthorRestoreDemoSeed={handleAuthorRestoreDemoSeed}
+        onLoadKharasaveyDemo={handleLoadKharasaveyDemo}
       />
 
       {/* Модальное окно мониторинга единой серверной СУБД SQLite и стенда OCC */}

@@ -13,12 +13,71 @@ import {
   WeldJoint,
 } from '../types/welding';
 import { DEFAULT_COLUMN_KEYS } from '../utils/weldingLogic';
-import {
-  KHARASAVEY_FACILITY,
-  KHARASAVEY_LINES,
-  KHARASAVEY_LRV,
-  KHARASAVEY_JOINTS,
-} from './kharasaveyDemoData';
+export const KHARASAVEY_FACILITY: FacilityObject = {
+  id: 'obj-kharasavey1s',
+  name: 'УКПГ-1С Харасавэйское ГКМ',
+  shortName: 'УКПГ-1С Харасавэй',
+  region: 'ЯНАО, побережье Карского моря',
+  weatherStation: 'Метеостанция Харасавэй (№20846)',
+  latitude: 71.18,
+  longitude: 66.87,
+  rdCodes: [
+    {
+      code: '0087.032.Р.14/1 0002 УКПГ.031.0055.001-ТХ1',
+      title: 'Цех низкотемпературной сепарации и стабилизации (Корпус 1)',
+      contours: [
+        'Контур ВД сепарации С-101',
+        'Контур регенерации ДЭГ',
+        'Контур дренажа углеводородов',
+      ],
+    },
+    {
+      code: '0087.032.Р.14/1 0002 УКПГ.031.0055.002-ТХ2',
+      title: 'Узел рекуперации холода «газ-газ» и теплообменников',
+      contours: [
+        'Контур НТС Т-201',
+        'Контур стабилизации конденсата',
+        'Факельный коллектор высокого давления КФС-1',
+      ],
+    },
+    {
+      code: '0087.032.Р.14/1 0006 УКПГ.031.0061.003-ГС1',
+      title: 'Межцеховые технологические коммуникации и газосборный коллектор',
+      contours: [
+        'Главный газосборный коллектор ГК-1',
+        'Шлейф нагнетания на ДКС',
+        'Контур продувочных свечей КПС-1',
+      ],
+    },
+    {
+      code: '0087.032.Р.14/1 0008 УКПГ.031.0068.004-ВТ1',
+      title: 'Дожимная компрессорная станция ДКС-1 (компримирование газа)',
+      contours: [
+        'Всасывающий коллектор ГПА-01',
+        'Нагнетательный коллектор ГПА-01',
+        'Контур масляной системы компрессора',
+      ],
+    },
+  ],
+};
+
+/**
+ * Ленивая (асинхронная) загрузка демонстрационного датасета Харасавэя (1271 стык).
+ * Вынесена в отдельный динамический chunk (Vite code splitting),
+ * что снижает размер основного JS-бандла более чем в 4 раза и ускоряет холодный старт.
+ */
+export async function loadKharasaveyDemoData(): Promise<{
+  joints: WeldJoint[];
+  projectLineList: ProjectLineItem[];
+  lrvCatalog: LRVItem[];
+}> {
+  const mod = await import('./kharasaveyDemoData');
+  return {
+    joints: mod.KHARASAVEY_JOINTS,
+    projectLineList: mod.KHARASAVEY_LINES,
+    lrvCatalog: mod.KHARASAVEY_LRV,
+  };
+}
 
 export const FACILITY_OBJECTS: FacilityObject[] = [
   {
@@ -441,7 +500,6 @@ export const INITIAL_LRV_CATALOG: LRVItem[] = [
     specQty: 18,
     unit: 'шт',
   },
-  ...KHARASAVEY_LRV,
 ];
 
 export const WELDERS_DIRECTORY: WelderProfile[] = [
@@ -1989,7 +2047,6 @@ export const INITIAL_JOINTS: WeldJoint[] = [
     updatedAt: '2026-10-22T11:10:00Z',
     updatedBy: 'Соколов Алексей Владимирович',
   },
-  ...KHARASAVEY_JOINTS,
 ];
 
 export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [
@@ -2204,6 +2261,5 @@ export const INITIAL_PROJECT_LINELIST: ProjectLineItem[] = [
     pvkPercent: 0,
     testDate: '2026-10-25',
   },
-  ...KHARASAVEY_LINES,
 ];
 
