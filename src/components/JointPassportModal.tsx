@@ -59,6 +59,7 @@ import {
   getFacilityWeatherStationName,
   GOST_16037_JOINT_TYPES,
   isJointDefective,
+  isJointFullyAccepted,
   LRV_ELEMENT_TYPE_OPTIONS,
   mmToInchDiameter,
   NAKS_WELDING_POSITIONS,
@@ -1352,6 +1353,40 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     ? 'Добавление нового сварного стыка'
                     : `Паспорт сварного стыка № ${form.jointNumber}`}
                 </h2>
+                {mode === 'edit' && (
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                      isJointDefective(form)
+                        ? 'bg-red-500/25 text-red-100 border-red-300/40'
+                        : isJointFullyAccepted(form)
+                        ? 'bg-emerald-500/25 text-emerald-100 border-emerald-300/40'
+                        : form.weldingDate
+                        ? 'bg-amber-500/25 text-amber-100 border-amber-300/40'
+                        : 'bg-white/15 text-sky-100 border-white/20'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isJointDefective(form)
+                          ? 'bg-red-400'
+                          : isJointFullyAccepted(form)
+                          ? 'bg-emerald-400'
+                          : form.weldingDate
+                          ? 'bg-amber-400'
+                          : 'bg-sky-200'
+                      }`}
+                    />
+                    <span>
+                      {isJointDefective(form)
+                        ? 'Требуется ремонт'
+                        : isJointFullyAccepted(form)
+                        ? 'Годен / Принят'
+                        : form.weldingDate
+                        ? 'На контроле'
+                        : 'Не заварен'}
+                    </span>
+                  </span>
+                )}
                 {mode === 'edit' && lineJoints.length > 0 && (
                   <span className="hidden sm:inline-flex px-2 py-0.5 rounded text-[11px] font-mono bg-white/15 text-sky-100 border border-white/20">
                     Линия {form.lineNumber} ({currentLineIndex >= 0 ? currentLineIndex + 1 : 1}/{lineJoints.length})
@@ -1412,7 +1447,9 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Прокручиваемое содержимое формы */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
 
           {validationError && (
             <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-300 text-red-800 text-xs font-semibold flex items-center gap-2">
@@ -3942,17 +3979,19 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
               )}
             </div>
           </div>
+          </div>
 
-          {/* Футер паспорта стыка */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-4 mt-5 border-t border-slate-200">
-            <div className="text-xs text-slate-500">
-              Все изменения фиксируются в журнале аудита с указанием пользователя и времени (ДД.ММ.ГГ)
+          {/* Фиксированный футер паспорта стыка (всегда закреплён внизу окна, не скроллится) */}
+          <div className="shrink-0 bg-white border-t border-slate-200 px-6 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-20 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+              <span>Все изменения фиксируются в журнале аудита с указанием автора и времени</span>
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50"
+                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer transition-colors"
               >
                 Отмена
               </button>
@@ -3960,7 +3999,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handleNavigateToJoint(nextJoint)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] text-xs font-semibold hover:bg-sky-100 transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] text-xs font-semibold hover:bg-sky-100 transition-colors cursor-pointer"
                   title={`Сохранить текущий стык и сразу перейти к следующему стыку № ${nextJoint.jointNumber}`}
                 >
                   <span>Сохранить и след. (№ {nextJoint.jointNumber})</span>
@@ -3970,7 +4009,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
               <button
                 type="submit"
                 disabled={!canSaveAnyField}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed shadow-xs"
+                className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed shadow-xs cursor-pointer transition-colors"
               >
                 {canSaveAnyField ? (
                   <Check className="w-4 h-4" />

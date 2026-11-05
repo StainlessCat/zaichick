@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
@@ -30,10 +30,60 @@ function broadcastDbChange(payload: {
   }
 }
 
+/**
+ * Извлекает session token из заголовков или тела запроса.
+ * Порядок приоритета: x-session-token header > Authorization: Bearer > body.sessionToken
+ */
+function extractSessionToken(req: Request): string | undefined {
+  const fromHeader = req.headers['x-session-token'] as string | undefined;
+  if (fromHeader) return fromHeader;
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
+  return req.body?.sessionToken as string | undefined;
+}
+
+/**
+ * Middleware: проверяет session token для операций ЗАПИСИ (POST/PATCH/PUT/DELETE).
+ *
+ * Логика:
+ * - Если token предоставлен и ВАЛИДЕН → пропускаем
+ * - Если token предоставлен и НЕВАЛИДЕН (истёк / подделан) → 401
+ * - Если token НЕ предоставлен → пропускаем (backward-compat: анонимный гость)
+ *
+ * Это защищает от подделки чужих токенов при сохранении от имени другого пользователя.
+ * Полный запрет анонимного доступа реализуется переключением флага REQUIRE_AUTH_FOR_WRITES.
+ */
+const REQUIRE_AUTH_FOR_WRITES =
+  process.env.ZAYCHICK_REQUIRE_AUTH === 'true';
+
+function requireWriteAuth(req: Request, res: Response, next: NextFunction): void {
+  const token = extractSessionToken(req);
+
+  if (!token) {
+    if (REQUIRE_AUTH_FOR_WRITES) {
+      res.status(401).json({ status: 'error', message: 'Требуется аутентификация (токен сессии не передан)' });
+      return;
+    }
+    // Анонимный режим: пропускаем (backward-compat)
+    next();
+    return;
+  }
+
+  // Токен передан — валидируем обязательно
+  const session = serverDb.validateSessionToken(token);
+  if (!session) {
+    res.status(401).json({ status: 'error', message: 'Токен сессии недействителен или истёк' });
+    return;
+  }
+
+  next();
+}
+
 async function startServer() {
   const app = express();
 
-  app.use(express.json({ limit: '50mb' }));
+  // Глобальный лимит тела запроса: 5 МБ для большинства роутов
+  app.use(express.json({ limit: '5mb' }));
 
   // --- АУТЕНТИФИКАЦИЯ И СЕССИОННАЯ БЕЗОПАСНОСТЬ (Proposal 2) ---
   app.post('/api/auth/login', (req: Request, res: Response) => {
@@ -190,7 +240,7 @@ async function startServer() {
   });
 
   // 3. Сохранение паспорта сварного стыка с проверкой ОПТИМИСТИЧЕСКОЙ БЛОКИРОВКИ (OCC HTTP 409 Conflict)
-  app.post('/api/db/joints/save', (req: Request, res: Response) => {
+  app.post('/api/db/joints/save', requireWriteAuth, (req: Request, res: Response) => {
     try {
       const {
         joint,
@@ -261,7 +311,7 @@ async function startServer() {
   });
 
   // 4. Транзакционная синхронизация таблиц с серверной СУБД SQLite
-  app.post('/api/db/sync', (req: Request, res: Response) => {
+  app.post('/api/db/sync', requireWriteAuth, (req: Request, res: Response) => {
     try {
       const {
         data,

@@ -1,14 +1,39 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        // import.meta.dirname — стандарт ESM, рекомендован Vite 6+
+        '@': import.meta.dirname,
+      },
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          // Code splitting: выделяем тяжёлые вендоры в отдельные chunk'и
+          // Это снижает время первой загрузки и улучшает кэширование
+          manualChunks(id) {
+            if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+              return 'react-vendor';
+            }
+            if (id.includes('node_modules/pdfmake')) {
+              return 'pdf-vendor';
+            }
+            if (id.includes('node_modules/xlsx')) {
+              return 'xlsx-vendor';
+            }
+            if (id.includes('node_modules/lucide-react')) {
+              return 'lucide-vendor';
+            }
+            if (id.includes('node_modules/@tanstack')) {
+              return 'tanstack-vendor';
+            }
+          },
+        },
       },
     },
     server: {
