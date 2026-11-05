@@ -5,6 +5,7 @@ import {
   applyBulkUpdateToJoints,
   applyBulkUpdateToLineList,
   buildUniqueLineId,
+  calculateEquivalentDiaInch,
   calculateReadinessReport,
   checkNaksCertStatus,
   computeLineListItemStatus,
@@ -26,17 +27,22 @@ import {
   formatJournalElementName,
   formatStoGazpromJournalRow,
   formatTimestampDDMMYY,
+  getEpcWallThicknessFactor,
   getFacilityWeatherStationName,
+  getJointEquivDiaInch,
+  getJointNominalInch,
   getLrvItemDn1,
   getLrvItemDn2,
   GOST_16037_JOINT_TYPES,
   GOST_32569_2013_JOURNAL_COLUMNS,
+  inchStringToNumeric,
   isAngularWeldJoint,
   isFlangedZraElement,
   isWeldingDateInRange,
   MAX_HISTORY_STEPS,
   mmToInchDiameter,
   mmToNominalBoreDn,
+  mmToNumericInchDiameter,
   NAKS_WELDING_POSITIONS,
   normalizeStampString,
   parseLrvCatalogRecords,
@@ -2433,4 +2439,130 @@ test('Расчет условных проходов DN [мм], DN [дюймы] 
   assert.equal(dnToOuterDiameterMm(150), 165);
   assert.equal(dnToOuterDiameterMm(300), 325);
   assert.equal(dnToOuterDiameterMm(175), undefined);
+});
+
+test('Эквивалентные дюймы (Метод А / EDI): расчет коэффициента Ктолщ, дюйм-диаметров и сводной готовности по эквивалентным дюймам', () => {
+  // 1. Проверка ступенчатой шкалы Ктолщ по Методу А
+  assert.equal(getEpcWallThicknessFactor(6.0), 1.0);
+  assert.equal(getEpcWallThicknessFactor(10.0), 1.0);
+  assert.equal(getEpcWallThicknessFactor(10.1), 1.35);
+  assert.equal(getEpcWallThicknessFactor(12.0), 1.35);
+  assert.equal(getEpcWallThicknessFactor(15.0), 1.35);
+  assert.equal(getEpcWallThicknessFactor(15.1), 1.75);
+  assert.equal(getEpcWallThicknessFactor(18.0), 1.75);
+  assert.equal(getEpcWallThicknessFactor(20.0), 1.75);
+  assert.equal(getEpcWallThicknessFactor(20.1), 2.3);
+  assert.equal(getEpcWallThicknessFactor(24.0), 2.3);
+  assert.equal(getEpcWallThicknessFactor(26.0), 2.3);
+  assert.equal(getEpcWallThicknessFactor(26.1), 2.8);
+  assert.equal(getEpcWallThicknessFactor(32.0), 2.8);
+  assert.equal(getEpcWallThicknessFactor(35.0), 2.8);
+  assert.equal(getEpcWallThicknessFactor(35.1), 3.5);
+  assert.equal(getEpcWallThicknessFactor(45.0), 3.5);
+  assert.equal(getEpcWallThicknessFactor(50.0), 3.5);
+  assert.equal(getEpcWallThicknessFactor(50.1), 4.5);
+  assert.equal(getEpcWallThicknessFactor(65.0), 4.5);
+
+  // 2. Проверка парсинга строковых дюймов (inchStringToNumeric)
+  assert.equal(inchStringToNumeric('3/8"'), 0.375);
+  assert.equal(inchStringToNumeric('1/2"'), 0.5);
+  assert.equal(inchStringToNumeric('3/4"'), 0.75);
+  assert.equal(inchStringToNumeric('1"'), 1.0);
+  assert.equal(inchStringToNumeric('1 1/4"'), 1.25);
+  assert.equal(inchStringToNumeric('1 1/2"'), 1.5);
+  assert.equal(inchStringToNumeric('2"'), 2.0);
+  assert.equal(inchStringToNumeric('2 1/2"'), 2.5);
+  assert.equal(inchStringToNumeric('3"'), 3.0);
+  assert.equal(inchStringToNumeric('3 1/2"'), 3.5);
+  assert.equal(inchStringToNumeric('4"'), 4.0);
+  assert.equal(inchStringToNumeric('6"'), 6.0);
+  assert.equal(inchStringToNumeric('6 1/2"'), 6.5);
+  assert.equal(inchStringToNumeric('8"'), 8.0);
+  assert.equal(inchStringToNumeric('12"'), 12.0);
+  assert.equal(inchStringToNumeric('24"'), 24.0);
+  assert.equal(inchStringToNumeric('56"'), 56.0);
+  assert.equal(inchStringToNumeric('88"'), 88.0);
+
+  // 3. Проверка mmToNumericInchDiameter
+  assert.equal(mmToNumericInchDiameter(16), 0.375); // DN 10
+  assert.equal(mmToNumericInchDiameter(20), 0.5);   // DN 15
+  assert.equal(mmToNumericInchDiameter(26), 0.75);  // DN 20
+  assert.equal(mmToNumericInchDiameter(32), 1.0);   // DN 25
+  assert.equal(mmToNumericInchDiameter(42), 1.25);  // DN 32
+  assert.equal(mmToNumericInchDiameter(45), 1.5);   // DN 40
+  assert.equal(mmToNumericInchDiameter(57), 2.0);   // DN 50
+  assert.equal(mmToNumericInchDiameter(76), 2.5);   // DN 65
+  assert.equal(mmToNumericInchDiameter(89), 3.0);   // DN 80
+  assert.equal(mmToNumericInchDiameter(102), 3.5);  // DN 90
+  assert.equal(mmToNumericInchDiameter(108), 4.0);  // DN 100
+  assert.equal(mmToNumericInchDiameter(133), 5.0);  // DN 125
+  assert.equal(mmToNumericInchDiameter(159), 6.0);  // DN 150
+  assert.equal(mmToNumericInchDiameter(165), 6.0);  // DN 150
+  assert.equal(mmToNumericInchDiameter(180), 6.5);  // DN 160
+  assert.equal(mmToNumericInchDiameter(219), 8.0);  // DN 200
+  assert.equal(mmToNumericInchDiameter(325), 12.0); // DN 300
+  assert.equal(mmToNumericInchDiameter(530), 20.0); // DN 500
+  assert.equal(mmToNumericInchDiameter(1420), 56.0);// DN 1400
+
+  // 4. Проверка точного расчета эквивалентных дюймов по формуле Метод А: EDI = D_inch * Ктолщ(S)
+  // Ø159x8 (6" * 1.0) -> 6.0 EDI
+  assert.equal(calculateEquivalentDiaInch(159, 8.0), 6.0);
+  // Ø159x12 (6" * 1.35) -> 8.1 EDI
+  assert.equal(calculateEquivalentDiaInch(159, 12.0), 8.1);
+  // Ø219x18 (8" * 1.75) -> 14.0 EDI
+  assert.equal(calculateEquivalentDiaInch(219, 18.0), 14.0);
+  // Ø325x22 (12" * 2.30) -> 27.6 EDI
+  assert.equal(calculateEquivalentDiaInch(325, 22.0), 27.6);
+  // Ø530x28 (20" * 2.80) -> 56.0 EDI
+  assert.equal(calculateEquivalentDiaInch(530, 28.0), 56.0);
+  // Ø1020x40 (40" * 3.50) -> 140.0 EDI
+  assert.equal(calculateEquivalentDiaInch(1020, 40.0), 140.0);
+  // Ø1420x52 (56" * 4.50) -> 252.0 EDI
+  assert.equal(calculateEquivalentDiaInch(1420, 52.0), 252.0);
+
+  // Передача строки в calculateEquivalentDiaInch
+  assert.equal(calculateEquivalentDiaInch('6"', 12.0), 8.1);
+  assert.equal(calculateEquivalentDiaInch('2 1/2"', 14.0), 3.38); // 2.5 * 1.35 = 3.375 -> 3.38
+
+  // 5. Проверка наличия столбца equivDiameterInch в ALL_COLUMNS
+  const ediCol = ALL_COLUMNS.find((c) => c.key === 'equivDiameterInch');
+  assert.ok(ediCol, 'Столбец equivDiameterInch должен присутствовать в ALL_COLUMNS');
+  assert.equal(ediCol?.label, 'Экв. дюйм (EDI)');
+  assert.equal(ediCol?.isNumeric, true);
+
+  // 6. Проверка расчета готовности по эквивалентным дюймам в calculateReadinessReport
+  const sampleJoints: WeldJoint[] = [
+    {
+      ...INITIAL_JOINTS[0],
+      id: 'test-j-edi-1',
+      jointNumber: '010',
+      diameterMm: 159,
+      diameterInch: '6"',
+      wallThickness: 12.0, // 6" * 1.35 = 8.1 EDI
+      weldingDate: '2026-10-12',
+      welderStamp: 'А142',
+    },
+    {
+      ...INITIAL_JOINTS[0],
+      id: 'test-j-edi-2',
+      jointNumber: '020',
+      diameterMm: 219,
+      diameterInch: '8"',
+      wallThickness: 8.0, // 8" * 1.0 = 8.0 EDI
+      weldingDate: '', // не заварен
+      welderStamp: '',
+    },
+  ];
+
+  const report = calculateReadinessReport(sampleJoints, 'rdCode');
+  assert.equal(report.length, 1);
+  const row = report[0];
+  // Всего: 8.1 + 8.0 = 16.1 EDI
+  assert.equal(row.totalEquivInches, 16.1);
+  // Заварено: 8.1 EDI
+  assert.equal(row.weldedEquivInches, 8.1);
+  // Процент сварки по EDI: 8.1 / 16.1 * 100 = 50.31% -> 50%
+  assert.equal(row.equivWeldingPct, 50);
+  // Номинальные дюймы: 6 + 8 = 14
+  assert.equal(row.totalNominalInches, 14);
 });

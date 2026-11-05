@@ -12,6 +12,7 @@ import {
   formatDateDDMMYY,
   formatGost32569JournalRow,
   formatStoGazpromJournalRow,
+  getJointEquivDiaInch,
   getLrvItemDn1,
   getLrvItemDn2,
   GOST_32569_2013_JOURNAL_COLUMNS,
@@ -66,7 +67,10 @@ export function exportAllJointsToFile(
     const rows = joints.map((joint) => {
       const record: Record<string, string | number> = {};
       for (const col of ALL_COLUMNS) {
-        const raw = joint[col.key];
+        const raw =
+          col.key === 'equivDiameterInch'
+            ? getJointEquivDiaInch(joint)
+            : joint[col.key];
         const strVal = String(raw ?? '');
         record[col.label] = isDateColumnKey(col.key)
           ? formatDateDDMMYY(strVal)
@@ -89,7 +93,10 @@ export function exportAllJointsToFile(
   const headers = ALL_COLUMNS.map((c) => c.label);
   const csvRows = joints.map((joint) =>
     ALL_COLUMNS.map((col) => {
-      const raw = joint[col.key];
+      const raw =
+        col.key === 'equivDiameterInch'
+          ? getJointEquivDiaInch(joint)
+          : joint[col.key];
       const strVal = String(raw ?? '');
       const formatted = isDateColumnKey(col.key) ? formatDateDDMMYY(strVal) : strVal;
       return `"${formatted.replace(/"/g, '""')}"`;

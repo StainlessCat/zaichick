@@ -9,6 +9,7 @@ import {
 import { ReadinessGroupCondition, ReadinessSummaryRow, WeldJoint } from '../types/welding';
 import {
   calculateReadinessReport,
+  getJointEquivDiaInch,
   isJointCurrentlyInRepair,
   isJointFullyAccepted,
 } from '../utils/weldingLogic';
@@ -53,6 +54,7 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
       groupKey: 230,
       totalJoints: 130,
       weldedCount: 130,
+      equivInches: 175,
       vikPassedCount: 110,
       ndtPassedCount: 110,
       dupNdtPassedCount: 120,
@@ -75,6 +77,8 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
           ? `${r.totalJoints} (доп: ${r.supplementaryJoints})`
           : String(r.totalJoints),
       weldedCount: (r) => `${r.weldedCount} (${r.weldingPct}%)`,
+      equivInches: (r) =>
+        `${r.weldedEquivInches} / ${r.totalEquivInches} (${r.equivWeldingPct}%)`,
       vikPassedCount: (r) => String(r.vikPassedCount),
       ndtPassedCount: (r) => String(r.ndtPassedCount),
       dupNdtPassedCount: (r) => String(r.dupNdtPassedCount),
@@ -128,9 +132,25 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
     const repair = joints.filter((j) => isJointCurrentlyInRepair(j)).length;
     const ready = joints.filter((j) => isJointFullyAccepted(j)).length;
 
+    const totalEquivInches =
+      Math.round(joints.reduce((acc, j) => acc + getJointEquivDiaInch(j), 0) * 10) / 10;
+    const weldedEquivInches =
+      Math.round(
+        joints
+          .filter((j) => Boolean(j.weldingDate && j.welderStamp))
+          .reduce((acc, j) => acc + getJointEquivDiaInch(j), 0) * 10
+      ) / 10;
+    const equivWeldingPct =
+      totalEquivInches > 0
+        ? Math.round((weldedEquivInches / totalEquivInches) * 100)
+        : 0;
+
     return {
       total,
       welded,
+      totalEquivInches,
+      weldedEquivInches,
+      equivWeldingPct,
       vikOk,
       ndtOk,
       repair,
@@ -161,6 +181,9 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
       'Из них доп. стыков',
       'Сварено (шт.)',
       'Готовность сварки (%)',
+      'Всего экв. дюймов EDI',
+      'Заварено экв. дюймов EDI',
+      'Процент сварки по EDI (%)',
       'Годен ВИК (шт.)',
       'Годен НК (шт.)',
       'Дубл. контроль закрыт (шт.)',
@@ -175,6 +198,9 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
       r.supplementaryJoints,
       r.weldedCount,
       `${r.weldingPct}%`,
+      r.totalEquivInches,
+      r.weldedEquivInches,
+      `${r.equivWeldingPct}%`,
       r.vikPassedCount,
       r.ndtPassedCount,
       r.dupNdtPassedCount,
@@ -261,7 +287,7 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
       </div>
 
       {/* Сводные показатели по выборке */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 p-3.5">
           <div className="text-xs text-slate-500">Всего стыков по базе</div>
           <div className="font-mono text-2xl font-bold text-slate-900 mt-1">{summary.total}</div>
@@ -269,6 +295,18 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
         <div className="bg-white rounded-xl border border-slate-200 p-3.5">
           <div className="text-xs text-slate-500">Сварено стыков</div>
           <div className="font-mono text-2xl font-bold text-[#1e3799] mt-1">{summary.welded}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-sky-300 bg-sky-50/40 p-3.5">
+          <div className="text-xs text-[#1e3799] font-medium flex items-center justify-between">
+            <span>Объём сварки (EDI)</span>
+            <span className="text-[10px] text-slate-500 font-mono">Метод А</span>
+          </div>
+          <div className="font-mono text-lg font-bold text-[#1e3799] mt-1 truncate">
+            {summary.weldedEquivInches} / {summary.totalEquivInches} дюйм
+          </div>
+          <div className="text-[11px] text-slate-600 font-semibold mt-0.5">
+            Прогресс: <span className="text-[#1e3799] font-bold">{summary.equivWeldingPct}%</span>
+          </div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-3.5">
           <div className="text-xs text-slate-500">Принято по ВИК</div>
@@ -339,6 +377,21 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   minWidth={95}
                   onResizeStart={handleResizeStart}
                   onAutoFit={() => handleAutoFit('weldedCount', 130)}
+                />
+                <TableColumnFilterHeader
+                  columnKey="equivInches"
+                  label="Экв. дюймы (EDI), сварено/всего (%)"
+                  rows={baseRows}
+                  getValue={rowGetters.equivInches}
+                  activeFilters={columnFilters}
+                  onApplyFilter={handleApplyFilter}
+                  sortConfig={sortConfig}
+                  onSort={handleSort}
+                  align="right"
+                  width={getColumnWidth('equivInches')}
+                  minWidth={140}
+                  onResizeStart={handleResizeStart}
+                  onAutoFit={() => handleAutoFit('equivInches', 175)}
                 />
                 <TableColumnFilterHeader
                   columnKey="vikPassedCount"
@@ -471,6 +524,17 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                   >
                     <span className="font-semibold text-slate-900">{row.weldedCount}</span>{' '}
                     <span className="text-slate-500">({row.weldingPct}%)</span>
+                  </td>
+                  <td
+                    style={{
+                      width: getColumnWidth('equivInches'),
+                      minWidth: getColumnWidth('equivInches'),
+                    }}
+                    className="py-3 px-3 border-r border-slate-200 font-mono text-right"
+                  >
+                    <span className="font-semibold text-[#1e3799]">{row.weldedEquivInches}</span>{' '}
+                    <span className="text-slate-500">/ {row.totalEquivInches}</span>{' '}
+                    <span className="text-slate-700 font-bold">({row.equivWeldingPct}%)</span>
                   </td>
                   <td
                     style={{

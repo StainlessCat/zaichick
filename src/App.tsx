@@ -65,6 +65,7 @@ import {
   FIELD_LABELS_MAP,
   formatDateDDMMYY,
   generatePeriodWeatherArchive,
+  getJointEquivDiaInch,
   isDateColumnKey,
   isWeldingDateInRange,
   MAX_HISTORY_STEPS,
@@ -1057,8 +1058,8 @@ export default function App() {
 
     const { key, direction } = sortConfig;
     return [...filtered].sort((a, b) => {
-      const valA = a[key] ?? '';
-      const valB = b[key] ?? '';
+      const valA = key === 'equivDiameterInch' ? getJointEquivDiaInch(a) : a[key] ?? '';
+      const valB = key === 'equivDiameterInch' ? getJointEquivDiaInch(b) : b[key] ?? '';
       const cmp = String(valA).localeCompare(String(valB), 'ru', { numeric: true });
       return direction === 'asc' ? cmp : -cmp;
     });
@@ -1068,7 +1069,8 @@ export default function App() {
   const getUniqueValuesForColumn = (colKey: WeldJointFieldKey) => {
     const counts = new Map<string, number>();
     for (const j of scopedJoints) {
-      const val = String(j[colKey] ?? '');
+      const raw = colKey === 'equivDiameterInch' ? getJointEquivDiaInch(j) : j[colKey];
+      const val = String(raw ?? '');
       counts.set(val, (counts.get(val) || 0) + 1);
     }
     return Array.from(counts.entries())

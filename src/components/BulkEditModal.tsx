@@ -18,8 +18,10 @@ import {
   WeldJoint,
 } from '../types/welding';
 import {
+  calculateEquivalentDiaInch,
   fetchAmbientTemperatureAuto,
   formatDateDDMMYY,
+  getEpcWallThicknessFactor,
   GOST_16037_JOINT_TYPES,
   mmToInchDiameter,
   NAKS_WELDING_POSITIONS,
@@ -144,6 +146,10 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
       if (enableDiameter) {
         rawPatch.diameterMm = Number(diameterMm);
         rawPatch.diameterInch = mmToInchDiameter(Number(diameterMm));
+        rawPatch.equivDiameterInch = calculateEquivalentDiaInch(
+          Number(diameterMm),
+          Number(wallThickness)
+        );
         rawPatch.wallThickness = Number(wallThickness);
       }
 
@@ -364,7 +370,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
             </label>
 
             {enableDiameter && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 pl-6">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1 pl-6">
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
                     Диаметр, мм
@@ -405,6 +411,18 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
                     value={wallThickness}
                     onChange={(e) => setWallThickness(Number(e.target.value))}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Экв. дюйм EDI (Метод А)
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${calculateEquivalentDiaInch(diameterMm, wallThickness)}" (K=${getEpcWallThicknessFactor(wallThickness)})`}
+                    title="Эквивалентный дюйм-диаметр по отраслевой шкале EPC с учетом толщины стенки"
+                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-md text-xs font-mono font-semibold text-[#1e3799]"
                   />
                 </div>
               </div>

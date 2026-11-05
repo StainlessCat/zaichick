@@ -46,6 +46,10 @@ export interface ReadinessSummaryRow {
   weldingPct: number;
   readinessPct: number;
   totalEquivDiameterMm: number;
+  totalNominalInches: number;
+  totalEquivInches: number;
+  weldedEquivInches: number;
+  equivWeldingPct: number;
 }
 
 export interface FacilityObject {
@@ -181,6 +185,7 @@ export interface WeldJoint {
   jointType: JointType; // Монтажный | Цеховой
   diameterMm: number; // Диаметр стыка в мм
   diameterInch: string; // Дюйм-диаметр
+  equivDiameterInch?: number; // Эквивалентный дюйм-диаметр (Метод А: EDI = D_inch * K_толщ(S))
   wallThickness: number; // Толщина стенки, мм
 
   // Элемент 1

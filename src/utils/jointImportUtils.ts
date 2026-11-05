@@ -7,6 +7,7 @@ import {
 } from '../types/welding';
 import {
   buildUniqueLineId,
+  calculateEquivalentDiaInch,
   extractRdSuffix,
   formatDateDDMMYY,
   mmToInchDiameter,
@@ -558,6 +559,7 @@ export function parseAndValidateJointsImport(
         jointType: 'Монтажный',
         diameterMm: finalDiameter,
         diameterInch: mmToInchDiameter(finalDiameter),
+        equivDiameterInch: calculateEquivalentDiaInch(finalDiameter, finalThickness),
         wallThickness: finalThickness,
         lrv1Code: lrv1Code || '',
         elem1Name,

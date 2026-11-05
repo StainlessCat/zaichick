@@ -69,6 +69,7 @@ export const PTO_EDITABLE_JOINT_FIELDS = new Set<keyof WeldJoint>([
   'jointType',
   'diameterMm',
   'diameterInch',
+  'equivDiameterInch',
   'wallThickness',
   // Элемент 1 и Элемент 2 (Каталог ЛРВ)
   'lrv1Code',

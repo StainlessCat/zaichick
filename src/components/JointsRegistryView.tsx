@@ -24,6 +24,7 @@ import {
   ALL_COLUMNS,
   FIELD_LABELS_MAP,
   formatDateDDMMYY,
+  getJointEquivDiaInch,
   isDateColumnKey,
 } from '../utils/weldingLogic';
 import { getUserRolePermissions } from '../utils/rbac';
@@ -613,7 +614,10 @@ export const JointsRegistryView: React.FC<JointsRegistryViewProps> = ({
 
                         {/* Ячейки данных по активному шаблону столбцов */}
                         {activeColumnDefs.map((col) => {
-                          const raw = joint[col.key];
+                          const raw =
+                            col.key === 'equivDiameterInch'
+                              ? getJointEquivDiaInch(joint)
+                              : joint[col.key];
                           const strVal = String(raw ?? '');
                           const colWidth =
                             columnWidths[col.key] ?? col.minWidth;

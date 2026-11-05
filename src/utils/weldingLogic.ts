@@ -492,6 +492,130 @@ export function mmToInchDiameter(diameterMm: number): string {
 }
 
 /**
+ * Отраслевая ступенчатая шкала EPC (Метод А) коэффициента трудоёмкости K_толщ по толщине стенки S [мм]:
+ * - S <= 10.0 мм: K = 1.00 (базовый диапазон стандартных толщин)
+ * - 10.1 <= S <= 15.0 мм: K = 1.35
+ * - 15.1 <= S <= 20.0 мм: K = 1.75
+ * - 20.1 <= S <= 26.0 мм: K = 2.30
+ * - 26.1 <= S <= 35.0 мм: K = 2.80
+ * - 35.1 <= S <= 50.0 мм: K = 3.50
+ * - S > 50.0 мм: K = 4.50
+ */
+export function getEpcWallThicknessFactor(wallThicknessMm?: number | null): number {
+  const s = Number(wallThicknessMm) || 0;
+  if (s <= 10.0) return 1.0;
+  if (s <= 15.0) return 1.35;
+  if (s <= 20.0) return 1.75;
+  if (s <= 26.0) return 2.3;
+  if (s <= 35.0) return 2.8;
+  if (s <= 50.0) return 3.5;
+  return 4.5;
+}
+
+/**
+ * Конвертирует строковое обозначение дюйм-диаметра в числовое значение.
+ * Примеры:
+ * "6\"" -> 6.0
+ * "2 1/2\"" -> 2.5
+ * "1 1/4\"" -> 1.25
+ * "1 1/2\"" -> 1.5
+ * "3/8\"" -> 0.375
+ * "1/2\"" -> 0.5
+ * "3/4\"" -> 0.75
+ * "6 1/2\"" -> 6.5
+ * "3 1/2\"" -> 3.5
+ */
+export function inchStringToNumeric(inchStr?: string | number | null): number {
+  if (inchStr === null || inchStr === undefined || inchStr === '') return 0;
+  if (typeof inchStr === 'number') return Number.isNaN(inchStr) ? 0 : inchStr;
+  const clean = String(inchStr).replace(/"/g, '').trim();
+  if (!clean) return 0;
+
+  // Смешанная дробь (напр. "2 1/2", "1 1/4", "6 1/2")
+  const mixedMatch = clean.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+  if (mixedMatch) {
+    const whole = parseFloat(mixedMatch[1]);
+    const num = parseFloat(mixedMatch[2]);
+    const den = parseFloat(mixedMatch[3]);
+    if (den !== 0) {
+      return Math.round((whole + num / den) * 1000) / 1000;
+    }
+  }
+
+  // Простая дробь (напр. "3/8", "1/2", "3/4")
+  const fracMatch = clean.match(/^(\d+)\/(\d+)$/);
+  if (fracMatch) {
+    const num = parseFloat(fracMatch[1]);
+    const den = parseFloat(fracMatch[2]);
+    if (den !== 0) {
+      return Math.round((num / den) * 1000) / 1000;
+    }
+  }
+
+  // Десятичное или целое число (напр. "6", "2.5")
+  const parsed = parseFloat(clean.replace(',', '.'));
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+/**
+ * Возвращает числовой номинальный диаметр в дюймах (D_inch) по наружному диаметру / DN в мм
+ * строго в соответствии с эталонной таблицей соответствия условных проходов.
+ */
+export function mmToNumericInchDiameter(diameterMm: number): number {
+  const inchStr = mmToInchDiameter(diameterMm);
+  return inchStringToNumeric(inchStr);
+}
+
+/**
+ * Расчёт эквивалентных дюймов (Equivalent Dia-Inch / EDI) по Методу А:
+ * EDI = D_inch * K_толщ(S)
+ * где D_inch — числовое значение номинального диаметра в дюймах,
+ * K_толщ(S) — ступенчатый отраслевой коэффициент EPC по толщине стенки.
+ * Результат округляется до 2 десятичных знаков.
+ */
+export function calculateEquivalentDiaInch(
+  diameterMmOrInches: number | string,
+  wallThicknessMm: number
+): number {
+  const dInch =
+    typeof diameterMmOrInches === 'number'
+      ? mmToNumericInchDiameter(diameterMmOrInches)
+      : inchStringToNumeric(diameterMmOrInches);
+  const k = getEpcWallThicknessFactor(wallThicknessMm);
+  return Math.round(dInch * k * 100) / 100;
+}
+
+/**
+ * Извлекает или рассчитывает эквивалентный дюйм-диаметр (EDI) стыка по Методу А
+ */
+export function getJointEquivDiaInch(
+  joint: Pick<WeldJoint, 'diameterMm' | 'diameterInch' | 'wallThickness'> & {
+    equivDiameterInch?: number;
+  }
+): number {
+  if (joint.equivDiameterInch !== undefined && !Number.isNaN(joint.equivDiameterInch)) {
+    return joint.equivDiameterInch;
+  }
+  return calculateEquivalentDiaInch(
+    joint.diameterInch || joint.diameterMm,
+    joint.wallThickness
+  );
+}
+
+/**
+ * Извлекает или рассчитывает номинальный дюйм-диаметр стыка
+ */
+export function getJointNominalInch(
+  joint: Pick<WeldJoint, 'diameterMm' | 'diameterInch'>
+): number {
+  if (joint.diameterInch) {
+    const parsed = inchStringToNumeric(joint.diameterInch);
+    if (parsed > 0) return parsed;
+  }
+  return mmToNumericInchDiameter(joint.diameterMm);
+}
+
+/**
  * Определяет условный проход DN [мм] по наружному диаметру трубы/детали в мм
  * строго в соответствии с эталонной таблицей соответствия условных проходов.
  * Если диаметр не указан или равен 0, возвращает undefined.
@@ -689,6 +813,10 @@ export interface ReadinessRow {
   weldingPct: number;
   readinessPct: number;
   totalEquivDiameterMm: number;
+  totalNominalInches: number;
+  totalEquivInches: number;
+  weldedEquivInches: number;
+  equivWeldingPct: number;
 }
 
 /**
@@ -803,6 +931,21 @@ export function calculateReadinessReport(
       totalJoints > 0 ? Math.round((fullyCompletedCount / totalJoints) * 100) : 0;
     const totalEquivDiameterMm = items.reduce((acc, i) => acc + (Number(i.diameterMm) || 0), 0);
 
+    const totalNominalInches =
+      Math.round(items.reduce((acc, j) => acc + getJointNominalInch(j), 0) * 10) / 10;
+    const totalEquivInches =
+      Math.round(items.reduce((acc, j) => acc + getJointEquivDiaInch(j), 0) * 10) / 10;
+    const weldedEquivInches =
+      Math.round(
+        items
+          .filter((j) => Boolean(j.weldingDate && j.welderStamp))
+          .reduce((acc, j) => acc + getJointEquivDiaInch(j), 0) * 10
+      ) / 10;
+    const equivWeldingPct =
+      totalEquivInches > 0
+        ? Math.round((weldedEquivInches / totalEquivInches) * 100)
+        : 0;
+
     const first = items[0];
     let subLabel = '';
     if (condition === 'objectName') {
@@ -830,6 +973,10 @@ export function calculateReadinessReport(
       weldingPct,
       readinessPct,
       totalEquivDiameterMm,
+      totalNominalInches,
+      totalEquivInches,
+      weldedEquivInches,
+      equivWeldingPct,
     });
   }
 
@@ -1132,6 +1279,15 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
     group: 'prep',
     groupLabel: 'Подготовка (Проект)',
     minWidth: 115,
+    isNumeric: true,
+  },
+  {
+    key: 'equivDiameterInch',
+    label: 'Экв. дюйм (EDI)',
+    shortLabel: 'EDI (дюйм)',
+    group: 'prep',
+    groupLabel: 'Подготовка (Проект)',
+    minWidth: 125,
     isNumeric: true,
   },
   {

@@ -45,6 +45,7 @@ import {
 } from '../utils/rbac';
 import {
   buildUniqueLineId,
+  calculateEquivalentDiaInch,
   checkNaksCertStatus,
   detectLrvConnectionType,
   detectLrvElementType,
@@ -54,6 +55,7 @@ import {
   findWelderByStamp,
   formatDateDDMMYY,
   formatTimestampDDMMYY,
+  getEpcWallThicknessFactor,
   getFacilityWeatherStationName,
   GOST_16037_JOINT_TYPES,
   LRV_ELEMENT_TYPE_OPTIONS,
@@ -1211,6 +1213,10 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       diameterMm: elem1Diam,
       diameterInch: mmToInchDiameter(elem1Diam),
       wallThickness: form.elem1WallThickness ?? form.wallThickness,
+      equivDiameterInch: calculateEquivalentDiaInch(
+        elem1Diam,
+        form.elem1WallThickness ?? form.wallThickness
+      ),
       uniqueLineId: computedUid,
       isSupplementary: isSupp,
     });
@@ -1238,6 +1244,10 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
         diameterMm: elem1Diam,
         diameterInch: mmToInchDiameter(elem1Diam),
         wallThickness: form.elem1WallThickness ?? form.wallThickness,
+        equivDiameterInch: calculateEquivalentDiaInch(
+          elem1Diam,
+          form.elem1WallThickness ?? form.wallThickness
+        ),
         uniqueLineId: computedUid,
         isSupplementary: isSupp,
       });
@@ -1507,6 +1517,19 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                         {form.contour}
                       </div>
                     </div>
+
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
+                      <div className="text-[10px] text-slate-400 mb-0.5">Диаметр и толщина стенки</div>
+                      <div className="font-mono font-bold text-slate-900">
+                        Ø{elem1Diam}×{form.elem1WallThickness ?? form.wallThickness} мм ({mmToInchDiameter(elem1Diam)})
+                      </div>
+                      <div className="text-[11px] font-mono text-[#1e3799] font-semibold mt-1 flex items-center justify-between">
+                        <span>Экв. дюймы (EDI):</span>
+                        <span title="Метод А: отраслевая шкала EPC по толщине стенки">
+                          {calculateEquivalentDiaInch(elem1Diam, form.elem1WallThickness ?? form.wallThickness)}" (K={getEpcWallThicknessFactor(form.elem1WallThickness ?? form.wallThickness)})
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Удаление стыка (разрешено только Инженеру ПТО по RBAC) */}
@@ -1710,6 +1733,19 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       aria-label="Контур испытания (из лайнлиста)"
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs"
                     />
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
+                    <div className="text-[10px] text-slate-400 mb-0.5">Диаметр и толщина стенки</div>
+                    <div className="font-mono font-bold text-slate-900">
+                      Ø{elem1Diam}×{form.elem1WallThickness ?? form.wallThickness} мм ({mmToInchDiameter(elem1Diam)})
+                    </div>
+                    <div className="text-[11px] font-mono text-[#1e3799] font-semibold mt-1 flex items-center justify-between">
+                      <span>Экв. дюймы (EDI):</span>
+                      <span title="Метод А: отраслевая шкала EPC по толщине стенки">
+                        {calculateEquivalentDiaInch(elem1Diam, form.elem1WallThickness ?? form.wallThickness)}" (K={getEpcWallThicknessFactor(form.elem1WallThickness ?? form.wallThickness)})
+                      </span>
+                    </div>
                   </div>
 
                   <div className="pt-2 border-t border-sky-200 space-y-2">
@@ -2343,7 +2379,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     <span>{diameterValidation.message}</span>
                   </div>
                   <span className="font-mono text-xs font-bold">
-                    Эл.1: Ø{elem1Diam}×{form.elem1WallThickness ?? form.wallThickness} мм · Эл.2: Ø{elem2Diam}×{form.elem2WallThickness ?? form.wallThickness} мм
+                    Эл.1: Ø{elem1Diam}×{form.elem1WallThickness ?? form.wallThickness} мм · Эл.2: Ø{elem2Diam}×{form.elem2WallThickness ?? form.wallThickness} мм · Экв. {calculateEquivalentDiaInch(elem1Diam, form.elem1WallThickness ?? form.wallThickness)}"
                   </span>
                 </div>
 

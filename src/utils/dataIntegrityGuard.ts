@@ -10,6 +10,7 @@ import {
 } from '../types/welding';
 import {
   buildUniqueLineId,
+  calculateEquivalentDiaInch,
   detectLrvElementType,
   formatDateDDMMYY,
   mmToInchDiameter,
@@ -231,6 +232,13 @@ export function sanitizeWeldJointRecord(joint: Partial<WeldJoint>): WeldJoint {
     diameterMm: safeDiam,
     diameterInch:
       sanitizeCleanString(joint.diameterInch) || mmToInchDiameter(safeDiam),
+    equivDiameterInch:
+      typeof joint.equivDiameterInch === 'number' && !Number.isNaN(joint.equivDiameterInch)
+        ? joint.equivDiameterInch
+        : calculateEquivalentDiaInch(
+            sanitizeCleanString(joint.diameterInch) || safeDiam,
+            safeWall
+          ),
     wallThickness: safeWall,
 
     lrv1Code: sanitizeCleanString(joint.lrv1Code),
