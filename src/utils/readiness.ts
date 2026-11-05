@@ -1,0 +1,289 @@
+import {
+  ProjectLineItem,
+  ReadinessGroupCondition,
+  WeldJoint,
+} from '../types/welding';
+import { getJointEquivDiaInch, getJointNominalInch } from './pipeCalc';
+
+export interface ReadinessRow {
+  groupKey: string;
+  subLabel: string;
+  totalJoints: number;
+  supplementaryJoints: number;
+  weldedCount: number;
+  vikPassedCount: number;
+  ndtPassedCount: number;
+  dupNdtPassedCount: number;
+  repairCount: number;
+  fullyCompletedCount: number;
+  weldingPct: number;
+  readinessPct: number;
+  totalEquivDiameterMm: number;
+  totalNominalInches: number;
+  totalEquivInches: number;
+  weldedEquivInches: number;
+  equivWeldingPct: number;
+}
+
+/**
+ * Проверяет, является ли стык дефектным (назначен «Ремонт» или «Вырезать» на любом этапе контроля
+ * либо начаты ремонтные работы).
+ */
+export function isJointDefective(
+  joint: Pick<WeldJoint, 'vikResult' | 'ndtResult' | 'dupNdtResult'> & {
+    repairAction?: string;
+  }
+): boolean {
+  if (
+    joint.vikResult === 'Ремонт' ||
+    joint.vikResult === 'Вырезать' ||
+    joint.ndtResult === 'Ремонт' ||
+    joint.ndtResult === 'Вырезать' ||
+    joint.dupNdtResult === 'Ремонт' ||
+    joint.dupNdtResult === 'Вырезать'
+  ) {
+    return true;
+  }
+  if (
+    joint.repairAction === 'Ремонт' ||
+    joint.repairAction === 'Вырезано' ||
+    joint.repairAction === 'Требуется ремонт'
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Проверяет, полностью ли принят стык (либо с первого раза по ВИК и НК,
+ * либо после первичного ремонта с успешным повторным контролем после ремонта).
+ */
+export function isJointFullyAccepted(joint: WeldJoint): boolean {
+  if (!joint.weldingDate || !joint.welderStamp) return false;
+
+  const hadDefect = isJointDefective(joint);
+
+  if (!hadDefect) {
+    // Случай 1: Первичный контроль прошёл успешно без ремонта
+    const primaryVikOk = joint.vikResult === 'Годен';
+    const primaryNdtOk = joint.ndtResult === 'Годен';
+    const dupOkOrNotRequired =
+      joint.dupNdtType === 'Не требуется' || joint.dupNdtResult === 'Годен';
+
+    return primaryVikOk && primaryNdtOk && dupOkOrNotRequired;
+  }
+
+  // Случай 2: Стык с дефектом — проверяем специализированный контроль после ремонта (СТО Газпром 38–48)
+  const hasRepairVik =
+    Boolean(joint.repairVikResult) && joint.repairVikResult !== 'Не проводился';
+  const hasRepairNdt =
+    Boolean(joint.repairNdtType) &&
+    joint.repairNdtType !== 'Не требуется' &&
+    Boolean(joint.repairNdtResult) &&
+    joint.repairNdtResult !== 'Не проводился';
+
+  if (hasRepairVik || hasRepairNdt) {
+    const postVikOk = joint.repairVikResult === 'Годен';
+    const postNdtOk =
+      !joint.repairNdtType ||
+      joint.repairNdtType === 'Не требуется' ||
+      joint.repairNdtResult === 'Годен';
+    const postDupOk =
+      !joint.repairDupNdtType ||
+      joint.repairDupNdtType === 'Не требуется' ||
+      joint.repairDupNdtResult === 'Годен';
+
+    return postVikOk && postNdtOk && postDupOk;
+  }
+
+  // 3. Обратная совместимость с legacy-записями
+  const hadPrimaryRepair =
+    joint.vikResult === 'Ремонт' || joint.ndtResult === 'Ремонт';
+  const postRepairPassed =
+    joint.dupNdtType !== 'Не требуется' && joint.dupNdtResult === 'Годен';
+
+  if (hadPrimaryRepair && postRepairPassed) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Проверяет, находится ли стык в активном ремонте (дефект не закрыт повторным контролем).
+ */
+export function isJointCurrentlyInRepair(joint: WeldJoint): boolean {
+  if (!isJointDefective(joint)) {
+    return false;
+  }
+  // Если дефект зафиксирован, но стык уже успешно принят после переконтроля — ремонт закрыт
+  return !isJointFullyAccepted(joint);
+}
+
+/**
+ * Расчёт отчётности по готовности по условиям: «Объект», «шифр РД», «линия», «контур»
+ */
+export function calculateReadinessReport(
+  joints: WeldJoint[],
+  condition: ReadinessGroupCondition
+): ReadinessRow[] {
+  const groups = new Map<string, WeldJoint[]>();
+
+  for (const j of joints) {
+    const key = j[condition] || 'Не указано';
+    const list = groups.get(key) || [];
+    list.push(j);
+    groups.set(key, list);
+  }
+
+  const rows: ReadinessRow[] = [];
+  for (const [groupKey, items] of groups.entries()) {
+    const totalJoints = items.length;
+    const supplementaryJoints = items.filter((i) => {
+      const num = parseInt(i.jointNumber, 10);
+      return !Number.isNaN(num) && num % 10 !== 0;
+    }).length;
+    const weldedCount = items.filter((i) => Boolean(i.weldingDate && i.welderStamp)).length;
+    const vikPassedCount = items.filter(
+      (i) =>
+        i.vikResult === 'Годен' ||
+        (i.vikResult === 'Ремонт' &&
+          (i.repairVikResult === 'Годен' ||
+            (i.dupNdtType !== 'Не требуется' && i.dupNdtResult === 'Годен')))
+    ).length;
+    const ndtPassedCount = items.filter(
+      (i) =>
+        i.ndtResult === 'Годен' ||
+        (i.ndtResult === 'Ремонт' &&
+          (i.repairNdtResult === 'Годен' ||
+            (i.dupNdtType !== 'Не требуется' && i.dupNdtResult === 'Годен')))
+    ).length;
+    const dupNdtPassedCount = items.filter(
+      (i) => i.dupNdtResult === 'Годен' || i.dupNdtType === 'Не требуется'
+    ).length;
+    const repairCount = items.filter((i) => isJointCurrentlyInRepair(i)).length;
+
+    const fullyCompletedCount = items.filter((i) => isJointFullyAccepted(i)).length;
+
+    const weldingPct = totalJoints > 0 ? Math.round((weldedCount / totalJoints) * 100) : 0;
+    const readinessPct =
+      totalJoints > 0 ? Math.round((fullyCompletedCount / totalJoints) * 100) : 0;
+    const totalEquivDiameterMm = items.reduce((acc, i) => acc + (Number(i.diameterMm) || 0), 0);
+
+    const totalNominalInches =
+      Math.round(items.reduce((acc, j) => acc + getJointNominalInch(j), 0) * 10) / 10;
+    const totalEquivInches =
+      Math.round(items.reduce((acc, j) => acc + getJointEquivDiaInch(j), 0) * 10) / 10;
+    const weldedEquivInches =
+      Math.round(
+        items
+          .filter((j) => Boolean(j.weldingDate && j.welderStamp))
+          .reduce((acc, j) => acc + getJointEquivDiaInch(j), 0) * 10
+      ) / 10;
+    const equivWeldingPct =
+      totalEquivInches > 0
+        ? Math.round((weldedEquivInches / totalEquivInches) * 100)
+        : 0;
+
+    const first = items[0];
+    let subLabel = '';
+    if (condition === 'objectName') {
+      const uniqueRds = new Set(items.map((x) => x.rdCode)).size;
+      subLabel = `Шифров РД: ${uniqueRds}`;
+    } else if (condition === 'rdCode') {
+      subLabel = first?.objectName || '';
+    } else if (condition === 'uniqueLineId') {
+      subLabel = `Линия ${first?.lineNumber || ''} · ${first?.contour || ''}`;
+    } else if (condition === 'contour') {
+      subLabel = first?.objectName || '';
+    }
+
+    rows.push({
+      groupKey,
+      subLabel,
+      totalJoints,
+      supplementaryJoints,
+      weldedCount,
+      vikPassedCount,
+      ndtPassedCount,
+      dupNdtPassedCount,
+      repairCount,
+      fullyCompletedCount,
+      weldingPct,
+      readinessPct,
+      totalEquivDiameterMm,
+      totalNominalInches,
+      totalEquivInches,
+      weldedEquivInches,
+      equivWeldingPct,
+    });
+  }
+
+  return rows.sort((a, b) => b.totalJoints - a.totalJoints);
+}
+
+export interface LineCompletionStatus {
+  isCompleted: boolean;
+  totalJoints: number;
+  weldedJoints: number;
+  controlledJoints: number;
+  statusLabel: string;
+}
+
+/**
+ * Вычисляет статус линии для раздела «Проект (лайнлист)»:
+ * показывает, что все стыки на линии сварены и проконтролированы.
+ */
+export function computeLineListItemStatus(
+  lineItem: ProjectLineItem,
+  allJoints: WeldJoint[]
+): LineCompletionStatus {
+  const lineJoints = allJoints.filter(
+    (j) =>
+      j.uniqueLineId === lineItem.uniqueLineId ||
+      (j.rdCode === lineItem.rdCode && j.lineNumber === lineItem.lineNumber)
+  );
+
+  const totalJoints = lineJoints.length;
+  if (totalJoints === 0) {
+    const manual = (lineItem.manualStatus || '').trim();
+    const isManualReady =
+      manual.toLowerCase().includes('все стыки сварены') ||
+      manual.toLowerCase().includes('готова') ||
+      manual.toLowerCase().includes('заверш');
+    return {
+      isCompleted: isManualReady,
+      totalJoints: 0,
+      weldedJoints: 0,
+      controlledJoints: 0,
+      statusLabel: manual || 'Нет стыков в реестре',
+    };
+  }
+
+  let weldedJoints = 0;
+  let controlledJoints = 0;
+
+  for (const j of lineJoints) {
+    const isWelded = Boolean(j.weldingDate && j.weldingDate.trim() !== '');
+    if (isWelded) {
+      weldedJoints += 1;
+    }
+
+    if (isJointFullyAccepted(j)) {
+      controlledJoints += 1;
+    }
+  }
+
+  const isCompleted =
+    totalJoints > 0 && weldedJoints === totalJoints && controlledJoints === totalJoints;
+
+  return {
+    isCompleted,
+    totalJoints,
+    weldedJoints,
+    controlledJoints,
+    statusLabel: isCompleted
+      ? `Все стыки сварены и проконтролированы (${controlledJoints}/${totalJoints})`
+      : `В работе (сварка ${weldedJoints}/${totalJoints}, НК ${controlledJoints}/${totalJoints})`,
+  };
+}
