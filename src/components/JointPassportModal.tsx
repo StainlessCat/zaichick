@@ -3173,7 +3173,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 {/* Контроль ВИК */}
                 <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2.5">
                   <h4 className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-1.5">
-                    Контроль ВИК (3 поля)
+                    Контроль ВИК
                   </h4>
                   <div>
                     <label className="block text-[11px] text-slate-600 mb-0.5">
@@ -3270,7 +3270,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 {/* Неразрушающий контроль НК */}
                 <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2.5">
                   <h4 className="text-xs font-bold text-slate-900 border-b border-slate-100 pb-1.5">
-                    Неразрушающий контроль НК (4 поля)
+                    Неразрушающий контроль НК
                   </h4>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -3593,10 +3593,13 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     Инженер ПТО · Специалист ЛНК
                   </span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
                   <div>
-                    <label className="block text-[11px] text-slate-600 mb-0.5">
-                      Отметка о контроле корня шва
+                    <label
+                      title="Отметка о контроле корня шва"
+                      className="block text-[11px] font-medium text-slate-600 mb-1 h-4 leading-4 whitespace-nowrap truncate"
+                    >
+                      Контроль корня шва
                     </label>
                     <input
                       type="text"
@@ -3610,8 +3613,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-600 mb-0.5">
-                      Стилоскопирование шва (№ закл., дата)
+                    <label
+                      title="Стилоскопирование шва (№ заключения, дата)"
+                      className="block text-[11px] font-medium text-slate-600 mb-1 h-4 leading-4 whitespace-nowrap truncate"
+                    >
+                      Стилоскопирование
                     </label>
                     <input
                       type="text"
@@ -3625,8 +3631,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-600 mb-0.5">
-                      Ф.И.О. оператора термиста, клеймо
+                    <label
+                      title="Ф.И.О. оператора термиста, клеймо"
+                      className="block text-[11px] font-medium text-slate-600 mb-1 h-4 leading-4 whitespace-nowrap truncate"
+                    >
+                      Термист и клеймо
                     </label>
                     <input
                       type="text"
@@ -3640,8 +3649,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-600 mb-0.5">
-                      № диаграммы термообработки
+                    <label
+                      title="№ диаграммы термообработки"
+                      className="block text-[11px] font-medium text-slate-600 mb-1 h-4 leading-4 whitespace-nowrap truncate"
+                    >
+                      № диаграммы ТО
                     </label>
                     <input
                       type="text"
@@ -3658,8 +3670,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-600 mb-0.5">
-                      Твердость металла шва (№ закл., дата)
+                    <label
+                      title="Твердость металла шва (№ заключения, дата)"
+                      className="block text-[11px] font-medium text-slate-600 mb-1 h-4 leading-4 whitespace-nowrap truncate"
+                    >
+                      Твердость металла
                     </label>
                     <input
                       type="text"
@@ -3673,7 +3688,10 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] text-slate-600 mb-0.5">
+                    <label
+                      title="№ заключения неразрушающего контроля"
+                      className="block text-[11px] font-medium text-slate-600 mb-1 h-4 leading-4 whitespace-nowrap truncate"
+                    >
                       № заключения НК
                     </label>
                     <input
@@ -3688,8 +3706,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     />
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="block text-[11px] text-slate-600 mb-0.5">
-                      Измерение ферритной фазы (№ закл., дата)
+                    <label
+                      title="Измерение ферритной фазы (№ заключения, дата)"
+                      className="block text-[11px] font-medium text-slate-600 mb-1 h-4 leading-4 whitespace-nowrap truncate"
+                    >
+                      Ферритная фаза
                     </label>
                     <input
                       type="text"
