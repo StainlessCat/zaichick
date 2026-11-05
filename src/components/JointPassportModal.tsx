@@ -1938,86 +1938,55 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
 
             {/* ПРАВАЯ ОСНОВНАЯ КОЛОНКА (9 колонок) */}
             <div className="lg:col-span-9 space-y-4">
-              {/* НАВИГАЦИОННЫЕ ВКЛАДКИ ПАСПОРТА СТЫКА (ЭТАП 2: СОВРЕМЕННЫЙ UX) */}
-              <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 shadow-2xs">
-                {/* Таб 1: Сварочные работы */}
+              {/* НАВИГАЦИОННЫЕ ВКЛАДКИ ПАСПОРТА СТЫКА (СОВРЕМЕННЫЙ ТАБ-БАР) */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 shadow-2xs overflow-x-auto">
+                {/* Таб 1: Сварка */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('welding')}
-                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     activeTab === 'welding'
                       ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
                   <Flame className="w-3.5 h-3.5 text-[#1e3799]" />
-                  <span>1. Сварка</span>
-                  {form.weldingDate ? (
-                    <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800">
-                      {formatDateDDMMYY(form.weldingDate)}
-                    </span>
-                  ) : (
-                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-200 text-slate-600">
-                      —
-                    </span>
-                  )}
+                  <span>Сварка</span>
                 </button>
 
-                {/* Таб 2: Свариваемые элементы */}
+                {/* Таб 2: Элементы */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('elements')}
-                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     activeTab === 'elements'
                       ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
                   <Layers className="w-3.5 h-3.5 text-[#1e3799]" />
-                  <span>2. Элементы (ЛРВ)</span>
-                  <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-sky-100 text-[#1e3799]">
-                    Ø{form.diameterMm || '—'}
-                  </span>
+                  <span>Элементы</span>
                 </button>
 
-                {/* Таб 3: Контроль качества (ВИК / НК) */}
+                {/* Таб 3: Контроль ВИК / НК */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('control')}
-                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     activeTab === 'control'
                       ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
                   <ShieldCheck className="w-3.5 h-3.5 text-[#1e3799]" />
-                  <span>3. Контроль ВИК / НК</span>
-                  {isJointDefective(form) ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-red-100 text-red-800 animate-pulse">
-                      <AlertTriangle className="w-2.5 h-2.5 text-red-600" />
-                      Брак
-                    </span>
-                  ) : isJointFullyAccepted(form) ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                      Годен
-                    </span>
-                  ) : form.vikResult || form.ndtResult ? (
-                    <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                      {form.vikResult || form.ndtResult}
-                    </span>
-                  ) : (
-                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-200 text-slate-600">
-                      Ожидает
-                    </span>
-                  )}
+                  <span>Контроль ВИК / НК</span>
                 </button>
 
-                {/* Таб 4: Ремонт и устранение */}
+                {/* Таб 4: Ремонт */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('repair')}
-                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     activeTab === 'repair'
                       ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
                       : isJointDefective(form)
@@ -2026,36 +1995,28 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   }`}
                 >
                   <Wrench className="w-3.5 h-3.5 text-amber-600" />
-                  <span>4. Ремонт</span>
-                  {isJointDefective(form) ? (
+                  <span>Ремонт</span>
+                  {isJointDefective(form) && (
                     <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-red-600 text-white shadow-2xs">
                       <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
                       Дефект
                     </span>
-                  ) : form.repairAction || form.repairVikResult ? (
-                    <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                      Отремонтирован
-                    </span>
-                  ) : (
-                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-200 text-slate-500">
-                      Не требуется
-                    </span>
                   )}
                 </button>
 
-                {/* Таб 5: История изменений (в режиме edit) */}
-                {mode === 'edit' && (
+                {/* Таб 5: История (только для Администратора) */}
+                {mode === 'edit' && currentUser?.role === 'admin' && (
                   <button
                     type="button"
                     onClick={() => setActiveTab('history')}
-                    className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                       activeTab === 'history'
                         ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                     }`}
                   >
                     <History className="w-3.5 h-3.5 text-slate-500" />
-                    <span>5. История</span>
+                    <span>История</span>
                     <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-200 text-slate-700">
                       {auditLogsForJoint.length}
                     </span>
@@ -2501,10 +2462,10 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   </div>
                 </div>
 
-                {/* Строка 4: Тип стыка (монтажный/цеховой), Тип сварного соединения по ГОСТ 16037-80 и Положение при сварке по системе НАКС */}
+                {/* Строка 4: Тип стыка, Тип сварного соединения, Положение при сварке */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
                   <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                    <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
                       Тип стыка *
                     </label>
                     <select
@@ -2524,8 +2485,8 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1">
-                      Тип сварного соединения (по ГОСТ 16037-80) *
+                    <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
+                      Тип сварного соединения *
                     </label>
                     <select
                       value={form.gostJointType || 'С17'}
@@ -2547,8 +2508,8 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-800 mb-1">
-                      Положение при сварке (по системе НАКС) *
+                    <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
+                      Положение при сварке *
                     </label>
                     <select
                       value={form.weldingPosition || 'В1'}
@@ -2568,18 +2529,6 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       ))}
                     </select>
                   </div>
-                </div>
-
-                {/* Навигация вкладки */}
-                <div className="flex justify-end pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('elements')}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-[#1e3799] border border-slate-300 hover:border-[#1e3799] text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    <span>Далее: Свариваемые элементы (ЛРВ)</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               </div>
               </fieldset>
@@ -3152,26 +3101,6 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     </div>
                   </div>
                 </div>
-
-                {/* Навигация вкладки */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('welding')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                    <span>Назад: Сварочные работы</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('control')}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-[#1e3799] border border-slate-300 hover:border-[#1e3799] text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    <span>Далее: Контроль ВИК / НК</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
               </div>
               </fieldset>
             )}
@@ -3652,149 +3581,127 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     </>
                   )}
                 </div>
+              </div>
 
-                {/* ДОПОЛНИТЕЛЬНЫЕ ДАННЫЕ ДЛЯ ФОРМЫ ЖУРНАЛА ПО ГОСТ 32569-2013 (ГРАФЫ 10–14, 16, 17) */}
-                <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                    <div className="text-xs font-bold text-slate-900">
-                      Специальные графы журнала сварки по ГОСТ 32569-2013 (графы 10–14, 16, 17)
-                    </div>
-                    <span className="text-[11px] text-slate-500">
-                      Гр. 10–14: Инженер ПТО · Гр. 16–17: Специалист ЛНК
-                    </span>
+              {/* ДОПОЛНИТЕЛЬНЫЕ ДАННЫЕ ДЛЯ ФОРМЫ ЖУРНАЛА ПО ГОСТ 32569-2013 */}
+              <div className="w-full p-3.5 rounded-xl bg-white border border-slate-200 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                  <div className="text-xs font-bold text-slate-900">
+                    Специальные графы журнала сварки по ГОСТ 32569-2013
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                    <div>
-                      <label className="block text-[11px] text-slate-600 mb-0.5">
-                        Гр. 10: Отметка о контроле корня шва
-                      </label>
-                      <input
-                        type="text"
-                        disabled={!rbac.canEditPrepAndWeldingFields}
-                        value={form.rootWeldControl || ''}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, rootWeldControl: e.target.value }))
-                        }
-                        placeholder="Авто: Годен, дата ВИК"
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-600 mb-0.5">
-                        Гр. 11: Стилоскопирование шва (№ закл., дата)
-                      </label>
-                      <input
-                        type="text"
-                        disabled={!rbac.canEditPrepAndWeldingFields}
-                        value={form.steeloscopyInfo || ''}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, steeloscopyInfo: e.target.value }))
-                        }
-                        placeholder="н/п / Соответствует, СТ-..."
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-600 mb-0.5">
-                        Гр. 12: Ф.И.О. оператора термиста, клеймо
-                      </label>
-                      <input
-                        type="text"
-                        disabled={!rbac.canEditPrepAndWeldingFields}
-                        value={form.heatTreatOperator || ''}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, heatTreatOperator: e.target.value }))
-                        }
-                        placeholder="н/п"
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-600 mb-0.5">
-                        Гр. 13: № диаграммы термообработки
-                      </label>
-                      <input
-                        type="text"
-                        disabled={!rbac.canEditPrepAndWeldingFields}
-                        value={form.heatTreatDiagramNumber || ''}
-                        onChange={(e) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            heatTreatDiagramNumber: e.target.value,
-                          }))
-                        }
-                        placeholder="н/п"
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-600 mb-0.5">
-                        Гр. 14: Твердость металла шва (№ закл., дата)
-                      </label>
-                      <input
-                        type="text"
-                        disabled={!rbac.canEditPrepAndWeldingFields}
-                        value={form.hardnessTestInfo || ''}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, hardnessTestInfo: e.target.value }))
-                        }
-                        placeholder="н/п / HB 185, ТВ-..."
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-slate-600 mb-0.5">
-                        Гр. 16: № заключения НК
-                      </label>
-                      <input
-                        type="text"
-                        disabled={!rbac.canEditNdtFields}
-                        value={form.ndtReportNumber || ''}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, ndtReportNumber: e.target.value }))
-                        }
-                        placeholder={`Авто: ${form.ndtType}-${form.jointNumber}`}
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-[11px] text-slate-600 mb-0.5">
-                        Гр. 17: Измерение ферритной фазы в металле шва (№ закл., дата)
-                      </label>
-                      <input
-                        type="text"
-                        disabled={!rbac.canEditNdtFields}
-                        value={form.ferritePhaseInfo || ''}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, ferritePhaseInfo: e.target.value }))
-                        }
-                        placeholder="н/п / 4,2%, ФФ-..."
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
-                      />
-                    </div>
-                  </div>
+                  <span className="text-[11px] text-slate-500">
+                    Инженер ПТО · Специалист ЛНК
+                  </span>
                 </div>
-
-                {/* Навигация вкладки Контроль */}
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('elements')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                    <span>Назад: Свариваемые элементы</span>
-                  </button>
-                  {isJointDefective(form) && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('repair')}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-800 border border-red-300 text-xs font-bold transition-colors cursor-pointer"
-                    >
-                      <span>Перейти к устранению дефекта</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-0.5">
+                      Отметка о контроле корня шва
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!rbac.canEditPrepAndWeldingFields}
+                      value={form.rootWeldControl || ''}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, rootWeldControl: e.target.value }))
+                      }
+                      placeholder="Авто: Годен, дата ВИК"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-0.5">
+                      Стилоскопирование шва (№ закл., дата)
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!rbac.canEditPrepAndWeldingFields}
+                      value={form.steeloscopyInfo || ''}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, steeloscopyInfo: e.target.value }))
+                      }
+                      placeholder="н/п / Соответствует, СТ-..."
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-0.5">
+                      Ф.И.О. оператора термиста, клеймо
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!rbac.canEditPrepAndWeldingFields}
+                      value={form.heatTreatOperator || ''}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, heatTreatOperator: e.target.value }))
+                      }
+                      placeholder="н/п"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-0.5">
+                      № диаграммы термообработки
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!rbac.canEditPrepAndWeldingFields}
+                      value={form.heatTreatDiagramNumber || ''}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          heatTreatDiagramNumber: e.target.value,
+                        }))
+                      }
+                      placeholder="н/п"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-0.5">
+                      Твердость металла шва (№ закл., дата)
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!rbac.canEditPrepAndWeldingFields}
+                      value={form.hardnessTestInfo || ''}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, hardnessTestInfo: e.target.value }))
+                      }
+                      placeholder="н/п / HB 185, ТВ-..."
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-600 mb-0.5">
+                      № заключения НК
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!rbac.canEditNdtFields}
+                      value={form.ndtReportNumber || ''}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, ndtReportNumber: e.target.value }))
+                      }
+                      placeholder={`Авто: ${form.ndtType}-${form.jointNumber}`}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] text-slate-600 mb-0.5">
+                      Измерение ферритной фазы (№ закл., дата)
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!rbac.canEditNdtFields}
+                      value={form.ferritePhaseInfo || ''}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, ferritePhaseInfo: e.target.value }))
+                      }
+                      placeholder="н/п / 4,2%, ФФ-..."
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
+                    />
+                  </div>
                 </div>
               </div>
               </fieldset>
@@ -4166,28 +4073,6 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                       </div>
                     </div>
                   </div>
-
-                  {/* Навигация вкладки Ремонт */}
-                  <div className="flex items-center justify-between pt-2 border-t border-amber-200">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('control')}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                      <span>Назад: Контроль ВИК / НК</span>
-                    </button>
-                    {mode === 'edit' && (
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('history')}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-[#1e3799] border border-slate-300 hover:border-[#1e3799] text-xs font-semibold transition-colors cursor-pointer"
-                      >
-                        <span>Перейти к истории аудита</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
                 </div>
               ) : (
               <div className="p-8 rounded-xl bg-white border border-slate-200 text-center space-y-3 shadow-2xs">
@@ -4200,23 +4085,13 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 <p className="text-xs text-slate-500 max-w-md mx-auto">
                   По результатам первичного контроля (ВИК и НК) дефектов не зафиксировано. Специализированные графы ремонта и повторного контроля активируются автоматически при переводе стыка в статус «Ремонт» или «Вырезать».
                 </p>
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('control')}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-[#1e3799] border border-slate-300 text-xs font-semibold transition-colors cursor-pointer"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                    <span>Вернуться к контролю ВИК / НК</span>
-                  </button>
-                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* ВКЛАДКА 5: ИСТОРИЯ ИЗМЕНЕНИЙ ЭТОГО СТЫКА */}
-        {activeTab === 'history' && mode === 'edit' && (
+        {/* ВКЛАДКА 5: ИСТОРИЯ ИЗМЕНЕНИЙ ЭТОГО СТЫКА (только для Администратора) */}
+        {activeTab === 'history' && mode === 'edit' && currentUser?.role === 'admin' && (
           <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-3 shadow-2xs">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-700 border-b border-slate-100 pb-2.5">
               <History className="w-4 h-4 text-[#1e3799]" />
