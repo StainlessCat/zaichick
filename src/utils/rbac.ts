@@ -289,7 +289,7 @@ export function getUserRolePermissions(
   }
 
   const desc =
-    'Редактирование разделов «Проект (лайнлист)», «Каталог ЛРВ» и полей подготовки/сварки в паспорте стыка.';
+    'Редактирование раздела «Проект (лайнлист)» и полей подготовки/сварки в паспорте стыка. Раздел «Каталог ЛРВ» доступен в режиме чтения (редактирование закреплено за Администратором).';
   return {
     category: 'pto',
     categoryLabel: 'Инженер ПТО',
@@ -297,7 +297,7 @@ export function getUserRolePermissions(
     roleDescription: desc,
     canEditWeldingTech: false,
     canEditLineList: true,
-    canEditLrvCatalog: true,
+    canEditLrvCatalog: false,
     canCreateOrDeleteJoints: true,
     canEditPrepAndWeldingFields: true,
     canEditNdtFields: false,

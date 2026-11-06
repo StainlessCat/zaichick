@@ -22,11 +22,13 @@ import {
   filterLrvCatalogByRd,
   findWelderByStamp,
   formatDateDDMMYY,
+  findMatchingTechCard,
   formatFlangedZraName,
   formatGost32569JournalRow,
   formatJournalElementName,
   formatStoGazpromJournalRow,
   formatTimestampDDMMYY,
+  getAvailableSizesFromLrv,
   getEpcWallThicknessFactor,
   getFacilityWeatherStationName,
   getJointEquivDiaInch,
@@ -65,6 +67,7 @@ import {
   isJointCurrentlyInRepair,
   isJointDefective,
   isJointFullyAccepted,
+  isJointRepaired,
   FIELD_LABELS_MAP,
 } from './weldingLogic';
 import { sanitizeWeldJointRecord } from './dataIntegrityGuard';
@@ -1657,6 +1660,8 @@ test('COMPREHENSIVE 10-USER SIMULATION: registration of 10 users, collaborative 
 
     if (j.gostJointType === 'У4') {
       assert.equal(stoRow.col14, 'Я', 'Для углового шва У4 в графе 14 ставится Я');
+    } else if (j.jointNumber === '020') {
+      assert.equal(stoRow.col14, 'Р', 'Для отремонтированного стыкового шва в графе 14 ставится Р');
     } else {
       assert.equal(stoRow.col14, 'н/п', 'Для стыкового шва С17 в графе 14 ставится н/п');
     }
@@ -1883,7 +1888,7 @@ test('Field-Level RBAC: ролевое разграничение прав Те�
   const ptoPerms = getUserRolePermissions(ptoUser);
   assert.equal(ptoPerms.canEditWeldingTech, false);
   assert.equal(ptoPerms.canEditLineList, true);
-  assert.equal(ptoPerms.canEditLrvCatalog, true);
+  assert.equal(ptoPerms.canEditLrvCatalog, false);
   assert.equal(ptoPerms.canCreateOrDeleteJoints, true);
   assert.equal(ptoPerms.canEditPrepAndWeldingFields, true);
   assert.equal(ptoPerms.canEditNdtFields, false);
@@ -2741,4 +2746,173 @@ test('Специализированные графы контроля посл�
   assert.equal(sanitized.repairTechCard, 'ТК-045-РАД/РД-01-Р');
   assert.equal(sanitized.repairVikResult, 'Годен');
   assert.equal(sanitized.repairNdtResult, 'Годен');
+});
+
+test('Отраслевые постулаты сварочно-монтажного производства: каскадный подбор ЛРВ, права admin на ЛРВ, индекс Р только в журналах, угловые врезки и автоподбор ТК', () => {
+  // 1. Каскадный подбор элементов ЛРВ (Тип -> Типоразмер Ø×S -> Изделие ЛРВ)
+  const sampleLrv: LRVItem[] = [
+    {
+      id: 'lrv-1',
+      lrvCode: '101',
+      objectName: 'УКПГ-1',
+      rdCode: '001/2026-ТХ',
+      shortName: 'Труба 219х8 09Г2С',
+      material: '09Г2С',
+      diameterMm: 219,
+      wallThickness: 8,
+      ntd: 'ГОСТ 8732-78',
+      manufacturer: 'ПАО ЧТПЗ',
+    },
+    {
+      id: 'lrv-2',
+      lrvCode: '102',
+      objectName: 'УКПГ-1',
+      rdCode: '001/2026-ТХ',
+      shortName: 'Труба 219х8 20',
+      material: '20',
+      diameterMm: 219,
+      wallThickness: 8,
+      ntd: 'ГОСТ 8732-78',
+      manufacturer: 'ПНТЗ',
+    },
+    {
+      id: 'lrv-3',
+      lrvCode: '103',
+      objectName: 'УКПГ-1',
+      rdCode: '001/2026-ТХ',
+      shortName: 'Отвод 90° 219х8 09Г2С',
+      material: '09Г2С',
+      diameterMm: 219,
+      wallThickness: 8,
+      ntd: 'ГОСТ 17375-2001',
+      manufacturer: 'АО СОТ',
+    },
+    {
+      id: 'lrv-4',
+      lrvCode: '104',
+      objectName: 'УКПГ-1',
+      rdCode: '001/2026-ТХ',
+      shortName: 'Труба 57х3.5 20',
+      material: '20',
+      diameterMm: 57,
+      wallThickness: 3.5,
+      ntd: 'ГОСТ 8734-75',
+      manufacturer: 'ПНТЗ',
+    },
+  ];
+
+  // Шаг 1: Получение доступных типоразмеров для типа 'Труба'
+  const pipeSizes = getAvailableSizesFromLrv(sampleLrv, 'Труба');
+  assert.equal(pipeSizes.length, 2);
+  assert.equal(pipeSizes[0].label, 'Ø57 × 3.5 мм');
+  assert.equal(pipeSizes[1].label, 'Ø219 × 8 мм');
+
+  // Шаг 2: Фильтрация по типу 'Труба' и типоразмеру '219x8'
+  const filteredPipes = searchLrvCatalogItems(sampleLrv, '', 'Труба', '219x8');
+  assert.equal(filteredPipes.length, 2);
+  assert.ok(filteredPipes.every((p) => p.diameterMm === 219 && p.wallThickness === 8));
+
+  // Шаг 3: Прямой поиск по коду ЛРВ
+  const directMatch = searchLrvCatalogItems(sampleLrv, '103', 'Все типы');
+  assert.equal(directMatch.length, 1);
+  assert.equal(directMatch[0].lrvCode, '103');
+
+  // 2. Ролевое разграничение: редактирование ЛРВ строго для admin (ПТО - только чтение)
+  const adminUser: UserAccount = {
+    id: 'u-admin',
+    login: 'admin',
+    fullName: 'Главный Администратор',
+    role: 'admin',
+    isActive: true,
+  };
+  const ptoUser: UserAccount = {
+    id: 'u-pto',
+    login: 'pto',
+    fullName: 'Инженер ПТО',
+    role: 'pto',
+    isActive: true,
+  };
+  assert.equal(getUserRolePermissions(adminUser).canEditLrvCatalog, true);
+  assert.equal(getUserRolePermissions(ptoUser).canEditLrvCatalog, false);
+
+  // 3. Индекс «Р» для ремонта: добавляется ТОЛЬКО в граф. 2 ГОСТ и граф. 14 СТО Газпром.
+  // В базе/паспорте номер стыка остаётся базовым (напр. 010).
+  const repairedJoint: WeldJoint = {
+    id: 'wj-rep-1',
+    objectName: 'УКПГ-1',
+    rdCode: '001/2026-ТХ',
+    lineNumber: 'ФП1.2/1',
+    jointNumber: '010',
+    status: 'Сварен',
+    jointKind: 'Стыковое',
+    gostJointType: 'С17',
+    diameterMm: 219,
+    wallThickness: 8,
+    weldingType: 'РАД+РД',
+    welderStamp: '01',
+    weldingDate: '2026-06-15',
+    elem1Name: 'Труба 219х8',
+    elem1Material: '09Г2С',
+    elem2Name: 'Отвод 219х8',
+    elem2Material: '09Г2С',
+    repairAction: 'Ремонт',
+    repairDate: '2026-06-18',
+    repairVikResult: 'Годен',
+    repairNdtResult: 'Годен',
+  };
+
+  assert.equal(repairedJoint.jointNumber, '010', 'В паспорте и реестре номер стыка чистый (010)');
+  assert.equal(isJointRepaired(repairedJoint), true);
+
+  const gostRow = formatGost32569JournalRow(repairedJoint, 0, []);
+  assert.equal(gostRow.col2, '010Р, С17', 'В графе 2 ГОСТ 32569-2013 номер стыка получает суффикс Р');
+
+  const stoRow = formatStoGazpromJournalRow(repairedJoint, 0, sampleLrv);
+  assert.equal(stoRow.col13, '010', 'В графе 13 СТО Газпром номер стыка остаётся базовым (010)');
+  assert.equal(stoRow.col14, 'Р', 'В графе 14 СТО Газпром проставляется индекс Р для отремонтированного шва');
+
+  // 4. Радиопереключатель «Стыковое / Угловое»:
+  // Для 'Стыковое' разные диаметры недопустимы
+  const buttMatch = validateElementsDiameterMatch(219, 57, 'Стыковое');
+  assert.equal(buttMatch.isMatch, false);
+
+  // Для 'Угловое' разные диаметры допустимы (врезка)
+  const angularMatch = validateElementsDiameterMatch(219, 57, 'Угловое');
+  assert.equal(angularMatch.isMatch, true);
+  assert.ok(angularMatch.message.includes('Угловое соединение (врезка)'));
+
+  // 5. Автоматический подбор технологической карты
+  const sampleTechCards: TechCardItem[] = [
+    {
+      id: 'tc-1',
+      code: 'ТК-01-219',
+      jointType: 'С17',
+      weldingType: 'РАД+РД',
+      steelGrade: '09Г2С',
+      minDiameterMm: 159,
+      maxDiameterMm: 325,
+      minWallThicknessMm: 6,
+      maxWallThicknessMm: 12,
+    },
+    {
+      id: 'tc-2',
+      code: 'ТК-02-57',
+      jointType: 'С17',
+      weldingType: 'РАД',
+      steelGrade: '20',
+      minDiameterMm: 32,
+      maxDiameterMm: 89,
+      minWallThicknessMm: 2,
+      maxWallThicknessMm: 5,
+    },
+  ];
+
+  const matchedTc = findMatchingTechCard(sampleTechCards, {
+    diameterMm: 219,
+    wallThicknessMm: 8,
+    weldingType: 'РАД+РД',
+    steelGrade: '09Г2С',
+  });
+  assert.ok(matchedTc);
+  assert.equal(matchedTc?.code, 'ТК-01-219');
 });

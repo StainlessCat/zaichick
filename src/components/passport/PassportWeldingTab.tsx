@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Flame,
   Lock,
   CheckCircle2,
   AlertTriangle,
   CloudSun,
+  Sparkles,
 } from 'lucide-react';
 import type {
   WeldJoint,
@@ -20,6 +21,7 @@ import {
   normalizeDecimalInput,
   findWelderByStamp,
   checkNaksCertStatus,
+  findMatchingTechCard,
   GOST_16037_JOINT_TYPES,
   NAKS_WELDING_POSITIONS,
 } from '../../utils/weldingLogic';
@@ -81,6 +83,23 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
   handleWelder2Change,
   handleBrigadeStampChange,
 }) => {
+  const currentJointDiam = form.elem1DiameterMm ?? form.diameterMm;
+  const currentJointWall = form.elem1WallThickness ?? form.wallThickness;
+  const autoMatchedTechCard = useMemo(() => {
+    return findMatchingTechCard(techCards, {
+      diameterMm: currentJointDiam,
+      wallThicknessMm: currentJointWall,
+      weldingType: form.weldingType,
+      steelGrade: form.elem1Material,
+    });
+  }, [techCards, currentJointDiam, currentJointWall, form.weldingType, form.elem1Material]);
+
+  const filteredGostOptions = useMemo(() => {
+    const isAng = form.jointKind === 'Угловое';
+    return GOST_16037_JOINT_TYPES.filter((g) =>
+      isAng ? g.category === 'Угловое' : g.category === 'Стыковое'
+    );
+  }, [form.jointKind]);
   return (
     <fieldset
       disabled={!rbac.canEditPrepAndWeldingFields}
@@ -172,9 +191,20 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
 
           <div className="lg:col-span-4">
-            <label className="block text-xs font-bold text-slate-800 mb-1">
-              Технологическая карта на сварку (ТК) *
-            </label>
+            <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
+              <span>Технологическая карта (ТК) *</span>
+              {autoMatchedTechCard && autoMatchedTechCard.number !== form.techCardNumber && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectTechCard(autoMatchedTechCard.number)}
+                  className="inline-flex items-center gap-1 text-[11px] font-mono text-[#1e3799] hover:underline font-bold"
+                  title={`Автоподбор ТК под Ø${currentJointDiam}×${currentJointWall} мм (${autoMatchedTechCard.weldingType})`}
+                >
+                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  <span>По ТК: {autoMatchedTechCard.number}</span>
+                </button>
+              )}
+            </div>
             <select
               value={form.techCardNumber}
               onChange={(e) => handleSelectTechCard(e.target.value)}
@@ -517,72 +547,127 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
         </div>
 
-        {/* Строка 4: Тип стыка, Тип сварного соединения, Положение при сварке */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
-          <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
-              Тип стыка *
-            </label>
-            <select
-              value={form.jointType || 'Монтажный'}
-              onChange={(e) =>
-                setForm((prev: WeldJoint) => ({
-                  ...prev,
-                  jointType: e.target.value as JointType,
-                }))
-              }
-              aria-label="Тип стыка"
-              className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-semibold text-[#1e3799]"
-            >
-              <option value="Монтажный">Монтажный</option>
-              <option value="Цеховой">Цеховой</option>
-            </select>
+        {/* Строка 4: Радиопереключатель «Стыковое / Угловое», Место сварки, Тип сварного соединения по ГОСТ 16037, Положение при сварке */}
+        <div className="space-y-3 pt-2 border-t border-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+            <span className="text-xs font-bold text-slate-800">
+              Вид сварного соединения:
+            </span>
+            <div className="flex items-center gap-4">
+              <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="jointKind"
+                  value="Стыковое"
+                  checked={form.jointKind !== 'Угловое'}
+                  onChange={() =>
+                    setForm((prev: WeldJoint) => ({
+                      ...prev,
+                      jointKind: 'Стыковое',
+                      gostJointType: prev.gostJointType?.startsWith('У') ? 'С17' : prev.gostJointType || 'С17',
+                    }))
+                  }
+                  className="w-4 h-4 text-[#1e3799] focus:ring-[#1e3799]"
+                />
+                <span>Стыковое</span>
+              </label>
+
+              <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-800 cursor-pointer">
+                <input
+                  type="radio"
+                  name="jointKind"
+                  value="Угловое"
+                  checked={form.jointKind === 'Угловое'}
+                  onChange={() =>
+                    setForm((prev: WeldJoint) => ({
+                      ...prev,
+                      jointKind: 'Угловое',
+                      gostJointType: prev.gostJointType?.startsWith('С') ? 'У16' : prev.gostJointType || 'У16',
+                    }))
+                  }
+                  className="w-4 h-4 text-[#1e3799] focus:ring-[#1e3799]"
+                />
+                <span>Угловое (врезка / штуцер)</span>
+              </label>
+            </div>
+            <span className="text-[11px] text-slate-500 font-mono">
+              {form.jointKind === 'Угловое'
+                ? 'Врезка: допускаются разные диаметры деталей'
+                : 'Стыковое: диаметры деталей должны совпадать'}
+            </span>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
-              Тип сварного соединения *
-            </label>
-            <select
-              value={form.gostJointType || 'С17'}
-              onChange={(e) =>
-                setForm((prev: WeldJoint) => ({
-                  ...prev,
-                  gostJointType: e.target.value,
-                }))
-              }
-              aria-label="Тип сварного соединения"
-              className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-semibold text-[#1e3799]"
-            >
-              {GOST_16037_JOINT_TYPES.map((gost) => (
-                <option key={gost.code} value={gost.code}>
-                  {gost.description}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
+                Тип стыка (место) *
+              </label>
+              <select
+                value={form.jointType || 'Монтажный'}
+                onChange={(e) =>
+                  setForm((prev: WeldJoint) => ({
+                    ...prev,
+                    jointType: e.target.value as JointType,
+                  }))
+                }
+                aria-label="Тип стыка"
+                className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-semibold text-[#1e3799]"
+              >
+                <option value="Монтажный">Монтажный (площадка)</option>
+                <option value="Цеховой">Цеховой (цех / база)</option>
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
-              Положение при сварке *
-            </label>
-            <select
-              value={form.weldingPosition || 'В1'}
-              onChange={(e) =>
-                setForm((prev: WeldJoint) => ({
-                  ...prev,
-                  weldingPosition: e.target.value,
-                }))
-              }
-              aria-label="Положение"
-              className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-semibold text-[#1e3799]"
-            >
-              {NAKS_WELDING_POSITIONS.map((pos) => (
-                <option key={pos.code} value={pos.code}>
-                  {pos.description}
-                </option>
-              ))}
-            </select>
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
+                Тип соединения по ГОСТ 16037 *
+              </label>
+              <select
+                value={form.gostJointType || (form.jointKind === 'Угловое' ? 'У16' : 'С17')}
+                onChange={(e) =>
+                  setForm((prev: WeldJoint) => ({
+                    ...prev,
+                    gostJointType: e.target.value,
+                  }))
+                }
+                aria-label="Тип сварного соединения"
+                className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-semibold text-[#1e3799]"
+              >
+                {filteredGostOptions.map((gost) => (
+                  <option key={gost.code} value={gost.code}>
+                    {gost.description}
+                  </option>
+                ))}
+                {!filteredGostOptions.some((g) => g.code === form.gostJointType) && form.gostJointType && (
+                  <option value={form.gostJointType}>
+                    {form.gostJointType}
+                  </option>
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
+                Положение при сварке *
+              </label>
+              <select
+                value={form.weldingPosition || 'В1'}
+                onChange={(e) =>
+                  setForm((prev: WeldJoint) => ({
+                    ...prev,
+                    weldingPosition: e.target.value,
+                  }))
+                }
+                aria-label="Положение"
+                className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-semibold text-[#1e3799]"
+              >
+                {NAKS_WELDING_POSITIONS.map((pos) => (
+                  <option key={pos.code} value={pos.code}>
+                    {pos.description}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>

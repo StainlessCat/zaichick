@@ -238,6 +238,7 @@ export function sanitizeWeldJointRecord(joint: Partial<WeldJoint>): WeldJoint {
     uniqueLineId,
     jointNumber: sanitizeCleanString(joint.jointNumber, '010'),
     isSupplementary: Boolean(joint.isSupplementary),
+    jointKind: joint.jointKind === 'Угловое' ? 'Угловое' : 'Стыковое',
     jointType: joint.jointType === 'Цеховой' ? 'Цеховой' : 'Монтажный',
     diameterMm: safeDiam,
     diameterInch:

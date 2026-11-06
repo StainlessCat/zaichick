@@ -182,6 +182,7 @@ export interface WeldJoint {
   // 1. Вносимые на этапе подготовки производства
   jointNumber: string; // 010, 020... или доп. стыки 011, 012
   isSupplementary?: boolean; // Признак дополнительного стыка
+  jointKind?: 'Стыковое' | 'Угловое'; // Тип соединения (стыковое / угловое)
   jointType: JointType; // Монтажный | Цеховой
   diameterMm: number; // Диаметр стыка в мм
   diameterInch: string; // Дюйм-диаметр

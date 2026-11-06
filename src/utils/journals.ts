@@ -274,6 +274,36 @@ function normalizeGostNotApplicable(val: string | undefined | null): string {
 /**
  * Формирует все 17 граф строки журнала сварки по ГОСТ 32569-2013 для заданного стыка.
  */
+/**
+ * Проверяет, подвергался ли сварной стык ремонту (устранение дефекта, ремонтный шов, повторный контроль).
+ */
+export function isJointRepaired(
+  joint: Pick<
+    WeldJoint,
+    | 'repairAction'
+    | 'repairDate'
+    | 'repairVikResult'
+    | 'repairNdtResult'
+    | 'repairDupNdtResult'
+    | 'repairWelderStamp'
+    | 'vikResult'
+    | 'ndtResult'
+    | 'dupNdtResult'
+  >
+): boolean {
+  return Boolean(
+    joint.repairAction ||
+      joint.repairDate ||
+      joint.repairWelderStamp ||
+      (joint.repairVikResult && joint.repairVikResult !== 'Не проводился') ||
+      (joint.repairNdtResult && joint.repairNdtResult !== 'Не проводился') ||
+      (joint.repairDupNdtResult && joint.repairDupNdtResult !== 'Не проводился') ||
+      joint.vikResult === 'Ремонт' ||
+      joint.ndtResult === 'Ремонт' ||
+      joint.dupNdtResult === 'Ремонт'
+  );
+}
+
 export function formatGost32569JournalRow(
   joint: WeldJoint,
   rowIndex: number,
@@ -283,7 +313,8 @@ export function formatGost32569JournalRow(
   const col1 = String(rowIndex + 1);
 
   const gostType = joint.gostJointType?.trim() || 'С17';
-  const col2 = `${joint.jointNumber}, ${gostType}`;
+  const repairSuffix = isJointRepaired(joint) ? 'Р' : '';
+  const col2 = `${joint.jointNumber}${repairSuffix}, ${gostType}`;
 
   const namesList = (joint.welderFullName || '')
     .split(',')
@@ -382,8 +413,9 @@ export function formatGost32569JournalRow(
       ? `Годен${refDate ? `, ${refDate}` : ''}`
       : 'н/п');
 
-  const isAlloySteel =
-    joint.elem1Material.includes('Х') || joint.elem2Material.includes('Х');
+  const isAlloySteel = Boolean(
+    joint.elem1Material?.includes('Х') || joint.elem2Material?.includes('Х')
+  );
   const customCol11 = normalizeGostNotApplicable(joint.steeloscopyInfo);
   const col11 =
     customCol11 ||
@@ -1083,7 +1115,16 @@ export function formatStoGazpromJournalRow(
   const col11 = joint.lineNumber || 'н/п';
   const col12 = joint.weldingType || 'н/п';
   const col13 = joint.jointNumber || 'н/п';
-  const col14 = isAngularWeldJoint(joint.gostJointType) ? 'Я' : 'н/п';
+  const isAngular = joint.jointKind === 'Угловое' || isAngularWeldJoint(joint.gostJointType);
+  const isRepair = isJointRepaired(joint);
+  let col14 = 'н/п';
+  if (isAngular && isRepair) {
+    col14 = 'Я / Р';
+  } else if (isAngular) {
+    col14 = 'Я';
+  } else if (isRepair) {
+    col14 = 'Р';
+  }
 
   const col15 = 'н/п';
   const col16 = (joint.techCardNumber || '').trim() || 'н/п';

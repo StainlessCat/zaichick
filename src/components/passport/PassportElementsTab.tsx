@@ -16,6 +16,7 @@ import {
 import {
   calculateEquivalentDiaInch,
   detectLrvElementType,
+  LrvSizeOption,
   LRV_ELEMENT_TYPE_OPTIONS,
   mmToInchDiameter,
   normalizeDecimalInput,
@@ -39,10 +40,16 @@ export interface PassportElementsTabProps {
   diameterValidation: { isMatch: boolean; message: string };
   elem1TypeFilter: LrvElementCategory;
   setElem1TypeFilter: (v: LrvElementCategory) => void;
+  elem1SizeFilter: string;
+  setElem1SizeFilter: (v: string) => void;
+  elem1AvailableSizes: LrvSizeOption[];
   elem1SearchQuery: string;
   setElem1SearchQuery: (v: string) => void;
   elem2TypeFilter: LrvElementCategory;
   setElem2TypeFilter: (v: LrvElementCategory) => void;
+  elem2SizeFilter: string;
+  setElem2SizeFilter: (v: string) => void;
+  elem2AvailableSizes: LrvSizeOption[];
   elem2SearchQuery: string;
   setElem2SearchQuery: (v: string) => void;
   filteredLrvOptionsElem1: LRVItem[];
@@ -71,10 +78,16 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
   diameterValidation,
   elem1TypeFilter,
   setElem1TypeFilter,
+  elem1SizeFilter,
+  setElem1SizeFilter,
+  elem1AvailableSizes,
   elem1SearchQuery,
   setElem1SearchQuery,
   elem2TypeFilter,
   setElem2TypeFilter,
+  elem2SizeFilter,
+  setElem2SizeFilter,
+  elem2AvailableSizes,
   elem2SearchQuery,
   setElem2SearchQuery,
   filteredLrvOptionsElem1,
@@ -173,57 +186,93 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
                 </span>
               </div>
 
-              {/* Поиск элемента 1 по ЛРВ, краткому наименованию, НТД, диаметру и типу элемента */}
-              <div className="p-2 rounded-lg bg-white border border-slate-200/90 space-y-1.5">
+              {/* Каскадный подбор элемента 1: 1. Тип -> 2. Типоразмер (Ø×S) -> 3. Материал ЛРВ */}
+              <div className="p-2.5 rounded-lg bg-white border border-slate-200/90 space-y-2">
                 <div className="grid grid-cols-12 gap-1.5">
-                  <div className="col-span-5">
+                  <div className="col-span-6">
+                    <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                      1. Тип элемента
+                    </label>
                     <select
                       value={elem1TypeFilter}
-                      onChange={(e) =>
-                        setElem1TypeFilter(
-                          e.target.value as LrvElementCategory
-                        )
-                      }
+                      onChange={(e) => {
+                        setElem1TypeFilter(e.target.value as LrvElementCategory);
+                        setElem1SizeFilter('all');
+                      }}
                       aria-label="Тип элемента 1"
                       className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-[11px] font-semibold text-[#1e3799]"
                     >
                       {LRV_ELEMENT_TYPE_OPTIONS.map((t) => (
                         <option key={t} value={t}>
-                          {t === 'Все типы' ? 'Тип: Все' : t}
+                          {t === 'Все типы' ? 'Все типы деталей' : t}
                         </option>
                       ))}
                     </select>
                   </div>
-                  <div className="col-span-7 relative">
-                    <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={elem1SearchQuery}
-                      onChange={(e) => setElem1SearchQuery(e.target.value)}
-                      placeholder="Поиск: ЛРВ, наимен., НТД, Ø..."
-                      aria-label="Поиск Элемента 1 по базе ЛРВ"
-                      className="w-full pl-6 pr-2 py-1 bg-white border border-slate-300 rounded text-[11px]"
-                    />
+                  <div className="col-span-6">
+                    <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                      2. Типоразмер (Ø × S)
+                    </label>
+                    <select
+                      value={elem1SizeFilter}
+                      onChange={(e) => setElem1SizeFilter(e.target.value)}
+                      aria-label="Типоразмер Элемента 1"
+                      className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-[11px] font-semibold text-slate-800"
+                    >
+                      <option value="all">Все размеры ({elem1AvailableSizes.length})</option>
+                      {elem1AvailableSizes.map((sz) => (
+                        <option key={sz.key} value={sz.key}>
+                          {sz.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
+                <div className="relative">
+                  <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={elem1SearchQuery}
+                    onChange={(e) => setElem1SearchQuery(e.target.value)}
+                    placeholder="Уточнить поиск: марка стали, завод, ГОСТ..."
+                    aria-label="Поиск Элемента 1 по базе ЛРВ"
+                    className="w-full pl-6 pr-2 py-1 bg-white border border-slate-300 rounded text-[11px]"
+                  />
+                </div>
+
                 <div>
-                  <label className="block text-[10px] font-medium text-slate-500 mb-0.5">
-                    Выбор элемента из базы ЛРВ (найдено: {filteredLrvOptionsElem1.length})
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    3. Изделие / материал из базы ЛРВ (найдено: {filteredLrvOptionsElem1.length})
                   </label>
                   <select
                     value={form.lrv1Code}
                     onChange={(e) => handleSelectLrv1(e.target.value)}
-                    aria-label="Код ЛРВ Элемент 1"
-                    className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799] rounded text-xs font-mono font-semibold text-[#1e3799]"
+                    aria-label="Изделие Элемент 1 из базы ЛРВ"
+                    className="w-full px-2 py-1.5 bg-white border border-[#1e3799] rounded text-xs font-semibold text-[#1e3799]"
                   >
-                    <option value="">— Выберите элемент из базы ЛРВ —</option>
+                    <option value="">— Выберите материал из базы ЛРВ —</option>
                     {filteredLrvOptionsElem1.map((item) => (
                       <option key={item.id} value={item.lrvCode}>
                         {formatLrvOptionLabel(item)}
                       </option>
                     ))}
                   </select>
+                </div>
+
+                {/* Прямой ввод кода ЛРВ */}
+                <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-500">Или прямой ввод кода ЛРВ:</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={form.lrv1Code || ''}
+                      onChange={(e) => handleSelectLrv1(e.target.value.trim())}
+                      placeholder="Код ЛРВ..."
+                      aria-label="Прямой ввод кода ЛРВ Элемент 1"
+                      className="w-28 px-2 py-0.5 bg-slate-50 border border-slate-300 rounded text-[11px] font-mono font-bold text-center text-[#1e3799]"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -436,57 +485,93 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
                 </span>
               </div>
 
-              {/* Поиск элемента 2 по ЛРВ, краткому наименованию, НТД, диаметру и типу элемента */}
-              <div className="p-2 rounded-lg bg-white border border-slate-200/90 space-y-1.5">
+              {/* Каскадный подбор элемента 2: 1. Тип -> 2. Типоразмер (Ø×S) -> 3. Материал ЛРВ */}
+              <div className="p-2.5 rounded-lg bg-white border border-slate-200/90 space-y-2">
                 <div className="grid grid-cols-12 gap-1.5">
-                  <div className="col-span-5">
+                  <div className="col-span-6">
+                    <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                      1. Тип элемента
+                    </label>
                     <select
                       value={elem2TypeFilter}
-                      onChange={(e) =>
-                        setElem2TypeFilter(
-                          e.target.value as LrvElementCategory
-                        )
-                      }
+                      onChange={(e) => {
+                        setElem2TypeFilter(e.target.value as LrvElementCategory);
+                        setElem2SizeFilter('all');
+                      }}
                       aria-label="Тип элемента 2"
                       className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-[11px] font-semibold text-[#1e3799]"
                     >
                       {LRV_ELEMENT_TYPE_OPTIONS.map((t) => (
                         <option key={t} value={t}>
-                          {t === 'Все типы' ? 'Тип: Все' : t}
+                          {t === 'Все типы' ? 'Все типы деталей' : t}
                         </option>
                       ))}
                     </select>
                   </div>
-                  <div className="col-span-7 relative">
-                    <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={elem2SearchQuery}
-                      onChange={(e) => setElem2SearchQuery(e.target.value)}
-                      placeholder="Поиск: ЛРВ, наимен., НТД, Ø..."
-                      aria-label="Поиск Элемента 2 по базе ЛРВ"
-                      className="w-full pl-6 pr-2 py-1 bg-white border border-slate-300 rounded text-[11px]"
-                    />
+                  <div className="col-span-6">
+                    <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                      2. Типоразмер (Ø × S)
+                    </label>
+                    <select
+                      value={elem2SizeFilter}
+                      onChange={(e) => setElem2SizeFilter(e.target.value)}
+                      aria-label="Типоразмер Элемента 2"
+                      className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-[11px] font-semibold text-slate-800"
+                    >
+                      <option value="all">Все размеры ({elem2AvailableSizes.length})</option>
+                      {elem2AvailableSizes.map((sz) => (
+                        <option key={sz.key} value={sz.key}>
+                          {sz.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
+                <div className="relative">
+                  <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={elem2SearchQuery}
+                    onChange={(e) => setElem2SearchQuery(e.target.value)}
+                    placeholder="Уточнить поиск: марка стали, завод, ГОСТ..."
+                    aria-label="Поиск Элемента 2 по базе ЛРВ"
+                    className="w-full pl-6 pr-2 py-1 bg-white border border-slate-300 rounded text-[11px]"
+                  />
+                </div>
+
                 <div>
-                  <label className="block text-[10px] font-medium text-slate-500 mb-0.5">
-                    Выбор элемента из базы ЛРВ (найдено: {filteredLrvOptionsElem2.length})
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    3. Изделие / материал из базы ЛРВ (найдено: {filteredLrvOptionsElem2.length})
                   </label>
                   <select
                     value={form.lrv2Code}
                     onChange={(e) => handleSelectLrv2(e.target.value)}
-                    aria-label="Код ЛРВ Элемент 2"
-                    className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799] rounded text-xs font-mono font-semibold text-[#1e3799]"
+                    aria-label="Изделие Элемент 2 из базы ЛРВ"
+                    className="w-full px-2 py-1.5 bg-white border border-[#1e3799] rounded text-xs font-semibold text-[#1e3799]"
                   >
-                    <option value="">— Выберите элемент из базы ЛРВ —</option>
+                    <option value="">— Выберите материал из базы ЛРВ —</option>
                     {filteredLrvOptionsElem2.map((item) => (
                       <option key={item.id} value={item.lrvCode}>
                         {formatLrvOptionLabel(item)}
                       </option>
                     ))}
                   </select>
+                </div>
+
+                {/* Прямой ввод кода ЛРВ */}
+                <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[10px] text-slate-500">Или прямой ввод кода ЛРВ:</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={form.lrv2Code || ''}
+                      onChange={(e) => handleSelectLrv2(e.target.value.trim())}
+                      placeholder="Код ЛРВ..."
+                      aria-label="Прямой ввод кода ЛРВ Элемент 2"
+                      className="w-28 px-2 py-0.5 bg-slate-50 border border-slate-300 rounded text-[11px] font-mono font-bold text-center text-[#1e3799]"
+                    />
+                  </div>
                 </div>
               </div>
 

@@ -62,6 +62,8 @@ import {
   GOST_16037_JOINT_TYPES,
   isJointDefective,
   isJointFullyAccepted,
+  getAvailableSizesFromLrv,
+  LrvSizeOption,
   LRV_ELEMENT_TYPE_OPTIONS,
   mmToInchDiameter,
   NAKS_WELDING_POSITIONS,
@@ -213,13 +215,15 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
   const [welder2Stamp, setWelder2Stamp] = useState<string>('');
   const [brigadeStamp, setBrigadeStamp] = useState<string>('');
 
-  // Поиск и фильтрация элементов 1 и 2 по базе ЛРВ (код ЛРВ, краткое наименование, НТД, диаметр, тип элемента)
+  // Поиск и каскадная фильтрация элементов 1 и 2 по базе ЛРВ (тип, типоразмер, код, наименование)
   const [elem1SearchQuery, setElem1SearchQuery] = useState('');
   const [elem1TypeFilter, setElem1TypeFilter] =
     useState<LrvElementCategory>('Все типы');
+  const [elem1SizeFilter, setElem1SizeFilter] = useState<string>('all');
   const [elem2SearchQuery, setElem2SearchQuery] = useState('');
   const [elem2TypeFilter, setElem2TypeFilter] =
     useState<LrvElementCategory>('Все типы');
+  const [elem2SizeFilter, setElem2SizeFilter] = useState<string>('all');
 
   const [form, setForm] = useState<WeldJoint>(() => {
     if (initialJoint) return { ...initialJoint };
@@ -362,12 +366,24 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     return filtered.length > 0 ? filtered : availableLrvItems;
   }, [availableLrvItems, filterLrvBySameDiameter, elem1Diam]);
 
-  // Отфильтрованные списки ЛРВ для Элемента 1 и Элемента 2 по поисковому запросу и типу элемента
+  // Доступные уникальные типоразмеры (Ø×S) для Элемента 1 и Элемента 2
+  const elem1AvailableSizes = useMemo(
+    () => getAvailableSizesFromLrv(availableLrvItems, elem1TypeFilter),
+    [availableLrvItems, elem1TypeFilter]
+  );
+
+  const elem2AvailableSizes = useMemo(
+    () => getAvailableSizesFromLrv(baseLrvOptionsForElem2, elem2TypeFilter),
+    [baseLrvOptionsForElem2, elem2TypeFilter]
+  );
+
+  // Отфильтрованные списки ЛРВ для Элемента 1 и Элемента 2 по поисковому запросу, типу и типоразмеру
   const filteredLrvOptionsElem1 = useMemo(() => {
     const matches = searchLrvCatalogItems(
       availableLrvItems,
       elem1SearchQuery,
-      elem1TypeFilter
+      elem1TypeFilter,
+      elem1SizeFilter
     );
     if (
       selectedLrv1Item &&
@@ -376,13 +392,20 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       return [selectedLrv1Item, ...matches];
     }
     return matches;
-  }, [availableLrvItems, elem1SearchQuery, elem1TypeFilter, selectedLrv1Item]);
+  }, [
+    availableLrvItems,
+    elem1SearchQuery,
+    elem1TypeFilter,
+    elem1SizeFilter,
+    selectedLrv1Item,
+  ]);
 
   const filteredLrvOptionsElem2 = useMemo(() => {
     const matches = searchLrvCatalogItems(
       baseLrvOptionsForElem2,
       elem2SearchQuery,
-      elem2TypeFilter
+      elem2TypeFilter,
+      elem2SizeFilter
     );
     if (
       selectedLrv2Item &&
@@ -395,6 +418,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     baseLrvOptionsForElem2,
     elem2SearchQuery,
     elem2TypeFilter,
+    elem2SizeFilter,
     selectedLrv2Item,
   ]);
 
@@ -423,8 +447,10 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     setValidationError('');
     setElem1SearchQuery('');
     setElem1TypeFilter('Все типы');
+    setElem1SizeFilter('all');
     setElem2SearchQuery('');
     setElem2TypeFilter('Все типы');
+    setElem2SizeFilter('all');
 
     if (rbac.category === 'ndt') {
       setActiveTab('control');
@@ -703,8 +729,8 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     (tc) => tc.number === form.techCardNumber
   );
 
-  // Проверка совпадения диаметров Элемента 1 и Элемента 2
-  const diameterValidation = validateElementsDiameterMatch(elem1Diam, elem2Diam);
+  // Проверка совпадения диаметров Элемента 1 и Элемента 2 (для углового соединения допускаются разные Ø)
+  const diameterValidation = validateElementsDiameterMatch(elem1Diam, elem2Diam, form.jointKind);
 
   // Проверка вида сварки по выбранной технологической карте (ТК)
   const weldingTypeValidation = validateWeldingTypeWithTechCard(
@@ -1047,14 +1073,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
 
   const formatLrvOptionLabel = (item: LRVItem) => {
     const dims = item.diameterMm2
-      ? `Ø1:${item.diameterMm}×${item.wallThickness} / Ø2:${item.diameterMm2}×${item.wallThickness2 ?? item.wallThickness}`
+      ? `Ø1: ${item.diameterMm}×${item.wallThickness} / Ø2: ${item.diameterMm2}×${item.wallThickness2 ?? item.wallThickness}`
       : `Ø${item.diameterMm}×${item.wallThickness}`;
-    const typeLabel = resolveLrvItemCategory(item);
-    const connBadge =
-      typeLabel === 'ЗРА'
-        ? ` · ${resolveLrvConnectionType(item)}`
-        : '';
-    return `${item.lrvCode} · [${typeLabel}${connBadge}] ${item.shortName} (${dims}, ${item.material}, ${item.ntd})`;
+    const mfg = item.manufacturer ? ` · ${item.manufacturer}` : '';
+    const ntd = item.ntd ? ` [${item.ntd}]` : '';
+    return `${item.shortName} · ст.${item.material}${mfg} · ${dims}${ntd} (ЛРВ: ${item.lrvCode})`;
   };
 
   const isPrimaryDefective =
@@ -1768,10 +1791,16 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   diameterValidation={diameterValidation}
                   elem1TypeFilter={elem1TypeFilter}
                   setElem1TypeFilter={setElem1TypeFilter}
+                  elem1SizeFilter={elem1SizeFilter}
+                  setElem1SizeFilter={setElem1SizeFilter}
+                  elem1AvailableSizes={elem1AvailableSizes}
                   elem1SearchQuery={elem1SearchQuery}
                   setElem1SearchQuery={setElem1SearchQuery}
                   elem2TypeFilter={elem2TypeFilter}
                   setElem2TypeFilter={setElem2TypeFilter}
+                  elem2SizeFilter={elem2SizeFilter}
+                  setElem2SizeFilter={setElem2SizeFilter}
+                  elem2AvailableSizes={elem2AvailableSizes}
                   elem2SearchQuery={elem2SearchQuery}
                   setElem2SearchQuery={setElem2SearchQuery}
                   filteredLrvOptionsElem1={filteredLrvOptionsElem1}

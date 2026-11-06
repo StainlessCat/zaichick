@@ -424,20 +424,6 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
 
   return (
     <div className="space-y-4">
-      {!canEdit && (
-        <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 font-semibold">
-            <Lock className="w-4 h-4 text-amber-700 shrink-0" />
-            <span>
-              Ролевое ограничение (RBAC): Текущая роль — «{currentUserRoleLabel}». Редактирование раздела «Каталог ЛРВ и спецификации» доступно только ролям «Инженер ПТО» и «Администратор». Включён режим чтения.
-            </span>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-amber-200/70 text-amber-900 font-mono text-[11px] shrink-0">
-            Только чтение
-          </span>
-        </div>
-      )}
-
       {/* Верхняя панель каталога ЛРВ */}
       <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 shadow-2xs flex flex-wrap items-center justify-end gap-2">
         <div className="flex flex-wrap items-center gap-2 w-full justify-end">
@@ -1333,8 +1319,8 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                         className="py-2.5 px-3 text-center whitespace-nowrap"
                       >
                         {!canEdit ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
-                            <Lock className="w-3.5 h-3.5" />
+                          <span className="text-[11px] text-slate-300 select-none">
+                            —
                           </span>
                         ) : confirmDeleteLrvId === item.id ? (
                           <div className="inline-flex items-center gap-1">

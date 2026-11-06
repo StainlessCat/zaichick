@@ -523,10 +523,12 @@ export function validatePreheatTemperature(
 
 /**
  * Обязательная проверка на соответствие диаметров свариваемых Элемента 1 и Элемента 2.
+ * В случае углового соединения (врезка) допускаются разные диаметры свариваемых деталей.
  */
 export function validateElementsDiameterMatch(
   elem1DiameterMm: number,
-  elem2DiameterMm: number
+  elem2DiameterMm: number,
+  jointKind: 'Стыковое' | 'Угловое' = 'Стыковое'
 ): { isMatch: boolean; message: string } {
   const d1 = Number(elem1DiameterMm) || 0;
   const d2 = Number(elem2DiameterMm) || 0;
@@ -536,10 +538,19 @@ export function validateElementsDiameterMatch(
       message: 'Укажите ненулевой диаметр обоих свариваемых элементов',
     };
   }
+  if (jointKind === 'Угловое') {
+    return {
+      isMatch: true,
+      message:
+        d1 === d2
+          ? `Угловое соединение: Ø${d1} мм`
+          : `Угловое соединение (врезка): Эл.1 Ø${d1} мм + Эл.2 Ø${d2} мм`,
+    };
+  }
   if (d1 !== d2) {
     return {
       isMatch: false,
-      message: `Несоответствие диаметров! Элемент 1: Ø${d1} мм, Элемент 2: Ø${d2} мм. У обоих свариваемых элементов должен быть одинаковый диаметр.`,
+      message: `Несоответствие диаметров! Элемент 1: Ø${d1} мм, Элемент 2: Ø${d2} мм. Для стыкового соединения диаметры элементов должны совпадать.`,
     };
   }
   return {
@@ -830,16 +841,76 @@ export const LRV_ELEMENT_TYPE_OPTIONS: LrvElementCategory[] = [
   'Прочее',
 ];
 
+export interface LrvSizeOption {
+  key: string;
+  label: string;
+  diameterMm: number;
+  wallThickness: number;
+}
+
+/**
+ * Получение уникальных типоразмеров (Ø и S) из каталога ЛРВ для выбранного типа элемента
+ */
+export function getAvailableSizesFromLrv(
+  items: LRVItem[],
+  elementTypeFilter: LrvElementCategory | string = 'Все типы'
+): LrvSizeOption[] {
+  const cleanType = (elementTypeFilter || 'Все типы').trim();
+  const filtered = items.filter((item) => {
+    if (!cleanType || cleanType === 'Все типы' || cleanType === 'ALL') {
+      return true;
+    }
+    const itemCategory = resolveLrvItemCategory(item);
+    const targetType = cleanType === 'Кран' ? 'ЗРА' : cleanType;
+    const actualType = itemCategory === 'Кран' ? 'ЗРА' : itemCategory;
+    return actualType.toLowerCase() === targetType.toLowerCase();
+  });
+
+  const sizeMap = new Map<string, LrvSizeOption>();
+  for (const it of filtered) {
+    if (it.diameterMm && it.wallThickness) {
+      const key = `${it.diameterMm}x${it.wallThickness}`;
+      if (!sizeMap.has(key)) {
+        sizeMap.set(key, {
+          key,
+          label: `Ø${it.diameterMm} × ${it.wallThickness} мм`,
+          diameterMm: it.diameterMm,
+          wallThickness: it.wallThickness,
+        });
+      }
+    }
+    if (it.diameterMm2) {
+      const wt2 = it.wallThickness2 ?? it.wallThickness;
+      const key2 = `${it.diameterMm2}x${wt2}`;
+      if (!sizeMap.has(key2)) {
+        sizeMap.set(key2, {
+          key: key2,
+          label: `Ø${it.diameterMm2} × ${wt2} мм`,
+          diameterMm: it.diameterMm2,
+          wallThickness: wt2,
+        });
+      }
+    }
+  }
+
+  return Array.from(sizeMap.values()).sort((a, b) => {
+    if (a.diameterMm !== b.diameterMm) return a.diameterMm - b.diameterMm;
+    return a.wallThickness - b.wallThickness;
+  });
+}
+
 /**
  * Комплексный поиск элемента в базе ЛРВ
  */
 export function searchLrvCatalogItems(
   items: LRVItem[],
   searchQuery: string,
-  elementTypeFilter: LrvElementCategory | string = 'Все типы'
+  elementTypeFilter: LrvElementCategory | string = 'Все типы',
+  sizeFilter: string = 'all'
 ): LRVItem[] {
   const cleanType = (elementTypeFilter || 'Все типы').trim();
   const cleanQuery = (searchQuery || '').trim().toLowerCase();
+  const cleanSize = (sizeFilter || 'all').trim();
 
   return items.filter((item) => {
     const itemCategory = resolveLrvItemCategory(item);
@@ -847,6 +918,16 @@ export function searchLrvCatalogItems(
       const targetType = cleanType === 'Кран' ? 'ЗРА' : cleanType;
       const actualType = itemCategory === 'Кран' ? 'ЗРА' : itemCategory;
       if (actualType.toLowerCase() !== targetType.toLowerCase()) {
+        return false;
+      }
+    }
+
+    if (cleanSize && cleanSize !== 'all') {
+      const s1 = `${item.diameterMm}x${item.wallThickness}`;
+      const s2 = item.diameterMm2
+        ? `${item.diameterMm2}x${item.wallThickness2 ?? item.wallThickness}`
+        : null;
+      if (s1 !== cleanSize && s2 !== cleanSize) {
         return false;
       }
     }
@@ -1086,3 +1167,63 @@ export const NAKS_WELDING_POSITIONS: NaksWeldingPositionOption[] = [
     description: 'С — Переменное / комбинированное положение (неповоротный стык: Н1+В1+П1)',
   },
 ];
+
+/**
+ * Автоматический подбор подходящей технологической карты (ТК) по геометрии стыка и марке стали.
+ */
+export function findMatchingTechCard(
+  techCards: TechCardItem[],
+  params: {
+    diameterMm: number;
+    wallThicknessMm: number;
+    weldingType?: string;
+    steelGrade?: string;
+  }
+): TechCardItem | null {
+  const diam = Number(params.diameterMm) || 0;
+  const wall = Number(params.wallThicknessMm) || 0;
+  if (!techCards || techCards.length === 0 || diam <= 0) return null;
+
+  // 1. Фильтруем ТК по диапазону диаметров и толщин стенок
+  const matchedRange = techCards.filter((tc) => {
+    const dMin = tc.minDiameterMm ?? 0;
+    const dMax = tc.maxDiameterMm ?? 9999;
+    const sMin = tc.minWallThicknessMm ?? 0;
+    const sMax = tc.maxWallThicknessMm ?? 999;
+    const diamFit = diam >= dMin && diam <= dMax;
+    const wallFit = wall > 0 ? wall >= sMin && wall <= sMax : true;
+    return diamFit && wallFit;
+  });
+
+  if (matchedRange.length === 0) {
+    // Если точного попадания по стенке нет, ищем только по диаметру
+    const diamOnly = techCards.filter(
+      (tc) => diam >= (tc.minDiameterMm ?? 0) && diam <= (tc.maxDiameterMm ?? 9999)
+    );
+    if (diamOnly.length > 0) {
+      if (params.weldingType) {
+        const byType = diamOnly.find((tc) => tc.weldingType === params.weldingType);
+        if (byType) return byType;
+      }
+      return diamOnly[0];
+    }
+    return null;
+  }
+
+  // 2. Если задан способ сварки, отдаем приоритет ТК с этим способом
+  if (params.weldingType) {
+    const byType = matchedRange.find((tc) => tc.weldingType === params.weldingType);
+    if (byType) return byType;
+  }
+
+  // 3. Если задана марка стали, проверяем вхождение в steelGroup
+  if (params.steelGrade) {
+    const cleanSteel = params.steelGrade.toLowerCase().replace(/сталь\s*|ст\.?\s*/g, '');
+    const bySteel = matchedRange.find((tc) =>
+      tc.steelGroup?.toLowerCase().includes(cleanSteel)
+    );
+    if (bySteel) return bySteel;
+  }
+
+  return matchedRange[0] || null;
+}
