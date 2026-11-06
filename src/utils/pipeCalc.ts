@@ -849,14 +849,64 @@ export interface LrvSizeOption {
 }
 
 /**
+ * Проверяет, используется ли позиция ЛРВ хотя бы в одном сварном стыке
+ */
+export function isLrvItemUsedInJoints(item: LRVItem, joints: WeldJoint[]): boolean {
+  if (!item || !item.lrvCode) return false;
+  return joints.some(
+    (j) => j.lrv1Code === item.lrvCode || j.lrv2Code === item.lrvCode
+  );
+}
+
+/**
+ * Возвращает список стыков, в которых используется данная позиция ЛРВ
+ */
+export function getJointsUsingLrvItem(item: LRVItem, joints: WeldJoint[]): WeldJoint[] {
+  if (!item || !item.lrvCode) return [];
+  return joints.filter(
+    (j) => j.lrv1Code === item.lrvCode || j.lrv2Code === item.lrvCode
+  );
+}
+
+/**
+ * Правило 1 ремонта:
+ * Проверяет, запрещён ли повторный ремонт (второй ремонт шва).
+ * Если стык уже подвергался ремонту (есть дата, клеймо, ТК ремонта или статус ремонта)
+ * и контроль после ремонта выявил дефект — повторный ремонт запрещён, допускается только вырез катушки.
+ */
+export function isSecondRepairForbidden(joint: Partial<WeldJoint>): boolean {
+  const hadFirstRepair = Boolean(
+    joint.repairDate ||
+    joint.repairTechCard ||
+    joint.repairWelderStamp ||
+    joint.repairAction === 'Ремонт'
+  );
+  if (!hadFirstRepair) return false;
+
+  const postRepairFailed =
+    joint.repairVikResult === 'Ремонт' ||
+    joint.repairVikResult === 'Вырезать' ||
+    joint.repairNdtResult === 'Ремонт' ||
+    joint.repairNdtResult === 'Вырезать' ||
+    joint.repairDupNdtResult === 'Ремонт' ||
+    joint.repairDupNdtResult === 'Вырезать';
+
+  return postRepairFailed;
+}
+
+/**
  * Получение уникальных типоразмеров (Ø и S) из каталога ЛРВ для выбранного типа элемента
  */
 export function getAvailableSizesFromLrv(
   items: LRVItem[],
-  elementTypeFilter: LrvElementCategory | string = 'Все типы'
+  elementTypeFilter: LrvElementCategory | string = 'Все типы',
+  includeSuperseded: boolean = false
 ): LrvSizeOption[] {
   const cleanType = (elementTypeFilter || 'Все типы').trim();
   const filtered = items.filter((item) => {
+    if (!includeSuperseded && (item.status === 'superseded' || item.status === 'archived')) {
+      return false;
+    }
     if (!cleanType || cleanType === 'Все типы' || cleanType === 'ALL') {
       return true;
     }
@@ -906,13 +956,17 @@ export function searchLrvCatalogItems(
   items: LRVItem[],
   searchQuery: string,
   elementTypeFilter: LrvElementCategory | string = 'Все типы',
-  sizeFilter: string = 'all'
+  sizeFilter: string = 'all',
+  includeSuperseded: boolean = false
 ): LRVItem[] {
   const cleanType = (elementTypeFilter || 'Все типы').trim();
   const cleanQuery = (searchQuery || '').trim().toLowerCase();
   const cleanSize = (sizeFilter || 'all').trim();
 
   return items.filter((item) => {
+    if (!includeSuperseded && (item.status === 'superseded' || item.status === 'archived')) {
+      return false;
+    }
     const itemCategory = resolveLrvItemCategory(item);
     if (cleanType && cleanType !== 'Все типы' && cleanType !== 'ALL') {
       const targetType = cleanType === 'Кран' ? 'ЗРА' : cleanType;

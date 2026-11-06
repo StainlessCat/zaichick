@@ -96,6 +96,9 @@ export interface LRVItem {
   wallThickness2?: number; // Вторая толщина стенки S2, мм (для переходов и переходных тройников)
   specQty: number; // Количество по спецификации, шт / м
   unit: 'шт' | 'м';
+  status?: 'active' | 'superseded' | 'archived'; // Статус позиции: активная / аннулирована (заменена) / архивная
+  replacementLetter?: string; // № и дата официального письма согласования замены от института/Заказчика
+  replacementDate?: string; // Дата согласования замены (YYYY-MM-DD)
   version?: number;
 }
 

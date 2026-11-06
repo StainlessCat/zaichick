@@ -68,9 +68,15 @@ import {
   isJointDefective,
   isJointFullyAccepted,
   isJointRepaired,
+  isLrvItemUsedInJoints,
+  getJointsUsingLrvItem,
+  isSecondRepairForbidden,
   FIELD_LABELS_MAP,
 } from './weldingLogic';
-import { sanitizeWeldJointRecord } from './dataIntegrityGuard';
+import {
+  sanitizeWeldJointRecord,
+  validateWeldJointComprehensive,
+} from './dataIntegrityGuard';
 import {
   AuditLogEntry,
   LRVItem,
@@ -2762,6 +2768,8 @@ test('Отраслевые постулаты сварочно-монтажно�
       wallThickness: 8,
       ntd: 'ГОСТ 8732-78',
       manufacturer: 'ПАО ЧТПЗ',
+      specQty: 100,
+      unit: 'м',
     },
     {
       id: 'lrv-2',
@@ -2774,6 +2782,8 @@ test('Отраслевые постулаты сварочно-монтажно�
       wallThickness: 8,
       ntd: 'ГОСТ 8732-78',
       manufacturer: 'ПНТЗ',
+      specQty: 100,
+      unit: 'м',
     },
     {
       id: 'lrv-3',
@@ -2786,6 +2796,8 @@ test('Отраслевые постулаты сварочно-монтажно�
       wallThickness: 8,
       ntd: 'ГОСТ 17375-2001',
       manufacturer: 'АО СОТ',
+      specQty: 10,
+      unit: 'шт',
     },
     {
       id: 'lrv-4',
@@ -2798,6 +2810,8 @@ test('Отраслевые постулаты сварочно-монтажно�
       wallThickness: 3.5,
       ntd: 'ГОСТ 8734-75',
       manufacturer: 'ПНТЗ',
+      specQty: 50,
+      unit: 'м',
     },
   ];
 
@@ -2819,18 +2833,20 @@ test('Отраслевые постулаты сварочно-монтажно�
 
   // 2. Ролевое разграничение: редактирование ЛРВ строго для admin (ПТО - только чтение)
   const adminUser: UserAccount = {
-    id: 'u-admin',
     login: 'admin',
+    password: '123',
     fullName: 'Главный Администратор',
-    role: 'admin',
-    isActive: true,
+    role: 'Администратор системы',
+    department: 'Администрация',
+    sessionNumber: 1,
   };
   const ptoUser: UserAccount = {
-    id: 'u-pto',
     login: 'pto',
+    password: '123',
     fullName: 'Инженер ПТО',
-    role: 'pto',
-    isActive: true,
+    role: 'Инженер ПТО',
+    department: 'ПТО',
+    sessionNumber: 1,
   };
   assert.equal(getUserRolePermissions(adminUser).canEditLrvCatalog, true);
   assert.equal(getUserRolePermissions(ptoUser).canEditLrvCatalog, false);
@@ -2838,12 +2854,12 @@ test('Отраслевые постулаты сварочно-монтажно�
   // 3. Индекс «Р» для ремонта: добавляется ТОЛЬКО в граф. 2 ГОСТ и граф. 14 СТО Газпром.
   // В базе/паспорте номер стыка остаётся базовым (напр. 010).
   const repairedJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
     id: 'wj-rep-1',
     objectName: 'УКПГ-1',
     rdCode: '001/2026-ТХ',
     lineNumber: 'ФП1.2/1',
     jointNumber: '010',
-    status: 'Сварен',
     jointKind: 'Стыковое',
     gostJointType: 'С17',
     diameterMm: 219,
@@ -2885,25 +2901,31 @@ test('Отраслевые постулаты сварочно-монтажно�
   const sampleTechCards: TechCardItem[] = [
     {
       id: 'tc-1',
-      code: 'ТК-01-219',
-      jointType: 'С17',
+      number: 'ТК-01-219',
+      title: 'Сварка 219',
+      ntd: 'ГОСТ 16037-80',
       weldingType: 'РАД+РД',
-      steelGrade: '09Г2С',
+      steelGroup: '09Г2С',
       minDiameterMm: 159,
       maxDiameterMm: 325,
       minWallThicknessMm: 6,
       maxWallThicknessMm: 12,
+      recommendedMaterials: 'Св-08Г2С, УОНИ-13/55',
+      preheatRules: [],
     },
     {
       id: 'tc-2',
-      code: 'ТК-02-57',
-      jointType: 'С17',
+      number: 'ТК-02-57',
+      title: 'Сварка 57',
+      ntd: 'ГОСТ 16037-80',
       weldingType: 'РАД',
-      steelGrade: '20',
+      steelGroup: '20',
       minDiameterMm: 32,
       maxDiameterMm: 89,
       minWallThicknessMm: 2,
       maxWallThicknessMm: 5,
+      recommendedMaterials: 'Св-08Г2С',
+      preheatRules: [],
     },
   ];
 
@@ -2914,5 +2936,162 @@ test('Отраслевые постулаты сварочно-монтажно�
     steelGrade: '09Г2С',
   });
   assert.ok(matchedTc);
-  assert.equal(matchedTc?.code, 'ТК-01-219');
+  assert.equal(matchedTc?.number, 'ТК-01-219');
+});
+
+test('Отраслевые правила п.1 и п.2: мягкое аннулирование ЛРВ (soft-delete) и запрет второго ремонта (Правило 1 ремонта)', () => {
+  // 1. Проверка мягкого аннулирования позиций ЛРВ
+  const lrv1: LRVItem = {
+    id: 'lrv-pipe-01',
+    lrvCode: 'P-01',
+    objectName: 'УКПГ-1',
+    rdCode: '001/2026-ТХ',
+    shortName: 'Труба 219х8 09Г2С',
+    material: '09Г2С',
+    diameterMm: 219,
+    wallThickness: 8,
+    ntd: 'ГОСТ 8732-78',
+    specQty: 100,
+    unit: 'м',
+  };
+  const lrv2Unused: LRVItem = {
+    id: 'lrv-pipe-02',
+    lrvCode: 'P-02',
+    objectName: 'УКПГ-1',
+    rdCode: '001/2026-ТХ',
+    shortName: 'Труба 57х3.5 20',
+    material: '20',
+    diameterMm: 57,
+    wallThickness: 3.5,
+    ntd: 'ГОСТ 8734-75',
+    specQty: 50,
+    unit: 'м',
+  };
+
+  const activeJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'wj-100',
+    objectName: 'УКПГ-1',
+    rdCode: '001/2026-ТХ',
+    lineNumber: 'ФП1.2/1',
+    jointNumber: '010',
+    lrv1Code: 'P-01',
+    lrv2Code: 'P-01',
+    diameterMm: 219,
+    wallThickness: 8,
+    weldingType: 'РАД+РД',
+    welderStamp: '01',
+    weldingDate: '2026-06-15',
+    elem1Name: 'Труба 219х8',
+    elem1Material: '09Г2С',
+    elem2Name: 'Труба 219х8',
+    elem2Material: '09Г2С',
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'Инженер',
+  };
+
+  const testJoints = [activeJoint];
+
+  // P-01 привязана к стыку wj-100
+  assert.equal(isLrvItemUsedInJoints(lrv1, testJoints), true);
+  assert.equal(getJointsUsingLrvItem(lrv1, testJoints).length, 1);
+  assert.equal(getJointsUsingLrvItem(lrv1, testJoints)[0].id, 'wj-100');
+
+  // P-02 НЕ привязана ни к одному стыку
+  assert.equal(isLrvItemUsedInJoints(lrv2Unused, testJoints), false);
+  assert.equal(getJointsUsingLrvItem(lrv2Unused, testJoints).length, 0);
+
+  // Аннулирование позиции ЛРВ (пересогласование материала)
+  const supersededLrv: LRVItem = {
+    ...lrv1,
+    status: 'superseded',
+    replacementLetter: 'Письмо № 142/ПТО от 15.08.2026',
+    replacementDate: '2026-08-15',
+  };
+
+  // По умолчанию searchLrvCatalogItems исключает аннулированные позиции
+  const catalogList = [supersededLrv, lrv2Unused];
+  const activeSearchResults = searchLrvCatalogItems(catalogList, '', 'Все типы', 'all', false);
+  assert.equal(activeSearchResults.length, 1);
+  assert.equal(activeSearchResults[0].lrvCode, 'P-02');
+
+  // Если явно запросить со статусом superseded, она находится
+  const allSearchResults = searchLrvCatalogItems(catalogList, '', 'Все типы', 'all', true);
+  assert.equal(allSearchResults.length, 2);
+
+  // 2. Правило 1 ремонта: запрет второго ремонта (СТО Газпром, ГОСТ 32569)
+  const firstRepairedJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'wj-200',
+    objectName: 'УКПГ-1',
+    rdCode: '001/2026-ТХ',
+    lineNumber: 'ФП1.2/1',
+    jointNumber: '020',
+    diameterMm: 219,
+    wallThickness: 8,
+    weldingType: 'РАД+РД',
+    welderStamp: '01',
+    weldingDate: '2026-06-15',
+    elem1Name: 'Труба 219х8',
+    elem1Material: '09Г2С',
+    elem2Name: 'Труба 219х8',
+    elem2Material: '09Г2С',
+    vikResult: 'Годен',
+    ndtResult: 'Ремонт',
+    repairAction: 'Ремонт',
+    repairDate: '2026-06-18',
+    repairTechCard: 'ТК-01-Р',
+    repairWelderStamp: '01',
+    repairForeman: 'Громов',
+    repairVikResult: 'Годен',
+    repairNdtResult: 'Годен',
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'ЛНК',
+  };
+
+  // После первого успешного ремонта второй ремонт не запрещен, т.к. дефекта нет
+  assert.equal(isSecondRepairForbidden(firstRepairedJoint), false);
+
+  // Если контроль после ремонта выявил дефект (Брак / Вырезать)
+  const failedSecondJoint: WeldJoint = {
+    ...firstRepairedJoint,
+    repairNdtResult: 'Вырезать',
+  };
+
+  // Повторный ремонт категорически запрещён!
+  assert.equal(isSecondRepairForbidden(failedSecondJoint), true);
+
+  // Валидатор целостности должен выдать ошибку, если стык не переведен в «Вырезать»
+  const invalidValidation = validateWeldJointComprehensive({
+    joint: { ...failedSecondJoint, repairAction: 'Ремонт' },
+    allJoints: [],
+    projectLineList: [],
+    lrvCatalog: [],
+    welders: [],
+    techCards: [],
+    weldingMaterials: [],
+  });
+  assert.ok(
+    invalidValidation.errors.some(
+      (err) => err.id === 'ndt-second-repair-forbidden'
+    ),
+    'Должна быть ошибка ndt-second-repair-forbidden при попытке оставить статус Ремонт'
+  );
+
+  // Если статус переведен в «Вырезать» / «Вырезано», валидация правила 1 ремонта проходит
+  const validCutValidation = validateWeldJointComprehensive({
+    joint: { ...failedSecondJoint, repairAction: 'Вырезано' },
+    allJoints: [],
+    projectLineList: [],
+    lrvCatalog: [],
+    welders: [],
+    techCards: [],
+    weldingMaterials: [],
+  });
+  assert.ok(
+    !validCutValidation.errors.some(
+      (err) => err.id === 'ndt-second-repair-forbidden'
+    ),
+    'Ошибка ndt-second-repair-forbidden должна отсутствовать при статусе Вырезать'
+  );
 });

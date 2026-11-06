@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import {
   ControlResult,
   InspectorProfile,
@@ -8,7 +8,11 @@ import {
   WelderProfile,
   WeldJoint,
 } from '../../types/welding';
-import { formatDateDDMMYY, isJointDefective } from '../../utils/weldingLogic';
+import {
+  formatDateDDMMYY,
+  isJointDefective,
+  isSecondRepairForbidden,
+} from '../../utils/weldingLogic';
 
 export interface PassportRepairTabProps {
   form: WeldJoint;
@@ -37,8 +41,29 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
     Boolean(form.repairVikResult && form.repairVikResult !== 'Не проводился') ||
     Boolean(form.repairNdtResult && form.repairNdtResult !== 'Не проводился');
 
+  const secondRepairBlocked =
+    isSecondRepairForbidden(form) ||
+    form.repairAction === 'Вырезано' ||
+    form.repairVikResult === 'Вырезать' ||
+    form.repairNdtResult === 'Вырезать' ||
+    form.repairDupNdtResult === 'Вырезать';
+
   return (
     <div className="space-y-4">
+      {secondRepairBlocked && (
+        <div className="p-3.5 rounded-xl bg-red-50 border-2 border-red-300 text-red-950 text-xs flex items-start gap-3 shadow-xs">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-bold text-red-900 text-sm">
+              Повторный ремонт шва категорически запрещён (Правило 1 ремонта)
+            </div>
+            <p className="leading-relaxed text-red-800">
+              Согласно нормативным требованиям (СТО Газпром 15-1.1-002-2023 п. 11.4, ГОСТ 32569-2013 п. 12.5.3, СП 86.13330) повторный ремонт одного и того же сварного соединения не допускается. В случае обнаружения дефектов после выполненного ремонта разрешается только <strong>вырез катушки</strong> с последующей вваркой двух новых монтажных стыков.
+            </p>
+          </div>
+        </div>
+      )}
+
       {isDefectiveOrHasRepair ? (
         <div className="p-4 rounded-xl bg-amber-50/70 border-2 border-amber-300 space-y-3.5 shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 pb-2.5">
@@ -72,16 +97,19 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
                   Статус ремонта
                 </label>
                 <select
-                  disabled={!rbac.canEditPrepAndWeldingFields}
-                  value={form.repairAction || 'Ремонт'}
+                  disabled={!rbac.canEditPrepAndWeldingFields || secondRepairBlocked}
+                  value={secondRepairBlocked ? 'Вырезано' : form.repairAction || 'Ремонт'}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, repairAction: e.target.value }))
+                    setForm((prev) => ({
+                      ...prev,
+                      repairAction: e.target.value,
+                    }))
                   }
-                  className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold"
+                  className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold disabled:bg-slate-100 disabled:text-slate-500"
                 >
-                  <option value="Ремонт">Ремонт</option>
-                  <option value="Вырезано">Вырезано</option>
-                  <option value="Требуется ремонт">Требуется ремонт</option>
+                  {!secondRepairBlocked && <option value="Ремонт">Ремонт (1-й ремонт)</option>}
+                  <option value="Вырезано">Вырезано (вырез катушки)</option>
+                  {!secondRepairBlocked && <option value="Требуется ремонт">Требуется ремонт</option>}
                 </select>
               </div>
               <div>
@@ -176,18 +204,23 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
                 <select
                   disabled={!rbac.canEditNdtFields}
                   value={form.repairVikResult || 'Не проводился'}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const nextVal = e.target.value as ControlResult;
                     setForm((prev) => ({
                       ...prev,
-                      repairVikResult: e.target.value as ControlResult,
-                    }))
-                  }
+                      repairVikResult: nextVal,
+                      ...(nextVal === 'Вырезать' || nextVal === 'Ремонт'
+                        ? {
+                            repairAction: 'Вырезано',
+                          }
+                        : {}),
+                    }));
+                  }}
                   className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-bold"
                 >
                   <option value="Не проводился">Не проводился</option>
                   <option value="Годен">Годен</option>
-                  <option value="Ремонт">Ремонт</option>
-                  <option value="Вырезать">Вырезать</option>
+                  <option value="Вырезать">Брак — Вырезать катушку</option>
                   <option value="В работе">В работе</option>
                 </select>
               </div>
@@ -308,18 +341,23 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
                     form.repairNdtType === 'Не требуется'
                   }
                   value={form.repairNdtResult || 'Не проводился'}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const nextVal = e.target.value as ControlResult;
                     setForm((prev) => ({
                       ...prev,
-                      repairNdtResult: e.target.value as ControlResult,
-                    }))
-                  }
+                      repairNdtResult: nextVal,
+                      ...(nextVal === 'Вырезать' || nextVal === 'Ремонт'
+                        ? {
+                            repairAction: 'Вырезано',
+                          }
+                        : {}),
+                    }));
+                  }}
                   className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-bold"
                 >
                   <option value="Не проводился">Не проводился</option>
                   <option value="Годен">Годен</option>
-                  <option value="Ремонт">Ремонт</option>
-                  <option value="Вырезать">Вырезать</option>
+                  <option value="Вырезать">Брак — Вырезать катушку</option>
                   <option value="В работе">В работе</option>
                 </select>
               </div>

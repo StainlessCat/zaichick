@@ -2224,6 +2224,7 @@ export default function App() {
         {/* РАЗДЕЛ 4: КАТАЛОГ ЛРВ И СПЕЦИФИКАЦИИ (С ПРИВЯЗКОЙ К ШИФРУ РД) */}
         {activeSection === 'lrv_catalog' && (
           <LrvCatalogView
+            joints={joints}
             catalog={
               selectedObjectName !== 'ALL'
                 ? lrvCatalog.filter((item) => item.objectName === selectedObjectName)

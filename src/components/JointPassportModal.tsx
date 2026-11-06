@@ -1077,7 +1077,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       : `Ø${item.diameterMm}×${item.wallThickness}`;
     const mfg = item.manufacturer ? ` · ${item.manufacturer}` : '';
     const ntd = item.ntd ? ` [${item.ntd}]` : '';
-    return `${item.shortName} · ст.${item.material}${mfg} · ${dims}${ntd} (ЛРВ: ${item.lrvCode})`;
+    const statusNote =
+      item.status === 'superseded' || item.status === 'archived'
+        ? ` [АННУЛИРОВАНА: ${item.replacementLetter || 'заменена'}]`
+        : '';
+    return `${item.shortName} · ст.${item.material}${mfg} · ${dims}${ntd}${statusNote} (ЛРВ: ${item.lrvCode})`;
   };
 
   const isPrimaryDefective =

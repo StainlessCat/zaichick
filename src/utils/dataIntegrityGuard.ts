@@ -13,6 +13,7 @@ import {
   calculateEquivalentDiaInch,
   detectLrvElementType,
   formatDateDDMMYY,
+  isSecondRepairForbidden,
   mmToInchDiameter,
   normalizeDateToISO,
   normalizeDecimalInput,
@@ -955,6 +956,21 @@ export function validateWeldJointComprehensive(params: {
       title: 'Требуется дублирующий контроль после ремонта',
       message: `По стыку назначен «Ремонт». Для закрытия стыка необходимо указать вид и результат дублирующего контроля в объеме 100%.`,
     });
+  }
+
+  // 3.3 Правило 1 ремонта: запрет второго ремонта (СТО Газпром 15-1.1-002-2023, ГОСТ 32569-2013)
+  if (isSecondRepairForbidden(joint)) {
+    if (joint.repairAction !== 'Вырезано') {
+      issues.push({
+        id: 'ndt-second-repair-forbidden',
+        category: 'ndt',
+        severity: 'error',
+        field: 'repairAction',
+        title: 'Запрет повторного ремонта сварного соединения (Правило 1 ремонта)',
+        message:
+          'Стык уже подвергался ремонту и не прошёл повторный контроль качества. Согласно нормативным требованиям (СТО Газпром 15-1.1-002-2023 п. 11.4, ГОСТ 32569-2013 п. 12.5.3, СП 86.13330) повторный ремонт шва категорически запрещён. Соединение подлежит вырезу катушки (статус «Вырезать» / действие «Вырезано»).',
+      });
+    }
   }
 
   // 3.4 Контроль проектного процента НК по лайнлисту

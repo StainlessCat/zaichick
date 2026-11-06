@@ -7,11 +7,14 @@ import {
   Filter,
   Lock,
   Plus,
+  AlertTriangle,
+  FileText,
   RotateCcw,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react';
-import { FacilityObject, LRVItem, LrvElementCategory } from '../types/welding';
+import { FacilityObject, LRVItem, LrvElementCategory, WeldJoint } from '../types/welding';
 import {
   exportLrvCatalogToExcel,
   readLrvCatalogFromExcelFile,
@@ -25,6 +28,8 @@ import {
   mmToNominalBoreDn,
   resolveLrvConnectionType,
   resolveLrvItemCategory,
+  isLrvItemUsedInJoints,
+  getJointsUsingLrvItem,
 } from '../utils/weldingLogic';
 import {
   applyTableColumnFiltersAndSort,
@@ -44,6 +49,7 @@ interface LrvCatalogViewProps {
   onDeleteLrvItems?: (ids: string[]) => void;
   canEdit?: boolean;
   currentUserRoleLabel?: string;
+  joints?: WeldJoint[];
 }
 
 export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
@@ -55,6 +61,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
   onDeleteLrvItems,
   canEdit = true,
   currentUserRoleLabel = 'Инженер ПТО',
+  joints = [],
 }) => {
   const allRds = useMemo(
     () =>
@@ -72,6 +79,13 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingLrvId, setEditingLrvId] = useState<string | null>(null);
   const [selectedLrvIds, setSelectedLrvIds] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'superseded'>('all');
+  const [supersedeModalItem, setSupersedeModalItem] = useState<LRVItem | null>(null);
+  const [supersedeLetterInput, setSupersedeLetterInput] = useState('');
+  const [supersedeDateInput, setSupersedeDateInput] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  );
+  const [bulkDeleteBlockMessage, setBulkDeleteBlockMessage] = useState<string | null>(null);
   const [confirmDeleteLrvId, setConfirmDeleteLrvId] = useState<string | null>(
     null
   );
@@ -180,13 +194,41 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
     setShowAddForm(true);
   };
 
-  // Базовая выборка по шифру РД
+  // Базовая выборка по шифру РД и статусу позиции
   const rdScopedCatalog = useMemo(() => {
     return catalog.filter((item) => {
       if (rdFilter !== 'ALL' && item.rdCode !== rdFilter) return false;
+      if (
+        statusFilter === 'active' &&
+        (item.status === 'superseded' || item.status === 'archived')
+      ) {
+        return false;
+      }
+      if (
+        statusFilter === 'superseded' &&
+        item.status !== 'superseded' &&
+        item.status !== 'archived'
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [catalog, rdFilter]);
+  }, [catalog, rdFilter, statusFilter]);
+
+  const activeCount = useMemo(
+    () =>
+      catalog.filter(
+        (i) => i.status !== 'superseded' && i.status !== 'archived'
+      ).length,
+    [catalog]
+  );
+  const supersededCount = useMemo(
+    () =>
+      catalog.filter(
+        (i) => i.status === 'superseded' || i.status === 'archived'
+      ).length,
+    [catalog]
+  );
 
   const lrvColumnGetters = useMemo<Record<string, (item: LRVItem) => string>>(
     () => ({
@@ -424,9 +466,63 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Сообщение о блокировке массового удаления связанных позиций ЛРВ */}
+      {bulkDeleteBlockMessage && (
+        <div className="px-4 py-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start justify-between gap-3 shadow-xs">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <span className="leading-relaxed">{bulkDeleteBlockMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBulkDeleteBlockMessage(null)}
+            className="text-amber-800 hover:text-amber-950 font-bold text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Верхняя панель каталога ЛРВ */}
-      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 shadow-2xs flex flex-wrap items-center justify-end gap-2">
-        <div className="flex flex-wrap items-center gap-2 w-full justify-end">
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 shadow-2xs flex flex-wrap items-center justify-between gap-2">
+        {/* Переключатель фильтрации по статусу позиций ЛРВ */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+          <button
+            type="button"
+            onClick={() => setStatusFilter('all')}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+              statusFilter === 'all'
+                ? 'bg-white text-[#1e3799] shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Все позиции ({catalog.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('active')}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+              statusFilter === 'active'
+                ? 'bg-white text-emerald-800 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Активные ({activeCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('superseded')}
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+              statusFilter === 'superseded'
+                ? 'bg-white text-amber-800 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Аннулированные ({supersededCount})
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 justify-end">
           <button
             type="button"
             onClick={() => exportLrvCatalogToExcel(filteredCatalog, false)}
@@ -473,6 +569,19 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        const itemsToDelete = catalog.filter((i) =>
+                          selectedLrvIds.includes(i.id)
+                        );
+                        const usedItems = itemsToDelete.filter(
+                          (i) => joints && isLrvItemUsedInJoints(i, joints)
+                        );
+                        if (usedItems.length > 0) {
+                          setBulkDeleteBlockMessage(
+                            `Из ${itemsToDelete.length} выбранных позиций ${usedItems.length} поз. (например, код «${usedItems[0]?.lrvCode}») уже привязаны к сварным стыкам. Согласно нормативным требованиям целостности данных, их физическое удаление запрещено. Аннулируйте эти позиции индивидуально с указанием реквизитов письма о замене.`
+                          );
+                          setConfirmBulkDeleteLrv(false);
+                          return;
+                        }
                         onDeleteLrvItems(selectedLrvIds);
                         setSelectedLrvIds([]);
                         setConfirmBulkDeleteLrv(false);
@@ -1158,7 +1267,18 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                       }}
                       className="py-2.5 px-3 border-r border-slate-200 font-mono font-bold text-[#1e3799] whitespace-nowrap"
                     >
-                      {item.lrvCode}
+                      <div className="flex items-center gap-1.5">
+                        <span>{item.lrvCode}</span>
+                        {(item.status === 'superseded' ||
+                          item.status === 'archived') && (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 select-none"
+                            title={`Аннулировано по письму: ${item.replacementLetter || 'Не указано'}${item.replacementDate ? ' от ' + item.replacementDate : ''}`}
+                          >
+                            Аннулирована
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td
                       style={{
@@ -1358,9 +1478,29 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
                             </button>
                             <button
                               type="button"
-                              onClick={() => setConfirmDeleteLrvId(item.id)}
+                              onClick={() => {
+                                const usedJoints = joints
+                                  ? getJointsUsingLrvItem(item, joints)
+                                  : [];
+                                if (usedJoints.length > 0) {
+                                  setSupersedeModalItem(item);
+                                  setSupersedeLetterInput(
+                                    item.replacementLetter || ''
+                                  );
+                                  setSupersedeDateInput(
+                                    item.replacementDate ||
+                                      new Date().toISOString().slice(0, 10)
+                                  );
+                                } else {
+                                  setConfirmDeleteLrvId(item.id);
+                                }
+                              }}
                               className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                              title={`Удалить материал ЛРВ «${item.lrvCode}»`}
+                              title={
+                                joints && isLrvItemUsedInJoints(item, joints)
+                                  ? `Позиция привязана к стыкам: аннулировать (заменить)`
+                                  : `Удалить материал ЛРВ «${item.lrvCode}»`
+                              }
                               aria-label={`Удалить материал ЛРВ ${item.lrvCode}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1402,6 +1542,104 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Модальное окно аннулирования (замены) позиции ЛРВ */}
+      {supersedeModalItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden space-y-4 p-5">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-100 text-amber-800">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Аннулирование позиции ЛРВ (пересогласование)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Защита целостности базы данных и исполнительной документации
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSupersedeModalItem(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-1.5 leading-relaxed">
+              <div className="font-bold">
+                Позиция ЛРВ {supersedeModalItem.lrvCode} («{supersedeModalItem.shortName}») привязана к сварным стыкам (
+                {joints ? getJointsUsingLrvItem(supersedeModalItem, joints).length : 0} шт.)!
+              </div>
+              <div>
+                Согласно правилам отраслевого учёта и нормативным требованиям (ГОСТ 32569, СТО Газпром), физическое удаление (HARD DELETE) запрещено, так как это разрушит исполнительную документацию уже сваренных соединений.
+              </div>
+              <div>
+                Позиция будет <strong>логически аннулирована</strong> (заменена). Она перестанет предлагаться для новых стыков, но сохранится в истории и журналах существующих стыков.
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  № и дата официального письма / акта пересогласования
+                </label>
+                <input
+                  type="text"
+                  value={supersedeLetterInput}
+                  onChange={(e) => setSupersedeLetterInput(e.target.value)}
+                  placeholder="Напр.: Письмо № 142/ПТО от 15.08.2026 (ГИП Иванова)"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-medium focus:ring-2 focus:ring-[#1e3799]/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Дата пересогласования (вступления в силу)
+                </label>
+                <input
+                  type="date"
+                  value={supersedeDateInput}
+                  onChange={(e) => setSupersedeDateInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-[#1e3799]/30"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSupersedeModalItem(null)}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onUpdateLrvItem && supersedeModalItem) {
+                    onUpdateLrvItem({
+                      ...supersedeModalItem,
+                      status: 'superseded',
+                      replacementLetter:
+                        supersedeLetterInput.trim() || 'Письмо пересогласования',
+                      replacementDate: supersedeDateInput,
+                    });
+                  }
+                  setSupersedeModalItem(null);
+                }}
+                className="px-4 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 shadow-2xs"
+              >
+                Аннулировать (заменить)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
