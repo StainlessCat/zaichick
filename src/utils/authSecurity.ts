@@ -148,9 +148,25 @@ export function hashPasswordWithSalt(
 }
 
 /**
+ * Безопасное по времени (constant-time) сравнение двух строк.
+ * Предотвращает timing-атаки по времени сверки хешей или паролей.
+ */
+export function timingSafeEqualString(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  let mismatch = a.length === b.length ? 0 : 1;
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    const charA = i < a.length ? a.charCodeAt(i) : 0;
+    const charB = i < b.length ? b.charCodeAt(i) : 0;
+    mismatch |= charA ^ charB;
+  }
+  return mismatch === 0;
+}
+
+/**
  * Проверяет подлинность пароля пользователя.
  * Поддерживает обратную совместимость с исходными тестовыми паролями ('123')
- * и автоматически валидирует соленый хеш при его наличии.
+ * и автоматически валидирует соленый хеш при его наличии с защитой от timing-атак.
  */
 export function verifyPassword(
   inputPassword: string,
@@ -162,16 +178,16 @@ export function verifyPassword(
   // 1. Если передана соль — производим криптографическую сверку хешей
   if (salt) {
     const computed = hashPasswordWithSalt(inputPassword, salt);
-    return computed.hash === storedPasswordOrHash;
+    return timingSafeEqualString(computed.hash, storedPasswordOrHash);
   }
 
   // 2. Обратная совместимость с открытыми паролями (сидовые аккаунты '123')
-  if (inputPassword === storedPasswordOrHash) {
+  if (timingSafeEqualString(inputPassword, storedPasswordOrHash)) {
     return true;
   }
 
   // 3. Проверка прямого sha256 без соли
-  if (sha256(inputPassword) === storedPasswordOrHash) {
+  if (timingSafeEqualString(sha256(inputPassword), storedPasswordOrHash)) {
     return true;
   }
 

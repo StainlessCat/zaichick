@@ -271,6 +271,58 @@ export default function App() {
 
   const [confirmBulkDeleteJoints, setConfirmBulkDeleteJoints] = useState(false);
 
+  // Проверка и автоматическая инициализация авторизованной сессии с сервером
+  useEffect(() => {
+    let active = true;
+    const establishSession = async () => {
+      const storedToken =
+        sessionToken ||
+        (typeof localStorage !== 'undefined'
+          ? localStorage.getItem('zaychick_session_token')
+          : null);
+      if (storedToken) {
+        try {
+          const res = await fetch('/api/auth/session', {
+            headers: { 'x-session-token': storedToken },
+          });
+          if (res.ok) {
+            const body = await res.json();
+            if (body?.session && active) {
+              setSessionToken(storedToken);
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      // Если сохранённой сессии нет или она истекла — выполняем авторизацию текущего пользователя
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            login: currentUser.login,
+            password: currentUser.password || '123',
+          }),
+        });
+        if (res.ok) {
+          const body = await res.json();
+          if (body?.token && active) {
+            setSessionToken(body.token);
+            try {
+              localStorage.setItem('zaychick_session_token', body.token);
+            } catch {}
+          }
+        }
+      } catch {}
+    };
+
+    establishSession();
+    return () => {
+      active = false;
+    };
+  }, [currentUser.login, currentUser.password]);
+
   // Горячие клавиши Ctrl+Z (Undo), Ctrl+Y / Ctrl+Shift+Z (Redo) и секретная консоль автора
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -2255,14 +2307,27 @@ export default function App() {
               setLrvCatalog((prev) =>
                 prev.map((item) => (item.id === updatedItem.id ? updatedItem : item))
               );
-              appendSystemAuditEntry(
-                'Редактирование',
-                updatedItem.rdCode || 'Каталог ЛРВ',
-                updatedItem.lrvCode,
-                'Редактирование позиции Каталога ЛРВ',
-                '—',
-                `${updatedItem.lrvCode} — ${updatedItem.shortName} (Ø${updatedItem.diameterMm}×${updatedItem.wallThickness}, ${updatedItem.material})`
-              );
+              if (updatedItem.status === 'superseded') {
+                appendSystemAuditEntry(
+                  'Аннулирование ЛРВ',
+                  updatedItem.rdCode || 'Каталог ЛРВ',
+                  updatedItem.lrvCode,
+                  'Аннулирование (замена) позиции ЛРВ',
+                  'Активна',
+                  `Аннулирована. Основание: ${updatedItem.replacementLetter || 'Письмо согласования'} от ${updatedItem.replacementDate || '—'}`,
+                  updatedItem.id,
+                  'lrv_superseded'
+                );
+              } else {
+                appendSystemAuditEntry(
+                  'Редактирование',
+                  updatedItem.rdCode || 'Каталог ЛРВ',
+                  updatedItem.lrvCode,
+                  'Редактирование позиции Каталога ЛРВ',
+                  '—',
+                  `${updatedItem.lrvCode} — ${updatedItem.shortName} (Ø${updatedItem.diameterMm}×${updatedItem.wallThickness}, ${updatedItem.material})`
+                );
+              }
             }}
             onDeleteLrvItems={handleDeleteLrvItems}
           />
@@ -2418,7 +2483,7 @@ export default function App() {
             fieldLabel: 'Регистрация новой учётной записи',
             oldValue: '—',
             newValue: `${newAcc.fullName} (${newAcc.login}, ${newAcc.role})`,
-            operationType: 'create_joint',
+            operationType: 'user_created',
           };
           setAuditLogs((prev) => [entry, ...prev]);
         }}

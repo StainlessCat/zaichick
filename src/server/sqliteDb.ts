@@ -41,7 +41,7 @@ import {
   hashPasswordWithSalt,
   isSessionActive,
   verifyPassword,
-} from '../utils/authSecurity';
+} from './serverAuth';
 
 const require = createRequire(import.meta.url);
 
@@ -141,6 +141,7 @@ export class UnifiedServerDatabase {
         this.sqliteDb.exec('PRAGMA busy_timeout = 5000;');
         this.createSchema();
         this.ensureSeeded();
+        this.restorePersistentSessions();
         return;
       }
     } catch {
@@ -241,6 +242,17 @@ export class UnifiedServerDatabase {
         operation_type TEXT NOT NULL,
         payload_json TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        token TEXT PRIMARY KEY,
+        login TEXT NOT NULL,
+        full_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        department TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
     `);
   }
 
@@ -326,16 +338,36 @@ export class UnifiedServerDatabase {
         data.activeTemplateId || 'tpl-full-30'
       );
 
-      // Weld Joints
-      this.sqliteDb.exec('DELETE FROM weld_joints;');
-      const insJoint = this.sqliteDb.prepare(`
+      // 1. Weld Joints (UPSERT + differential delete)
+      const incomingJointIds = new Set((data.joints || []).map((j) => j.id));
+      const existingJointRows = this.sqliteDb
+        .prepare('SELECT id FROM weld_joints')
+        .all() as { id: string }[];
+      const jointsToDelete = existingJointRows.filter((r) => !incomingJointIds.has(r.id));
+      if (jointsToDelete.length > 0) {
+        const delJointStmt = this.sqliteDb.prepare('DELETE FROM weld_joints WHERE id = ?');
+        for (const row of jointsToDelete) {
+          delJointStmt.run(row.id);
+        }
+      }
+      const upsertJoint = this.sqliteDb.prepare(`
         INSERT INTO weld_joints (id, sort_order, joint_number, unique_line_id, rd_code, object_name, version, updated_at, updated_by, payload_json)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sort_order = excluded.sort_order,
+          joint_number = excluded.joint_number,
+          unique_line_id = excluded.unique_line_id,
+          rd_code = excluded.rd_code,
+          object_name = excluded.object_name,
+          version = excluded.version,
+          updated_at = excluded.updated_at,
+          updated_by = excluded.updated_by,
+          payload_json = excluded.payload_json
       `);
       (data.joints || []).forEach((j, idx) => {
         const ver = j.version ?? 1;
         const normalized: WeldJoint = { ...j, version: ver };
-        insJoint.run(
+        upsertJoint.run(
           normalized.id,
           idx,
           normalized.jointNumber || '',
@@ -349,16 +381,33 @@ export class UnifiedServerDatabase {
         );
       });
 
-      // Project Line List
-      this.sqliteDb.exec('DELETE FROM project_linelist;');
-      const insLine = this.sqliteDb.prepare(`
+      // 2. Project Line List (UPSERT + differential delete)
+      const incomingLineIds = new Set((data.projectLineList || []).map((l) => l.id));
+      const existingLineRows = this.sqliteDb
+        .prepare('SELECT id FROM project_linelist')
+        .all() as { id: string }[];
+      const linesToDelete = existingLineRows.filter((r) => !incomingLineIds.has(r.id));
+      if (linesToDelete.length > 0) {
+        const delLineStmt = this.sqliteDb.prepare('DELETE FROM project_linelist WHERE id = ?');
+        for (const row of linesToDelete) {
+          delLineStmt.run(row.id);
+        }
+      }
+      const upsertLine = this.sqliteDb.prepare(`
         INSERT INTO project_linelist (id, sort_order, unique_line_id, rd_code, object_name, version, payload_json)
         VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sort_order = excluded.sort_order,
+          unique_line_id = excluded.unique_line_id,
+          rd_code = excluded.rd_code,
+          object_name = excluded.object_name,
+          version = excluded.version,
+          payload_json = excluded.payload_json
       `);
       (data.projectLineList || []).forEach((l, idx) => {
         const ver = l.version ?? 1;
         const normalized: ProjectLineItem = { ...l, version: ver };
-        insLine.run(
+        upsertLine.run(
           normalized.id,
           idx,
           normalized.uniqueLineId || '',
@@ -369,16 +418,33 @@ export class UnifiedServerDatabase {
         );
       });
 
-      // LRV Catalog
-      this.sqliteDb.exec('DELETE FROM lrv_catalog;');
-      const insLrv = this.sqliteDb.prepare(`
+      // 3. LRV Catalog (UPSERT + differential delete)
+      const incomingLrvIds = new Set((data.lrvCatalog || []).map((item) => item.id));
+      const existingLrvRows = this.sqliteDb
+        .prepare('SELECT id FROM lrv_catalog')
+        .all() as { id: string }[];
+      const lrvToDelete = existingLrvRows.filter((r) => !incomingLrvIds.has(r.id));
+      if (lrvToDelete.length > 0) {
+        const delLrvStmt = this.sqliteDb.prepare('DELETE FROM lrv_catalog WHERE id = ?');
+        for (const row of lrvToDelete) {
+          delLrvStmt.run(row.id);
+        }
+      }
+      const upsertLrv = this.sqliteDb.prepare(`
         INSERT INTO lrv_catalog (id, sort_order, lrv_code, rd_code, object_name, version, payload_json)
         VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sort_order = excluded.sort_order,
+          lrv_code = excluded.lrv_code,
+          rd_code = excluded.rd_code,
+          object_name = excluded.object_name,
+          version = excluded.version,
+          payload_json = excluded.payload_json
       `);
       (data.lrvCatalog || []).forEach((item, idx) => {
         const ver = item.version ?? 1;
         const normalized: LRVItem = { ...item, version: ver };
-        insLrv.run(
+        upsertLrv.run(
           normalized.id,
           idx,
           normalized.lrvCode || '',
@@ -389,64 +455,139 @@ export class UnifiedServerDatabase {
         );
       });
 
-      // Welders
-      this.sqliteDb.exec('DELETE FROM welders;');
-      const insWelder = this.sqliteDb.prepare(`
+      // 4. Welders (UPSERT + differential delete)
+      const incomingStamps = new Set((data.welders || []).map((w) => w.stamp));
+      const existingWelderRows = this.sqliteDb
+        .prepare('SELECT stamp FROM welders')
+        .all() as { stamp: string }[];
+      const weldersToDelete = existingWelderRows.filter((r) => !incomingStamps.has(r.stamp));
+      if (weldersToDelete.length > 0) {
+        const delWelderStmt = this.sqliteDb.prepare('DELETE FROM welders WHERE stamp = ?');
+        for (const row of weldersToDelete) {
+          delWelderStmt.run(row.stamp);
+        }
+      }
+      const upsertWelder = this.sqliteDb.prepare(`
         INSERT INTO welders (stamp, sort_order, version, payload_json)
         VALUES (?, ?, 1, ?)
+        ON CONFLICT(stamp) DO UPDATE SET
+          sort_order = excluded.sort_order,
+          version = excluded.version,
+          payload_json = excluded.payload_json
       `);
       (data.welders || []).forEach((w, idx) => {
-        insWelder.run(w.stamp, idx, JSON.stringify(w));
+        upsertWelder.run(w.stamp, idx, JSON.stringify(w));
       });
 
-      // Tech Cards
-      this.sqliteDb.exec('DELETE FROM tech_cards;');
-      const insTc = this.sqliteDb.prepare(`
+      // 5. Tech Cards (UPSERT + differential delete)
+      const incomingTcIds = new Set((data.techCards || []).map((t) => t.id));
+      const existingTcRows = this.sqliteDb
+        .prepare('SELECT id FROM tech_cards')
+        .all() as { id: string }[];
+      const tcToDelete = existingTcRows.filter((r) => !incomingTcIds.has(r.id));
+      if (tcToDelete.length > 0) {
+        const delTcStmt = this.sqliteDb.prepare('DELETE FROM tech_cards WHERE id = ?');
+        for (const row of tcToDelete) {
+          delTcStmt.run(row.id);
+        }
+      }
+      const upsertTc = this.sqliteDb.prepare(`
         INSERT INTO tech_cards (id, sort_order, number, version, payload_json)
         VALUES (?, ?, ?, 1, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sort_order = excluded.sort_order,
+          number = excluded.number,
+          version = excluded.version,
+          payload_json = excluded.payload_json
       `);
       (data.techCards || []).forEach((t, idx) => {
-        insTc.run(t.id, idx, t.number || '', JSON.stringify(t));
+        upsertTc.run(t.id, idx, t.number || '', JSON.stringify(t));
       });
 
-      // Welding Materials
-      this.sqliteDb.exec('DELETE FROM welding_materials;');
-      const insMat = this.sqliteDb.prepare(`
+      // 6. Welding Materials (UPSERT + differential delete)
+      const incomingMatIds = new Set((data.weldingMaterials || []).map((m) => m.id));
+      const existingMatRows = this.sqliteDb
+        .prepare('SELECT id FROM welding_materials')
+        .all() as { id: string }[];
+      const matToDelete = existingMatRows.filter((r) => !incomingMatIds.has(r.id));
+      if (matToDelete.length > 0) {
+        const delMatStmt = this.sqliteDb.prepare('DELETE FROM welding_materials WHERE id = ?');
+        for (const row of matToDelete) {
+          delMatStmt.run(row.id);
+        }
+      }
+      const upsertMat = this.sqliteDb.prepare(`
         INSERT INTO welding_materials (id, sort_order, version, payload_json)
         VALUES (?, ?, 1, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sort_order = excluded.sort_order,
+          version = excluded.version,
+          payload_json = excluded.payload_json
       `);
       (data.weldingMaterials || []).forEach((m, idx) => {
-        insMat.run(m.id, idx, JSON.stringify(m));
+        upsertMat.run(m.id, idx, JSON.stringify(m));
       });
 
-      // User Accounts
-      this.sqliteDb.exec('DELETE FROM user_accounts;');
-      const insUser = this.sqliteDb.prepare(`
+      // 7. User Accounts (UPSERT + differential delete)
+      const incomingLogins = new Set((data.userAccounts || []).map((u) => u.login));
+      const existingUserRows = this.sqliteDb
+        .prepare('SELECT login FROM user_accounts')
+        .all() as { login: string }[];
+      const usersToDelete = existingUserRows.filter((r) => !incomingLogins.has(r.login));
+      if (usersToDelete.length > 0) {
+        const delUserStmt = this.sqliteDb.prepare('DELETE FROM user_accounts WHERE login = ?');
+        for (const row of usersToDelete) {
+          delUserStmt.run(row.login);
+        }
+      }
+      const upsertUser = this.sqliteDb.prepare(`
         INSERT INTO user_accounts (login, sort_order, version, payload_json)
         VALUES (?, ?, 1, ?)
+        ON CONFLICT(login) DO UPDATE SET
+          sort_order = excluded.sort_order,
+          version = excluded.version,
+          payload_json = excluded.payload_json
       `);
       (data.userAccounts || []).forEach((u, idx) => {
-        insUser.run(u.login, idx, JSON.stringify(u));
+        upsertUser.run(u.login, idx, JSON.stringify(u));
       });
 
-      // Facility Geo Overrides
-      this.sqliteDb.exec('DELETE FROM facility_geo;');
-      const insGeo = this.sqliteDb.prepare(`
+      // 8. Facility Geo Overrides (UPSERT + differential delete)
+      const incomingGeoKeys = new Set(Object.keys(data.facilityGeoOverrides || {}));
+      const existingGeoRows = this.sqliteDb
+        .prepare('SELECT object_name FROM facility_geo')
+        .all() as { object_name: string }[];
+      const geoToDelete = existingGeoRows.filter((r) => !incomingGeoKeys.has(r.object_name));
+      if (geoToDelete.length > 0) {
+        const delGeoStmt = this.sqliteDb.prepare('DELETE FROM facility_geo WHERE object_name = ?');
+        for (const row of geoToDelete) {
+          delGeoStmt.run(row.object_name);
+        }
+      }
+      const upsertGeo = this.sqliteDb.prepare(`
         INSERT INTO facility_geo (object_name, version, payload_json)
         VALUES (?, 1, ?)
+        ON CONFLICT(object_name) DO UPDATE SET
+          version = excluded.version,
+          payload_json = excluded.payload_json
       `);
       Object.entries(data.facilityGeoOverrides || {}).forEach(([objName, geo]) => {
-        insGeo.run(objName, JSON.stringify(geo));
+        upsertGeo.run(objName, JSON.stringify(geo));
       });
 
-      // Audit Logs
-      this.sqliteDb.exec('DELETE FROM audit_logs;');
-      const insAudit = this.sqliteDb.prepare(`
+      // 9. Audit Logs (UPSERT without clearing history)
+      const upsertAudit = this.sqliteDb.prepare(`
         INSERT INTO audit_logs (id, sort_order, timestamp, user_login, operation_type, payload_json)
         VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sort_order = excluded.sort_order,
+          timestamp = excluded.timestamp,
+          user_login = excluded.user_login,
+          operation_type = excluded.operation_type,
+          payload_json = excluded.payload_json
       `);
-      (data.auditLogs || []).slice(0, 2000).forEach((a, idx) => {
-        insAudit.run(
+      (data.auditLogs || []).slice(0, 5000).forEach((a, idx) => {
+        upsertAudit.run(
           a.id,
           idx,
           a.timestamp || nowIso,
@@ -455,6 +596,96 @@ export class UnifiedServerDatabase {
           JSON.stringify(a)
         );
       });
+
+      this.sqliteDb.exec('COMMIT;');
+    } catch (err) {
+      this.sqliteDb.exec('ROLLBACK;');
+      throw err;
+    }
+  }
+
+  public saveSingleJointToSqlite(params: {
+    nextRevision: number;
+    nowIso: string;
+    updatedBy: string;
+    actionText: string;
+    savedJoint: WeldJoint;
+    auditEntries: AuditLogEntry[];
+    templates?: ColumnTemplate[];
+    activeTemplateId?: string;
+  }) {
+    if (!this.sqliteDb) return;
+    this.sqliteDb.exec('BEGIN IMMEDIATE TRANSACTION;');
+    try {
+      // 1. Обновляем метаданные БД
+      const upsertMeta = this.sqliteDb.prepare(`
+        INSERT INTO db_meta (id, global_revision, last_updated_at, last_updated_by, last_action, templates_json, active_template_id)
+        VALUES (1, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          global_revision = excluded.global_revision,
+          last_updated_at = excluded.last_updated_at,
+          last_updated_by = excluded.last_updated_by,
+          last_action = excluded.last_action,
+          templates_json = excluded.templates_json,
+          active_template_id = excluded.active_template_id
+      `);
+      upsertMeta.run(
+        params.nextRevision,
+        params.nowIso,
+        params.updatedBy,
+        params.actionText,
+        JSON.stringify(params.templates || INITIAL_COLUMN_TEMPLATES),
+        params.activeTemplateId || 'tpl-full-30'
+      );
+
+      // 2. Гранулярный UPSERT одного сохраненного стыка без перезаписи всей таблицы
+      const upsertJoint = this.sqliteDb.prepare(`
+        INSERT INTO weld_joints (id, sort_order, joint_number, unique_line_id, rd_code, object_name, version, updated_at, updated_by, payload_json)
+        VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          joint_number = excluded.joint_number,
+          unique_line_id = excluded.unique_line_id,
+          rd_code = excluded.rd_code,
+          object_name = excluded.object_name,
+          version = excluded.version,
+          updated_at = excluded.updated_at,
+          updated_by = excluded.updated_by,
+          payload_json = excluded.payload_json
+      `);
+      const j = params.savedJoint;
+      upsertJoint.run(
+        j.id,
+        j.jointNumber || '',
+        j.uniqueLineId || '',
+        j.rdCode || '',
+        j.objectName || '',
+        j.version ?? 1,
+        j.updatedAt || params.nowIso,
+        j.updatedBy || params.updatedBy,
+        JSON.stringify(j)
+      );
+
+      // 3. Точечная вставка новых записей аудита
+      if (params.auditEntries && params.auditEntries.length > 0) {
+        const upsertAudit = this.sqliteDb.prepare(`
+          INSERT INTO audit_logs (id, sort_order, timestamp, user_login, operation_type, payload_json)
+          VALUES (?, 0, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            timestamp = excluded.timestamp,
+            user_login = excluded.user_login,
+            operation_type = excluded.operation_type,
+            payload_json = excluded.payload_json
+        `);
+        for (const a of params.auditEntries) {
+          upsertAudit.run(
+            a.id,
+            a.timestamp || params.nowIso,
+            a.userLogin || 'system',
+            a.operationType || 'single_edit',
+            JSON.stringify(a)
+          );
+        }
+      }
 
       this.sqliteDb.exec('COMMIT;');
     } catch (err) {
@@ -532,6 +763,32 @@ export class UnifiedServerDatabase {
     const session = createAuthenticatedSession(account);
     this.authSessions.set(session.token, session);
 
+    if (this.sqliteDb) {
+      try {
+        const insSess = this.sqliteDb.prepare(`
+          INSERT INTO auth_sessions (token, login, full_name, role, is_admin, department, created_at, expires_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(token) DO UPDATE SET
+            login = excluded.login,
+            full_name = excluded.full_name,
+            role = excluded.role,
+            is_admin = excluded.is_admin,
+            department = excluded.department,
+            expires_at = excluded.expires_at
+        `);
+        insSess.run(
+          session.token,
+          session.login,
+          session.fullName,
+          session.role,
+          session.isAdmin ? 1 : 0,
+          session.department,
+          session.createdAt,
+          session.expiresAt
+        );
+      } catch {}
+    }
+
     this.recordSessionHeartbeat({
       sessionId: session.token,
       login: account.login,
@@ -542,12 +799,58 @@ export class UnifiedServerDatabase {
     return { success: true, session, user: account };
   }
 
+  private restorePersistentSessions() {
+    if (!this.sqliteDb) return;
+    try {
+      const nowIso = new Date().toISOString();
+      this.sqliteDb.prepare('DELETE FROM auth_sessions WHERE expires_at < ?').run(nowIso);
+      const rows = this.sqliteDb.prepare('SELECT * FROM auth_sessions').all() as any[];
+      for (const r of rows) {
+        this.authSessions.set(r.token, {
+          token: r.token,
+          login: r.login,
+          fullName: r.full_name,
+          role: r.role,
+          isAdmin: Boolean(r.is_admin),
+          department: r.department || '',
+          createdAt: r.created_at,
+          expiresAt: r.expires_at,
+        });
+      }
+    } catch {}
+  }
+
   public validateSessionToken(token?: string): AuthenticatedSession | null {
     if (!token) return null;
-    const session = this.authSessions.get(token);
+    let session = this.authSessions.get(token);
+    if (!session && this.sqliteDb) {
+      try {
+        const r = this.sqliteDb
+          .prepare('SELECT * FROM auth_sessions WHERE token = ?')
+          .get(token) as any;
+        if (r) {
+          session = {
+            token: r.token,
+            login: r.login,
+            fullName: r.full_name,
+            role: r.role,
+            isAdmin: Boolean(r.is_admin),
+            department: r.department || '',
+            createdAt: r.created_at,
+            expiresAt: r.expires_at,
+          };
+          this.authSessions.set(session.token, session);
+        }
+      } catch {}
+    }
     if (!session) return null;
     if (!isSessionActive(session)) {
       this.authSessions.delete(token);
+      if (this.sqliteDb) {
+        try {
+          this.sqliteDb.prepare('DELETE FROM auth_sessions WHERE token = ?').run(token);
+        } catch {}
+      }
       return null;
     }
     return session;
@@ -556,6 +859,11 @@ export class UnifiedServerDatabase {
   public logoutUser(token?: string): boolean {
     if (!token) return false;
     this.activeSessions.delete(token);
+    if (this.sqliteDb) {
+      try {
+        this.sqliteDb.prepare('DELETE FROM auth_sessions WHERE token = ?').run(token);
+      } catch {}
+    }
     return this.authSessions.delete(token);
   }
 
@@ -780,12 +1088,25 @@ export class UnifiedServerDatabase {
       ? `Разрешение конфликта OCC стыка №${occResult.savedJoint.jointNumber} (v${occResult.savedJoint.version})`
       : `Сохранение паспорта стыка №${occResult.savedJoint.jointNumber} (v${occResult.savedJoint.version})`;
 
-    this.writeFullStateToSqlite(
-      nextData,
-      nextRevision,
-      actionText,
-      effectiveUser.fullName
-    );
+    if (this.sqliteDb) {
+      this.saveSingleJointToSqlite({
+        nextRevision,
+        nowIso: new Date().toISOString(),
+        updatedBy: effectiveUser.fullName,
+        actionText,
+        savedJoint: occResult.savedJoint,
+        auditEntries: occResult.auditEntries,
+        templates: data.templates,
+        activeTemplateId: data.activeTemplateId,
+      });
+    } else {
+      this.writeFullStateToSqlite(
+        nextData,
+        nextRevision,
+        actionText,
+        effectiveUser.fullName
+      );
+    }
 
     const updated = this.readFullState();
     return {

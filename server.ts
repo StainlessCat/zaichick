@@ -54,17 +54,21 @@ function extractSessionToken(req: Request): string | undefined {
  * Полный запрет анонимного доступа реализуется переключением флага REQUIRE_AUTH_FOR_WRITES.
  */
 const REQUIRE_AUTH_FOR_WRITES =
-  process.env.ZAYCHICK_REQUIRE_AUTH === 'true';
+  process.env.ZAYCHICK_REQUIRE_AUTH !== 'false';
 
 function requireWriteAuth(req: Request, res: Response, next: NextFunction): void {
   const token = extractSessionToken(req);
 
   if (!token) {
     if (REQUIRE_AUTH_FOR_WRITES) {
-      res.status(401).json({ status: 'error', message: 'Требуется аутентификация (токен сессии не передан)' });
+      res.status(401).json({
+        status: 'error',
+        code: 'UNAUTHORIZED',
+        message: 'Требуется аутентификация: токен сессии не передан',
+      });
       return;
     }
-    // Анонимный режим: пропускаем (backward-compat)
+    // Анонимный режим: только если явно разрешён ZAYCHICK_REQUIRE_AUTH=false
     next();
     return;
   }
@@ -72,10 +76,15 @@ function requireWriteAuth(req: Request, res: Response, next: NextFunction): void
   // Токен передан — валидируем обязательно
   const session = serverDb.validateSessionToken(token);
   if (!session) {
-    res.status(401).json({ status: 'error', message: 'Токен сессии недействителен или истёк' });
+    res.status(401).json({
+      status: 'error',
+      code: 'UNAUTHORIZED',
+      message: 'Токен сессии недействителен или истёк',
+    });
     return;
   }
 
+  (req as any).authenticatedSession = session;
   next();
 }
 
@@ -264,6 +273,15 @@ async function startServer() {
         (req.headers['x-session-token'] as string) ||
         (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : req.body?.sessionToken);
 
+      const authenticatedUser = (req as any).authenticatedSession
+        ? {
+            login: (req as any).authenticatedSession.login,
+            fullName: (req as any).authenticatedSession.fullName,
+            role: (req as any).authenticatedSession.role,
+            isAdmin: (req as any).authenticatedSession.isAdmin,
+          }
+        : user;
+
       const result = serverDb.saveJointWithOptimisticLock({
         joint,
         baseJoint,
@@ -271,11 +289,7 @@ async function startServer() {
           typeof expectedVersion === 'number' ? expectedVersion : undefined,
         forceOverwrite: Boolean(forceOverwrite),
         sessionToken,
-        user: user || {
-          login: 'engineer_pto',
-          fullName: 'Инженер ПТО',
-          role: 'Инженер ПТО',
-        },
+        user: authenticatedUser || user,
       });
 
       if (result.status === 'conflict') {
@@ -335,17 +349,22 @@ async function startServer() {
         (req.headers['x-session-token'] as string) ||
         (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : req.body?.sessionToken);
 
+      const authenticatedUser = (req as any).authenticatedSession
+        ? {
+            login: (req as any).authenticatedSession.login,
+            fullName: (req as any).authenticatedSession.fullName,
+            role: (req as any).authenticatedSession.role,
+            isAdmin: (req as any).authenticatedSession.isAdmin,
+          }
+        : user;
+
       const result = serverDb.syncStateWithOptimisticLock({
         data,
         expectedGlobalRevision,
         forceOverwrite,
         actionLabel: actionLabel || 'Синхронизация данных',
         sessionToken,
-        user: user || {
-          login: 'engineer_pto',
-          fullName: 'Инженер ПТО',
-          role: 'Инженер ПТО',
-        },
+        user: authenticatedUser || user,
       });
 
       broadcastDbChange({

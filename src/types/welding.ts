@@ -404,7 +404,12 @@ export interface AuditLogEntry {
     | 'create_joint'
     | 'delete_joint'
     | 'cross_rd_lrv'
-    | 'batch_upload';
+    | 'batch_upload'
+    | 'lrv_superseded'
+    | 'linelist_change'
+    | 'user_created'
+    | 'user_modified'
+    | 'user_deleted';
 }
 
 export interface UserAccount {

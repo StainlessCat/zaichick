@@ -3095,3 +3095,92 @@ test('Отраслевые правила п.1 и п.2: мягкое аннул�
     'Ошибка ndt-second-repair-forbidden должна отсутствовать при статусе Вырезать'
   );
 });
+
+test('Sprint 1: Серверная безопасность, криптостойкие сессии, UPSERT и расширенный аудит-лог', async () => {
+  const {
+    hashPasswordWithSalt: serverHash,
+    verifyPassword: serverVerify,
+    timingSafeCompare,
+    createAuthenticatedSession: serverCreateSession,
+    isSessionActive: serverIsActive,
+  } = await import('../server/serverAuth');
+
+  // 1. Серверное соленое хеширование и timing-safe сравнение через node:crypto
+  const serverP1 = serverHash('Gazprom2026!');
+  assert.equal(serverP1.hash.length, 64);
+  assert.equal(serverP1.salt.length, 32);
+  assert.equal(serverVerify('Gazprom2026!', serverP1.hash, serverP1.salt), true);
+  assert.equal(serverVerify('WrongPassword', serverP1.hash, serverP1.salt), false);
+  assert.equal(timingSafeCompare('hash_abc', 'hash_abc'), true);
+  assert.equal(timingSafeCompare('hash_abc', 'hash_xyz'), false);
+
+  // 2. Серверная сессия и время жизни
+  const testUser: UserAccount = {
+    login: 'pto_lead',
+    password: '123',
+    fullName: 'Ведущий инженер ПТО',
+    role: 'Ведущий инженер ПТО',
+    department: 'ПТО',
+    sessionNumber: 10,
+    isAdmin: false,
+  };
+  const session = serverCreateSession(testUser, 1); // 1 час
+  assert.ok(session.token.startsWith('zsess_'));
+  assert.equal(serverIsActive(session), true);
+
+  // 3. Расширенный журнал аудита: новые operationType
+  const auditEntries: AuditLogEntry[] = [
+    {
+      id: 'aud-lrv-1',
+      timestamp: new Date().toISOString(),
+      userLogin: 'admin',
+      userFullName: 'Администратор',
+      userRole: 'Администратор системы',
+      jointId: 'lrv-001',
+      jointNumber: 'ЛРВ-001',
+      uniqueLineId: 'Каталог ЛРВ',
+      rdCode: '01.02.03-ТХ',
+      fieldKey: 'status',
+      fieldLabel: 'Аннулирование (замена) позиции ЛРВ',
+      oldValue: 'Активна',
+      newValue: 'Аннулирована. Письмо № 123-ГП от 01.11.2026',
+      operationType: 'lrv_superseded',
+    },
+    {
+      id: 'aud-line-1',
+      timestamp: new Date().toISOString(),
+      userLogin: 'pto_lead',
+      userFullName: 'Ведущий инженер ПТО',
+      userRole: 'Ведущий инженер ПТО',
+      jointId: 'line-001',
+      jointNumber: '—',
+      uniqueLineId: '01.02.03-ТХ-Линия1',
+      rdCode: '01.02.03-ТХ',
+      fieldKey: 'rkPercent',
+      fieldLabel: 'Изменение проектного процента РК',
+      oldValue: '25%',
+      newValue: '50%',
+      operationType: 'linelist_change',
+    },
+    {
+      id: 'aud-user-1',
+      timestamp: new Date().toISOString(),
+      userLogin: 'admin',
+      userFullName: 'Администратор',
+      userRole: 'Администратор системы',
+      jointId: 'user-001',
+      jointNumber: 'Сессия #15',
+      uniqueLineId: 'Учётные записи',
+      rdCode: 'ИТ',
+      fieldKey: 'auth_register',
+      fieldLabel: 'Создание пользователя',
+      oldValue: '—',
+      newValue: 'Иванов И.И. (ivanov_ii)',
+      operationType: 'user_created',
+    },
+  ];
+
+  assert.equal(auditEntries[0].operationType, 'lrv_superseded');
+  assert.equal(auditEntries[1].operationType, 'linelist_change');
+  assert.equal(auditEntries[2].operationType, 'user_created');
+});

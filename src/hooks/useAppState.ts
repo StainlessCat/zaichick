@@ -479,8 +479,26 @@ export function useAppState() {
       fieldChanged: string,
       oldValue: string,
       newValue: string,
-      jointId = 'sys-dict'
+      jointId = 'sys-dict',
+      explicitOperationType?: AuditLogEntry['operationType']
     ) => {
+      let resolvedOpType: AuditLogEntry['operationType'] =
+        explicitOperationType || (actionType === 'Создание стыка' ? 'create_joint' : 'single_edit');
+
+      if (!explicitOperationType) {
+        if (actionType.toLowerCase().includes('аннулирование лрв')) {
+          resolvedOpType = 'lrv_superseded';
+        } else if (actionType.toLowerCase().includes('лайнлист') || fieldChanged.toLowerCase().includes('лайнлист')) {
+          resolvedOpType = 'linelist_change';
+        } else if (actionType.toLowerCase().includes('создание пользователя')) {
+          resolvedOpType = 'user_created';
+        } else if (actionType.toLowerCase().includes('удаление пользователя')) {
+          resolvedOpType = 'user_deleted';
+        } else if (actionType.toLowerCase().includes('пользовател') || fieldChanged.toLowerCase().includes('парол')) {
+          resolvedOpType = 'user_modified';
+        }
+      }
+
       const entry: AuditLogEntry = {
         id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         timestamp: new Date().toISOString(),
@@ -495,8 +513,7 @@ export function useAppState() {
         fieldLabel: fieldChanged,
         oldValue,
         newValue,
-        operationType:
-          actionType === 'Создание стыка' ? 'create_joint' : 'single_edit',
+        operationType: resolvedOpType,
       };
       setAuditLogs((prev) => [entry, ...prev]);
     },

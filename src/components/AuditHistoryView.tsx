@@ -58,6 +58,11 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
     delete_joint: 'Удаление стыка',
     cross_rd_lrv: 'Применение ЛРВ из другого шифра РД',
     batch_upload: 'Импорт стыков из Excel',
+    lrv_superseded: 'Аннулирование позиции ЛРВ',
+    linelist_change: 'Изменение лайнлиста РД',
+    user_created: 'Создание пользователя',
+    user_modified: 'Изменение прав / пользователя',
+    user_deleted: 'Удаление пользователя',
   };
 
   const baseFiltered = useMemo(() => {
@@ -200,13 +205,18 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
           <select
             value={opFilter}
             onChange={(e) => setOpFilter(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-xs"
+            className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-xs font-medium text-slate-700"
           >
             <option value="ALL">Все типы операций ({logs.length})</option>
             <option value="single_edit">Одиночная правка</option>
             <option value="bulk_edit">Массовое редактирование</option>
             <option value="create_joint">Добавление стыков</option>
             <option value="delete_joint">Удаление стыков</option>
+            <option value="lrv_superseded">Аннулирование ЛРВ</option>
+            <option value="linelist_change">Изменение лайнлиста</option>
+            <option value="user_created">Создание пользователей</option>
+            <option value="user_modified">Изменение прав / ролей</option>
+            <option value="user_deleted">Удаление пользователей</option>
           </select>
 
           <div className="relative w-72">
