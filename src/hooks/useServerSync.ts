@@ -1,0 +1,254 @@
+import { useEffect, useRef, useState } from 'react';
+import type {
+  AuditLogEntry,
+  LRVItem,
+  OptimisticLockConflictPayload,
+  ProjectLineItem,
+  ServerDbMetadata,
+  TechCardItem,
+  UserAccount,
+  WelderProfile,
+  WeldingMaterialCertificate,
+  WeldJoint,
+} from '../types/welding';
+
+export interface FacilityGeoOverride {
+  region: string;
+  weatherStation: string;
+  latitude: number;
+  longitude: number;
+  weatherArchive?: Record<string, string>;
+}
+
+export interface UseServerSyncParams {
+  currentUser: UserAccount;
+  sessionToken: string | null;
+  joints: WeldJoint[];
+  setJoints: React.Dispatch<React.SetStateAction<WeldJoint[]>>;
+  projectLineList: ProjectLineItem[];
+  setProjectLineList: React.Dispatch<React.SetStateAction<ProjectLineItem[]>>;
+  lrvCatalog: LRVItem[];
+  setLrvCatalog: React.Dispatch<React.SetStateAction<LRVItem[]>>;
+  welders: WelderProfile[];
+  setWelders: React.Dispatch<React.SetStateAction<WelderProfile[]>>;
+  techCards: TechCardItem[];
+  setTechCards: React.Dispatch<React.SetStateAction<TechCardItem[]>>;
+  weldingMaterials: WeldingMaterialCertificate[];
+  setWeldingMaterials: React.Dispatch<
+    React.SetStateAction<WeldingMaterialCertificate[]>
+  >;
+  userAccounts: UserAccount[];
+  setUserAccounts: React.Dispatch<React.SetStateAction<UserAccount[]>>;
+  auditLogs: AuditLogEntry[];
+  setAuditLogs: React.Dispatch<React.SetStateAction<AuditLogEntry[]>>;
+  facilityGeoOverrides: Record<string, FacilityGeoOverride>;
+  setFacilityGeoOverrides: React.Dispatch<
+    React.SetStateAction<Record<string, FacilityGeoOverride>>
+  >;
+}
+
+export function useServerSync({
+  currentUser,
+  sessionToken,
+  joints,
+  setJoints,
+  projectLineList,
+  setProjectLineList,
+  lrvCatalog,
+  setLrvCatalog,
+  welders,
+  setWelders,
+  techCards,
+  setTechCards,
+  weldingMaterials,
+  setWeldingMaterials,
+  userAccounts,
+  setUserAccounts,
+  auditLogs,
+  setAuditLogs,
+  facilityGeoOverrides,
+  setFacilityGeoOverrides,
+}: UseServerSyncParams) {
+  const [serverDbMeta, setServerDbMeta] = useState<ServerDbMetadata | null>(
+    null
+  );
+  const [isDbConnected, setIsDbConnected] = useState<boolean>(true);
+  const [isDbSyncing, setIsDbSyncing] = useState<boolean>(false);
+  const [isServerDbModalOpen, setIsServerDbModalOpen] =
+    useState<boolean>(false);
+  const [activeConflict, setActiveConflict] =
+    useState<OptimisticLockConflictPayload | null>(null);
+
+  const clientIdRef = useRef<string>(
+    `sess-${Math.random().toString(36).slice(2, 9)}`
+  );
+  const isApplyingServerStateRef = useRef<boolean>(false);
+  const hasLoadedServerInitialRef = useRef<boolean>(false);
+
+  const fetchServerDbState = async (silent = false) => {
+    if (!silent) setIsDbSyncing(true);
+    try {
+      const params = new URLSearchParams({
+        clientId: clientIdRef.current,
+        userLogin: currentUser.login,
+        userFullName: currentUser.fullName,
+        userRole: currentUser.role,
+      });
+      const res = await fetch(`/api/db/state?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const payload = await res.json();
+      if (payload && payload.data) {
+        isApplyingServerStateRef.current = true;
+        if (Array.isArray(payload.data.joints)) setJoints(payload.data.joints);
+        if (Array.isArray(payload.data.projectLineList))
+          setProjectLineList(payload.data.projectLineList);
+        if (Array.isArray(payload.data.lrvCatalog))
+          setLrvCatalog(payload.data.lrvCatalog);
+        if (Array.isArray(payload.data.welders))
+          setWelders(payload.data.welders);
+        if (Array.isArray(payload.data.techCards))
+          setTechCards(payload.data.techCards);
+        if (Array.isArray(payload.data.weldingMaterials))
+          setWeldingMaterials(payload.data.weldingMaterials);
+        if (
+          Array.isArray(payload.data.userAccounts) &&
+          payload.data.userAccounts.length > 0
+        ) {
+          setUserAccounts(payload.data.userAccounts);
+        }
+        if (Array.isArray(payload.data.auditLogs))
+          setAuditLogs(payload.data.auditLogs);
+        if (
+          payload.data.facilityGeoOverrides &&
+          typeof payload.data.facilityGeoOverrides === 'object'
+        ) {
+          setFacilityGeoOverrides(payload.data.facilityGeoOverrides);
+        }
+        if (payload.meta) {
+          setServerDbMeta(payload.meta);
+        }
+        setIsDbConnected(true);
+        hasLoadedServerInitialRef.current = true;
+        window.setTimeout(() => {
+          isApplyingServerStateRef.current = false;
+        }, 60);
+      }
+    } catch {
+      setIsDbConnected(false);
+    } finally {
+      if (!silent) setIsDbSyncing(false);
+    }
+  };
+
+  // Загрузка начального состояния из серверной СУБД SQLite и подписка на SSE-события
+  useEffect(() => {
+    fetchServerDbState(false);
+
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(
+        `/api/db/events?clientId=${encodeURIComponent(clientIdRef.current)}`
+      );
+      es.addEventListener('connected', (ev: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(ev.data);
+          if (parsed?.meta) setServerDbMeta(parsed.meta);
+          setIsDbConnected(true);
+        } catch {
+          // ignore
+        }
+      });
+      es.addEventListener('db_updated', (ev: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(ev.data);
+          if (parsed?.meta) setServerDbMeta(parsed.meta);
+          if (
+            parsed?.sourceClientId &&
+            parsed.sourceClientId !== clientIdRef.current
+          ) {
+            fetchServerDbState(true);
+          }
+        } catch {
+          // ignore
+        }
+      });
+      es.onerror = () => {
+        // SSE auto-reconnects
+      };
+    } catch {
+      // ignore if SSE unavailable
+    }
+
+    return () => {
+      if (es) es.close();
+    };
+  }, []);
+
+  // Автоматическая синхронизация справочников и групповых правок в серверную СУБД SQLite
+  useEffect(() => {
+    if (!hasLoadedServerInitialRef.current || isApplyingServerStateRef.current) {
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch('/api/db/sync', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
+          },
+          body: JSON.stringify({
+            clientId: clientIdRef.current,
+            sessionToken,
+            user: currentUser,
+            joints,
+            projectLineList,
+            lrvCatalog,
+            welders,
+            techCards,
+            weldingMaterials,
+            userAccounts,
+            auditLogs,
+            facilityGeoOverrides,
+          }),
+        });
+        if (res.ok) {
+          const out = await res.json();
+          if (out?.meta) setServerDbMeta(out.meta);
+          setIsDbConnected(true);
+        }
+      } catch {
+        // local state remains in localStorage as offline buffer
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [
+    joints,
+    projectLineList,
+    lrvCatalog,
+    welders,
+    techCards,
+    weldingMaterials,
+    userAccounts,
+    auditLogs,
+    facilityGeoOverrides,
+    currentUser,
+    sessionToken,
+  ]);
+
+  return {
+    serverDbMeta,
+    setServerDbMeta,
+    isDbConnected,
+    setIsDbConnected,
+    isDbSyncing,
+    setIsDbSyncing,
+    isServerDbModalOpen,
+    setIsServerDbModalOpen,
+    activeConflict,
+    setActiveConflict,
+    clientIdRef,
+    isApplyingServerStateRef,
+    fetchServerDbState,
+  };
+}
