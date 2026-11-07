@@ -28,6 +28,7 @@ import {
   formatDateDDMMYY,
   formatGost32569JournalRow,
   formatStoGazpromJournalRow,
+  getMissingPassportFields,
   GOST_32569_2013_JOURNAL_COLUMNS,
   Gost32569ColumnKey,
   sortJointsChronologically,

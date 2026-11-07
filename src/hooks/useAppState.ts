@@ -170,16 +170,39 @@ export function useAppState() {
   );
 
   // Справочники сварки
-  const [welders, setWelders] = useState<WelderProfile[]>(() =>
-    Array.isArray(initialSavedState?.welders)
+  const [welders, setWelders] = useState<WelderProfile[]>(() => {
+    const list = Array.isArray(initialSavedState?.welders)
       ? initialSavedState.welders
-      : WELDERS_DIRECTORY
-  );
-  const [techCards, setTechCards] = useState<TechCardItem[]>(() =>
-    Array.isArray(initialSavedState?.techCards)
+      : WELDERS_DIRECTORY;
+    return list.map((w) => {
+      if (w.naksCerts && w.naksCerts.length > 0) return w;
+      const initialMatch = WELDERS_DIRECTORY.find((init) => init.stamp === w.stamp);
+      if (initialMatch?.naksCerts && initialMatch.naksCerts.length > 0) {
+        return { ...w, naksCerts: initialMatch.naksCerts };
+      }
+      const methods = w.allowedMethods || ['РД'];
+      const generated = methods.map((m, idx) => ({
+        weldingType: m,
+        certNumber: w.certNumber ? `${w.certNumber}-${m}` : `НАКС-${m}-${w.stamp}`,
+        issueDate: w.certIssueDate,
+        expiryDate: w.certExpiryDate,
+        admissionSheetNumber: w.admissionSheetNumber ? `${w.admissionSheetNumber}/${idx + 1}` : undefined,
+        admissionSheetDate: w.admissionSheetDate,
+      }));
+      return { ...w, naksCerts: generated };
+    });
+  });
+  const [techCards, setTechCards] = useState<TechCardItem[]>(() => {
+    const list = Array.isArray(initialSavedState?.techCards)
       ? initialSavedState.techCards
-      : INITIAL_TECH_CARDS
-  );
+      : INITIAL_TECH_CARDS;
+    return list.map((tc) => {
+      const initialMatch = INITIAL_TECH_CARDS.find((init) => init.number === tc.number);
+      const jointKind = tc.jointKind || initialMatch?.jointKind || 'Стыковое';
+      const elementCombination = tc.elementCombination || initialMatch?.elementCombination || 'Труба+Труба';
+      return { ...tc, jointKind, elementCombination };
+    });
+  });
   const [weldingMaterials, setWeldingMaterials] = useState<
     WeldingMaterialCertificate[]
   >(() =>

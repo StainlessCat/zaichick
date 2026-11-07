@@ -135,7 +135,10 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
         ? `Бригада (${(w.brigadeMembers || []).join(', ')})`
         : 'Личное клеймо',
     fullName: (w) => w.fullName,
-    certNumber: (w) => w.certNumber,
+    certNumber: (w) =>
+      w.naksCerts && w.naksCerts.length > 0
+        ? w.naksCerts.map((c) => `${c.weldingType}: ${c.certNumber}`).join('; ')
+        : w.certNumber,
     dates: (w) =>
       `${formatDateDDMMYY(w.certIssueDate) || '—'} — ${
         formatDateDDMMYY(w.certExpiryDate) || '—'
