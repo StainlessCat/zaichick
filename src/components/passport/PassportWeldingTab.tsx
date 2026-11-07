@@ -22,6 +22,7 @@ import {
   findWelderByStamp,
   checkNaksCertStatus,
   findMatchingTechCard,
+  validateWelderNaksAttestation,
   GOST_16037_JOINT_TYPES,
   NAKS_WELDING_POSITIONS,
 } from '../../utils/weldingLogic';
@@ -430,6 +431,33 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                       )
                       .join('; ')}
                     .
+                  </div>
+                </div>
+              );
+            }
+
+            // Проверка соответствия области аттестации НАКС параметрам стыка (диаметр, толщина, способ)
+            const naksIssues = selectedProfiles.flatMap((wp) => {
+              const res = validateWelderNaksAttestation(wp, {
+                diameterMm: form.diameterMm,
+                wallThickness: form.wallThickness,
+                steelGroup: form.elem1Material,
+                weldingType: form.weldingType,
+              });
+              return res.warnings.map((w) => `${wp.stamp} (${wp.fullName}): ${w}`);
+            });
+
+            if (naksIssues.length > 0) {
+              return (
+                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2 shadow-2xs">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <span className="font-bold">Предупреждение по аттестации НАКС:</span>
+                    <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-800">
+                      {naksIssues.map((issue, idx) => (
+                        <li key={idx}>{issue}</li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
               );

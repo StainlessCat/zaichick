@@ -893,6 +893,9 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
         ? `${prev.elem1FactoryNumber}-К`
         : '',
       elem2Length: prev.elem1Length || '',
+      elem2CertNumber: prev.elem1CertNumber || '',
+      elem2HeatNumber: prev.elem1HeatNumber || '',
+      elem2BatchNumber: prev.elem1BatchNumber || '',
     }));
   };
 
@@ -909,6 +912,9 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       elem1WallThickness: prev.elem2WallThickness ?? prev.wallThickness,
       elem1FactoryNumber: prev.elem2FactoryNumber,
       elem1Length: prev.elem2Length,
+      elem1CertNumber: prev.elem2CertNumber,
+      elem1HeatNumber: prev.elem2HeatNumber,
+      elem1BatchNumber: prev.elem2BatchNumber,
       lrv2Code: prev.lrv1Code,
       elem2Name: prev.elem1Name,
       elem2Material: prev.elem1Material,
@@ -918,6 +924,9 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       elem2WallThickness: prev.elem1WallThickness ?? prev.wallThickness,
       elem2FactoryNumber: prev.elem1FactoryNumber,
       elem2Length: prev.elem1Length,
+      elem2CertNumber: prev.elem1CertNumber,
+      elem2HeatNumber: prev.elem1HeatNumber,
+      elem2BatchNumber: prev.elem1BatchNumber,
     }));
   };
 

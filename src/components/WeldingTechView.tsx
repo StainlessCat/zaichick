@@ -1617,6 +1617,82 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
                 />
               </div>
 
+              {/* Структурированные параметры аттестации НАКС для автоматической валидации */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
+                <div className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                  <span>Параметры аттестации НАКС (для автоматической проверки стыков)</span>
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    Если не заполнены — извлекаются автоматически из текста области
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] text-slate-600 mb-0.5">
+                      Мин. диаметр Ø, мм
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={welderForm.minDiameterMm ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                        setWelderForm((prev) => ({ ...prev, minDiameterMm: val }));
+                      }}
+                      placeholder="Напр.: 57"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-600 mb-0.5">
+                      Макс. диаметр Ø, мм
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={welderForm.maxDiameterMm ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                        setWelderForm((prev) => ({ ...prev, maxDiameterMm: val }));
+                      }}
+                      placeholder="Напр.: 530"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-600 mb-0.5">
+                      Мин. толщина S, мм
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={welderForm.minWallThicknessMm ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                        setWelderForm((prev) => ({ ...prev, minWallThicknessMm: val }));
+                      }}
+                      placeholder="Напр.: 4.0"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-slate-600 mb-0.5">
+                      Макс. толщина S, мм
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={welderForm.maxWallThicknessMm ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value ? parseFloat(e.target.value) : undefined;
+                        setWelderForm((prev) => ({ ...prev, maxWallThicknessMm: val }));
+                      }}
+                      placeholder="Напр.: 20.0"
+                      className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-medium text-slate-700 mb-1">

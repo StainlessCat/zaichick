@@ -9,9 +9,11 @@ import {
   WeldJoint,
 } from '../../types/welding';
 import {
+  checkRepairEligibility,
   formatDateDDMMYY,
   isJointDefective,
   isSecondRepairForbidden,
+  normalizeDecimalInput,
 } from '../../utils/weldingLogic';
 
 export interface PassportRepairTabProps {
@@ -41,8 +43,16 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
     Boolean(form.repairVikResult && form.repairVikResult !== 'Не проводился') ||
     Boolean(form.repairNdtResult && form.repairNdtResult !== 'Не проводился');
 
+  const repairEligibility = checkRepairEligibility(
+    form.diameterMm,
+    form.repairLengthMm,
+    form.repairDefectType,
+    (form.repairCount || 0) + (isSecondRepairForbidden(form) ? 1 : 0)
+  );
+
   const secondRepairBlocked =
     isSecondRepairForbidden(form) ||
+    !repairEligibility.isValid ||
     form.repairAction === 'Вырезано' ||
     form.repairVikResult === 'Вырезать' ||
     form.repairNdtResult === 'Вырезать' ||
@@ -50,7 +60,22 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
 
   return (
     <div className="space-y-4">
-      {secondRepairBlocked && (
+      {/* Предупреждение о запрете ремонта при нарушении требований СТО */}
+      {!repairEligibility.isValid && (
+        <div className="p-3.5 rounded-xl bg-red-100 border-2 border-red-400 text-red-950 text-xs flex items-start gap-3 shadow-xs">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-bold text-red-900 text-sm">
+              Ремонт шва недопустим по СТО Газпром 15-1.1-002-2023 · Стык подлежит вырезке катушки
+            </div>
+            <p className="leading-relaxed text-red-800">
+              {repairEligibility.message}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {secondRepairBlocked && repairEligibility.isValid && (
         <div className="p-3.5 rounded-xl bg-red-50 border-2 border-red-300 text-red-950 text-xs flex items-start gap-3 shadow-xs">
           <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
@@ -58,7 +83,7 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
               Повторный ремонт шва категорически запрещён (Правило 1 ремонта)
             </div>
             <p className="leading-relaxed text-red-800">
-              Согласно нормативным требованиям (СТО Газпром 15-1.1-002-2023 п. 11.4, ГОСТ 32569-2013 п. 12.5.3, СП 86.13330) повторный ремонт одного и того же сварного соединения не допускается. В случае обнаружения дефектов после выполненного ремонта разрешается только <strong>вырез катушки</strong> с последующей вваркой двух новых монтажных стыков.
+              Согласно нормативным требованиям (СТО Газпром 15-1.1-002-2023 п. 19.3, ГОСТ 32569-2013 п. 12.5.3, СП 86.13330) повторный ремонт одного и того же сварного соединения не допускается. В случае обнаружения дефектов после выполненного ремонта разрешается только <strong>вырез катушки</strong> с последующей вваркой двух новых монтажных стыков.
             </p>
           </div>
         </div>
@@ -182,6 +207,81 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
                   }
                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100"
                 />
+              </div>
+            </div>
+
+            {/* Параметры выборки дефекта по СТО 15-1.1-002-2023 */}
+            <div className="pt-2 border-t border-dashed border-amber-200 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-2.5 items-end">
+              <div className="lg:col-span-4">
+                <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                  Характер устраняемого дефекта
+                </label>
+                <select
+                  disabled={!rbac.canEditPrepAndWeldingFields}
+                  value={form.repairDefectType || 'Поры'}
+                  onChange={(e) => {
+                    const defect = e.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      repairDefectType: defect,
+                      ...(defect.toLowerCase().includes('трещин') ? { repairAction: 'Вырезано' } : {}),
+                    }));
+                  }}
+                  className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium"
+                >
+                  <option value="Поры">Поры / пористость</option>
+                  <option value="Шлаковые включения">Шлаковые включения</option>
+                  <option value="Непровар">Непровар</option>
+                  <option value="Подрез">Подрез</option>
+                  <option value="Наплыв">Наплыв / чешуйчатость</option>
+                  <option value="Трещина (запрещено п. 19.1 СТО)">Трещина (ремонт запрещен)</option>
+                  <option value="Прочее">Прочий допустимый дефект</option>
+                </select>
+              </div>
+
+              <div className="lg:col-span-4">
+                <label className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-0.5">
+                  <span>Длина выборки, мм</span>
+                  <span className="font-mono text-slate-500 font-normal">
+                    макс. {repairEligibility.maxAllowableLengthMm} мм (1/{repairEligibility.ratioFactor} L)
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  disabled={!rbac.canEditPrepAndWeldingFields || secondRepairBlocked}
+                  value={form.repairLengthMm ?? ''}
+                  onChange={(e) => {
+                    const raw = normalizeDecimalInput(e.target.value);
+                    const val = raw ? parseFloat(raw) : undefined;
+                    setForm((prev) => ({
+                      ...prev,
+                      repairLengthMm: val,
+                      ...(val && val > repairEligibility.maxAllowableLengthMm ? { repairAction: 'Вырезано' } : {}),
+                    }));
+                  }}
+                  placeholder={`≤ ${repairEligibility.maxAllowableLengthMm} мм`}
+                  className={`w-full px-2.5 py-1.5 bg-white border rounded text-xs font-mono font-bold ${
+                    repairEligibility.isExceeded
+                      ? 'border-red-500 text-red-900 bg-red-50'
+                      : 'border-slate-300 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              <div className="lg:col-span-4 pb-0.5">
+                <div
+                  className={`px-2.5 py-1.5 rounded text-[11px] font-medium border flex items-center justify-between ${
+                    repairEligibility.isValid
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-red-50 border-red-200 text-red-800'
+                  }`}
+                >
+                  <span>Периметр: {repairEligibility.perimeterMm} мм</span>
+                  <span className="font-bold">
+                    {repairEligibility.isValid ? 'В пределах нормы' : 'Превышение лимита!'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

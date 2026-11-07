@@ -3184,3 +3184,330 @@ test('Sprint 1: Серверная безопасность, криптосто�
   assert.equal(auditEntries[1].operationType, 'linelist_change');
   assert.equal(auditEntries[2].operationType, 'user_created');
 });
+
+test('weldingLogic: Sprint 2: Трассируемость материалов, разнотолщинность, лимиты ремонта, квоты НК по сварщикам и НАКС-валидация', async () => {
+  const {
+    checkWallThicknessTransition,
+    checkRepairEligibility,
+    validateWelderNaksAttestation,
+    calculateWelderNdtQuotas,
+    calculateLineNdtProgress,
+    formatStoGazpromJournalRow,
+    formatGost32569JournalRow,
+  } = await import('./weldingLogic');
+
+  // 1. Проверка разнотолщинности по п. 14.3 СТО Газпром 15-1.1-002-2023
+  // Одинаковая толщина
+  const eqRes = checkWallThicknessTransition(10, 10);
+  assert.equal(eqRes.isDifferentThickness, false);
+  assert.equal(eqRes.requiresBevel, false);
+  assert.equal(eqRes.isDirectWeldingForbidden, false);
+
+  // Разность <= 2 мм (напр. 10 и 11 мм) -> bevel не требуется
+  const smallDiff = checkWallThicknessTransition(10, 11);
+  assert.equal(smallDiff.isDifferentThickness, true);
+  assert.equal(smallDiff.diffMm, 1);
+  assert.equal(smallDiff.requiresBevel, false);
+  assert.equal(smallDiff.isDirectWeldingForbidden, false);
+
+  // Разность > 2 мм (напр. 10 и 13 мм) -> требуется расточка/скос
+  const bevelDiff = checkWallThicknessTransition(10, 13);
+  assert.equal(bevelDiff.isDifferentThickness, true);
+  assert.equal(bevelDiff.diffMm, 3);
+  assert.equal(bevelDiff.requiresBevel, true);
+  assert.equal(bevelDiff.isDirectWeldingForbidden, false);
+  assert.ok(bevelDiff.warning?.includes('СТО Газпром 15-1.1-002-2023'));
+
+  // Отношение толщин > 1.5 (напр. 10 и 16 мм, 1.6) -> прямая сварка запрещена
+  const forbiddenDiff = checkWallThicknessTransition(10, 16);
+  assert.equal(forbiddenDiff.isDirectWeldingForbidden, true);
+  assert.ok(forbiddenDiff.error?.includes('категорически запрещена'));
+  assert.ok(forbiddenDiff.error?.includes('переходное кольцо'));
+
+  // 2. Лимиты выборки ремонта и запреты по разделу 19 СТО 15-1.1-002-2023
+  // Диаметр 219 мм -> Периметр Pi*219 = 688 мм -> Лимит 1/6 = 114.6 мм
+  const normalRepair = checkRepairEligibility(219, 50, 'Поры', 0);
+  assert.equal(normalRepair.isValid, true);
+  assert.equal(normalRepair.isExceeded, false);
+
+  // Превышение лимита длины выборки (150 мм > 114.6 мм)
+  const exceededRepair = checkRepairEligibility(219, 150, 'Поры', 0);
+  assert.equal(exceededRepair.isValid, false);
+  assert.equal(exceededRepair.isExceeded, true);
+  assert.equal(exceededRepair.forcedAction, 'Вырезано');
+
+  // Запрет ремонта трещин (п. 19.1)
+  const crackRepair = checkRepairEligibility(219, 20, 'Продольная трещина', 0);
+  assert.equal(crackRepair.isValid, false);
+  assert.equal(crackRepair.isCracksForbidden, true);
+  assert.equal(crackRepair.forcedAction, 'Вырезано');
+
+  // Запрет повторного ремонта (п. 19.3)
+  const secondRepair = checkRepairEligibility(219, 30, 'Поры', 1);
+  assert.equal(secondRepair.isValid, false);
+  assert.equal(secondRepair.isSecondRepairForbidden, true);
+  assert.equal(secondRepair.forcedAction, 'Вырезано');
+
+  // Сейсмоопасные условия (коэффициент 1/8)
+  const seismicRepair = checkRepairEligibility(219, 90, 'Шлак', 0, true);
+  // Лимит 1/8 от 688 = 86 мм -> 90 мм превышает
+  assert.equal(seismicRepair.isValid, false);
+  assert.equal(seismicRepair.ratioFactor, 8);
+
+  // 3. Валидация соответствия аттестации НАКС
+  const welder: WelderProfile = {
+    stamp: 'А142',
+    fullName: 'Воронов А.П.',
+    certNumber: 'НАКС-ЗСР-I-104928',
+    allowedMethods: ['РАД', 'РД'],
+    crewForeman: 'Мастер СМР Громов И.А.',
+    minDiameterMm: 57,
+    maxDiameterMm: 325,
+    minWallThicknessMm: 4,
+    maxWallThicknessMm: 16,
+    steelGroups: ['М01'],
+  };
+
+  const validJointNaks = validateWelderNaksAttestation(welder, {
+    diameterMm: 159,
+    wallThickness: 8,
+    steelGroup: 'М01',
+    weldingType: 'РД',
+  });
+  assert.equal(validJointNaks.isValid, true);
+  assert.equal(validJointNaks.warnings.length, 0);
+
+  // Диаметр вне диапазона
+  const invalidDNaks = validateWelderNaksAttestation(welder, {
+    diameterMm: 426,
+    wallThickness: 8,
+    steelGroup: 'М01',
+    weldingType: 'РД',
+  });
+  assert.equal(invalidDNaks.isDiameterValid, false);
+  assert.equal(invalidDNaks.isValid, false);
+
+  // Способ сварки не разрешен
+  const invalidMethodNaks = validateWelderNaksAttestation(welder, {
+    diameterMm: 159,
+    wallThickness: 8,
+    steelGroup: 'М01',
+    weldingType: 'АФ',
+  });
+  assert.equal(invalidMethodNaks.isMethodValid, false);
+  assert.equal(invalidMethodNaks.isValid, false);
+
+  // 4. Расчет соблюдения квот неразрушающего контроля по сварщикам
+  const lines: ProjectLineItem[] = [
+    {
+      id: 'l-1',
+      objectName: 'УКПГ-2В',
+      rdCode: '0092.049.Р.13/1-TX3',
+      lineNumber: '101',
+      uniqueLineId: 'TX3-101',
+      lineName: 'Линия пластового газа',
+      product: 'Газ',
+      testContour: 'К-1',
+      weldingNtd: 'СТО Газпром 15-1.1-002-2023',
+      controlNtd: 'СТО Газпром 15-1.3-004-2023',
+      qualityLevel: 'А',
+      pipelineCategory: 'I',
+      workingPressure: '7.5',
+      workingTemperature: '+20',
+      rkPercent: 100,
+      uzkPercent: 100,
+      pvkPercent: 0,
+      testDate: '2026-10-01',
+    },
+    {
+      id: 'l-2',
+      objectName: 'УКПГ-2В',
+      rdCode: '0092.049.Р.13/1-TX3',
+      lineNumber: '102',
+      uniqueLineId: 'TX3-102',
+      lineName: 'Линия рядовая',
+      product: 'Конденсат',
+      testContour: 'К-2',
+      weldingNtd: 'СТО Газпром 15-1.1-002-2023',
+      controlNtd: 'СТО Газпром 15-1.3-004-2023',
+      qualityLevel: 'С',
+      pipelineCategory: 'III',
+      workingPressure: '2.5',
+      workingTemperature: '+10',
+      rkPercent: 100,
+      uzkPercent: 20,
+      pvkPercent: 0,
+      testDate: '2026-10-01',
+    },
+  ];
+
+  const joints: WeldJoint[] = [
+    // Сварщик А142 на линии 1 (категория I, требует 100%): 2 стыка, оба проконтролированы
+    {
+      id: 'j-1',
+      jointNumber: '010',
+      uniqueLineId: 'TX3-101',
+      rdCode: '0092.049.Р.13/1-TX3',
+      objectName: 'УКПГ-2В',
+      contour: 'К-1',
+      lineNumber: '101',
+      jointType: 'Монтажный',
+      diameterMm: 219,
+      diameterInch: '8"',
+      wallThickness: 10,
+      lrv1Code: 'ЛРВ-1',
+      elem1Name: 'Труба',
+      elem1Material: '09Г2С',
+      elem1Ntd: 'ГОСТ 8732',
+      elem1CertNumber: 'СЕРТ-Т-0981',
+      elem1HeatNumber: 'ПЛ-4421',
+      lrv2Code: 'ЛРВ-2',
+      elem2Name: 'Отвод',
+      elem2Material: '09Г2С',
+      elem2Ntd: 'ГОСТ 17375',
+      elem2CertNumber: 'СЕРТ-О-1102',
+      elem2HeatNumber: 'ПЛ-8890',
+      weldingType: 'РД',
+      weldingDate: '2026-05-10',
+      welderStamp: 'А142',
+      welderFullName: 'Воронов А.П.',
+      welderCertNumber: 'НАКС-01',
+      responsiblePerson: 'Громов',
+      techCardNumber: 'ТК-01',
+      weldingMaterials: 'УОНИ',
+      ambientTemp: '+15',
+      vikResult: 'Годен',
+      vikDate: '2026-05-11',
+      vikInspector: 'Петров',
+      ndtType: 'РК',
+      ndtDate: '2026-05-12',
+      ndtResult: 'Годен',
+      ndtInspector: 'Сидоров',
+      dupNdtType: 'Не требуется',
+      dupNdtDate: '',
+      dupNdtResult: 'Не проводился',
+      dupNdtInspector: '',
+      updatedAt: '2026-05-12',
+      updatedBy: 'Инженер',
+    },
+    {
+      id: 'j-2',
+      jointNumber: '020',
+      uniqueLineId: 'TX3-101',
+      rdCode: '0092.049.Р.13/1-TX3',
+      objectName: 'УКПГ-2В',
+      contour: 'К-1',
+      lineNumber: '101',
+      jointType: 'Монтажный',
+      diameterMm: 219,
+      diameterInch: '8"',
+      wallThickness: 10,
+      lrv1Code: 'ЛРВ-1',
+      elem1Name: 'Труба',
+      elem1Material: '09Г2С',
+      elem1Ntd: 'ГОСТ 8732',
+      lrv2Code: 'ЛРВ-2',
+      elem2Name: 'Труба',
+      elem2Material: '09Г2С',
+      elem2Ntd: 'ГОСТ 8732',
+      weldingType: 'РД',
+      weldingDate: '2026-05-11',
+      welderStamp: 'А142',
+      welderFullName: 'Воронов А.П.',
+      welderCertNumber: 'НАКС-01',
+      responsiblePerson: 'Громов',
+      techCardNumber: 'ТК-01',
+      weldingMaterials: 'УОНИ',
+      ambientTemp: '+15',
+      vikResult: 'Годен',
+      vikDate: '2026-05-12',
+      vikInspector: 'Петров',
+      ndtType: 'РК',
+      ndtDate: '2026-05-13',
+      ndtResult: 'Годен',
+      ndtInspector: 'Сидоров',
+      dupNdtType: 'Не требуется',
+      dupNdtDate: '',
+      dupNdtResult: 'Не проводился',
+      dupNdtInspector: '',
+      updatedAt: '2026-05-13',
+      updatedBy: 'Инженер',
+    },
+    // Сварщик Б015 на линии 2 (категория III, 20%): 1 стык, 0 проконтролировано -> critical
+    {
+      id: 'j-3',
+      jointNumber: '010',
+      uniqueLineId: 'TX3-102',
+      rdCode: '0092.049.Р.13/1-TX3',
+      objectName: 'УКПГ-2В',
+      contour: 'К-2',
+      lineNumber: '102',
+      jointType: 'Монтажный',
+      diameterMm: 159,
+      diameterInch: '6"',
+      wallThickness: 8,
+      lrv1Code: 'ЛРВ-3',
+      elem1Name: 'Труба',
+      elem1Material: '09Г2С',
+      elem1Ntd: 'ГОСТ 8732',
+      lrv2Code: 'ЛРВ-3',
+      elem2Name: 'Труба',
+      elem2Material: '09Г2С',
+      elem2Ntd: 'ГОСТ 8732',
+      weldingType: 'РД',
+      weldingDate: '2026-05-12',
+      welderStamp: 'Б015',
+      welderFullName: 'Белов С.В.',
+      welderCertNumber: 'НАКС-02',
+      responsiblePerson: 'Громов',
+      techCardNumber: 'ТК-01',
+      weldingMaterials: 'УОНИ',
+      ambientTemp: '+15',
+      vikResult: 'Годен',
+      vikDate: '2026-05-13',
+      vikInspector: 'Петров',
+      ndtType: 'РК',
+      ndtDate: '',
+      ndtResult: 'Не проводился',
+      ndtInspector: '',
+      dupNdtType: 'Не требуется',
+      dupNdtDate: '',
+      dupNdtResult: 'Не проводился',
+      dupNdtInspector: '',
+      updatedAt: '2026-05-13',
+      updatedBy: 'Инженер',
+    },
+  ];
+
+  const quotas = calculateWelderNdtQuotas(joints, lines);
+  const a142Quota = quotas.find((q) => q.stamp === 'А142');
+  assert.ok(a142Quota);
+  assert.equal(a142Quota.totalWelded, 2);
+  assert.equal(a142Quota.inspectedCount, 2);
+  assert.equal(a142Quota.actualNdtPct, 100);
+  assert.equal(a142Quota.isCompliant, true);
+  assert.equal(a142Quota.status, 'compliant');
+
+  const b015Quota = quotas.find((q) => q.stamp === 'Б015');
+  assert.ok(b015Quota);
+  assert.equal(b015Quota.totalWelded, 1);
+  assert.equal(b015Quota.inspectedCount, 0);
+  assert.equal(b015Quota.isCompliant, false);
+  assert.equal(b015Quota.status, 'critical');
+
+  // 5. Прогресс выполнения плана НК по линии
+  const lineProgress101 = calculateLineNdtProgress(joints, lines[0]);
+  assert.equal(lineProgress101.weldedJoints, 2);
+  assert.equal(lineProgress101.inspectedRkCount, 2);
+  assert.equal(lineProgress101.actualRkPct, 100);
+  assert.equal(lineProgress101.isRkFulfilled, true);
+
+  // 6. Прослеживаемость материалов: попадание сертификата и плавки в журналы
+  const stoRow = formatStoGazpromJournalRow(joints[0], 0);
+  assert.ok(stoRow.col9.includes('СЕРТ-Т-0981'));
+  assert.ok(stoRow.col9.includes('ПЛ-4421'));
+
+  const gostRow = formatGost32569JournalRow(joints[0], 0);
+  assert.ok(gostRow.col4.includes('СЕРТ-Т-0981'));
+  assert.ok(gostRow.col4.includes('ПЛ-4421'));
+});

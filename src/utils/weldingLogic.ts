@@ -105,6 +105,509 @@ export function checkNaksCertStatus(
 }
 
 /**
+ * Результат проверки соединения на разнотолщинность по п. 14.3 СТО Газпром 15-1.1-002-2023
+ */
+export interface WallThicknessTransitionCheck {
+  isDifferentThickness: boolean;
+  diffMm: number;
+  ratio: number;
+  requiresBevel: boolean; // |S1 - S2| > 2 мм -> требуется расточка/скос кромок
+  isDirectWeldingForbidden: boolean; // Smax / Smin > 1.5 -> прямая сварка запрещена
+  warning?: string;
+  error?: string;
+}
+
+/**
+ * Проверка разнотолщинности свариваемых элементов по п. 14.3 СТО Газпром 15-1.1-002-2023.
+ * - При разности толщин стенок более 2.0 мм соединение считается разнотолщинным
+ *   и требует специальной разделки/расточки кромок с уклоном не круче 1:4.
+ * - При отношении толщин стенок Smax / Smin > 1.5 прямая сварка элементов запрещена!
+ *   Требуется применение переходного кольца длиной не менее 250 мм или калиброванной переходной детали.
+ */
+export function checkWallThicknessTransition(
+  s1: number | string | undefined | null,
+  s2: number | string | undefined | null
+): WallThicknessTransitionCheck {
+  const numS1 = typeof s1 === 'number' ? s1 : parseFloat(String(s1 || '').replace(',', '.'));
+  const numS2 = typeof s2 === 'number' ? s2 : parseFloat(String(s2 || '').replace(',', '.'));
+
+  if (Number.isNaN(numS1) || Number.isNaN(numS2) || numS1 <= 0 || numS2 <= 0) {
+    return {
+      isDifferentThickness: false,
+      diffMm: 0,
+      ratio: 1,
+      requiresBevel: false,
+      isDirectWeldingForbidden: false,
+    };
+  }
+
+  const minS = Math.min(numS1, numS2);
+  const maxS = Math.max(numS1, numS2);
+  const diffMm = Math.round(Math.abs(numS1 - numS2) * 100) / 100;
+  const ratio = Math.round((maxS / minS) * 100) / 100;
+
+  const requiresBevel = diffMm > 2.0;
+  const isDirectWeldingForbidden = ratio > 1.5;
+
+  let warning: string | undefined;
+  let error: string | undefined;
+
+  if (isDirectWeldingForbidden) {
+    error = `Отношение толщин стенок ${ratio} > 1.5 (${maxS} / ${minS} мм). Прямая сварка разнотолщинных элементов категорически запрещена п. 14.3 СТО Газпром 15-1.1-002-2023. Требуется переходное кольцо длиной ≥ 250 мм или переходная деталь.`;
+  } else if (requiresBevel) {
+    warning = `Разнотолщинное соединение: разность стенок ΔS = ${diffMm} мм (> 2.0 мм). По п. 14.3 СТО Газпром 15-1.1-002-2023 требуется внутренняя или наружная механическая обработка (расточка) кромок с уклоном не круче 1:4.`;
+  }
+
+  return {
+    isDifferentThickness: diffMm > 0.05,
+    diffMm,
+    ratio,
+    requiresBevel,
+    isDirectWeldingForbidden,
+    warning,
+    error,
+  };
+}
+
+/**
+ * Результат проверки допустимости ремонта шва по СТО Газпром 15-1.1-002-2023 (раздел 19)
+ */
+export interface RepairEligibilityCheck {
+  isValid: boolean;
+  perimeterMm: number;
+  maxAllowableLengthMm: number;
+  ratioFactor: 6 | 8;
+  isExceeded: boolean;
+  isCracksForbidden: boolean;
+  isSecondRepairForbidden: boolean;
+  forcedAction?: 'Вырезано';
+  message: string;
+}
+
+/**
+ * Проверка допустимости проведения ремонта сварного шва:
+ * 1. Запрет повторного ремонта (п. 19.3): повторный ремонт запрещен стандартом -> только вырезка катушки.
+ * 2. Запрет ремонта трещин (п. 19.1): трещины любого типа и размера ремонту не подлежат -> только вырезка катушки.
+ * 3. Лимит длины выборки (п. 19.4): суммарная длина участков ремонта не должна превышать 1/6 длины периметра
+ *    (для сейсмоопасных зон >= 6 баллов и зон тектонических разломов — не более 1/8). При превышении -> только вырезка катушки.
+ */
+export function checkRepairEligibility(
+  diameterMm: number | string | undefined | null,
+  repairLengthMm: number | string | undefined | null,
+  defectType?: string | null,
+  previousRepairCount = 0,
+  isSeismicOrFault = false
+): RepairEligibilityCheck {
+  const d = typeof diameterMm === 'number' ? diameterMm : parseFloat(String(diameterMm || '').replace(',', '.'));
+  const validD = !Number.isNaN(d) && d > 0 ? d : 0;
+  const perimeterMm = Math.round(Math.PI * validD * 10) / 10;
+  const ratioFactor: 6 | 8 = isSeismicOrFault ? 8 : 6;
+  const maxAllowableLengthMm = Math.round((perimeterMm / ratioFactor) * 10) / 10;
+
+  const len = typeof repairLengthMm === 'number' ? repairLengthMm : parseFloat(String(repairLengthMm || '').replace(',', '.'));
+  const validLen = !Number.isNaN(len) && len > 0 ? len : 0;
+
+  // 1. Повторный ремонт
+  if (previousRepairCount >= 1) {
+    return {
+      isValid: false,
+      perimeterMm,
+      maxAllowableLengthMm,
+      ratioFactor,
+      isExceeded: false,
+      isCracksForbidden: false,
+      isSecondRepairForbidden: true,
+      forcedAction: 'Вырезано',
+      message: 'Повторный ремонт сварного соединения запрещен п. 19.3 СТО Газпром 15-1.1-002-2023. Стык подлежит только вырезке катушки.',
+    };
+  }
+
+  // 2. Трещины
+  const cleanDefect = String(defectType || '').trim().toLowerCase();
+  if (cleanDefect.includes('трещин') || cleanDefect === 'трещина') {
+    return {
+      isValid: false,
+      perimeterMm,
+      maxAllowableLengthMm,
+      ratioFactor,
+      isExceeded: false,
+      isCracksForbidden: true,
+      isSecondRepairForbidden: false,
+      forcedAction: 'Вырезано',
+      message: 'Сварные соединения с трещинами любого вида ремонту не подлежат согласно п. 19.1 СТО Газпром 15-1.1-002-2023. Стык подлежит только вырезке катушки.',
+    };
+  }
+
+  // 3. Превышение длины выборки
+  if (validLen > maxAllowableLengthMm && maxAllowableLengthMm > 0) {
+    return {
+      isValid: false,
+      perimeterMm,
+      maxAllowableLengthMm,
+      ratioFactor,
+      isExceeded: true,
+      isCracksForbidden: false,
+      isSecondRepairForbidden: false,
+      forcedAction: 'Вырезано',
+      message: `Суммарная длина выборки (${validLen} мм) превышает допустимый предел 1/${ratioFactor} периметра стыка (${maxAllowableLengthMm} мм при Ø${validD} мм). Согласно п. 19.4 СТО Газпром 15-1.1-002-2023 стык подлежит только вырезке катушки.`,
+    };
+  }
+
+  return {
+    isValid: true,
+    perimeterMm,
+    maxAllowableLengthMm,
+    ratioFactor,
+    isExceeded: false,
+    isCracksForbidden: false,
+    isSecondRepairForbidden: false,
+    message: `Допустимо. Суммарная длина выборки: ${validLen} мм (макс. предел: ${maxAllowableLengthMm} мм, 1/${ratioFactor} периметра).`,
+  };
+}
+
+/**
+ * Валидация соответствия аттестации НАКС сварщика свариваемому соединению
+ */
+export interface WelderNaksComplianceCheck {
+  isValid: boolean;
+  isDiameterValid: boolean;
+  isThicknessValid: boolean;
+  isSteelGroupValid: boolean;
+  isMethodValid: boolean;
+  warnings: string[];
+  errors: string[];
+}
+
+export function validateWelderNaksAttestation(
+  welder: WelderProfile | undefined | null,
+  joint: {
+    diameterMm: number;
+    wallThickness: number;
+    steelGroup?: string;
+    weldingType?: string;
+  }
+): WelderNaksComplianceCheck {
+  if (!welder) {
+    return {
+      isValid: false,
+      isDiameterValid: false,
+      isThicknessValid: false,
+      isSteelGroupValid: false,
+      isMethodValid: false,
+      warnings: [],
+      errors: ['Сварщик не найден или не выбран'],
+    };
+  }
+
+  const warnings: string[] = [];
+  const errors: string[] = [];
+
+  // Парсинг параметров из attestationArea, если структурированные поля не заполнены
+  const area = welder.attestationArea || '';
+
+  // 1. Диаметр
+  let minD = welder.minDiameterMm;
+  let maxD = welder.maxDiameterMm;
+  if (minD === undefined || maxD === undefined) {
+    const dMatch = area.match(/Ø\s*(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)/i);
+    if (dMatch) {
+      minD = parseFloat(dMatch[1]);
+      maxD = parseFloat(dMatch[2]);
+    }
+  }
+
+  let isDiameterValid = true;
+  if (minD !== undefined && maxD !== undefined && joint.diameterMm > 0) {
+    if (joint.diameterMm < minD || joint.diameterMm > maxD) {
+      isDiameterValid = false;
+      warnings.push(`Диаметр стыка Ø${joint.diameterMm} мм выходит за границы аттестации НАКС сварщика (Ø${minD}–${maxD} мм).`);
+    }
+  }
+
+  // 2. Толщина стенки
+  let minS = welder.minWallThicknessMm;
+  let maxS = welder.maxWallThicknessMm;
+  if (minS === undefined || maxS === undefined) {
+    const sMatch = area.match(/S\s*(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)/i);
+    if (sMatch) {
+      minS = parseFloat(sMatch[1]);
+      maxS = parseFloat(sMatch[2]);
+    }
+  }
+
+  let isThicknessValid = true;
+  if (minS !== undefined && maxS !== undefined && joint.wallThickness > 0) {
+    if (joint.wallThickness < minS || joint.wallThickness > maxS) {
+      isThicknessValid = false;
+      warnings.push(`Толщина стенки S${joint.wallThickness} мм выходит за границы аттестации НАКС сварщика (S${minS}–${maxS} мм).`);
+    }
+  }
+
+  // 3. Группа стали
+  let isSteelGroupValid = true;
+  const jointSteel = (joint.steelGroup || '').toUpperCase().trim();
+  if (jointSteel) {
+    const allowedGroups = welder.steelGroups && welder.steelGroups.length > 0
+      ? welder.steelGroups.map((g) => g.toUpperCase().trim())
+      : (area.match(/М\d{2}|M\d{2}/gi) || []).map((g) => g.toUpperCase().trim());
+
+    if (allowedGroups.length > 0) {
+      const match = allowedGroups.some((g) => jointSteel.includes(g) || g.includes(jointSteel));
+      if (!match) {
+        isSteelGroupValid = false;
+        warnings.push(`Группа стали стыка (${joint.steelGroup}) не входит в аттестованные группы сварщика (${allowedGroups.join(', ')}).`);
+      }
+    }
+  }
+
+  // 4. Способ сварки
+  let isMethodValid = true;
+  const weldMethod = (joint.weldingType || '').trim();
+  if (weldMethod && welder.allowedMethods && welder.allowedMethods.length > 0) {
+    const hasMethod = welder.allowedMethods.some(
+      (m) => m === weldMethod || (weldMethod.includes('+') && m.includes(weldMethod))
+    );
+    if (!hasMethod) {
+      isMethodValid = false;
+      warnings.push(`Способ сварки "${weldMethod}" не разрешен в удостоверении НАКС (допущены: ${welder.allowedMethods.join(', ')}).`);
+    }
+  }
+
+  const isValid = isDiameterValid && isThicknessValid && isSteelGroupValid && isMethodValid;
+
+  return {
+    isValid,
+    isDiameterValid,
+    isThicknessValid,
+    isSteelGroupValid,
+    isMethodValid,
+    warnings,
+    errors,
+  };
+}
+
+/**
+ * Персональный расчет выполнения квот неразрушающего контроля (НК) по сварщикам
+ * в соответствии с СТО Газпром 15-1.3-004-2023, СП 86.13330.2022 и ГОСТ 32569-2013
+ */
+export interface WelderNdtQuotaReport {
+  stamp: string;
+  fullName: string;
+  totalWelded: number;
+  inspectedCount: number;
+  passedCount: number;
+  defectCount: number;
+  actualNdtPct: number;
+  requiredNdtPct: number;
+  isCompliant: boolean;
+  hasMinimumJointInspected: boolean;
+  penaltyRequiredJoints: number; // Требуемое количество дополнительных стыков на контроль из-за брака (удвоение)
+  status: 'compliant' | 'warning' | 'penalty_required' | 'critical';
+  details: string;
+}
+
+export function calculateWelderNdtQuotas(
+  joints: WeldJoint[],
+  lines: ProjectLineItem[] = []
+): WelderNdtQuotaReport[] {
+  const lineMap = new Map<string, ProjectLineItem>();
+  for (const l of lines) {
+    if (l.uniqueLineId) lineMap.set(l.uniqueLineId, l);
+  }
+
+  // Группировка стыков по клеймам сварщиков
+  const welderStats = new Map<
+    string,
+    {
+      stamp: string;
+      fullName: string;
+      weldedJoints: WeldJoint[];
+      inspectedJoints: WeldJoint[];
+      defectJoints: WeldJoint[];
+      passedJoints: WeldJoint[];
+      highestRequiredPct: number;
+    }
+  >();
+
+  for (const j of joints) {
+    const stamps: string[] = [];
+    if (j.welderStampsList && j.welderStampsList.length > 0) {
+      stamps.push(...j.welderStampsList);
+    } else if (j.welderStamp) {
+      stamps.push(...j.welderStamp.split(/[,;/+]+/).map((s) => s.trim()).filter(Boolean));
+    }
+
+    if (stamps.length === 0) continue;
+
+    // Определяем требование НК для линии данного стыка
+    const line = lineMap.get(j.uniqueLineId);
+    let lineRequiredPct = 100;
+    if (line) {
+      const cat = (line.pipelineCategory || '').toUpperCase().trim();
+      const ql = (line.qualityLevel || '').toUpperCase().trim();
+      if (cat.includes('III') || cat.includes('IV') || ql === 'С' || ql === 'C') {
+        lineRequiredPct = Math.max(line.rkPercent || 0, line.uzkPercent || 0, 20);
+      } else {
+        lineRequiredPct = 100;
+      }
+    }
+
+    const isWelded = Boolean(j.weldingDate);
+    const hasNdt = Boolean(j.ndtResult && j.ndtResult !== 'Не проводился');
+    const isDefect =
+      j.ndtResult === 'Ремонт' ||
+      j.ndtResult === 'Вырезать' ||
+      j.vikResult === 'Ремонт' ||
+      j.vikResult === 'Вырезать';
+    const isPassed = j.ndtResult === 'Годен' || j.vikResult === 'Годен';
+
+    for (const stamp of stamps) {
+      if (!welderStats.has(stamp)) {
+        welderStats.set(stamp, {
+          stamp,
+          fullName: j.welderFullName || '',
+          weldedJoints: [],
+          inspectedJoints: [],
+          defectJoints: [],
+          passedJoints: [],
+          highestRequiredPct: lineRequiredPct,
+        });
+      }
+
+      const stat = welderStats.get(stamp)!;
+      if (!stat.fullName && j.welderFullName) stat.fullName = j.welderFullName;
+      if (lineRequiredPct > stat.highestRequiredPct) stat.highestRequiredPct = lineRequiredPct;
+
+      if (isWelded) stat.weldedJoints.push(j);
+      if (hasNdt) stat.inspectedJoints.push(j);
+      if (isDefect) stat.defectJoints.push(j);
+      if (isPassed && !isDefect) stat.passedJoints.push(j);
+    }
+  }
+
+  const reports: WelderNdtQuotaReport[] = [];
+
+  for (const [, stat] of welderStats) {
+    const totalWelded = stat.weldedJoints.length;
+    const inspectedCount = stat.inspectedJoints.length;
+    const defectCount = stat.defectJoints.length;
+    const passedCount = stat.passedJoints.length;
+
+    const actualNdtPct = totalWelded > 0 ? Math.round((inspectedCount / totalWelded) * 1000) / 10 : 0;
+    const requiredNdtPct = stat.highestRequiredPct;
+    const hasMinimumJointInspected = totalWelded === 0 || inspectedCount >= 1;
+
+    // Правило удвоения при браке: +2 стыка на каждый дефектный стык
+    const penaltyRequiredJoints = defectCount * 2;
+    const hasPenaltyFulfilled =
+      defectCount === 0 ||
+      inspectedCount >=
+        Math.min(
+          totalWelded,
+          Math.ceil((totalWelded * requiredNdtPct) / 100) + penaltyRequiredJoints
+        );
+
+    let isCompliant = true;
+    let status: 'compliant' | 'warning' | 'penalty_required' | 'critical' = 'compliant';
+    let details = 'Нормативы неразрушающего контроля полностью выполнены.';
+
+    if (totalWelded > 0 && inspectedCount === 0) {
+      isCompliant = false;
+      status = 'critical';
+      details = `Ни один из ${totalWelded} сваренных стыков не проконтролирован! Требуется не менее 1 стыка и ${requiredNdtPct}%.`;
+    } else if (defectCount > 0 && !hasPenaltyFulfilled) {
+      isCompliant = false;
+      status = 'penalty_required';
+      details = `Выявлен брак (${defectCount} стык(ов)). По п. 5.7 СТО 15-1.3-004-2023 назначен штрафной контроль удвоенного количества (+${penaltyRequiredJoints} стык(ов)) того же сварщика.`;
+    } else if (actualNdtPct < requiredNdtPct) {
+      isCompliant = false;
+      status = 'warning';
+      details = `Фактический объем контроля ${actualNdtPct}% ниже требуемого нормативом (${requiredNdtPct}%). Проконтролировано ${inspectedCount} из ${totalWelded} стыков.`;
+    }
+
+    reports.push({
+      stamp: stat.stamp,
+      fullName: stat.fullName,
+      totalWelded,
+      inspectedCount,
+      passedCount,
+      defectCount,
+      actualNdtPct,
+      requiredNdtPct,
+      isCompliant,
+      hasMinimumJointInspected,
+      penaltyRequiredJoints,
+      status,
+      details,
+    });
+  }
+
+  return reports.sort((a, b) => {
+    if (a.isCompliant !== b.isCompliant) return a.isCompliant ? 1 : -1;
+    return b.totalWelded - a.totalWelded;
+  });
+}
+
+/**
+ * Прогресс выполнения плана неразрушающего контроля по конкретной технологической линии
+ */
+export interface LineNdtProgress {
+  uniqueLineId: string;
+  totalJoints: number;
+  weldedJoints: number;
+  inspectedRkCount: number;
+  inspectedUzkCount: number;
+  requiredRkPct: number;
+  requiredUzkPct: number;
+  actualRkPct: number;
+  actualUzkPct: number;
+  isRkFulfilled: boolean;
+  isUzkFulfilled: boolean;
+}
+
+export function calculateLineNdtProgress(
+  joints: WeldJoint[],
+  line: ProjectLineItem
+): LineNdtProgress {
+  const lineJoints = joints.filter((j) => j.uniqueLineId === line.uniqueLineId);
+  const totalJoints = lineJoints.length;
+  const weldedJoints = lineJoints.filter((j) => Boolean(j.weldingDate)).length;
+
+  const inspectedRkCount = lineJoints.filter(
+    (j) =>
+      (j.ndtType === 'РК' || j.ndtType === 'РК+УЗК') &&
+      Boolean(j.ndtResult && j.ndtResult !== 'Не проводился')
+  ).length;
+
+  const inspectedUzkCount = lineJoints.filter(
+    (j) =>
+      (j.ndtType === 'УЗК' || j.ndtType === 'РК+УЗК' || j.dupNdtType === 'УЗК') &&
+      (Boolean(j.ndtResult && j.ndtResult !== 'Не проводился') ||
+        Boolean(j.dupNdtResult && j.dupNdtResult !== 'Не проводился'))
+  ).length;
+
+  const requiredRkPct = line.rkPercent || 0;
+  const requiredUzkPct = line.uzkPercent || 0;
+
+  const actualRkPct = weldedJoints > 0 ? Math.round((inspectedRkCount / weldedJoints) * 1000) / 10 : 0;
+  const actualUzkPct = weldedJoints > 0 ? Math.round((inspectedUzkCount / weldedJoints) * 1000) / 10 : 0;
+
+  return {
+    uniqueLineId: line.uniqueLineId,
+    totalJoints,
+    weldedJoints,
+    inspectedRkCount,
+    inspectedUzkCount,
+    requiredRkPct,
+    requiredUzkPct,
+    actualRkPct,
+    actualUzkPct,
+    isRkFulfilled: actualRkPct >= requiredRkPct,
+    isUzkFulfilled: actualUzkPct >= requiredUzkPct,
+  };
+}
+
+/**
  * Извлекает уникальный суффикс из шифра РД.
  * Для классических шифров вида "...045.0077.001-TX3" возвращает "001-TX3".
  * Для шифров с отличающимся префиксом установки/блока включает различающий сегмент, исключая коллизии uniqueLineId.

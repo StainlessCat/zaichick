@@ -15,6 +15,7 @@ import {
 } from '../../types/welding';
 import {
   calculateEquivalentDiaInch,
+  checkWallThicknessTransition,
   detectLrvElementType,
   LrvSizeOption,
   LRV_ELEMENT_TYPE_OPTIONS,
@@ -170,6 +171,48 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
             Эл.1: Ø{elem1Diam}×{form.elem1WallThickness ?? form.wallThickness} мм · Эл.2: Ø{elem2Diam}×{form.elem2WallThickness ?? form.wallThickness} мм · Экв. {calculateEquivalentDiaInch(elem1Diam || 0, form.elem1WallThickness ?? form.wallThickness ?? 0)}"
           </span>
         </div>
+
+        {/* Проверка разнотолщинности по п. 14.3 СТО Газпром 15-1.1-002-2023 */}
+        {(() => {
+          const s1 = form.elem1WallThickness ?? form.wallThickness;
+          const s2 = form.elem2WallThickness ?? form.wallThickness;
+          const thicknessCheck = checkWallThicknessTransition(s1, s2);
+          if (!thicknessCheck.isDifferentThickness) return null;
+
+          if (thicknessCheck.isDirectWeldingForbidden) {
+            return (
+              <div className="px-3 py-2.5 rounded-lg text-xs bg-red-100 border-2 border-red-400 text-red-950 flex items-start gap-2.5 shadow-xs">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-red-900">
+                    Прямая сварка разнотолщинных элементов запрещена (СТО Газпром 15-1.1-002-2023 п. 14.3)
+                  </div>
+                  <div className="text-[11px] text-red-800 leading-relaxed">
+                    {thicknessCheck.error}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          if (thicknessCheck.requiresBevel) {
+            return (
+              <div className="px-3 py-2 rounded-lg text-xs bg-amber-50 border border-amber-300 text-amber-950 flex items-start gap-2.5 shadow-2xs">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-amber-900">
+                    Разнотолщинное соединение: требуется разделка кромок (п. 14.3 СТО 15-1.1-002-2023)
+                  </div>
+                  <div className="text-[11px] text-amber-800 leading-relaxed">
+                    {thicknessCheck.warning}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          return null;
+        })()}
 
         {/* Карточки «Элемент 1» — [Иконки Копировать и Поменять местами] — «Элемент 2» */}
         <div className="grid grid-cols-1 lg:grid-cols-11 gap-3 items-stretch">
@@ -403,43 +446,103 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-200 grid grid-cols-12 gap-2">
-              <div className="col-span-7">
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Заводской номер
-                </label>
-                <input
-                  type="text"
-                  value={form.elem1FactoryNumber || ''}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      elem1FactoryNumber: e.target.value,
-                    }))
-                  }
-                  placeholder="Зав. № детали 1"
-                  aria-label="Заводской номер Элемента 1"
-                  className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono font-semibold text-slate-900"
-                />
+            <div className="pt-2 border-t border-slate-200 space-y-2">
+              <div className="grid grid-cols-12 gap-2">
+                <div className="col-span-7">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Заводской номер
+                  </label>
+                  <input
+                    type="text"
+                    value={form.elem1FactoryNumber || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem1FactoryNumber: e.target.value,
+                      }))
+                    }
+                    placeholder="Зав. № детали 1"
+                    aria-label="Заводской номер Элемента 1"
+                    className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono font-semibold text-slate-900"
+                  />
+                </div>
+                <div className="col-span-5">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Длина, м
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={form.elem1Length || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem1Length: normalizeDecimalInput(e.target.value),
+                      }))
+                    }
+                    placeholder="Напр.: 11.8"
+                    aria-label="Длина Элемента 1"
+                    className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono font-semibold text-slate-900"
+                  />
+                </div>
               </div>
-              <div className="col-span-5">
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Длина, м
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={form.elem1Length || ''}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      elem1Length: normalizeDecimalInput(e.target.value),
-                    }))
-                  }
-                  placeholder="Напр.: 11.8"
-                  aria-label="Длина Элемента 1"
-                  className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono font-semibold text-slate-900"
-                />
+
+              {/* Прослеживаемость материалов элемента 1: Сертификат, плавка, партия */}
+              <div className="grid grid-cols-3 gap-2 pt-1 border-t border-dashed border-slate-200">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    № сертификата
+                  </label>
+                  <input
+                    type="text"
+                    value={form.elem1CertNumber || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem1CertNumber: e.target.value,
+                      }))
+                    }
+                    placeholder="№ серт."
+                    aria-label="Номер сертификата качества Элемента 1"
+                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono text-slate-900 focus:border-[#1e3799]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    № плавки
+                  </label>
+                  <input
+                    type="text"
+                    value={form.elem1HeatNumber || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem1HeatNumber: e.target.value,
+                      }))
+                    }
+                    placeholder="№ плавки"
+                    aria-label="Номер плавки Элемента 1"
+                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono text-slate-900 focus:border-[#1e3799]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    № партии
+                  </label>
+                  <input
+                    type="text"
+                    value={form.elem1BatchNumber || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem1BatchNumber: e.target.value,
+                      }))
+                    }
+                    placeholder="№ партии"
+                    aria-label="Номер партии Элемента 1"
+                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono text-slate-900 focus:border-[#1e3799]"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -696,43 +799,103 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-200 grid grid-cols-12 gap-2">
-              <div className="col-span-7">
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Заводской номер
-                </label>
-                <input
-                  type="text"
-                  value={form.elem2FactoryNumber || ''}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      elem2FactoryNumber: e.target.value,
-                    }))
-                  }
-                  placeholder="Зав. № детали 2"
-                  aria-label="Заводской номер Элемента 2"
-                  className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono font-semibold text-slate-900"
-                />
+            <div className="pt-2 border-t border-slate-200 space-y-2">
+              <div className="grid grid-cols-12 gap-2">
+                <div className="col-span-7">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Заводской номер
+                  </label>
+                  <input
+                    type="text"
+                    value={form.elem2FactoryNumber || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem2FactoryNumber: e.target.value,
+                      }))
+                    }
+                    placeholder="Зав. № детали 2"
+                    aria-label="Заводской номер Элемента 2"
+                    className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono font-semibold text-slate-900"
+                  />
+                </div>
+                <div className="col-span-5">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Длина, м
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={form.elem2Length || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem2Length: normalizeDecimalInput(e.target.value),
+                      }))
+                    }
+                    placeholder="Напр.: 0.35"
+                    aria-label="Длина Элемента 2"
+                    className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono font-semibold text-slate-900"
+                  />
+                </div>
               </div>
-              <div className="col-span-5">
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  Длина, м
-                </label>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={form.elem2Length || ''}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      elem2Length: normalizeDecimalInput(e.target.value),
-                    }))
-                  }
-                  placeholder="Напр.: 0.35"
-                  aria-label="Длина Элемента 2"
-                  className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono font-semibold text-slate-900"
-                />
+
+              {/* Прослеживаемость материалов элемента 2: Сертификат, плавка, партия */}
+              <div className="grid grid-cols-3 gap-2 pt-1 border-t border-dashed border-slate-200">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    № сертификата
+                  </label>
+                  <input
+                    type="text"
+                    value={form.elem2CertNumber || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem2CertNumber: e.target.value,
+                      }))
+                    }
+                    placeholder="№ серт."
+                    aria-label="Номер сертификата качества Элемента 2"
+                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono text-slate-900 focus:border-[#1e3799]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    № плавки
+                  </label>
+                  <input
+                    type="text"
+                    value={form.elem2HeatNumber || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem2HeatNumber: e.target.value,
+                      }))
+                    }
+                    placeholder="№ плавки"
+                    aria-label="Номер плавки Элемента 2"
+                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono text-slate-900 focus:border-[#1e3799]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    № партии
+                  </label>
+                  <input
+                    type="text"
+                    value={form.elem2BatchNumber || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        elem2BatchNumber: e.target.value,
+                      }))
+                    }
+                    placeholder="№ партии"
+                    aria-label="Номер партии Элемента 2"
+                    className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono text-slate-900 focus:border-[#1e3799]"
+                  />
+                </div>
               </div>
             </div>
           </div>

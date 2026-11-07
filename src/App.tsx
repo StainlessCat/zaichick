@@ -1901,6 +1901,7 @@ export default function App() {
           <JointsRegistryView
             joints={joints}
             filteredAndSortedJoints={filteredAndSortedJoints}
+            lines={projectLineList}
             selectedJointIds={selectedJointIds}
             onToggleSelectRow={toggleSelectRow}
             onToggleSelectAll={toggleSelectAllVisible}
