@@ -23,6 +23,10 @@ import {
   findWelderByStamp,
   formatDateDDMMYY,
   findMatchingTechCard,
+  classifyJointElements,
+  getWelderCertForMethod,
+  getMissingPassportFields,
+  isPassportIncomplete,
   formatFlangedZraName,
   formatGost32569JournalRow,
   formatJournalElementName,
@@ -3514,4 +3518,179 @@ test('weldingLogic: Sprint 2: Трассируемость материалов,
   // Заводские номера не должны попадать в столбец 4 ГОСТ, если указаны сертификаты
   assert.equal(gostRow.col4.includes('ЗАВ-001'), false);
   assert.equal(gostRow.col4.includes('ЗАВ-002'), false);
+});
+
+test('Sprint 3: classifyJointElements, findMatchingTechCard with jointKind and elementCombination', () => {
+  assert.equal(classifyJointElements('Труба', 'Труба БШ 219х8', 'Труба', 'Труба 219х8'), 'Труба+Труба');
+  assert.equal(classifyJointElements('Труба', 'Труба 219х8', 'Отвод', 'Отвод 90 219х8'), 'Труба+СДТ');
+  assert.equal(classifyJointElements('Отвод', 'Отвод 90', 'Переход', 'Переход К 219х159'), 'СДТ+СДТ');
+  assert.equal(classifyJointElements('Труба', 'Труба 219', 'ЗРА', 'Кран шаровой КШ 200'), 'Труба+ЗРА');
+  assert.equal(classifyJointElements('Отвод', 'Отвод 90', 'Фланец', 'Фланец воротниковый 200'), 'СДТ+ЗРА');
+
+  const tcList: TechCardItem[] = [
+    {
+      id: 'tc-pipe',
+      number: 'ТК-ТРУБА',
+      title: 'Труба+Труба',
+      weldingType: 'РАД+РД',
+      jointKind: 'Стыковое',
+      elementCombination: 'Труба+Труба',
+      ntd: 'СТО',
+      steelGroup: 'М01',
+      minDiameterMm: 57,
+      maxDiameterMm: 325,
+      minWallThicknessMm: 4,
+      maxWallThicknessMm: 16,
+      recommendedMaterials: 'Св-08Г2С',
+      preheatRules: [],
+    },
+    {
+      id: 'tc-ang',
+      number: 'ТК-УГЛ',
+      title: 'Угловое патрубок',
+      weldingType: 'РАД+РД',
+      jointKind: 'Угловое',
+      elementCombination: 'Труба+СДТ',
+      ntd: 'СТО',
+      steelGroup: 'М01',
+      minDiameterMm: 15,
+      maxDiameterMm: 159,
+      minWallThicknessMm: 3,
+      maxWallThicknessMm: 12,
+      recommendedMaterials: 'Св-08Г2С',
+      preheatRules: [],
+    },
+  ];
+
+  const matchedPipe = findMatchingTechCard(tcList, {
+    diameterMm: 219,
+    wallThicknessMm: 8,
+    jointKind: 'Стыковое',
+    elementCombination: 'Труба+Труба',
+  });
+  assert.equal(matchedPipe?.number, 'ТК-ТРУБА');
+
+  const matchedAng = findMatchingTechCard(tcList, {
+    diameterMm: 57,
+    wallThicknessMm: 4,
+    jointKind: 'Угловое',
+    elementCombination: 'Труба+СДТ',
+  });
+  assert.equal(matchedAng?.number, 'ТК-УГЛ');
+});
+
+test('Sprint 3: getWelderCertForMethod gets specific cert for method and resolves correctly', () => {
+  const welderWithMethods: WelderProfile = {
+    stamp: 'А142',
+    fullName: 'Королев Д.В.',
+    certNumber: 'ЗС-ОСНОВНОЙ',
+    allowedMethods: ['РАД', 'РД', 'РАД+РД'],
+    crewForeman: 'Громов И.А.',
+    naksCerts: [
+      {
+        weldingType: 'РАД',
+        certNumber: 'НАКС-РАД-001',
+        issueDate: '2025-01-01',
+        expiryDate: '2027-01-01',
+      },
+      {
+        weldingType: 'РД',
+        certNumber: 'НАКС-РД-002',
+        issueDate: '2025-01-01',
+        expiryDate: '2027-01-01',
+      },
+    ],
+  };
+
+  const radCert = getWelderCertForMethod(welderWithMethods, 'РАД');
+  assert.equal(radCert.certNumber, 'НАКС-РАД-001');
+
+  const rdCert = getWelderCertForMethod(welderWithMethods, 'РД');
+  assert.equal(rdCert.certNumber, 'НАКС-РД-002');
+
+  const combCert = getWelderCertForMethod(welderWithMethods, 'РАД+РД');
+  assert.ok(combCert.certNumber.includes('НАКС-РАД-001') && combCert.certNumber.includes('НАКС-РД-002'));
+
+  const resolved = resolveWeldersSelection(['А142'], undefined, [welderWithMethods], 'РД');
+  assert.equal(resolved.welderCertNumber, 'НАКС-РД-002');
+});
+
+test('Sprint 3: getMissingPassportFields and isPassportIncomplete validate welded joints', () => {
+  const baseMockJoint: WeldJoint = {
+    id: 'test-j-1',
+    objectName: 'Объект 1',
+    rdCode: 'РД-001',
+    contour: 'Контур 1',
+    lineNumber: '001',
+    uniqueLineId: '001-РД-001',
+    jointNumber: '010',
+    jointType: 'Монтажный',
+    diameterMm: 219,
+    diameterInch: '8"',
+    wallThickness: 8,
+    lrv1Code: 'LRV-1',
+    elem1Name: 'Труба 219',
+    elem1Material: '09Г2С',
+    elem1Ntd: 'ГОСТ 8732',
+    lrv2Code: 'LRV-2',
+    elem2Name: 'Труба 219',
+    elem2Material: '09Г2С',
+    elem2Ntd: 'ГОСТ 8732',
+    weldingType: 'РАД+РД',
+    weldingDate: '',
+    welderStamp: '',
+    weldingMaterials: '',
+    ambientTemp: '+15',
+    responsiblePerson: '',
+    welderFullName: '',
+    welderCertNumber: '',
+    techCardNumber: '',
+    vikResult: '',
+    vikDate: '',
+    vikInspector: '',
+    ndtResult: '',
+    ndtDate: '',
+    ndtProtocolNumber: '',
+    ndtInspector: '',
+    dupNdtResult: '',
+    dupNdtDate: '',
+    dupNdtProtocolNumber: '',
+    dupNdtInspector: '',
+    updatedAt: '',
+    updatedBy: '',
+  };
+
+  const draftJoint: WeldJoint = { ...baseMockJoint, weldingDate: '', welderStamp: '' };
+  assert.equal(isPassportIncomplete(draftJoint), false, 'Несваренный стык не считается незаполненным');
+
+  const weldedJointWithoutFields: WeldJoint = {
+    ...baseMockJoint,
+    weldingDate: '2026-10-15',
+    welderStamp: '',
+    techCardNumber: '',
+    weldingMaterials: '',
+    responsiblePerson: '',
+    elem1FactoryNumber: '',
+    elem2FactoryNumber: '',
+    elem1Length: '',
+    elem2Length: '',
+  };
+  assert.equal(isPassportIncomplete(weldedJointWithoutFields), true);
+  const missing = getMissingPassportFields(weldedJointWithoutFields);
+  assert.equal(missing.length, 8);
+
+  const completeWeldedJoint: WeldJoint = {
+    ...baseMockJoint,
+    weldingDate: '2026-10-15',
+    welderStamp: 'А142',
+    techCardNumber: 'ТК-01',
+    weldingMaterials: 'Св-08Г2С',
+    responsiblePerson: 'Громов',
+    elem1FactoryNumber: 'Т-01',
+    elem2FactoryNumber: 'Т-02',
+    elem1Length: '11.5',
+    elem2Length: '11.8',
+  };
+  assert.equal(isPassportIncomplete(completeWeldedJoint), false);
+  assert.equal(getMissingPassportFields(completeWeldedJoint).length, 0);
 });

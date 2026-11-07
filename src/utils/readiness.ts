@@ -228,11 +228,18 @@ export interface LineCompletionStatus {
   weldedJoints: number;
   controlledJoints: number;
   statusLabel: string;
+  ndtStatus: 'sufficient' | 'insufficient' | 'no_welding';
+  ndtStatusBadge: 'Достаточно НК' | 'Недостаточно НК' | 'Нет сварки';
+  rkRequired: number;
+  rkControlled: number;
+  uzkRequired: number;
+  uzkControlled: number;
 }
 
 /**
  * Вычисляет статус линии для раздела «Проект (лайнлист)»:
- * показывает, что все стыки на линии сварены и проконтролированы.
+ * проверяет выполнение объемов неразрушающего контроля (РК / УЗК) по линии
+ * и готовность всех стыков на линии.
  */
 export function computeLineListItemStatus(
   lineItem: ProjectLineItem,
@@ -257,16 +264,42 @@ export function computeLineListItemStatus(
       weldedJoints: 0,
       controlledJoints: 0,
       statusLabel: manual || 'Нет стыков в реестре',
+      ndtStatus: 'no_welding',
+      ndtStatusBadge: 'Нет сварки',
+      rkRequired: 0,
+      rkControlled: 0,
+      uzkRequired: 0,
+      uzkControlled: 0,
     };
   }
 
   let weldedJoints = 0;
   let controlledJoints = 0;
+  let rkControlled = 0;
+  let uzkControlled = 0;
 
   for (const j of lineJoints) {
     const isWelded = Boolean(j.weldingDate && j.weldingDate.trim() !== '');
     if (isWelded) {
       weldedJoints += 1;
+
+      // Проверка прохождения РК
+      const hasRk =
+        (j.ndtType === 'РК' && Boolean(j.ndtResult)) ||
+        (j.dupNdtType === 'РК' && Boolean(j.dupNdtResult)) ||
+        j.repairNdtResult === 'Годен';
+      if (hasRk) {
+        rkControlled += 1;
+      }
+
+      // Проверка прохождения УЗК
+      const hasUzk =
+        (j.ndtType === 'УЗК' && Boolean(j.ndtResult)) ||
+        (j.dupNdtType === 'УЗК' && Boolean(j.dupNdtResult)) ||
+        j.repairDupNdtResult === 'Годен';
+      if (hasUzk) {
+        uzkControlled += 1;
+      }
     }
 
     if (isJointFullyAccepted(j)) {
@@ -274,16 +307,56 @@ export function computeLineListItemStatus(
     }
   }
 
+  // Расчет планового норматива контроля по лайнлисту
+  const rkPlanPct =
+    typeof lineItem.rkPercent === 'number'
+      ? lineItem.rkPercent
+      : parseFloat(String(lineItem.rkPercent || '0')) || 0;
+  const uzkPlanPct =
+    typeof lineItem.uzkPercent === 'number'
+      ? lineItem.uzkPercent
+      : parseFloat(String(lineItem.uzkPercent || '0')) || 0;
+
+  const rkRequired = Math.ceil(weldedJoints * (rkPlanPct / 100));
+  const uzkRequired = Math.ceil(weldedJoints * (uzkPlanPct / 100));
+
+  let ndtStatus: 'sufficient' | 'insufficient' | 'no_welding' = 'no_welding';
+  let ndtStatusBadge: 'Достаточно НК' | 'Недостаточно НК' | 'Нет сварки' = 'Нет сварки';
+
+  if (weldedJoints > 0) {
+    const isRkSufficient = rkRequired === 0 || rkControlled >= rkRequired;
+    const isUzkSufficient = uzkRequired === 0 || uzkControlled >= uzkRequired;
+
+    if (isRkSufficient && isUzkSufficient) {
+      ndtStatus = 'sufficient';
+      ndtStatusBadge = 'Достаточно НК';
+    } else {
+      ndtStatus = 'insufficient';
+      ndtStatusBadge = 'Недостаточно НК';
+    }
+  }
+
   const isCompleted =
     totalJoints > 0 && weldedJoints === totalJoints && controlledJoints === totalJoints;
+
+  const detailInfo = `(РК: ${rkControlled}/${rkRequired}, УЗК: ${uzkControlled}/${uzkRequired})`;
+  const statusLabel = isCompleted
+    ? `Все стыки сварены и проконтролированы (${controlledJoints}/${totalJoints})`
+    : weldedJoints === 0
+    ? 'Нет сварки'
+    : `${ndtStatusBadge} ${detailInfo}`;
 
   return {
     isCompleted,
     totalJoints,
     weldedJoints,
     controlledJoints,
-    statusLabel: isCompleted
-      ? `Все стыки сварены и проконтролированы (${controlledJoints}/${totalJoints})`
-      : `В работе (сварка ${weldedJoints}/${totalJoints}, НК ${controlledJoints}/${totalJoints})`,
+    statusLabel,
+    ndtStatus,
+    ndtStatusBadge,
+    rkRequired,
+    rkControlled,
+    uzkRequired,
+    uzkControlled,
   };
 }

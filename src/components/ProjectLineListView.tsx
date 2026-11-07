@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowDownAZ,
   ArrowUp,
@@ -642,7 +643,7 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
     colKey: LineListColumnKey
   ): string => {
     if (colKey === 'computedStatus') {
-      return row.status.statusLabel;
+      return row.status.ndtStatusBadge;
     }
     return String(row.item[colKey] ?? '');
   };
@@ -1833,16 +1834,29 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                         }}
                         className="py-2.5 px-3 border-r border-slate-200"
                       >
-                        {status.isCompleted ? (
-                          <div className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold">
-                            <CheckCircle2 className="w-4 h-4 shrink-0" />
-                            <span>{status.statusLabel}</span>
-                          </div>
+                        {status.ndtStatus === 'sufficient' ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-xs"
+                            title={status.statusLabel}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                            <span>Достаточно НК</span>
+                          </span>
+                        ) : status.ndtStatus === 'insufficient' ? (
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-300 shadow-xs"
+                            title={status.statusLabel}
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                            <span>Недостаточно НК</span>
+                          </span>
                         ) : (
-                          <div className="inline-flex items-center gap-1.5 text-amber-700 font-medium">
-                            <Clock className="w-4 h-4 shrink-0" />
-                            <span>{status.statusLabel}</span>
-                          </div>
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200"
+                            title={status.statusLabel}
+                          >
+                            <span>Нет сварки</span>
+                          </span>
                         )}
                       </td>
                       <td

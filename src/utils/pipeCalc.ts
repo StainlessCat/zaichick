@@ -1,4 +1,6 @@
 import {
+  ElementCombination,
+  JointKind,
   LrvElementCategory,
   LRVItem,
   TechCardItem,
@@ -1223,7 +1225,48 @@ export const NAKS_WELDING_POSITIONS: NaksWeldingPositionOption[] = [
 ];
 
 /**
- * Автоматический подбор подходящей технологической карты (ТК) по геометрии стыка и марке стали.
+ * Классификация сочетания свариваемых элементов стыка для подбора технологической карты (ТК).
+ * Возможные варианты: строго 'Труба+Труба' | 'Труба+СДТ' | 'СДТ+СДТ' | 'Труба+ЗРА' | 'СДТ+ЗРА'.
+ */
+export function classifyJointElements(
+  elem1Category?: string,
+  elem1Name?: string,
+  elem2Category?: string,
+  elem2Name?: string
+): ElementCombination {
+  const normType = (cat?: string, name?: string): 'Труба' | 'СДТ' | 'ЗРА' => {
+    const c = (cat || '').toLowerCase();
+    const n = (name || '').toLowerCase();
+    if (c === 'труба' || n.includes('труба') || n.includes('секц') || n.includes('патруб')) {
+      return 'Труба';
+    }
+    if (
+      c === 'зра' ||
+      c === 'фланец' ||
+      n.includes('кран') ||
+      n.includes('задвижк') ||
+      n.includes('клапан') ||
+      n.includes('зра') ||
+      n.includes('флан')
+    ) {
+      return 'ЗРА';
+    }
+    return 'СДТ';
+  };
+
+  const t1 = normType(elem1Category, elem1Name);
+  const t2 = normType(elem2Category, elem2Name);
+
+  if (t1 === 'Труба' && t2 === 'Труба') return 'Труба+Труба';
+  if ((t1 === 'Труба' && t2 === 'СДТ') || (t1 === 'СДТ' && t2 === 'Труба')) return 'Труба+СДТ';
+  if (t1 === 'СДТ' && t2 === 'СДТ') return 'СДТ+СДТ';
+  if ((t1 === 'Труба' && t2 === 'ЗРА') || (t1 === 'ЗРА' && t2 === 'Труба')) return 'Труба+ЗРА';
+  return 'СДТ+ЗРА';
+}
+
+/**
+ * Автоматический подбор подходящей технологической карты (ТК) по геометрии стыка,
+ * типу соединения, комбинации элементов, способу сварки и марке стали.
  */
 export function findMatchingTechCard(
   techCards: TechCardItem[],
@@ -1232,6 +1275,8 @@ export function findMatchingTechCard(
     wallThicknessMm: number;
     weldingType?: string;
     steelGrade?: string;
+    jointKind?: JointKind;
+    elementCombination?: ElementCombination;
   }
 ): TechCardItem | null {
   const diam = Number(params.diameterMm) || 0;
@@ -1249,35 +1294,43 @@ export function findMatchingTechCard(
     return diamFit && wallFit;
   });
 
-  if (matchedRange.length === 0) {
-    // Если точного попадания по стенке нет, ищем только по диаметру
-    const diamOnly = techCards.filter(
-      (tc) => diam >= (tc.minDiameterMm ?? 0) && diam <= (tc.maxDiameterMm ?? 9999)
-    );
-    if (diamOnly.length > 0) {
-      if (params.weldingType) {
-        const byType = diamOnly.find((tc) => tc.weldingType === params.weldingType);
-        if (byType) return byType;
-      }
-      return diamOnly[0];
-    }
+  const pool = matchedRange.length > 0 ? matchedRange : techCards.filter(
+    (tc) => diam >= (tc.minDiameterMm ?? 0) && diam <= (tc.maxDiameterMm ?? 9999)
+  );
+
+  if (pool.length === 0) {
     return null;
   }
 
-  // 2. Если задан способ сварки, отдаем приоритет ТК с этим способом
-  if (params.weldingType) {
-    const byType = matchedRange.find((tc) => tc.weldingType === params.weldingType);
-    if (byType) return byType;
-  }
+  // Ранжирование кандидатов по совпадению критериев:
+  // - тип соединения (стыковое / угловое)
+  // - комбинация элементов (Труба+Труба, Труба+СДТ, СДТ+СДТ, Труба+ЗРА, СДТ+ЗРА)
+  // - способ сварки (РАД, РД, РАД+РД, МП)
+  // - марка стали
+  const scored = pool.map((tc) => {
+    let score = 0;
+    if (params.jointKind && tc.jointKind === params.jointKind) {
+      score += 30;
+    }
+    if (params.elementCombination && tc.elementCombination === params.elementCombination) {
+      score += 25;
+    }
+    if (params.weldingType && tc.weldingType === params.weldingType) {
+      score += 20;
+    }
+    if (params.steelGrade) {
+      const cleanSteel = params.steelGrade.toLowerCase().replace(/сталь\s*|ст\.?\s*/g, '');
+      if (tc.steelGroup?.toLowerCase().includes(cleanSteel)) {
+        score += 15;
+      }
+    }
+    // Точное попадание по толщине стенки
+    if (wall > 0 && wall >= tc.minWallThicknessMm && wall <= tc.maxWallThicknessMm) {
+      score += 10;
+    }
+    return { tc, score };
+  });
 
-  // 3. Если задана марка стали, проверяем вхождение в steelGroup
-  if (params.steelGrade) {
-    const cleanSteel = params.steelGrade.toLowerCase().replace(/сталь\s*|ст\.?\s*/g, '');
-    const bySteel = matchedRange.find((tc) =>
-      tc.steelGroup?.toLowerCase().includes(cleanSteel)
-    );
-    if (bySteel) return bySteel;
-  }
-
-  return matchedRange[0] || null;
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]?.tc || null;
 }

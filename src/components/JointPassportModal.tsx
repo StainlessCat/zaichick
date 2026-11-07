@@ -763,7 +763,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     nextBrigade: string
   ) => {
     const stamps = [nextW1, nextW2].filter(Boolean);
-    const resolved = resolveWeldersSelection(stamps, nextBrigade, welders);
+    const resolved = resolveWeldersSelection(stamps, nextBrigade, welders, form.weldingType);
     setForm((prev) => ({
       ...prev,
       welderStamp: resolved.welderStamp,

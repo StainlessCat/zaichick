@@ -1547,14 +1547,142 @@ export function searchWeldersByStampOrName(
   });
 }
 
+export interface WelderCertMethodInfo {
+  certNumber: string;
+  issueDate?: string;
+  expiryDate?: string;
+  admissionSheetNumber?: string;
+  admissionSheetDate?: string;
+}
+
+/**
+ * Получает реквизиты удостоверения НАКС сварщика для конкретного способа сварки (РАД, РД, МП, АФ).
+ * На разные области аттестации сварщик получает отдельные удостоверения НАКС.
+ */
+export function getWelderCertForMethod(
+  welder: WelderProfile,
+  weldingType?: string
+): WelderCertMethodInfo {
+  const method = (weldingType || '').trim();
+
+  if (welder.naksCerts && welder.naksCerts.length > 0) {
+    if (method) {
+      // 1. Прямое совпадение способа сварки
+      const exact = welder.naksCerts.find(
+        (c) => c.weldingType.toLowerCase() === method.toLowerCase()
+      );
+      if (exact && exact.certNumber) {
+        return {
+          certNumber: exact.certNumber,
+          issueDate: exact.issueDate || welder.certIssueDate,
+          expiryDate: exact.expiryDate || welder.certExpiryDate,
+          admissionSheetNumber: exact.admissionSheetNumber || welder.admissionSheetNumber,
+          admissionSheetDate: exact.admissionSheetDate || welder.admissionSheetDate,
+        };
+      }
+
+      // 2. Если комбинированный способ (РАД+РД), а у сварщика отдельные удостоверения на РАД и РД
+      if (method.includes('+')) {
+        const parts = method.split('+').map((p) => p.trim().toLowerCase());
+        const matched = welder.naksCerts.filter((c) =>
+          parts.includes(c.weldingType.toLowerCase())
+        );
+        if (matched.length > 0) {
+          return {
+            certNumber: matched.map((m) => `${m.weldingType}: ${m.certNumber}`).join('; '),
+            issueDate: matched[0].issueDate || welder.certIssueDate,
+            expiryDate: matched[0].expiryDate || welder.certExpiryDate,
+            admissionSheetNumber:
+              matched.map((m) => m.admissionSheetNumber).filter(Boolean).join('; ') ||
+              welder.admissionSheetNumber,
+            admissionSheetDate: matched[0].admissionSheetDate || welder.admissionSheetDate,
+          };
+        }
+      }
+    }
+
+    // 3. Если способ не совпал или не передан, берем первое удостоверение из списка
+    const first = welder.naksCerts[0];
+    if (first && first.certNumber) {
+      return {
+        certNumber: first.certNumber,
+        issueDate: first.issueDate || welder.certIssueDate,
+        expiryDate: first.expiryDate || welder.certExpiryDate,
+        admissionSheetNumber: first.admissionSheetNumber || welder.admissionSheetNumber,
+        admissionSheetDate: first.admissionSheetDate || welder.admissionSheetDate,
+      };
+    }
+  }
+
+  // Fallback: основное удостоверение профиля
+  return {
+    certNumber: welder.certNumber || '',
+    issueDate: welder.certIssueDate,
+    expiryDate: welder.certExpiryDate,
+    admissionSheetNumber: welder.admissionSheetNumber,
+    admissionSheetDate: welder.admissionSheetDate,
+  };
+}
+
+/**
+ * Возвращает список незаполненных обязательных полей паспорта стыка.
+ * Если дата сварки введена (стык сварен в металле), обязательными являются:
+ * - Клеймо сварщика
+ * - Технологическая карта
+ * - Сварочные материалы
+ * - Ответственное лицо (мастер, прораб)
+ * - Заводские номера свариваемых элементов 1 и 2
+ * - Длины элементов 1 и 2
+ */
+export function getMissingPassportFields(joint: WeldJoint): string[] {
+  if (!joint.weldingDate || joint.weldingDate.trim() === '') {
+    return [];
+  }
+  const missing: string[] = [];
+  if (!joint.welderStamp || joint.welderStamp.trim() === '') {
+    missing.push('Клеймо сварщика');
+  }
+  if (!joint.techCardNumber || joint.techCardNumber.trim() === '') {
+    missing.push('Техкарта (ТК)');
+  }
+  if (!joint.weldingMaterials || joint.weldingMaterials.trim() === '') {
+    missing.push('Сварочные материалы');
+  }
+  if (!joint.responsiblePerson || joint.responsiblePerson.trim() === '') {
+    missing.push('Ответственное лицо');
+  }
+  if (!joint.elem1FactoryNumber || joint.elem1FactoryNumber.trim() === '') {
+    missing.push('Зав. № элемента 1');
+  }
+  if (!joint.elem2FactoryNumber || joint.elem2FactoryNumber.trim() === '') {
+    missing.push('Зав. № элемента 2');
+  }
+  if (!joint.elem1Length || joint.elem1Length.trim() === '') {
+    missing.push('Длина элемента 1');
+  }
+  if (!joint.elem2Length || joint.elem2Length.trim() === '') {
+    missing.push('Длина элемента 2');
+  }
+  return missing;
+}
+
+/**
+ * Проверяет, является ли паспорт стыка незаполненным при наличии даты сварки.
+ */
+export function isPassportIncomplete(joint: WeldJoint): boolean {
+  return getMissingPassportFields(joint).length > 0;
+}
+
 /**
  * Автоматически формирует строку клейм, ФИО сварщиков, номеров удостоверений НАКС и мастера
- * при выборе или вводе одного сварщика, нескольких сварщиков или бригадного клейма.
+ * при выборе или вводе одного сварщика, нескольких сварщиков или бригадного клейма
+ * с учетом выбранного способа сварки.
  */
 export function resolveWeldersSelection(
   selectedStamps: string[],
   brigadeStamp: string | undefined,
-  weldersDirectory: WelderProfile[]
+  weldersDirectory: WelderProfile[],
+  weldingType?: string
 ): {
   welderStamp: string;
   welderFullName: string;
@@ -1586,10 +1714,13 @@ export function resolveWeldersSelection(
       .filter((w): w is WelderProfile => Boolean(w));
 
     if (memberProfiles.length > 0) {
+      const certs = memberProfiles.map(
+        (m) => getWelderCertForMethod(m, weldingType).certNumber
+      );
       return {
         welderStamp: `${brigadeProfile.stamp} (${memberProfiles.map((m) => m.stamp).join(', ')})`,
         welderFullName: memberProfiles.map((m) => m.fullName).join(', '),
-        welderCertNumber: memberProfiles.map((m) => m.certNumber).join(', '),
+        welderCertNumber: certs.join(', '),
         responsiblePerson: brigadeProfile.crewForeman || memberProfiles[0].crewForeman,
       };
     }
@@ -1597,7 +1728,7 @@ export function resolveWeldersSelection(
     return {
       welderStamp: brigadeProfile.stamp,
       welderFullName: brigadeProfile.fullName,
-      welderCertNumber: brigadeProfile.certNumber,
+      welderCertNumber: getWelderCertForMethod(brigadeProfile, weldingType).certNumber,
       responsiblePerson: brigadeProfile.crewForeman,
     };
   }
@@ -1608,10 +1739,14 @@ export function resolveWeldersSelection(
       : canonicalBrigade
     : canonicalStamps.join(', ');
 
+  const certs = matchedProfiles.map(
+    (m) => getWelderCertForMethod(m, weldingType).certNumber
+  );
+
   return {
     welderStamp: stampDisplay,
     welderFullName: matchedProfiles.map((m) => m.fullName).join(', '),
-    welderCertNumber: matchedProfiles.map((m) => m.certNumber).join(', '),
+    welderCertNumber: certs.join(', '),
     responsiblePerson:
       matchedProfiles[0]?.crewForeman || brigadeProfile?.crewForeman || '',
   };

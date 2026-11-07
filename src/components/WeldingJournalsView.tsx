@@ -1393,10 +1393,17 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                 {chronologicalJoints.map((j, index) => {
                   const row = formatGost32569JournalRow(j, index, materials, lrvCatalog);
                   const gostType = j.gostJointType?.trim() || 'С17';
+                  const missingFields = getMissingPassportFields(j);
+                  const isIncomplete = missingFields.length > 0;
                   return (
                     <tr
                       key={j.id}
-                      className="hover:bg-[#e8f1fc]/60 transition-colors odd:bg-white even:bg-slate-50/60 align-top"
+                      title={isIncomplete ? `Внимание: дата сварки внесена, но не заполнены обязательные поля паспорта (${missingFields.length}): ${missingFields.join(', ')}` : undefined}
+                      className={`transition-colors align-top ${
+                        isIncomplete
+                          ? 'bg-amber-50/80 hover:bg-amber-100/80'
+                          : 'hover:bg-[#e8f1fc]/60 odd:bg-white even:bg-slate-50/60'
+                      }`}
                     >
                       {/* Графа 1: № п/п */}
                       <td
@@ -1823,10 +1830,17 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
                   )}
                   {chronologicalJoints.map((j, index) => {
                     const row = formatStoGazpromJournalRow(j, index, lrvCatalog);
+                    const missingFields = getMissingPassportFields(j);
+                    const isIncomplete = missingFields.length > 0;
                     return (
                       <tr
                         key={j.id}
-                        className="hover:bg-[#e8f1fc]/60 transition-colors odd:bg-white even:bg-slate-50/60 align-top"
+                        title={isIncomplete ? `Внимание: дата сварки внесена, но не заполнены обязательные поля паспорта (${missingFields.length}): ${missingFields.join(', ')}` : undefined}
+                        className={`transition-colors align-top ${
+                          isIncomplete
+                            ? 'bg-amber-50/80 hover:bg-amber-100/80'
+                            : 'hover:bg-[#e8f1fc]/60 odd:bg-white even:bg-slate-50/60'
+                        }`}
                       >
                         {STO_GAZPROM_15_1_1_002_2023_COLUMNS.map((col, cIdx) => {
                           const cellVal = row[col.key];

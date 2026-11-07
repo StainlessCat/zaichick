@@ -22,6 +22,8 @@ import {
   findWelderByStamp,
   checkNaksCertStatus,
   findMatchingTechCard,
+  classifyJointElements,
+  getWelderCertForMethod,
   validateWelderNaksAttestation,
   GOST_16037_JOINT_TYPES,
   NAKS_WELDING_POSITIONS,
@@ -87,13 +89,36 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
   const currentJointDiam = form.elem1DiameterMm ?? form.diameterMm;
   const currentJointWall = form.elem1WallThickness ?? form.wallThickness;
   const autoMatchedTechCard = useMemo(() => {
+    const combination = classifyJointElements(
+      undefined,
+      form.elem1Name,
+      undefined,
+      form.elem2Name
+    );
+    const jointKind =
+      form.jointKind ||
+      (form.gostJointType?.startsWith('У') || form.gostJointType?.startsWith('Т')
+        ? 'Угловое'
+        : 'Стыковое');
     return findMatchingTechCard(techCards, {
       diameterMm: currentJointDiam,
       wallThicknessMm: currentJointWall,
       weldingType: form.weldingType,
       steelGrade: form.elem1Material,
+      jointKind,
+      elementCombination: combination,
     });
-  }, [techCards, currentJointDiam, currentJointWall, form.weldingType, form.elem1Material]);
+  }, [
+    techCards,
+    currentJointDiam,
+    currentJointWall,
+    form.weldingType,
+    form.elem1Material,
+    form.jointKind,
+    form.gostJointType,
+    form.elem1Name,
+    form.elem2Name,
+  ]);
 
   const filteredGostOptions = useMemo(() => {
     const isAng = form.jointKind === 'Угловое';
@@ -171,7 +196,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
         {/* Строка 1: Дата сварки, Технологическая карта, Вид сварки (с проверкой по ТК), Авто-температура воздуха */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-start">
           <div className="lg:col-span-3">
-            <label className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
+            <label className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1 h-5">
               <span>Дата сварки *</span>
               <span className="font-mono text-[#1e3799]">
                 {formatDateDDMMYY(form.weldingDate) || 'ДД.ММ.ГГ'}
@@ -192,18 +217,26 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
 
           <div className="lg:col-span-4">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
-              <span>Технологическая карта (ТК) *</span>
+            <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1 h-5">
+              <span className="truncate">Техкарта (ТК) *</span>
               {autoMatchedTechCard && autoMatchedTechCard.number !== form.techCardNumber && (
                 <button
                   type="button"
                   onClick={() => handleSelectTechCard(autoMatchedTechCard.number)}
-                  className="inline-flex items-center gap-1 text-[11px] font-mono text-[#1e3799] hover:underline font-bold"
-                  title={`Автоподбор ТК под Ø${currentJointDiam}×${currentJointWall} мм (${autoMatchedTechCard.weldingType})`}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 font-bold shrink-0 transition-colors"
+                  title={`Автоподбор ТК под Ø${currentJointDiam}×${currentJointWall} мм: ${autoMatchedTechCard.number} (${autoMatchedTechCard.weldingType})`}
                 >
-                  <Sparkles className="w-3 h-3 text-amber-500" />
-                  <span>По ТК: {autoMatchedTechCard.number}</span>
+                  <Sparkles className="w-3 h-3 text-amber-500 fill-amber-400 shrink-0" />
+                  <span>По ТК</span>
                 </button>
+              )}
+              {autoMatchedTechCard && autoMatchedTechCard.number === form.techCardNumber && (
+                <span
+                  className="inline-flex items-center text-emerald-600 shrink-0"
+                  title={`ТК ${autoMatchedTechCard.number} соответствует параметрам стыка`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                </span>
               )}
             </div>
             <select
@@ -227,8 +260,8 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
 
           <div className="lg:col-span-3">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1">
-              <span>Вид сварки *</span>
+            <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1 h-5">
+              <span className="truncate">Вид сварки *</span>
               {selectedTechCard && !weldingTypeValidation.isValid && (
                 <button
                   type="button"
@@ -247,12 +280,21 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
             </div>
             <select
               value={form.weldingType}
-              onChange={(e) =>
-                setForm((prev: WeldJoint) => ({
-                  ...prev,
-                  weldingType: e.target.value as WeldingType,
-                }))
-              }
+              onChange={(e) => {
+                const newMethod = e.target.value as WeldingType;
+                setForm((prev: WeldJoint) => {
+                  const firstStamp = prev.welderStamp.split(/[\s,]+/)[0];
+                  const w1 = findWelderByStamp(personalWelders, firstStamp, false);
+                  const newCert = w1
+                    ? getWelderCertForMethod(w1, newMethod).certNumber || prev.welderCertNumber
+                    : prev.welderCertNumber;
+                  return {
+                    ...prev,
+                    weldingType: newMethod,
+                    welderCertNumber: newCert,
+                  };
+                });
+              }}
               aria-label="Вид сварки"
               className={`w-full px-2.5 py-2 bg-white border rounded-md text-xs font-mono font-bold ${
                 weldingTypeValidation.isValid
@@ -285,7 +327,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
 
           <div className="lg:col-span-2">
-            <div className="flex items-center justify-between text-xs font-medium text-slate-600 mb-1">
+            <div className="flex items-center justify-between text-xs font-medium text-slate-600 mb-1 h-5">
               <span>T возд., °C</span>
             </div>
             <div

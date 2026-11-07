@@ -102,6 +102,15 @@ export interface LRVItem {
   version?: number;
 }
 
+export interface WelderNaksCert {
+  weldingType: WeldingType; // Способ сварки (РАД, РД, РАД+РД, МП, АФ)
+  certNumber: string; // Номер удостоверения НАКС
+  issueDate?: string; // Дата выдачи
+  expiryDate?: string; // Срок действия
+  admissionSheetNumber?: string; // Номер допускного листа
+  admissionSheetDate?: string; // Дата допускного листа
+}
+
 /**
  * Профиль сварщика или сварочной бригады в разделе «Технология сварочного производства»
  */
@@ -111,13 +120,14 @@ export interface WelderProfile {
   isBrigade?: boolean; // Признак бригадного клейма
   brigadeMembers?: string[]; // Клейма сварщиков, входящих в бригаду
   fullName: string; // ФИО сварщика (или состав бригады)
-  certNumber: string; // № удостоверения НАКС
+  certNumber: string; // № основного удостоверения НАКС (для совместимости)
   certIssueDate?: string; // Дата выдачи удостоверения (YYYY-MM-DD / ДД.ММ.ГГ)
   certExpiryDate?: string; // Срок действия удостоверения (YYYY-MM-DD / ДД.ММ.ГГ)
   attestationArea?: string; // Область аттестации (способ сварки, группа сталей, Ø и S, НТД)
   admissionSheetNumber?: string; // № допускного листа
   admissionSheetDate?: string; // Дата допускного листа (YYYY-MM-DD / ДД.ММ.ГГ)
   allowedMethods: WeldingType[];
+  naksCerts?: WelderNaksCert[]; // Перечень удостоверений НАКС по отдельным способам сварки
   crewForeman: string; // Ответственное лицо (мастер, прораб)
   // Аттестационные параметры НАКС (для автоматической валидации параметров стыка)
   steelGroups?: string[]; // Группы свариваемых сталей (напр. ['М01', 'М03', 'М11'])
@@ -137,6 +147,14 @@ export interface PreheatRegimeRule {
   conditionLabel: string; // Текстовое описание диапазона
 }
 
+export type JointKind = 'Стыковое' | 'Угловое';
+export type ElementCombination =
+  | 'Труба+Труба'
+  | 'Труба+СДТ'
+  | 'СДТ+СДТ'
+  | 'Труба+ЗРА'
+  | 'СДТ+ЗРА';
+
 /**
  * Технологическая карта (ТК) на сварку в разделе «Технология сварочного производства»
  */
@@ -145,6 +163,8 @@ export interface TechCardItem {
   number: string; // Шифр ТК (напр. ТК-045-РАД/РД-01)
   title: string; // Наименование ТК
   weldingType: WeldingType; // Способ сварки
+  jointKind: JointKind; // Тип соединения (строго 'Стыковое' | 'Угловое')
+  elementCombination: ElementCombination; // Типы свариваемых элементов ('Труба+Труба' | 'Труба+СДТ' | 'СДТ+СДТ' | 'Труба+ЗРА' | 'СДТ+ЗРА')
   ntd: string; // НТД на сварку
   steelGroup: string; // Группа и марки свариваемых сталей
   minDiameterMm: number; // Мин. диаметр свариваемых элементов, мм

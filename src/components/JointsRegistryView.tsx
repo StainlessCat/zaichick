@@ -35,6 +35,8 @@ import {
   formatDateDDMMYY,
   getJointEquivDiaInch,
   isDateColumnKey,
+  getMissingPassportFields,
+  isPassportIncomplete,
 } from '../utils/weldingLogic';
 import { getUserRolePermissions } from '../utils/rbac';
 import { ExcelColumnFilter } from './ExcelColumnFilter';
@@ -145,26 +147,6 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
   onHideColumnInline,
 }) => {
   const parentRef = useRef<HTMLDivElement>(null);
-  const [showWelderQuotasModal, setShowWelderQuotasModal] = useState(false);
-
-  // Персональный расчет соблюдения квот неразрушающего контроля по сварщикам (СТО 15-1.3-004-2023)
-  const welderQuotas = useMemo(
-    () => calculateWelderNdtQuotas(joints, lines),
-    [joints, lines]
-  );
-
-  const penaltyWelderCount = useMemo(
-    () =>
-      welderQuotas.filter(
-        (q) => q.status === 'penalty_required' || q.status === 'critical'
-      ).length,
-    [welderQuotas]
-  );
-
-  const warningWelderCount = useMemo(
-    () => welderQuotas.filter((q) => q.status === 'warning').length,
-    [welderQuotas]
-  );
 
   // Виртуализация таблицы с помощью @tanstack/react-virtual
   // Позволяет легко рендерить 10 000+ стыков с плавным 60 FPS скроллом
@@ -349,27 +331,8 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
           </div>
         </div>
 
-        {/* Блок 2: Отдельный блок справа (квоты НК сварщиков, выбор шаблона таблицы и иконка "Столбцы") */}
+        {/* Блок 2: Отдельный блок справа (выбор шаблона таблицы и иконка "Столбцы") */}
         <div className="bg-white rounded-xl border border-slate-200 px-3.5 py-2.5 flex items-center gap-2 shadow-2xs shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowWelderQuotasModal(true)}
-            title={`Квоты НК по сварщикам (СТО Газпром 15-1.3-004-2023): ${welderQuotas.length} сварщиков`}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-colors whitespace-nowrap shadow-2xs cursor-pointer ${
-              penaltyWelderCount > 0
-                ? 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100'
-                : warningWelderCount > 0
-                ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-                : 'bg-[#f4f8fe] text-[#1e3799] border-sky-200 hover:bg-sky-100'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Квоты НК ({welderQuotas.length})</span>
-            {penaltyWelderCount > 0 && (
-              <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse" />
-            )}
-          </button>
-
           <Bookmark className="w-4 h-4 text-[#1e3799] shrink-0" />
           <select
             value={activeTemplateId}
@@ -654,6 +617,8 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
                     const isSupp =
                       joint.isSupplementary ||
                       (!Number.isNaN(numVal) && numVal % 10 !== 0);
+                    const missingFields = getMissingPassportFields(joint);
+                    const isIncomplete = missingFields.length > 0;
 
                     return (
                       <tr
@@ -663,6 +628,8 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
                         className={`transition-colors ${
                           isSelected
                             ? 'bg-[#e8f1fc]'
+                            : isIncomplete
+                            ? 'bg-amber-50/80 hover:bg-amber-100/80'
                             : 'odd:bg-white even:bg-[#f8fafd] hover:bg-sky-50/70'
                         }`}
                       >
@@ -714,6 +681,15 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
                                       title="Дополнительный стык"
                                     >
                                       (доп.)
+                                    </span>
+                                  )}
+                                  {isIncomplete && (
+                                    <span
+                                      className="ml-1.5 px-1 py-0.2 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300 shrink-0 inline-flex items-center gap-0.5"
+                                      title={`Внимание: введена дата сварки (${formatDateDDMMYY(joint.weldingDate)}), но не заполнены обязательные поля паспорта (${missingFields.length}): ${missingFields.join(', ')}`}
+                                    >
+                                      <AlertTriangle className="w-2.5 h-2.5 text-amber-700" />
+                                      <span>Не заполнен</span>
                                     </span>
                                   )}
                                 </button>
@@ -837,159 +813,6 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Модальное окно: Выполнение квот неразрушающего контроля (НК) по сварщикам */}
-      {showWelderQuotasModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Квоты неразрушающего контроля по сварщикам"
-        >
-          <div
-            className="fixed inset-0 bg-slate-900/45 backdrop-blur-[1px]"
-            onClick={() => setShowWelderQuotasModal(false)}
-          />
-          <div className="relative z-10 w-full max-w-4xl bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="flex items-center justify-between px-6 py-4 bg-[#1e3799] text-white">
-              <div className="flex items-center gap-2.5">
-                <Users className="w-5 h-5 text-sky-300" />
-                <div>
-                  <h2 className="text-sm font-bold">
-                    Выполнение квот неразрушающего контроля по сварщикам
-                  </h2>
-                  <div className="text-[11px] text-sky-200">
-                    СТО Газпром 15-1.3-004-2023 (Табл. 5.1), СП 86.13330.2022 (п. 12.4), ГОСТ 32569-2013
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowWelderQuotasModal(false)}
-                className="p-1 rounded text-sky-100 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-4 bg-sky-50/60 border-b border-sky-100 text-xs text-slate-700 leading-relaxed space-y-1">
-              <div className="font-semibold text-[#1e3799]">
-                Нормативные принципы выборки:
-              </div>
-              <div>
-                • Категории В, I, II (уровни качества А и В): <strong>100% сплошной физический контроль</strong> каждого сварщика.
-              </div>
-              <div>
-                • Категории III, IV (уровень качества С): <strong>не менее 20%</strong> от стыков каждого сварщика и <strong>не менее 1 стыка</strong> за смену/партию.
-              </div>
-              <div>
-                • При обнаружении дефекта (брака): <strong>удвоенный контроль (+2 стыка)</strong> того же сварщика. При повторном браке — 100% контроль и отстранение.
-              </div>
-            </div>
-
-            <div className="p-4 overflow-y-auto space-y-3 flex-1">
-              {welderQuotas.length === 0 ? (
-                <div className="py-8 text-center text-xs text-slate-400">
-                  Сварные стыки с указанием клейм пока не внесены в базу.
-                </div>
-              ) : (
-                <table className="w-full text-left text-xs border border-slate-200 rounded-lg overflow-hidden">
-                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                    <tr>
-                      <th className="py-2.5 px-3">Клеймо</th>
-                      <th className="py-2.5 px-3">ФИО сварщика</th>
-                      <th className="py-2.5 px-3 text-right">Сварено</th>
-                      <th className="py-2.5 px-3 text-right">НК факт</th>
-                      <th className="py-2.5 px-3 text-right">Брак</th>
-                      <th className="py-2.5 px-3 text-right">Факт %</th>
-                      <th className="py-2.5 px-3 text-right">План %</th>
-                      <th className="py-2.5 px-3 text-center">Статус</th>
-                      <th className="py-2.5 px-3">Примечание</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {welderQuotas.map((q) => (
-                      <tr
-                        key={q.stamp}
-                        className={`hover:bg-slate-50 transition-colors ${
-                          q.status === 'penalty_required'
-                            ? 'bg-red-50/40'
-                            : q.status === 'critical'
-                            ? 'bg-rose-50/40'
-                            : q.status === 'warning'
-                            ? 'bg-amber-50/30'
-                            : ''
-                        }`}
-                      >
-                        <td className="py-2.5 px-3 font-mono font-bold text-[#1e3799]">
-                          {q.stamp}
-                        </td>
-                        <td className="py-2.5 px-3 font-medium text-slate-800">
-                          {q.fullName || '—'}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono text-right font-semibold">
-                          {q.totalWelded}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono text-right text-emerald-800 font-semibold">
-                          {q.inspectedCount}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono text-right text-red-700 font-semibold">
-                          {q.defectCount}
-                        </td>
-                        <td className="py-2.5 px-3 font-mono text-right font-bold">
-                          {q.actualNdtPct}%
-                        </td>
-                        <td className="py-2.5 px-3 font-mono text-right text-slate-500">
-                          {q.requiredNdtPct}%
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          {q.status === 'compliant' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              Норма
-                            </span>
-                          )}
-                          {q.status === 'penalty_required' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800">
-                              <AlertTriangle className="w-3 h-3 text-red-600" />
-                              Штрафной НК (+{q.penaltyRequiredJoints})
-                            </span>
-                          )}
-                          {q.status === 'warning' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                              <AlertTriangle className="w-3 h-3 text-amber-600" />
-                              Недобор %
-                            </span>
-                          )}
-                          {q.status === 'critical' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
-                              <AlertTriangle className="w-3 h-3 text-rose-600" />
-                              Без контроля
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-[11px] text-slate-600 max-w-xs">
-                          {q.details}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowWelderQuotasModal(false)}
-                className="px-4 py-2 bg-[#1e3799] text-white rounded-lg text-xs font-semibold hover:bg-[#15276e] transition-colors cursor-pointer"
-              >
-                Закрыть
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
