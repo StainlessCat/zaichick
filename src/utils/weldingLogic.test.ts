@@ -3359,12 +3359,14 @@ test('weldingLogic: Sprint 2: Трассируемость материалов,
       elem1Name: 'Труба',
       elem1Material: '09Г2С',
       elem1Ntd: 'ГОСТ 8732',
+      elem1FactoryNumber: 'ЗАВ-001',
       elem1CertNumber: 'СЕРТ-Т-0981',
       elem1HeatNumber: 'ПЛ-4421',
       lrv2Code: 'ЛРВ-2',
       elem2Name: 'Отвод',
       elem2Material: '09Г2С',
       elem2Ntd: 'ГОСТ 17375',
+      elem2FactoryNumber: 'ЗАВ-002',
       elem2CertNumber: 'СЕРТ-О-1102',
       elem2HeatNumber: 'ПЛ-8890',
       weldingType: 'РД',
@@ -3502,12 +3504,14 @@ test('weldingLogic: Sprint 2: Трассируемость материалов,
   assert.equal(lineProgress101.actualRkPct, 100);
   assert.equal(lineProgress101.isRkFulfilled, true);
 
-  // 6. Прослеживаемость материалов: попадание сертификата и плавки в журналы
+  // 6. Прослеживаемость материалов: попадание заводских номеров в СТО (столбец 9) и номеров сертификатов в ГОСТ (столбец 4)
   const stoRow = formatStoGazpromJournalRow(joints[0], 0);
-  assert.ok(stoRow.col9.includes('СЕРТ-Т-0981'));
-  assert.ok(stoRow.col9.includes('ПЛ-4421'));
+  assert.equal(stoRow.col9, 'ЗАВ-001\nЗАВ-002');
 
   const gostRow = formatGost32569JournalRow(joints[0], 0);
   assert.ok(gostRow.col4.includes('СЕРТ-Т-0981'));
-  assert.ok(gostRow.col4.includes('ПЛ-4421'));
+  assert.ok(gostRow.col4.includes('СЕРТ-О-1102'));
+  // Заводские номера не должны попадать в столбец 4 ГОСТ, если указаны сертификаты
+  assert.equal(gostRow.col4.includes('ЗАВ-001'), false);
+  assert.equal(gostRow.col4.includes('ЗАВ-002'), false);
 });

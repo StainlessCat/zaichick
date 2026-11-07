@@ -340,28 +340,24 @@ export function formatGost32569JournalRow(
     col3 = 'н/п';
   }
 
-  const certParts1 = [
-    joint.elem1CertNumber ? `серт. № ${joint.elem1CertNumber}` : '',
-    joint.elem1HeatNumber ? `пл. ${joint.elem1HeatNumber}` : '',
-    joint.elem1BatchNumber ? `парт. ${joint.elem1BatchNumber}` : '',
-    joint.elem1FactoryNumber
-      ? joint.elem1CertNumber || joint.elem1HeatNumber
-        ? `зав. № ${joint.elem1FactoryNumber}`
-        : String(joint.elem1FactoryNumber).trim()
-      : '',
-  ].filter(Boolean);
+  // ГОСТ 32569-2013 графа 4: «Марка стали (композиция марок сталей), НД, номера сертификатов».
+  // Номера сертификатов включаются вместо заводских номеров элементов (в отличие от формы СТО, где в графе 9 заводской номер)
+  const certParts1 = joint.elem1CertNumber
+    ? [
+        `серт. № ${joint.elem1CertNumber}`,
+        joint.elem1HeatNumber ? `пл. ${joint.elem1HeatNumber}` : '',
+        joint.elem1BatchNumber ? `парт. ${joint.elem1BatchNumber}` : '',
+      ].filter(Boolean)
+    : [String(joint.elem1FactoryNumber ?? '').trim()].filter(Boolean);
   const cert1 = certParts1.join(', ').replace(/[()]/g, '').trim();
 
-  const certParts2 = [
-    joint.elem2CertNumber ? `серт. № ${joint.elem2CertNumber}` : '',
-    joint.elem2HeatNumber ? `пл. ${joint.elem2HeatNumber}` : '',
-    joint.elem2BatchNumber ? `парт. ${joint.elem2BatchNumber}` : '',
-    joint.elem2FactoryNumber
-      ? joint.elem2CertNumber || joint.elem2HeatNumber
-        ? `зав. № ${joint.elem2FactoryNumber}`
-        : String(joint.elem2FactoryNumber).trim()
-      : '',
-  ].filter(Boolean);
+  const certParts2 = joint.elem2CertNumber
+    ? [
+        `серт. № ${joint.elem2CertNumber}`,
+        joint.elem2HeatNumber ? `пл. ${joint.elem2HeatNumber}` : '',
+        joint.elem2BatchNumber ? `парт. ${joint.elem2BatchNumber}` : '',
+      ].filter(Boolean)
+    : [String(joint.elem2FactoryNumber ?? '').trim()].filter(Boolean);
   const cert2 = certParts2.join(', ').replace(/[()]/g, '').trim();
   const shortName1 = formatJournalElementName(
     joint.elem1Name,
@@ -1125,19 +1121,9 @@ export function formatStoGazpromJournalRow(
     'н/п';
   const col8 = `${name1}\n${name2}`;
 
-  const fac1Parts = [
-    joint.elem1FactoryNumber ? `зав. № ${joint.elem1FactoryNumber}` : '',
-    joint.elem1HeatNumber ? `пл. ${joint.elem1HeatNumber}` : '',
-    joint.elem1CertNumber ? `серт. ${joint.elem1CertNumber}` : '',
-  ].filter(Boolean);
-  const fac1 = fac1Parts.join(', ') || String(joint.elem1FactoryNumber ?? '').trim() || 'н/п';
-
-  const fac2Parts = [
-    joint.elem2FactoryNumber ? `зав. № ${joint.elem2FactoryNumber}` : '',
-    joint.elem2HeatNumber ? `пл. ${joint.elem2HeatNumber}` : '',
-    joint.elem2CertNumber ? `серт. ${joint.elem2CertNumber}` : '',
-  ].filter(Boolean);
-  const fac2 = fac2Parts.join(', ') || String(joint.elem2FactoryNumber ?? '').trim() || 'н/п';
+  // СТО Газпром графа 9: «Заводской номер элемента» (строго заводские номера деталей)
+  const fac1 = String(joint.elem1FactoryNumber ?? '').trim() || 'н/п';
+  const fac2 = String(joint.elem2FactoryNumber ?? '').trim() || 'н/п';
   const col9 = `${fac1}\n${fac2}`;
 
   const len1 = String(joint.elem1Length ?? '').trim() || 'н/п';
