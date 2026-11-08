@@ -93,13 +93,23 @@ export function useServerSync({
   const fetchServerDbState = async (silent = false) => {
     if (!silent) setIsDbSyncing(true);
     try {
+      const token =
+        sessionToken ||
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('zaychick_session_token') || ''
+          : '');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['x-session-token'] = token;
+      }
       const params = new URLSearchParams({
         clientId: clientIdRef.current,
         userLogin: currentUser.login,
         userFullName: currentUser.fullName,
         userRole: currentUser.role,
+        ...(token ? { token } : {}),
       });
-      const res = await fetch(`/api/db/state?${params.toString()}`);
+      const res = await fetch(`/api/db/state?${params.toString()}`, { headers });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const payload = await res.json();
       if (payload && payload.data) {
@@ -153,9 +163,15 @@ export function useServerSync({
 
     let es: EventSource | null = null;
     try {
-      es = new EventSource(
-        `/api/db/events?clientId=${encodeURIComponent(clientIdRef.current)}`
-      );
+      const token =
+        sessionToken ||
+        (typeof window !== 'undefined'
+          ? localStorage.getItem('zaychick_session_token') || ''
+          : '');
+      const sseUrl = `/api/db/events?clientId=${encodeURIComponent(
+        clientIdRef.current
+      )}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+      es = new EventSource(sseUrl);
       es.addEventListener('connected', (ev: MessageEvent) => {
         try {
           const parsed = JSON.parse(ev.data);

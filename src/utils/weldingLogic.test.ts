@@ -3976,3 +3976,79 @@ test('Sprint 2: OCC-контроль ревизий (HTTP 409), согласов
 
   assert.equal(forceResult.status, 'ok', 'При forceOverwrite: true синхронизация должна успешно применяться');
 });
+
+test('Sprint 3: Регресс сохранения хешей паролей при синхронизации и явный отказ при создании стыка', async () => {
+  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
+
+  const db = new UnifiedServerDatabase();
+
+  // 1. Проверяем, что первичный вход успешен
+  const initialAuth = db.authenticateUser('admin', '123');
+  assert.equal(initialAuth.success, true, 'Первичный вход admin/123 должен быть успешен');
+
+  // 2. Получаем состояние через публичный readFullState (где аккаунты маскированы)
+  const publicState = db.readFullState();
+  const maskedAccounts = publicState.data.userAccounts;
+  assert.ok(maskedAccounts.length > 0);
+  assert.equal(maskedAccounts[0].passwordHash, undefined, 'В публичном DTO passwordHash должен быть замаскирован');
+
+  // 3. Выполняем синхронизацию состояния, передавая маскированные аккаунты
+  const syncRes = db.syncStateWithOptimisticLock({
+    data: {
+      userAccounts: maskedAccounts,
+      joints: publicState.data.joints,
+    },
+    actionLabel: 'Тест синхронизации с маскированными аккаунтами',
+    user: { login: 'admin', fullName: 'Админ', role: 'Администратор системы', isAdmin: true },
+    forceOverwrite: true,
+  });
+  assert.equal(syncRes.status, 'ok');
+
+  // 4. КРИТИЧЕСКИЙ РЕГРЕСС-ТЕСТ: повторный вход admin/123 ОБЯЗАН быть успешен!
+  const repeatAuth = db.authenticateUser('admin', '123');
+  assert.equal(
+    repeatAuth.success,
+    true,
+    'Критический регресс: после syncStateWithOptimisticLock парольные хеши в БД не должны затираться!'
+  );
+
+  // 5. Проверка явного отказа (forbidden) при попытке создания стыка без прав
+  const forbiddenSave = db.saveJointWithOptimisticLock({
+    joint: {
+      id: `new-joint-unauthorized-${Date.now()}`,
+      jointNumber: '999',
+      uniqueLineId: 'TEST-LINE',
+      rdCode: 'RD-01',
+      objectName: 'Объект',
+      contour: 'К-1',
+      lineNumber: 'L-1',
+      jointType: 'Монтажный',
+      diameterMm: 159,
+      diameterInch: '6"',
+      wallThickness: 8,
+      lrv1Code: 'L-1',
+      elem1Name: 'Труба',
+      elem1Material: '09Г2С',
+      elem1Ntd: 'ГОСТ',
+      lrv2Code: 'L-2',
+      elem2Name: 'Труба',
+      elem2Material: '09Г2С',
+      elem2Ntd: 'ГОСТ',
+      welderStamp: 'W1',
+      weldingDate: '2026-01-10',
+      vikResult: 'Годен',
+      ndtType: 'РК',
+      ndtResult: 'Годен',
+      updatedAt: '2026-01-10T10:00:00Z',
+      updatedBy: 'Дефектоскопист',
+    } as any,
+    user: { login: 'ndt_petrov', fullName: 'Дефектоскопист', role: 'Специалист ЛНК' },
+    forceOverwrite: false,
+  });
+
+  assert.equal(
+    forbiddenSave.status,
+    'forbidden',
+    'Попытка заведения стыка ролью без прав должна возвращать явный статус forbidden (HTTP 403)'
+  );
+});

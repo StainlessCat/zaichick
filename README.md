@@ -40,8 +40,8 @@
 
 1. Склонируйте репозиторий:
    ```bash
-   git clone https://github.com/vsilchenko/ZAYCHICK-welding-management.git
-   cd ZAYCHICK-welding-management
+   git clone https://github.com/StainlessCat/zaichick.git
+   cd zaichick
    ```
 
 2. Запустите контейнер через Docker Compose:

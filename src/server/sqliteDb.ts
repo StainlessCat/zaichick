@@ -189,21 +189,43 @@ export class UnifiedServerDatabase {
 
       if (this.sqliteDb) {
         const backupPath = path.join(backupsDir, `zaychick-backup-${ts}-${label}.sqlite`);
+        let createdSuccessfully = false;
+
+        // 1. Приоритетный путь: транзакционный моментальный снимок через нативный VACUUM INTO
         try {
-          // 1. Сбрасываем незафиксированные страницы из -wal файла в базу данных
           this.sqliteDb.exec('PRAGMA wal_checkpoint(TRUNCATE);');
-          // 2. Выполняем согласованный моментальный снимок через нативный VACUUM INTO
           const escapedPath = backupPath.replace(/'/g, "''");
           this.sqliteDb.exec(`VACUUM INTO '${escapedPath}';`);
-        } catch {
-          // Fallback: принудительный checkpoint и файловое копирование
+          createdSuccessfully = true;
+        } catch (vacuumErr) {
+          console.warn('[ZAYCHICK] VACUUM INTO не удался, попытка синхронного checkpoint + copy:', vacuumErr);
+        }
+
+        // 2. Fallback: строгий fail-closed путь с верификацией контрольной точки
+        if (!createdSuccessfully) {
           try {
             this.sqliteDb.exec('PRAGMA wal_checkpoint(TRUNCATE);');
-          } catch {}
-          if (fs.existsSync(SQLITE_DB_PATH)) {
+            if (!fs.existsSync(SQLITE_DB_PATH)) {
+              return { success: false, error: 'Файл базы данных SQLite не найден' };
+            }
             fs.copyFileSync(SQLITE_DB_PATH, backupPath);
+            createdSuccessfully = true;
+          } catch (fallbackErr: any) {
+            return {
+              success: false,
+              error: `Сбой создания резервной копии SQLite: ${fallbackErr?.message || fallbackErr}`,
+            };
           }
         }
+
+        // 3. Валидация целостности созданного файла
+        if (!fs.existsSync(backupPath) || fs.statSync(backupPath).size < 100) {
+          try {
+            if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+          } catch {}
+          return { success: false, error: 'Резервная копия повреждена или имеет нулевой размер' };
+        }
+
         this.rotateBackups(backupsDir, 5);
         return { success: true, backupPath };
       }
@@ -368,6 +390,45 @@ export class UnifiedServerDatabase {
         'Инициализация эталонной серверной БД SQLite',
         'Система (СУБД SQLite)'
       );
+    } else {
+      // Самовосстановление учётных записей в существующей базе данных, если хеши были стёрты:
+      try {
+        const userRows = this.sqliteDb
+          .prepare('SELECT login, payload_json FROM user_accounts')
+          .all() as { login: string; payload_json: string }[];
+        const seedMap = new Map(USER_ACCOUNTS.map((u) => [u.login.toLowerCase(), u]));
+        const updateStmt = this.sqliteDb.prepare('UPDATE user_accounts SET payload_json = ? WHERE lower(login) = ?');
+
+        for (const r of userRows) {
+          const acc = JSON.parse(r.payload_json) as UserAccount;
+          if (!acc.passwordHash && !acc.password) {
+            const seedAcc = seedMap.get(acc.login.toLowerCase());
+            if (seedAcc?.passwordHash && seedAcc?.passwordSalt) {
+              acc.passwordHash = seedAcc.passwordHash;
+              acc.passwordSalt = seedAcc.passwordSalt;
+            } else {
+              const generated = hashPasswordWithSalt('123');
+              acc.passwordHash = generated.hash;
+              acc.passwordSalt = generated.salt;
+            }
+            updateStmt.run(JSON.stringify(acc), acc.login.toLowerCase());
+            console.log(`[ZAYCHICK Security] Восстановлены парольные хеши для учётной записи «${acc.login}».`);
+          }
+        }
+
+        // Если в БД не оказалось администратора admin, добавляем его из seed
+        const adminExists = userRows.some((r) => r.login.toLowerCase() === 'admin');
+        if (!adminExists) {
+          const seedAdmin = USER_ACCOUNTS.find((u) => u.login === 'admin');
+          if (seedAdmin) {
+            this.sqliteDb
+              .prepare('INSERT INTO user_accounts (login, sort_order, version, payload_json) VALUES (?, 99, 1, ?)')
+              .run(seedAdmin.login, JSON.stringify(seedAdmin));
+          }
+        }
+      } catch (err) {
+        console.warn('[ZAYCHICK Security] Ошибка восстановления учётных записей:', err);
+      }
     }
   }
 
@@ -405,6 +466,29 @@ export class UnifiedServerDatabase {
     updatedBy: string
   ) {
     if (!this.sqliteDb) {
+      // Сохраняем парольные хеши существующих пользователей, если новые записи пришли маскированными
+      const existingUserMap = new Map<string, UserAccount>();
+      if (fs.existsSync(JSON_FALLBACK_PATH)) {
+        try {
+          const oldRaw = JSON.parse(fs.readFileSync(JSON_FALLBACK_PATH, 'utf8'));
+          (oldRaw?.data?.userAccounts || []).forEach((u: UserAccount) => {
+            if (u.login) existingUserMap.set(u.login.toLowerCase(), u);
+          });
+        } catch {}
+      }
+      const safeUserAccounts = (data.userAccounts || []).map((u) => {
+        const existing = existingUserMap.get(u.login.toLowerCase());
+        return {
+          ...u,
+          passwordHash: u.passwordHash || existing?.passwordHash,
+          passwordSalt: u.passwordSalt || existing?.passwordSalt,
+          password: u.password || existing?.password,
+        };
+      });
+      const safeData = {
+        ...data,
+        userAccounts: safeUserAccounts,
+      };
       const payload = {
         meta: {
           globalRevision: nextRevision,
@@ -414,7 +498,7 @@ export class UnifiedServerDatabase {
           templates: data.templates || INITIAL_COLUMN_TEMPLATES,
           activeTemplateId: data.activeTemplateId || 'tpl-full-30',
         },
-        data,
+        data: safeData,
       };
       const tmp = `${JSON_FALLBACK_PATH}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(payload), 'utf8');
@@ -636,16 +720,20 @@ export class UnifiedServerDatabase {
         upsertMat.run(m.id, idx, JSON.stringify(m));
       });
 
-      // 7. User Accounts (UPSERT + differential delete)
-      const incomingLogins = new Set((data.userAccounts || []).map((u) => u.login));
+      // 7. User Accounts (UPSERT + differential delete с сохранением секретов)
+      const incomingLogins = new Set((data.userAccounts || []).map((u) => u.login.toLowerCase()));
       const existingUserRows = this.sqliteDb
-        .prepare('SELECT login FROM user_accounts')
-        .all() as { login: string }[];
-      const usersToDelete = existingUserRows.filter((r) => !incomingLogins.has(r.login));
+        .prepare('SELECT login, payload_json FROM user_accounts')
+        .all() as { login: string; payload_json: string }[];
+      const existingUserMap = new Map<string, UserAccount>(
+        existingUserRows.map((r) => [r.login.toLowerCase(), JSON.parse(r.payload_json)])
+      );
+
+      const usersToDelete = existingUserRows.filter((r) => !incomingLogins.has(r.login.toLowerCase()));
       if (usersToDelete.length > 0) {
-        const delUserStmt = this.sqliteDb.prepare('DELETE FROM user_accounts WHERE login = ?');
+        const delUserStmt = this.sqliteDb.prepare('DELETE FROM user_accounts WHERE lower(login) = ?');
         for (const row of usersToDelete) {
-          delUserStmt.run(row.login);
+          delUserStmt.run(row.login.toLowerCase());
         }
       }
       const upsertUser = this.sqliteDb.prepare(`
@@ -657,7 +745,16 @@ export class UnifiedServerDatabase {
           payload_json = excluded.payload_json
       `);
       (data.userAccounts || []).forEach((u, idx) => {
-        upsertUser.run(u.login, idx, JSON.stringify(u));
+        const existing = existingUserMap.get(u.login.toLowerCase());
+        const safeUser: UserAccount = {
+          ...u,
+          passwordHash: u.passwordHash || existing?.passwordHash,
+          passwordSalt: u.passwordSalt || existing?.passwordSalt,
+        };
+        if (!safeUser.passwordHash && existing?.password) {
+          safeUser.password = existing.password;
+        }
+        upsertUser.run(safeUser.login, idx, JSON.stringify(safeUser));
       });
 
       // 8. Facility Geo Overrides (UPSERT + differential delete)
@@ -1006,7 +1103,11 @@ export class UnifiedServerDatabase {
     };
   }
 
-  public readFullState(): { meta: ServerDbMetadata; data: UnifiedDbDataPayload } {
+  /**
+   * Считывает полное внутреннее состояние базы данных SQLite БЕЗ маскирования парольных хешей.
+   * Используется строго внутри сервера (для OCC, транзакций и синхронизации).
+   */
+  public readInternalFullState(): { meta: ServerDbMetadata; data: UnifiedDbDataPayload } {
     if (!this.sqliteDb) {
       const raw = JSON.parse(fs.readFileSync(JSON_FALLBACK_PATH, 'utf8'));
       const data: UnifiedDbDataPayload = raw.data;
@@ -1033,7 +1134,7 @@ export class UnifiedServerDatabase {
         },
         data: {
           ...data,
-          userAccounts: (data.userAccounts || []).map(sanitizeUserAccountForClient),
+          userAccounts: data.userAccounts || [],
         },
       };
     }
@@ -1106,7 +1207,7 @@ export class UnifiedServerDatabase {
     const userAccounts: UserAccount[] = this.sqliteDb
       .prepare('SELECT payload_json FROM user_accounts ORDER BY sort_order ASC')
       .all()
-      .map((r: any) => sanitizeUserAccountForClient(JSON.parse(r.payload_json)));
+      .map((r: any) => JSON.parse(r.payload_json));
 
     const geoRows = this.sqliteDb
       .prepare('SELECT object_name, payload_json FROM facility_geo')
@@ -1165,6 +1266,21 @@ export class UnifiedServerDatabase {
   }
 
   /**
+   * Считывает публичное состояние базы данных с маскированием паролей и секретных хешей пользователей.
+   * Безопасно для выдачи внешним клиентам по API.
+   */
+  public readFullState(): { meta: ServerDbMetadata; data: UnifiedDbDataPayload } {
+    const internal = this.readInternalFullState();
+    return {
+      meta: internal.meta,
+      data: {
+        ...internal.data,
+        userAccounts: (internal.data.userAccounts || []).map(sanitizeUserAccountForClient),
+      },
+    };
+  }
+
+  /**
    * Сохраняет сварной стык с транзакционной проверкой оптимистической блокировки (OCC) по полю version.
    */
   public saveJointWithOptimisticLock(params: {
@@ -1185,8 +1301,13 @@ export class UnifiedServerDatabase {
         status: 'conflict';
         conflict: OptimisticLockConflictPayload;
         meta: ServerDbMetadata;
+      }
+    | {
+        status: 'forbidden';
+        error: string;
+        meta: ServerDbMetadata;
       } {
-    const { meta, data } = this.readFullState();
+    const { meta, data } = this.readInternalFullState();
 
     const verifiedSession = this.validateSessionToken(params.sessionToken);
     const effectiveUser = verifiedSession
@@ -1205,13 +1326,12 @@ export class UnifiedServerDatabase {
     const perms = getUserRolePermissions(effectiveUser);
     const existingOnServer = data.joints.find((j) => j.id === params.joint.id);
 
-    // Если стык создаётся впервые, но у роли нет права создания/удаления стыков — отклоняем создание
+    // Если стык создаётся впервые, но у роли нет права создания/удаления стыков — возвращаем явный отказ
     if (!existingOnServer && !perms.canCreateOrDeleteJoints && !params.forceOverwrite) {
       return {
-        status: 'ok',
-        savedJoint: params.joint,
+        status: 'forbidden',
+        error: 'У вашей роли отсутствуют полномочия на заведение новых сварных стыков в систему',
         meta,
-        data,
       };
     }
 
@@ -1305,7 +1425,7 @@ export class UnifiedServerDatabase {
         meta: ServerDbMetadata;
         data: UnifiedDbDataPayload;
       } {
-    const current = this.readFullState();
+    const current = this.readInternalFullState();
 
     // OCC: Проверка ревизии для предотвращения коллизий и перезаписи параллельных изменений
     if (
@@ -1398,6 +1518,20 @@ export class UnifiedServerDatabase {
         ? current.data.auditLogs
         : params.data.auditLogs;
 
+    let nextUserAccounts = current.data.userAccounts;
+    if (canEditUsers && params.data.userAccounts) {
+      const existingMap = new Map(current.data.userAccounts.map((u) => [u.login.toLowerCase(), u]));
+      nextUserAccounts = params.data.userAccounts.map((incoming) => {
+        const existing = existingMap.get(incoming.login.toLowerCase());
+        return {
+          ...incoming,
+          passwordHash: incoming.passwordHash || existing?.passwordHash,
+          passwordSalt: incoming.passwordSalt || existing?.passwordSalt,
+          password: incoming.password || existing?.password,
+        };
+      });
+    }
+
     const mergedData: UnifiedDbDataPayload = {
       joints: nextJoints,
       projectLineList: canEditLineList
@@ -1415,9 +1549,7 @@ export class UnifiedServerDatabase {
       weldingMaterials: canEditTech
         ? params.data.weldingMaterials ?? current.data.weldingMaterials
         : current.data.weldingMaterials,
-      userAccounts: canEditUsers
-        ? params.data.userAccounts ?? current.data.userAccounts
-        : current.data.userAccounts,
+      userAccounts: nextUserAccounts,
       auditLogs: nextAuditLogs,
       facilityGeoOverrides: canEditGeo
         ? params.data.facilityGeoOverrides ?? current.data.facilityGeoOverrides
@@ -1455,7 +1587,7 @@ export class UnifiedServerDatabase {
     newVersion: number;
     meta: ServerDbMetadata;
   } | null {
-    const current = this.readFullState();
+    const current = this.readInternalFullState();
     const target =
       (params.jointId
         ? current.data.joints.find((j) => j.id === params.jointId)

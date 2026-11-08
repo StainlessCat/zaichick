@@ -37,10 +37,45 @@ function broadcastDbChange(payload: {
  */
 function extractSessionToken(req: Request): string | undefined {
   const fromHeader = req.headers['x-session-token'] as string | undefined;
-  if (fromHeader) return fromHeader;
+  if (fromHeader && fromHeader.trim()) return fromHeader.trim();
   const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
+  if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7).trim();
+  const queryToken = req.query?.token || req.query?.sessionToken;
+  if (typeof queryToken === 'string' && queryToken.trim()) return queryToken.trim();
   return req.body?.sessionToken as string | undefined;
+}
+
+/**
+ * Middleware: проверяет session token для операций ЧТЕНИЯ (GET /api/db/state, SSE).
+ */
+function requireReadAuth(req: Request, res: Response, next: NextFunction): void {
+  const token = extractSessionToken(req);
+
+  if (!token) {
+    if (REQUIRE_AUTH_FOR_WRITES) {
+      res.status(401).json({
+        status: 'error',
+        code: 'UNAUTHORIZED',
+        message: 'Требуется аутентификация: токен сессии не передан',
+      });
+      return;
+    }
+    next();
+    return;
+  }
+
+  const session = serverDb.validateSessionToken(token);
+  if (!session) {
+    res.status(401).json({
+      status: 'error',
+      code: 'UNAUTHORIZED',
+      message: 'Токен сессии недействителен или истёк',
+    });
+    return;
+  }
+
+  (req as any).authenticatedSession = session;
+  next();
 }
 
 /**
@@ -222,7 +257,7 @@ async function startServer() {
   });
 
   // 1. Получение актуального состояния единой серверной СУБД SQLite
-  app.get('/api/db/state', (req: Request, res: Response) => {
+  app.get('/api/db/state', requireReadAuth, (req: Request, res: Response) => {
     try {
       const sinceRev = req.query.sinceRevision
         ? Number(req.query.sinceRevision)
@@ -264,7 +299,7 @@ async function startServer() {
   });
 
   // 2. Поток реального времени Server-Sent Events (SSE)
-  app.get('/api/db/events', (req: Request, res: Response) => {
+  app.get('/api/db/events', requireReadAuth, (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -310,19 +345,18 @@ async function startServer() {
         (req.headers['x-session-token'] as string) ||
         (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : req.body?.sessionToken);
 
-      const authenticatedUser = (req as any).authenticatedSession
+      const authenticatedSession = (req as any).authenticatedSession;
+      const callerUser = authenticatedSession
         ? {
-            login: (req as any).authenticatedSession.login,
-            fullName: (req as any).authenticatedSession.fullName,
-            role: (req as any).authenticatedSession.role,
-            isAdmin: (req as any).authenticatedSession.isAdmin,
+            login: authenticatedSession.login,
+            fullName: authenticatedSession.fullName,
+            role: authenticatedSession.role,
+            isAdmin: Boolean(authenticatedSession.isAdmin),
           }
         : user;
 
-      const callerUser = authenticatedUser || user;
-      const isAdmin =
-        Boolean(callerUser?.isAdmin) ||
-        getUserRolePermissions(callerUser).category === 'admin';
+      // Строго исключаем доверие к клиентскому req.body.user для административных полномочий
+      const isAdmin = Boolean(authenticatedSession?.isAdmin);
       const effectiveForceOverwrite = Boolean(forceOverwrite) && isAdmin;
 
       const result = serverDb.saveJointWithOptimisticLock({
@@ -340,6 +374,16 @@ async function startServer() {
         res.status(409).json({
           status: 'conflict',
           conflict: result.conflict,
+          meta: result.meta,
+        });
+        return;
+      }
+
+      if (result.status === 'forbidden') {
+        res.status(403).json({
+          status: 'error',
+          code: 'FORBIDDEN',
+          message: result.error,
           meta: result.meta,
         });
         return;
@@ -415,19 +459,18 @@ async function startServer() {
         (req.headers['x-session-token'] as string) ||
         (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : req.body?.sessionToken);
 
-      const authenticatedUser = (req as any).authenticatedSession
+      const authenticatedSession = (req as any).authenticatedSession;
+      const callerUser = authenticatedSession
         ? {
-            login: (req as any).authenticatedSession.login,
-            fullName: (req as any).authenticatedSession.fullName,
-            role: (req as any).authenticatedSession.role,
-            isAdmin: (req as any).authenticatedSession.isAdmin,
+            login: authenticatedSession.login,
+            fullName: authenticatedSession.fullName,
+            role: authenticatedSession.role,
+            isAdmin: Boolean(authenticatedSession.isAdmin),
           }
         : user;
 
-      const callerUser = authenticatedUser || user;
-      const isAdmin =
-        Boolean(callerUser?.isAdmin) ||
-        getUserRolePermissions(callerUser).category === 'admin';
+      // Строго исключаем доверие к клиентскому req.body.user для административных полномочий
+      const isAdmin = Boolean(authenticatedSession?.isAdmin);
       const effectiveForceOverwrite = Boolean(forceOverwrite) && isAdmin;
 
       const result = serverDb.syncStateWithOptimisticLock({
