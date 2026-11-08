@@ -131,7 +131,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     return maxSession + 1;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
@@ -222,9 +222,33 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       setErrorMsg('');
       onRegisterAccount?.(newAcc);
-      onAuthenticate(newAcc);
+      onAuthenticate(newAcc, cleanPassword);
       onClose();
       return;
+    }
+
+    // 1. Попытка аутентификации через серверный API /api/auth/login (авторитетная проверка)
+    try {
+      const authRes = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ login: cleanLogin, password: cleanPassword }),
+      });
+      if (authRes.ok) {
+        const authData = await authRes.json();
+        if (authData?.user) {
+          setErrorMsg('');
+          onAuthenticate(authData.user, cleanPassword);
+          onClose();
+          return;
+        }
+      } else if (authRes.status === 401 || authRes.status === 404) {
+        const errJson = await authRes.json().catch(() => null);
+        setErrorMsg(errJson?.message || `Неверный логин или пароль для учётной записи «${cleanLogin}»`);
+        return;
+      }
+    } catch {
+      // Сервер офлайн / автономный локальный режим — продолжаем проверку по локальным данным
     }
 
     const existingAcc = accounts.find(
@@ -234,7 +258,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     if (existingAcc) {
       const isPasswordCorrect = verifyPassword(
         cleanPassword,
-        existingAcc.passwordHash || existingAcc.password || '123',
+        existingAcc.passwordHash || existingAcc.password || '',
         existingAcc.passwordSalt
       );
       if (isPasswordCorrect) {

@@ -220,6 +220,7 @@ export function useServerSync({
             clientId: clientIdRef.current,
             sessionToken,
             user: currentUser,
+            expectedGlobalRevision: serverDbMeta?.globalRevision,
             data: payloadData,
             ...payloadData,
           }),
@@ -231,7 +232,12 @@ export function useServerSync({
         } else {
           setIsDbConnected(false);
           const errData = await res.json().catch(() => null);
-          console.warn('[ZAYCHICK Sync] Сервер отклонил пакет синхронизации:', res.status, errData?.message);
+          if (res.status === 409) {
+            console.warn('[ZAYCHICK Sync] Обнаружен конфликт ревизий (OCC 409). Актуализация данных с сервера...');
+            fetchServerDbState(true);
+          } else {
+            console.warn('[ZAYCHICK Sync] Сервер отклонил пакет синхронизации:', res.status, errData?.message);
+          }
         }
       } catch (err) {
         setIsDbConnected(false);

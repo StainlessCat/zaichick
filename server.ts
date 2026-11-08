@@ -439,6 +439,11 @@ async function startServer() {
         user: callerUser,
       });
 
+      if (result.status === 'conflict') {
+        res.status(409).json(result);
+        return;
+      }
+
       broadcastDbChange({
         globalRevision: result.meta.globalRevision,
         lastUpdatedAt: result.meta.lastUpdatedAt,
@@ -508,7 +513,52 @@ async function startServer() {
     }
   });
 
-  // 6. Подключение Vite в режиме разработки или раздача статики в production
+  // 6. Административный снимок базы данных SQLite (согласованный VACUUM INTO + WAL checkpoint)
+  app.post('/api/admin/backup', requireWriteAuth, (req: Request, res: Response) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const sessionToken =
+        (req.headers['x-session-token'] as string) ||
+        (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : req.body?.sessionToken);
+
+      const authenticatedSession = (req as any).authenticatedSession;
+      const isAdmin =
+        Boolean(authenticatedSession?.isAdmin) ||
+        getUserRolePermissions(authenticatedSession || {}).category === 'admin';
+
+      if (!isAdmin) {
+        res.status(403).json({
+          status: 'error',
+          message: 'Создание резервных копий доступно исключительно администратору системы',
+        });
+        return;
+      }
+
+      const label = (req.body?.label || 'manual').replace(/[^a-zA-Z0-9_-]/g, '');
+      const backupResult = serverDb.createBackup(label);
+
+      if (!backupResult.success) {
+        res.status(500).json({
+          status: 'error',
+          message: backupResult.error || 'Ошибка создания резервной копии базы данных',
+        });
+        return;
+      }
+
+      res.json({
+        status: 'ok',
+        message: 'Согласованная резервная копия базы данных успешно создана',
+        backupPath: backupResult.backupPath,
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        status: 'error',
+        message: err?.message || 'Внутренняя ошибка при создании бэкапа',
+      });
+    }
+  });
+
+  // 7. Подключение Vite в режиме разработки или раздача статики в production
   const isProd = process.env.NODE_ENV === 'production';
   const distDir = path.join(ROOT_DIR, 'dist');
   const prebuiltDir = path.join(ROOT_DIR, 'prebuilt');

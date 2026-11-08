@@ -1359,7 +1359,8 @@ export const INSPECTORS_DIRECTORY: InspectorProfile[] = [
 export const USER_ACCOUNTS: UserAccount[] = [
   {
     login: 'sokolov_av',
-    password: '123',
+    passwordHash: '565bb823d8ab5b7adff8b098c3c4988189c8c910225fa67e46a26819a0de0cc3',
+    passwordSalt: '6be6b7d8d4fccbcfac2f05f1920f4b73',
     fullName: 'Соколов Алексей Владимирович',
     role: 'Ведущий инженер ПТО',
     department: 'Производственно-технический отдел (ПТО)',
@@ -1367,7 +1368,8 @@ export const USER_ACCOUNTS: UserAccount[] = [
   },
   {
     login: 'morozov_iv',
-    password: '123',
+    passwordHash: 'b842b3c9c99d684b24d48ed707cf218bada5b151a6063057863c05ad06490172',
+    passwordSalt: 'da200c9c58c8787b5eb3e1c45029582e',
     fullName: 'Морозов Илья Викторович',
     role: 'Главный сварщик / Инженер-технолог по сварке',
     department: 'Отдел главного сварщика (ОГС)',
@@ -1375,7 +1377,8 @@ export const USER_ACCOUNTS: UserAccount[] = [
   },
   {
     login: 'gromov_ia',
-    password: '123',
+    passwordHash: '9bba2d94ae64aea7f8d5f7f816d32f9264d5911a9b067b64327c05ac6c48acd6',
+    passwordSalt: 'be6ef842b37c06d65b82cd4bc9be9b79',
     fullName: 'Громов Игорь Анатольевич',
     role: 'Мастер сварочно-монтажного участка',
     department: 'Участок технологических трубопроводов №2',
@@ -1383,7 +1386,8 @@ export const USER_ACCOUNTS: UserAccount[] = [
   },
   {
     login: 'lebedev_km',
-    password: '123',
+    passwordHash: 'b95169a44a3acf8d96b3da8b4d70c8e736f8d3c0588d7f3f1987491ec9e336b2',
+    passwordSalt: '4a0211f686712c57dd9f39fb84db22f3',
     fullName: 'Лебедев Константин Михайлович',
     role: 'Начальник лаборатории НК (ПИЛ)',
     department: 'Лаборатория неразрушающего контроля',
@@ -1391,7 +1395,8 @@ export const USER_ACCOUNTS: UserAccount[] = [
   },
   {
     login: 'admin',
-    password: '123',
+    passwordHash: 'bcaa180a17381336fb655e78af8730bf05bd725a6c3a52ef1ea209f8d1e6caf9',
+    passwordSalt: 'b6b8b0fc6badc3e59d85fbc088031e7c',
     fullName: 'Администратор Системы (Полный доступ)',
     role: 'Администратор системы',
     department: 'Администрация / Управление проектом',

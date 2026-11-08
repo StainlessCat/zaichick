@@ -3923,3 +3923,56 @@ test('Sprint 4: Strict TechCard matching and Line-specific Welder NDT Quota calc
   assert.ok(status.welderNdtDeficits && status.welderNdtDeficits.length > 0);
   assert.ok(status.welderNdtDeficits.some((d) => d.includes('W1')));
 });
+
+test('Sprint 2: OCC-контроль ревизий (HTTP 409), согласованный бэкап WAL и scrypt KDF', async () => {
+  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
+  const { hashPasswordWithSalt, verifyPassword } = await import('../server/serverAuth');
+  const { USER_ACCOUNTS } = await import('../data/seedData');
+
+  // 1. Проверка сидовых учетных записей: отсутствие открытых паролей и валидность scrypt-хешей
+  for (const acc of USER_ACCOUNTS) {
+    assert.equal(acc.password, undefined, `Учётная запись ${acc.login} не должна содержать открытый пароль`);
+    assert.ok(acc.passwordHash, `Учётная запись ${acc.login} должна содержать passwordHash`);
+    assert.ok(acc.passwordSalt, `Учётная запись ${acc.login} должна содержать passwordSalt`);
+    assert.equal(
+      verifyPassword('123', acc.passwordHash!, acc.passwordSalt!),
+      true,
+      `Учётная запись ${acc.login} должна успешно верифицироваться со штатным паролем`
+    );
+  }
+
+  // 2. Инициализация базы данных и проверка согласованного бэкапа
+  const db = new UnifiedServerDatabase();
+  const backupRes = db.createBackup('test_audit');
+  assert.equal(backupRes.success, true, 'Метод createBackup должен завершаться успешно');
+  assert.ok(backupRes.backupPath, 'Метод createBackup должен возвращать путь к файлу');
+
+  // 3. Проверка OCC: syncStateWithOptimisticLock со старой ревизией должна возвращать STALE_GLOBAL_REVISION
+  const state = db.readFullState();
+  const currentRev = state.meta.globalRevision;
+
+  const staleResult = db.syncStateWithOptimisticLock({
+    data: { joints: state.data.joints },
+    expectedGlobalRevision: currentRev - 1, // Устаревшая ревизия
+    forceOverwrite: false,
+    actionLabel: 'Тест конфликта ревизии',
+    user: { login: 'engineer_pto', fullName: 'Инженер', role: 'Инженер ПТО' },
+  });
+
+  assert.equal(staleResult.status, 'conflict', 'При устаревшей ревизии ожидается статус conflict');
+  if (staleResult.status === 'conflict') {
+    assert.equal(staleResult.conflict, 'STALE_GLOBAL_REVISION');
+    assert.equal(staleResult.currentRevision, currentRev);
+  }
+
+  // 4. Проверка обхода принудительной перезаписи администратором (forceOverwrite: true)
+  const forceResult = db.syncStateWithOptimisticLock({
+    data: { joints: state.data.joints },
+    expectedGlobalRevision: currentRev - 1,
+    forceOverwrite: true,
+    actionLabel: 'Принудительная синхронизация админом',
+    user: { login: 'admin', fullName: 'Админ', role: 'Администратор системы', isAdmin: true },
+  });
+
+  assert.equal(forceResult.status, 'ok', 'При forceOverwrite: true синхронизация должна успешно применяться');
+});

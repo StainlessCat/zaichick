@@ -4,7 +4,7 @@
  * аппаратное ускорение и timingSafeEqual для предотвращения timing-атак при проверке паролей.
  */
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { UserAccount } from '../types/welding';
 import type { AuthenticatedSession } from '../utils/authSecurity';
 export type { AuthenticatedSession };
@@ -17,20 +17,17 @@ export function generateSecureSalt(byteLength = 16): string {
 }
 
 /**
- * Хеширует пароль с криптографической солью через нативный SHA-256 (node:crypto).
- * Каскадные раунды хеширования защищают от радужных таблиц (rainbow tables).
+ * Хеширует пароль с криптографической солью через аппаратный KDF scrypt (NIST / OWASP).
+ * Обеспечивает устойчивость против атак перебора на GPU/ASIC за счет memory-hardness.
  */
 export function hashPasswordWithSalt(
   password: string,
   salt?: string,
-  rounds = 100
+  _rounds = 100
 ): { hash: string; salt: string } {
   const finalSalt = salt || generateSecureSalt(16);
-  let current = `${finalSalt}:${password}:${finalSalt}`;
-  for (let r = 0; r < rounds; r++) {
-    current = createHash('sha256').update(current, 'utf8').digest('hex');
-  }
-  return { hash: current, salt: finalSalt };
+  const hash = scryptSync(password, finalSalt, 32).toString('hex');
+  return { hash, salt: finalSalt };
 }
 
 /**
@@ -50,8 +47,19 @@ export function timingSafeCompare(a: string, b: string): boolean {
 }
 
 /**
+ * Вычисляет устаревший хеш (100 раундов SHA-256) для обратной совместимости при верификации.
+ */
+function hashLegacySha256(password: string, salt: string, rounds = 100): string {
+  let current = `${salt}:${password}:${salt}`;
+  for (let r = 0; r < rounds; r++) {
+    current = createHash('sha256').update(current, 'utf8').digest('hex');
+  }
+  return current;
+}
+
+/**
  * Проверяет подлинность пароля пользователя на сервере.
- * Поддерживает обратную совместимость с тестовыми паролями ('123')
+ * Поддерживает современный KDF scrypt, обратную совместимость с legacy 100-раундным SHA-256
  * и безопасную сверку хешей через timingSafeEqual.
  */
 export function verifyPassword(
@@ -61,18 +69,26 @@ export function verifyPassword(
 ): boolean {
   if (!inputPassword || !storedPasswordOrHash) return false;
 
-  // 1. Если передана соль — производим криптографическую сверку соленого хеша
+  // 1. Если передана соль — сначала сверяем через современный scrypt KDF
   if (salt) {
-    const computed = hashPasswordWithSalt(inputPassword, salt);
-    return timingSafeCompare(computed.hash, storedPasswordOrHash);
+    const scryptCandidate = scryptSync(inputPassword, salt, 32).toString('hex');
+    if (timingSafeCompare(scryptCandidate, storedPasswordOrHash)) {
+      return true;
+    }
+
+    // 2. Обратная совместимость с легаси 100-раундным SHA-256
+    const legacyCandidate = hashLegacySha256(inputPassword, salt);
+    if (timingSafeCompare(legacyCandidate, storedPasswordOrHash)) {
+      return true;
+    }
   }
 
-  // 2. Обратная совместимость с открытыми паролями (сидовые аккаунты '123')
+  // 3. Обратная совместимость с открытыми паролями (сидовые аккаунты '123')
   if (timingSafeCompare(inputPassword, storedPasswordOrHash)) {
     return true;
   }
 
-  // 3. Проверка прямого sha256 без соли
+  // 4. Проверка прямого sha256 без соли
   const directHash = createHash('sha256').update(inputPassword, 'utf8').digest('hex');
   if (timingSafeCompare(directHash, storedPasswordOrHash)) {
     return true;

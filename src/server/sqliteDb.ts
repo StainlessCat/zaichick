@@ -138,9 +138,6 @@ export class UnifiedServerDatabase {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
 
-    // Создаем резервную копию базы данных при старте сервера с ротацией последних 5 копий
-    this.createStartupBackup();
-
     try {
       const nodeSqlite = require('node:sqlite');
       if (nodeSqlite && nodeSqlite.DatabaseSync) {
@@ -151,6 +148,7 @@ export class UnifiedServerDatabase {
         this.createSchema();
         this.ensureSeeded();
         this.restorePersistentSessions();
+        this.createStartupBackup();
         return;
       }
     } catch {
@@ -160,18 +158,26 @@ export class UnifiedServerDatabase {
     this.engineName = 'Transactional File DB (WAL JSON)';
     this.journalMode = 'ATOMIC_RENAME';
     this.ensureSeededFallback();
+    this.createStartupBackup();
   }
 
   /**
-   * Создает снимок базы данных SQLite в data/backups/ перед открытием сессии,
-   * выполняя ротацию и сохраняя ровно 5 последних архивных копий.
+   * Создает снимок базы данных SQLite в data/backups/ перед открытием сессии.
    */
   private createStartupBackup(): void {
     try {
-      if (!fs.existsSync(SQLITE_DB_PATH)) return;
-      const stat = fs.statSync(SQLITE_DB_PATH);
-      if (stat.size === 0) return;
+      this.createBackup('startup');
+    } catch (err) {
+      console.warn('[ZAYCHICK] Автоматический бэкап при старте пропущен:', err);
+    }
+  }
 
+  /**
+   * Создает согласованный моментальный снимок базы данных SQLite (VACUUM INTO + WAL checkpoint)
+   * в папке data/backups/, выполняя ротацию с сохранением 5 последних архивных копий.
+   */
+  public createBackup(label = 'manual'): { success: boolean; backupPath?: string; error?: string } {
+    try {
       const backupsDir = path.join(DATA_DIR, 'backups');
       if (!fs.existsSync(backupsDir)) {
         fs.mkdirSync(backupsDir, { recursive: true });
@@ -180,16 +186,50 @@ export class UnifiedServerDatabase {
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, '0');
       const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const backupPath = path.join(backupsDir, `zaychick-backup-${ts}.sqlite`);
 
-      fs.copyFileSync(SQLITE_DB_PATH, backupPath);
+      if (this.sqliteDb) {
+        const backupPath = path.join(backupsDir, `zaychick-backup-${ts}-${label}.sqlite`);
+        try {
+          // 1. Сбрасываем незафиксированные страницы из -wal файла в базу данных
+          this.sqliteDb.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+          // 2. Выполняем согласованный моментальный снимок через нативный VACUUM INTO
+          const escapedPath = backupPath.replace(/'/g, "''");
+          this.sqliteDb.exec(`VACUUM INTO '${escapedPath}';`);
+        } catch {
+          // Fallback: принудительный checkpoint и файловое копирование
+          try {
+            this.sqliteDb.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+          } catch {}
+          if (fs.existsSync(SQLITE_DB_PATH)) {
+            fs.copyFileSync(SQLITE_DB_PATH, backupPath);
+          }
+        }
+        this.rotateBackups(backupsDir, 5);
+        return { success: true, backupPath };
+      }
 
+      if (fs.existsSync(JSON_FALLBACK_PATH)) {
+        const jsonBackupPath = path.join(backupsDir, `zaychick-backup-${ts}-${label}.json`);
+        fs.copyFileSync(JSON_FALLBACK_PATH, jsonBackupPath);
+        this.rotateBackups(backupsDir, 5);
+        return { success: true, backupPath: jsonBackupPath };
+      }
+
+      return { success: false, error: 'База данных не инициализирована' };
+    } catch (err: any) {
+      console.warn('[ZAYCHICK] Ошибка создания резервной копии:', err);
+      return { success: false, error: err?.message || 'Ошибка создания бэкапа' };
+    }
+  }
+
+  private rotateBackups(backupsDir: string, maxFiles = 5): void {
+    try {
       const existingBackups = fs
         .readdirSync(backupsDir)
-        .filter((f) => f.startsWith('zaychick-backup-') && f.endsWith('.sqlite'))
+        .filter((f) => f.startsWith('zaychick-backup-') && (f.endsWith('.sqlite') || f.endsWith('.json')))
         .sort();
 
-      while (existingBackups.length > 5) {
+      while (existingBackups.length > maxFiles) {
         const oldest = existingBackups.shift();
         if (oldest) {
           try {
@@ -197,9 +237,7 @@ export class UnifiedServerDatabase {
           } catch {}
         }
       }
-    } catch (err) {
-      console.warn('[ZAYCHICK] Автоматический бэкап при старте пропущен:', err);
-    }
+    } catch {}
   }
 
   private createSchema() {
@@ -312,6 +350,18 @@ export class UnifiedServerDatabase {
       .get();
     if (!row) {
       const seed = buildDefaultSeedData();
+      if (process.env.INITIAL_ADMIN_PASSWORD) {
+        const customHashed = hashPasswordWithSalt(process.env.INITIAL_ADMIN_PASSWORD);
+        const adminAcc = seed.userAccounts.find((u) => u.login === 'admin');
+        if (adminAcc) {
+          adminAcc.passwordHash = customHashed.hash;
+          adminAcc.passwordSalt = customHashed.salt;
+          delete adminAcc.password;
+        }
+        console.log('[ZAYCHICK Security] Пароль администратора инициализирован из переменной окружения INITIAL_ADMIN_PASSWORD.');
+      } else {
+        console.log('[ZAYCHICK Security] Учётная запись администратора инициализирована со стандартным соленым хешем. Рекомендуется сменить пароль при первом входе.');
+      }
       this.writeFullStateToSqlite(
         seed,
         1,
@@ -324,6 +374,15 @@ export class UnifiedServerDatabase {
   private ensureSeededFallback() {
     if (!fs.existsSync(JSON_FALLBACK_PATH)) {
       const seed = buildDefaultSeedData();
+      if (process.env.INITIAL_ADMIN_PASSWORD) {
+        const customHashed = hashPasswordWithSalt(process.env.INITIAL_ADMIN_PASSWORD);
+        const adminAcc = seed.userAccounts.find((u) => u.login === 'admin');
+        if (adminAcc) {
+          adminAcc.passwordHash = customHashed.hash;
+          adminAcc.passwordSalt = customHashed.salt;
+          delete adminAcc.password;
+        }
+      }
       const payload = {
         meta: {
           globalRevision: 1,
@@ -807,11 +866,20 @@ export class UnifiedServerDatabase {
       return { success: false, error: 'Неверный пароль пользователя' };
     }
 
-    // Если пароль хранился в открытом виде, мигрируем его на соленый хеш в БД
-    if (!account.passwordSalt) {
-      const hashed = hashPasswordWithSalt(password);
-      account.passwordHash = hashed.hash;
-      account.passwordSalt = hashed.salt;
+    // Проверяем, требует ли пароль миграции на современный scrypt KDF или очистки открытого пароля
+    const currentScrypt = account.passwordSalt
+      ? hashPasswordWithSalt(password, account.passwordSalt)
+      : null;
+    const needsMigration =
+      !account.passwordSalt ||
+      !currentScrypt ||
+      account.passwordHash !== currentScrypt.hash ||
+      Boolean(account.password);
+
+    if (needsMigration) {
+      const rehashed = hashPasswordWithSalt(password);
+      account.passwordHash = rehashed.hash;
+      account.passwordSalt = rehashed.salt;
       delete account.password; // Удаляем открытый пароль при миграции
 
       if (this.sqliteDb) {
@@ -1223,12 +1291,38 @@ export class UnifiedServerDatabase {
     actionLabel: string;
     user?: { login: string; fullName: string; role: string; isAdmin?: boolean };
     sessionToken?: string;
-  }): {
-    status: 'ok';
-    meta: ServerDbMetadata;
-    data: UnifiedDbDataPayload;
-  } {
+  }):
+    | {
+        status: 'ok';
+        meta: ServerDbMetadata;
+        data: UnifiedDbDataPayload;
+      }
+    | {
+        status: 'conflict';
+        conflict: 'STALE_GLOBAL_REVISION';
+        currentRevision: number;
+        expectedRevision: number;
+        meta: ServerDbMetadata;
+        data: UnifiedDbDataPayload;
+      } {
     const current = this.readFullState();
+
+    // OCC: Проверка ревизии для предотвращения коллизий и перезаписи параллельных изменений
+    if (
+      params.expectedGlobalRevision !== undefined &&
+      !params.forceOverwrite &&
+      params.expectedGlobalRevision < current.meta.globalRevision
+    ) {
+      return {
+        status: 'conflict',
+        conflict: 'STALE_GLOBAL_REVISION',
+        currentRevision: current.meta.globalRevision,
+        expectedRevision: params.expectedGlobalRevision,
+        meta: current.meta,
+        data: current.data,
+      };
+    }
+
     const nextRevision = current.meta.globalRevision + 1;
 
     const verifiedSession = this.validateSessionToken(params.sessionToken);
