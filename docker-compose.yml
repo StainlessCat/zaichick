@@ -1,9 +1,30 @@
+# =========================================================================
+# Корпоративное развёртывание системы ZAYCHICK через Docker Compose
+# Запуск: docker compose up -d
+# Остановка: docker compose down
+# Обновление: docker compose pull && docker compose up -d --build
+# =========================================================================
+
 services:
-  zaychick-web:
+  zaychick:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: zaychick-corporate-server
+    image: zaychick:latest
+    container_name: zaychick_app
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ZAYCHICK_REQUIRE_AUTH=true
+    volumes:
+      # Постоянное хранилище базы данных SQLite и архивных копий (бэкапов)
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

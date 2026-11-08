@@ -1836,26 +1836,26 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
                       >
                         {status.ndtStatus === 'sufficient' ? (
                           <span
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-xs"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
                             title={status.statusLabel}
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                            <span>Достаточно НК</span>
+                            <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-700" />
+                            <span>НК ✓</span>
                           </span>
                         ) : status.ndtStatus === 'insufficient' ? (
                           <span
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-300 shadow-xs"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs"
                             title={status.statusLabel}
                           >
-                            <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                            <span>Недостаточно НК</span>
+                            <AlertTriangle className="w-3 h-3 shrink-0 text-amber-700" />
+                            <span>НК !</span>
                           </span>
                         ) : (
                           <span
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200"
+                            className="text-slate-400 font-mono text-[11px] px-2"
                             title={status.statusLabel}
                           >
-                            <span>Нет сварки</span>
+                            —
                           </span>
                         )}
                       </td>

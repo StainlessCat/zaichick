@@ -24,6 +24,8 @@ import {
   formatDateDDMMYY,
   findMatchingTechCard,
   classifyJointElements,
+  checkWelderMethodCompliance,
+  validateWelderNaksAttestation,
   getWelderCertForMethod,
   getMissingPassportFields,
   isPassportIncomplete,
@@ -511,6 +513,8 @@ test('resolveWeldersSelection, validatePreheatTemperature, validateElementsDiame
     number: 'ТК-159-09Г2С-01',
     title: 'РАД+РД труб 09Г2С',
     weldingType: 'РАД+РД',
+    jointKind: 'Стыковое',
+    elementCombination: 'Труба+Труба',
     ntd: 'СТО Газпром 15-1.1-002-2023',
     steelGroup: 'М01 (09Г2С)',
     minDiameterMm: 57,
@@ -1093,6 +1097,8 @@ test('COMPREHENSIVE 10-USER SIMULATION: registration of 10 users, collaborative 
       number: 'ТК-SIM-09Г2С-01',
       title: 'Сварка трубопроводов из стали 09Г2С',
       weldingType: 'РАД+РД',
+      jointKind: 'Стыковое',
+      elementCombination: 'Труба+Труба',
       steelGroup: '09Г2С',
       minDiameterMm: 57,
       maxDiameterMm: 530,
@@ -1120,6 +1126,8 @@ test('COMPREHENSIVE 10-USER SIMULATION: registration of 10 users, collaborative 
       number: 'ТК-УДАЛИТЬ-99',
       title: 'Временная ТК на удаление',
       weldingType: 'РД',
+      jointKind: 'Стыковое',
+      elementCombination: 'Труба+Труба',
       steelGroup: '20',
       minDiameterMm: 57,
       maxDiameterMm: 108,
@@ -2909,6 +2917,8 @@ test('Отраслевые постулаты сварочно-монтажно�
       title: 'Сварка 219',
       ntd: 'ГОСТ 16037-80',
       weldingType: 'РАД+РД',
+      jointKind: 'Стыковое',
+      elementCombination: 'Труба+Труба',
       steelGroup: '09Г2С',
       minDiameterMm: 159,
       maxDiameterMm: 325,
@@ -2923,6 +2933,8 @@ test('Отраслевые постулаты сварочно-монтажно�
       title: 'Сварка 57',
       ntd: 'ГОСТ 16037-80',
       weldingType: 'РАД',
+      jointKind: 'Стыковое',
+      elementCombination: 'Труба+Труба',
       steelGroup: '20',
       minDiameterMm: 32,
       maxDiameterMm: 89,
@@ -3645,16 +3657,16 @@ test('Sprint 3: getMissingPassportFields and isPassportIncomplete validate welde
     welderFullName: '',
     welderCertNumber: '',
     techCardNumber: '',
-    vikResult: '',
+    vikResult: 'Не проводился',
     vikDate: '',
     vikInspector: '',
-    ndtResult: '',
+    ndtType: 'РК',
+    ndtResult: 'Не проводился',
     ndtDate: '',
-    ndtProtocolNumber: '',
     ndtInspector: '',
-    dupNdtResult: '',
+    dupNdtType: 'УЗК',
+    dupNdtResult: 'Не проводился',
     dupNdtDate: '',
-    dupNdtProtocolNumber: '',
     dupNdtInspector: '',
     updatedAt: '',
     updatedBy: '',
@@ -3693,4 +3705,221 @@ test('Sprint 3: getMissingPassportFields and isPassportIncomplete validate welde
   };
   assert.equal(isPassportIncomplete(completeWeldedJoint), false);
   assert.equal(getMissingPassportFields(completeWeldedJoint).length, 0);
+});
+
+test('Sprint 3: checkWelderMethodCompliance restricts welders lacking required welding method', () => {
+  const radOnlyWelder: WelderProfile = {
+    id: 'w-rad-only',
+    stamp: 'Р01',
+    isBrigade: false,
+    fullName: 'Радов Р.Р.',
+    certNumber: 'НАКС-РАД-01',
+    allowedMethods: ['РАД'],
+    naksCerts: [
+      {
+        weldingType: 'РАД',
+        certNumber: 'НАКС-РАД-01',
+      },
+    ],
+    crewForeman: 'Мастер',
+  };
+
+  const rdOnlyWelder: WelderProfile = {
+    id: 'w-rd-only',
+    stamp: 'Д02',
+    isBrigade: false,
+    fullName: 'Дугов Д.Д.',
+    certNumber: 'НАКС-РД-02',
+    allowedMethods: ['РД'],
+    naksCerts: [
+      {
+        weldingType: 'РД',
+        certNumber: 'НАКС-РД-02',
+      },
+    ],
+    crewForeman: 'Мастер',
+  };
+
+  const dualWelder: WelderProfile = {
+    id: 'w-dual',
+    stamp: 'К03',
+    isBrigade: false,
+    fullName: 'Комбинированный К.К.',
+    certNumber: 'НАКС-РАД-03, НАКС-РД-03',
+    allowedMethods: ['РАД', 'РД', 'РАД+РД'],
+    naksCerts: [
+      {
+        weldingType: 'РАД',
+        certNumber: 'НАКС-РАД-03',
+      },
+      {
+        weldingType: 'РД',
+        certNumber: 'НАКС-РД-03',
+      },
+    ],
+    crewForeman: 'Мастер',
+  };
+
+  // 1. Сварщик с только РАД не допускается к РД
+  const resRadOnRd = checkWelderMethodCompliance(radOnlyWelder, 'РД');
+  assert.equal(resRadOnRd.isAllowed, false);
+  assert.equal(resRadOnRd.reason, 'Нет аттестации на РД');
+
+  // 2. Сварщик с РД допускается к РД
+  const resRdOnRd = checkWelderMethodCompliance(rdOnlyWelder, 'РД');
+  assert.equal(resRdOnRd.isAllowed, true);
+
+  // 3. Сварщик с РАД+РД допускается к РД и РАД
+  assert.equal(checkWelderMethodCompliance(dualWelder, 'РД').isAllowed, true);
+  assert.equal(checkWelderMethodCompliance(dualWelder, 'РАД').isAllowed, true);
+  assert.equal(checkWelderMethodCompliance(dualWelder, 'РАД+РД').isAllowed, true);
+
+  // 4. Сварщик с только РД не допускается к РАД
+  const resRdOnRad = checkWelderMethodCompliance(rdOnlyWelder, 'РАД');
+  assert.equal(resRdOnRad.isAllowed, false);
+  assert.equal(resRdOnRad.reason, 'Нет аттестации на РАД');
+
+  // 5. Валидация НАКС также фиксирует предупреждение при несовпадении способа
+  const naksValidation = validateWelderNaksAttestation(radOnlyWelder, {
+    diameterMm: 219,
+    wallThickness: 8,
+    steelGroup: '09Г2С',
+    weldingType: 'РД',
+  });
+  assert.equal(naksValidation.isValid, false);
+  assert.equal(naksValidation.isMethodValid, false);
+  assert.ok(naksValidation.warnings.some((w) => w.includes('Способ сварки "РД" не разрешен')));
+});
+
+test('Sprint 4: Strict TechCard matching and Line-specific Welder NDT Quota calculation', () => {
+  // 1. Strict TechCard matching
+  const techCards: TechCardItem[] = [
+    {
+      id: 'tc-rad',
+      number: 'ТК-РАД-01',
+      title: 'Сварка РАД',
+      weldingType: 'РАД',
+      jointKind: 'Стыковое',
+      elementCombination: 'Труба+Труба',
+      ntd: 'СТО Газпром',
+      steelGroup: '09Г2С',
+      minDiameterMm: 57,
+      maxDiameterMm: 219,
+      minWallThicknessMm: 4,
+      maxWallThicknessMm: 12,
+      recommendedMaterials: 'Св-08Г2С',
+      preheatRules: [],
+    },
+  ];
+
+  // Matching request with matching method
+  const match = findMatchingTechCard(techCards, {
+    diameterMm: 159,
+    wallThicknessMm: 8,
+    steelGrade: '09Г2С',
+    weldingType: 'РАД',
+    jointKind: 'Стыковое',
+    elementCombination: 'Труба+Труба',
+  });
+  assert.ok(match !== null);
+  assert.equal(match.id, 'tc-rad');
+
+  // Mismatching weldingType should return null and NEVER substitute a different method
+  const noMatch = findMatchingTechCard(techCards, {
+    diameterMm: 159,
+    wallThicknessMm: 8,
+    steelGrade: '09Г2С',
+    weldingType: 'РД', // Not matching РАД
+    jointKind: 'Стыковое',
+    elementCombination: 'Труба+Труба',
+  });
+  assert.equal(noMatch, null);
+
+  // 2. Line-specific Welder NDT Quota calculation
+  const lineItem: ProjectLineItem = {
+    id: 'line-1',
+    uniqueLineId: 'LINE-01',
+    lineNumber: 'L-1',
+    lineName: 'Линия 1',
+    rdCode: 'RD-01',
+    objectName: 'Объект',
+    product: 'Газ',
+    testContour: 'К-1',
+    weldingNtd: 'СТО Газпром',
+    controlNtd: 'СТО Газпром',
+    qualityLevel: 'I',
+    pipelineCategory: 'I',
+    workingPressure: '10',
+    workingTemperature: '20',
+    rkPercent: 100, // 100% control required
+    uzkPercent: 0,
+    pvkPercent: 0,
+    testDate: '2026-05-01',
+  };
+
+  // Two joints on line-1 welded by welder W1, only one has RK 'Годен'
+  const jointsOnLine = [
+    {
+      id: 'j-1',
+      jointNumber: '010',
+      uniqueLineId: 'LINE-01',
+      rdCode: 'RD-01',
+      objectName: 'Объект',
+      contour: 'К-1',
+      lineNumber: 'L-1',
+      jointType: 'Монтажный' as const,
+      diameterMm: 159,
+      diameterInch: '6"',
+      wallThickness: 8,
+      lrv1Code: 'L-1',
+      elem1Name: 'Труба',
+      elem1Material: '09Г2С',
+      elem1Ntd: 'ГОСТ',
+      lrv2Code: 'L-2',
+      elem2Name: 'Труба',
+      elem2Material: '09Г2С',
+      elem2Ntd: 'ГОСТ',
+      welderStamp: 'W1',
+      weldingDate: '2026-01-10',
+      vikResult: 'Годен' as const,
+      ndtType: 'РК' as const,
+      ndtResult: 'Годен' as const,
+      updatedAt: '2026-01-10T10:00:00Z',
+      updatedBy: 'Test',
+    } as WeldJoint,
+    {
+      id: 'j-2',
+      jointNumber: '020',
+      uniqueLineId: 'LINE-01',
+      rdCode: 'RD-01',
+      objectName: 'Объект',
+      contour: 'К-1',
+      lineNumber: 'L-1',
+      jointType: 'Монтажный' as const,
+      diameterMm: 159,
+      diameterInch: '6"',
+      wallThickness: 8,
+      lrv1Code: 'L-1',
+      elem1Name: 'Труба',
+      elem1Material: '09Г2С',
+      elem1Ntd: 'ГОСТ',
+      lrv2Code: 'L-2',
+      elem2Name: 'Труба',
+      elem2Material: '09Г2С',
+      elem2Ntd: 'ГОСТ',
+      welderStamp: 'W1',
+      weldingDate: '2026-01-11',
+      vikResult: 'Годен' as const,
+      ndtType: 'РК' as const,
+      ndtResult: 'Не проводился' as const, // Quota not met for W1!
+      updatedAt: '2026-01-11T10:00:00Z',
+      updatedBy: 'Test',
+    } as WeldJoint,
+  ];
+
+  const status = computeLineListItemStatus(lineItem, jointsOnLine);
+  // Total RK required is 2 (100% of 2 joints), passed is 1 -> insufficient
+  assert.equal(status.ndtStatus, 'insufficient');
+  assert.ok(status.welderNdtDeficits && status.welderNdtDeficits.length > 0);
+  assert.ok(status.welderNdtDeficits.some((d) => d.includes('W1')));
 });

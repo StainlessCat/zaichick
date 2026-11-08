@@ -234,6 +234,7 @@ export interface LineCompletionStatus {
   rkControlled: number;
   uzkRequired: number;
   uzkControlled: number;
+  welderNdtDeficits?: string[]; // Список сварщиков с дефицитом контроля на данной линии
 }
 
 /**
@@ -320,14 +321,55 @@ export function computeLineListItemStatus(
   const rkRequired = Math.ceil(weldedJoints * (rkPlanPct / 100));
   const uzkRequired = Math.ceil(weldedJoints * (uzkPlanPct / 100));
 
+  // Анализ квотирования НК по каждому сварщику на данной конкретной линии (СТО Газпром 15-1.3-004-2023)
+  const welderStats = new Map<string, { welded: number; controlled: number }>();
+  for (const j of lineJoints) {
+    const isWelded = Boolean(j.weldingDate && j.weldingDate.trim() !== '');
+    if (!isWelded) continue;
+
+    const stamps = new Set<string>();
+    if (j.welderStamp?.trim()) {
+      j.welderStamp.split(/[/,-]+/).forEach((s) => {
+        const clean = s.trim();
+        if (clean) stamps.add(clean);
+      });
+    }
+
+    const hasAnyNdt =
+      (Boolean(j.ndtType) && j.ndtType !== 'Не требуется' && Boolean(j.ndtResult) && j.ndtResult !== 'Не проводился') ||
+      (Boolean(j.dupNdtType) && j.dupNdtType !== 'Не требуется' && Boolean(j.dupNdtResult) && j.dupNdtResult !== 'Не проводился') ||
+      j.repairNdtResult === 'Годен';
+
+    stamps.forEach((s) => {
+      const cur = welderStats.get(s) || { welded: 0, controlled: 0 };
+      cur.welded += 1;
+      if (hasAnyNdt) {
+        cur.controlled += 1;
+      }
+      welderStats.set(s, cur);
+    });
+  }
+
+  const welderNdtDeficits: string[] = [];
+  const planPct = Math.max(rkPlanPct, uzkPlanPct);
+  if (planPct > 0) {
+    for (const [stamp, stats] of welderStats.entries()) {
+      const requiredForWelder = Math.max(1, Math.ceil(stats.welded * (planPct / 100)));
+      if (stats.controlled < requiredForWelder) {
+        welderNdtDeficits.push(`${stamp} (${stats.controlled}/${requiredForWelder})`);
+      }
+    }
+  }
+
   let ndtStatus: 'sufficient' | 'insufficient' | 'no_welding' = 'no_welding';
   let ndtStatusBadge: 'Достаточно НК' | 'Недостаточно НК' | 'Нет сварки' = 'Нет сварки';
 
   if (weldedJoints > 0) {
     const isRkSufficient = rkRequired === 0 || rkControlled >= rkRequired;
     const isUzkSufficient = uzkRequired === 0 || uzkControlled >= uzkRequired;
+    const areWeldersSufficient = welderNdtDeficits.length === 0;
 
-    if (isRkSufficient && isUzkSufficient) {
+    if (isRkSufficient && isUzkSufficient && areWeldersSufficient) {
       ndtStatus = 'sufficient';
       ndtStatusBadge = 'Достаточно НК';
     } else {
@@ -340,11 +382,14 @@ export function computeLineListItemStatus(
     totalJoints > 0 && weldedJoints === totalJoints && controlledJoints === totalJoints;
 
   const detailInfo = `(РК: ${rkControlled}/${rkRequired}, УЗК: ${uzkControlled}/${uzkRequired})`;
+  const welderDeficitNote = welderNdtDeficits.length > 0
+    ? ` [Дефицит НК по сварщикам: ${welderNdtDeficits.join(', ')}]`
+    : '';
   const statusLabel = isCompleted
     ? `Все стыки сварены и проконтролированы (${controlledJoints}/${totalJoints})`
     : weldedJoints === 0
     ? 'Нет сварки'
-    : `${ndtStatusBadge} ${detailInfo}`;
+    : `${ndtStatusBadge} ${detailInfo}${welderDeficitNote}`;
 
   return {
     isCompleted,
@@ -358,5 +403,6 @@ export function computeLineListItemStatus(
     rkControlled,
     uzkRequired,
     uzkControlled,
+    welderNdtDeficits,
   };
 }

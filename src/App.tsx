@@ -2289,7 +2289,7 @@ export default function App() {
                 : derivedFacilities
             }
             selectedRdCode={selectedRdCode}
-            canEdit={currentUser?.role === 'admin'}
+            canEdit={userPermissions.canEditLrvCatalog}
             currentUserRoleLabel={userPermissions.categoryLabel}
             onAddLrvItems={(newItems) => {
               recordUndoSnapshot(`Добавление в каталог ЛРВ (${newItems.length} поз.)`);

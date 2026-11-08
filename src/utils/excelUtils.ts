@@ -1,4 +1,12 @@
-import * as XLSX from 'xlsx';
+import type * as XLSXType from 'xlsx';
+
+let cachedXlsx: typeof XLSXType | null = null;
+async function getXlsx(): Promise<typeof XLSXType> {
+  if (cachedXlsx) return cachedXlsx;
+  cachedXlsx = await import('xlsx');
+  return cachedXlsx;
+}
+
 import {
   JournalStandard,
   LRVItem,
@@ -39,10 +47,11 @@ export function triggerBlobDownload(blob: Blob, filename: string): void {
   }, 2500);
 }
 
-export function saveWorkbookFile(
-  workbook: XLSX.WorkBook,
+export async function saveWorkbookFile(
+  workbook: any,
   filename: string
-): void {
+): Promise<void> {
+  const XLSX = await getXlsx();
   try {
     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], {
@@ -57,13 +66,14 @@ export function saveWorkbookFile(
 /**
  * Экспорт всех данных таблицы сварных стыков в формат .XLSX или .CSV (вызывается из меню-бутерброда)
  */
-export function exportAllJointsToFile(
+export async function exportAllJointsToFile(
   joints: WeldJoint[],
   format: 'xlsx' | 'csv'
-): void {
+): Promise<void> {
   const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
 
   if (format === 'xlsx') {
+    const XLSX = await getXlsx();
     const rows = joints.map((joint) => {
       const record: Record<string, string | number> = {};
       for (const col of ALL_COLUMNS) {
@@ -85,7 +95,7 @@ export function exportAllJointsToFile(
     }));
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Реестр стыков');
-    saveWorkbookFile(workbook, `ZAYCHICK_Reestr_Stykov_${dateStamp}.xlsx`);
+    await saveWorkbookFile(workbook, `ZAYCHICK_Reestr_Stykov_${dateStamp}.xlsx`);
     return;
   }
 
@@ -111,12 +121,13 @@ export function exportAllJointsToFile(
 /**
  * Экспорт нормативных журналов сварочных работ (СТО Газпром 15-1.1-002-2023 — 49 граф, ГОСТ 32569-2013 — 17 граф) в книгу .XLSX
  */
-export function exportWeldingJournalToExcel(
+export async function exportWeldingJournalToExcel(
   joints: WeldJoint[],
   standard: JournalStandard,
   materials: WeldingMaterialCertificate[] = [],
   lrvCatalog: LRVItem[] = []
-): void {
+): Promise<void> {
+  const XLSX = await getXlsx();
   const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
 
   const isGost = standard === 'ГОСТ 32569-2013';
@@ -148,7 +159,7 @@ export function exportWeldingJournalToExcel(
   const workbook = XLSX.utils.book_new();
   const sheetName = isGost ? 'Журнал ГОСТ 32569' : 'Журнал СТО Газпром';
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-  saveWorkbookFile(
+  await saveWorkbookFile(
     workbook,
     `Журнал_сварки_${standard.replace(/\s+/g, '_')}_${dateStamp}.xlsx`
   );
@@ -157,11 +168,12 @@ export function exportWeldingJournalToExcel(
 /**
  * Экспорт раздела «Проект (лайнлист)» или шаблона Excel с 16 полями
  */
-export function exportProjectLineListToExcel(
+export async function exportProjectLineListToExcel(
   items: ProjectLineItem[],
   allJoints: WeldJoint[],
   isTemplate = false
-): void {
+): Promise<void> {
+  const XLSX = await getXlsx();
   const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
 
   const sourceItems: ProjectLineItem[] = isTemplate
@@ -256,7 +268,7 @@ export function exportProjectLineListToExcel(
   ];
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Проект (лайнлист)');
-  saveWorkbookFile(
+  await saveWorkbookFile(
     workbook,
     isTemplate
       ? `ZAYCHICK_Shablon_LineList.xlsx`
@@ -272,6 +284,7 @@ export async function readProjectLineListFromExcelFile(
   defaultObjectName: string,
   defaultRdCode: string
 ): Promise<ProjectLineItem[]> {
+  const XLSX = await getXlsx();
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
   const firstSheetName = workbook.SheetNames[0];
@@ -286,10 +299,11 @@ export async function readProjectLineListFromExcelFile(
 /**
  * Экспорт каталога ЛРВ или подготовленного шаблона Excel (.xlsx)
  */
-export function exportLrvCatalogToExcel(
+export async function exportLrvCatalogToExcel(
   items: LRVItem[],
   isTemplate = false
-): void {
+): Promise<void> {
+  const XLSX = await getXlsx();
   const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
 
   const sourceItems: LRVItem[] = isTemplate
@@ -379,7 +393,7 @@ export function exportLrvCatalogToExcel(
   ];
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Каталог ЛРВ');
-  saveWorkbookFile(
+  await saveWorkbookFile(
     workbook,
     isTemplate
       ? `ZAYCHICK_Shablon_LRV.xlsx`
@@ -396,6 +410,7 @@ export async function readLrvCatalogFromExcelFile(
   defaultRdCode: string,
   existingCodes?: Set<string>
 ): Promise<LRVItem[]> {
+  const XLSX = await getXlsx();
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
   const firstSheetName = workbook.SheetNames[0];
@@ -411,4 +426,3 @@ export async function readLrvCatalogFromExcelFile(
     existingCodes
   );
 }
-

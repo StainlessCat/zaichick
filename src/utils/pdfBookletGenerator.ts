@@ -1,15 +1,25 @@
-import pdfMake from 'pdfmake/build/pdfmake';
-import vfsFonts from 'pdfmake/build/vfs_fonts';
 import type { TDocumentDefinitions } from 'pdfmake/interfaces';
 
-const vfsRecord =
-  (vfsFonts as unknown as { pdfMake?: { vfs: Record<string, string> } }).pdfMake
-    ?.vfs || (vfsFonts as unknown as Record<string, string>);
+let cachedPdfMake: any = null;
 
-if (typeof (pdfMake as unknown as { addVirtualFileSystem?: (v: Record<string, string>) => void }).addVirtualFileSystem === 'function') {
-  (pdfMake as unknown as { addVirtualFileSystem: (v: Record<string, string>) => void }).addVirtualFileSystem(vfsRecord);
-} else {
-  (pdfMake as unknown as { vfs: Record<string, string> }).vfs = vfsRecord;
+async function getPdfMakeInstance(): Promise<any> {
+  if (cachedPdfMake) return cachedPdfMake;
+  const [pdfMakeModule, vfsFontsModule] = await Promise.all([
+    import('pdfmake/build/pdfmake'),
+    import('pdfmake/build/vfs_fonts'),
+  ]);
+  const pdfMake = (pdfMakeModule as any).default || pdfMakeModule;
+  const vfsFonts = (vfsFontsModule as any).default || vfsFontsModule;
+  const vfsRecord =
+    (vfsFonts as any)?.pdfMake?.vfs || (vfsFonts as any);
+
+  if (typeof (pdfMake as any).addVirtualFileSystem === 'function') {
+    (pdfMake as any).addVirtualFileSystem(vfsRecord);
+  } else {
+    (pdfMake as any).vfs = vfsRecord;
+  }
+  cachedPdfMake = pdfMake;
+  return pdfMake;
 }
 
 export function buildUserGuideBookletDocDefinition(): TDocumentDefinitions {
@@ -768,8 +778,9 @@ export function buildUserGuideBookletDocDefinition(): TDocumentDefinitions {
   };
 }
 
-export function downloadUserGuideBookletPdf(): void {
+export async function downloadUserGuideBookletPdf(): Promise<void> {
   const docDef = buildUserGuideBookletDocDefinition();
+  const pdfMake = await getPdfMakeInstance();
   const pdfDoc = pdfMake.createPdf(docDef);
   if (typeof (pdfDoc as any).getBlob === 'function') {
     (pdfDoc as any).getBlob((blob: Blob) => {
@@ -787,14 +798,14 @@ export function downloadUserGuideBookletPdf(): void {
   }
 }
 
-export function exportWeldingJournalToPdfA3(
+export async function exportWeldingJournalToPdfA3(
   standardTitle: string,
   objectName: string,
   rdCode: string,
   headers: string[],
   colNumbers: string[],
   rows: string[][]
-): void {
+): Promise<void> {
   const brandNavy = '#1e3799';
   const isSto = colNumbers.length > 20;
   const fontSize = isSto ? 5.2 : 7.5;
@@ -873,6 +884,7 @@ export function exportWeldingJournalToPdfA3(
   };
 
   const fileName = `Журнал_сварки_А3_${standardTitle.replace(/[\s/]+/g, '_')}.pdf`;
+  const pdfMake = await getPdfMakeInstance();
   const pdfDoc = pdfMake.createPdf(docDef);
   if (typeof (pdfDoc as any).getBlob === 'function') {
     (pdfDoc as any).getBlob((blob: Blob) => {

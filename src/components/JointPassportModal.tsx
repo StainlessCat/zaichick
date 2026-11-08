@@ -1742,7 +1742,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 </button>
 
                 {/* Таб 5: История (только для Администратора) */}
-                {mode === 'edit' && currentUser?.role === 'admin' && (
+                {mode === 'edit' && rbac.category === 'admin' && (
                   <button
                     type="button"
                     onClick={() => setActiveTab('history')}
@@ -1852,7 +1852,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
               )}
 
               {/* ВКЛАДКА 5: ИСТОРИЯ ИЗМЕНЕНИЙ ЭТОГО СТЫКА (только для Администратора) */}
-              {activeTab === 'history' && mode === 'edit' && currentUser?.role === 'admin' && (
+              {activeTab === 'history' && mode === 'edit' && rbac.category === 'admin' && (
                 <PassportHistoryTab
                   jointNumber={form.jointNumber}
                   auditLogsForJoint={auditLogsForJoint}

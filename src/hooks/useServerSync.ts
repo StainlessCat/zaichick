@@ -11,6 +11,11 @@ import type {
   WeldingMaterialCertificate,
   WeldJoint,
 } from '../types/welding';
+import {
+  normalizeTechCard,
+  normalizeWelderProfile,
+  normalizeWeldJoint,
+} from '../utils/entityNormalizers';
 
 export interface FacilityGeoOverride {
   region: string;
@@ -104,10 +109,12 @@ export function useServerSync({
           setProjectLineList(payload.data.projectLineList);
         if (Array.isArray(payload.data.lrvCatalog))
           setLrvCatalog(payload.data.lrvCatalog);
-        if (Array.isArray(payload.data.welders))
-          setWelders(payload.data.welders);
-        if (Array.isArray(payload.data.techCards))
-          setTechCards(payload.data.techCards);
+        if (Array.isArray(payload.data.welders)) {
+          setWelders(payload.data.welders.map((w: WelderProfile) => normalizeWelderProfile(w)));
+        }
+        if (Array.isArray(payload.data.techCards)) {
+          setTechCards(payload.data.techCards.map((tc: TechCardItem) => normalizeTechCard(tc)));
+        }
         if (Array.isArray(payload.data.weldingMaterials))
           setWeldingMaterials(payload.data.weldingMaterials);
         if (

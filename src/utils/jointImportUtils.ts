@@ -1,4 +1,11 @@
-import * as XLSX from 'xlsx';
+import type * as XLSXType from 'xlsx';
+
+let cachedXlsx: typeof XLSXType | null = null;
+async function getXlsx(): Promise<typeof XLSXType> {
+  if (cachedXlsx) return cachedXlsx;
+  cachedXlsx = await import('xlsx');
+  return cachedXlsx;
+}
 import {
   LRVItem,
   ProjectLineItem,
@@ -665,10 +672,10 @@ export function parseAndValidateJointsImport(
 /**
  * Генерирует и скачивает шаблон Excel (.xlsx) для импорта стыков с образцами данных
  */
-export function exportJointsExcelTemplate(
+export async function exportJointsExcelTemplate(
   projectLineList: ProjectLineItem[],
   lrvCatalog: LRVItem[]
-): void {
+): Promise<void> {
   const line1 = projectLineList[0] || {
     rdCode: '0092.049.Р.13/1 0004 УКПГ.045.0077.001-TX3',
     lineNumber: 'ФП1.2/1',
@@ -725,6 +732,7 @@ export function exportJointsExcelTemplate(
     },
   ];
 
+  const XLSX = await getXlsx();
   const worksheet = XLSX.utils.json_to_sheet(rows);
   worksheet['!cols'] = [
     { wch: 38 }, // Шифр РД
@@ -764,6 +772,7 @@ export function exportJointsExcelTemplate(
 export async function readExcelFileRows(
   file: File
 ): Promise<Record<string, unknown>[]> {
+  const XLSX = await getXlsx();
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
   const firstSheetName = workbook.SheetNames[0];

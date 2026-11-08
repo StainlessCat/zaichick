@@ -9,6 +9,7 @@ import {
   FacilityObject,
   LRVItem,
   ProjectLineItem,
+  WelderNaksCert,
   WelderProfile,
   WeldJoint,
 } from '../types/welding';
@@ -266,6 +267,84 @@ export function checkRepairEligibility(
 }
 
 /**
+ * Проверяет, аттестован ли сварщик на требуемый способ сварки.
+ * Если у сварщика есть удостоверение НАКС на указанный способ (или комбинированный допуск),
+ * возвращает isAllowed: true. В противном случае isAllowed: false с понятной причиной.
+ */
+export function checkWelderMethodCompliance(
+  welder: WelderProfile | undefined | null,
+  requiredMethod?: string
+): { isAllowed: boolean; reason?: string } {
+  if (!welder || !requiredMethod || !requiredMethod.trim()) {
+    return { isAllowed: true };
+  }
+
+  const req = requiredMethod.trim();
+
+  // Для бригадного клейма проверяем состав бригады и общие допуски
+  if (welder.isBrigade) {
+    const methods = welder.allowedMethods || [];
+    const hasMatch = methods.some(
+      (m) => m === req || m.includes(req) || req.includes(m)
+    );
+    if (hasMatch) return { isAllowed: true };
+    return {
+      isAllowed: false,
+      reason: `Бригада не аттестована на ${req}`,
+    };
+  }
+
+  // 1. Проверяем индивидуальные удостоверения НАКС по способам (naksCerts)
+  if (welder.naksCerts && welder.naksCerts.length > 0) {
+    const hasCert = welder.naksCerts.some((c) => {
+      if (c.weldingType === req) return true;
+      if (req === 'РАД' && (c.weldingType === 'РАД' || c.weldingType === 'РАД+РД')) return true;
+      if (req === 'РД' && (c.weldingType === 'РД' || c.weldingType === 'РАД+РД')) return true;
+      if (req === 'РАД+РД' && c.weldingType === 'РАД+РД') return true;
+      return false;
+    });
+    if (hasCert) return { isAllowed: true };
+
+    // Если требуется РАД+РД, но у сварщика есть раздельные удостоверения и на РАД, и на РД
+    if (req === 'РАД+РД') {
+      const hasRad = welder.naksCerts.some((c) => c.weldingType === 'РАД');
+      const hasRd = welder.naksCerts.some((c) => c.weldingType === 'РД');
+      if (hasRad && hasRd) return { isAllowed: true };
+    }
+  }
+
+  // 2. Проверяем список разрешенных методов (allowedMethods)
+  const methods = welder.allowedMethods || [];
+  const hasMethod = methods.some((m) => {
+    if (m === req) return true;
+    if (req === 'РАД' && (m === 'РАД' || m === 'РАД+РД')) return true;
+    if (req === 'РД' && (m === 'РД' || m === 'РАД+РД')) return true;
+    if (req === 'РАД+РД' && m === 'РАД+РД') return true;
+    return false;
+  });
+  if (hasMethod) return { isAllowed: true };
+
+  if (req === 'РАД+РД' && methods.includes('РАД') && methods.includes('РД')) {
+    return { isAllowed: true };
+  }
+
+  // 3. Фолбэк по текстовой области аттестации
+  const area = welder.attestationArea || '';
+  if (
+    area.includes(req) ||
+    (req === 'РАД' && area.includes('РАД')) ||
+    (req === 'РД' && area.includes('РД'))
+  ) {
+    return { isAllowed: true };
+  }
+
+  return {
+    isAllowed: false,
+    reason: `Нет аттестации на ${req}`,
+  };
+}
+
+/**
  * Валидация соответствия аттестации НАКС сварщика свариваемому соединению
  */
 export interface WelderNaksComplianceCheck {
@@ -305,9 +384,19 @@ export function validateWelderNaksAttestation(
   // Парсинг параметров из attestationArea, если структурированные поля не заполнены
   const area = welder.attestationArea || '';
 
-  // 1. Диаметр
-  let minD = welder.minDiameterMm;
-  let maxD = welder.maxDiameterMm;
+  // Если указан способ сварки, находим конкретное удостоверение НАКС на этот способ
+  const specificCert: WelderNaksCert | undefined = joint.weldingType && welder.naksCerts
+    ? welder.naksCerts.find(
+        (c) =>
+          c.weldingType === joint.weldingType ||
+          (joint.weldingType === 'РАД' && c.weldingType === 'РАД+РД') ||
+          (joint.weldingType === 'РД' && c.weldingType === 'РАД+РД')
+      )
+    : undefined;
+
+  // 1. Диаметр (приоритет: поля конкретного удостоверения НАКС на способ)
+  let minD = specificCert?.minDiameterMm ?? welder.minDiameterMm;
+  let maxD = specificCert?.maxDiameterMm ?? welder.maxDiameterMm;
   if (minD === undefined || maxD === undefined) {
     const dMatch = area.match(/Ø\s*(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)/i);
     if (dMatch) {
@@ -320,13 +409,14 @@ export function validateWelderNaksAttestation(
   if (minD !== undefined && maxD !== undefined && joint.diameterMm > 0) {
     if (joint.diameterMm < minD || joint.diameterMm > maxD) {
       isDiameterValid = false;
-      warnings.push(`Диаметр стыка Ø${joint.diameterMm} мм выходит за границы аттестации НАКС сварщика (Ø${minD}–${maxD} мм).`);
+      const certHint = specificCert ? ` по удостоверению ${specificCert.certNumber} (${specificCert.weldingType})` : '';
+      warnings.push(`Диаметр стыка Ø${joint.diameterMm} мм выходит за границы аттестации НАКС сварщика (Ø${minD}–${maxD} мм)${certHint}.`);
     }
   }
 
-  // 2. Толщина стенки
-  let minS = welder.minWallThicknessMm;
-  let maxS = welder.maxWallThicknessMm;
+  // 2. Толщина стенки (приоритет: поля конкретного удостоверения НАКС на способ)
+  let minS = specificCert?.minWallThicknessMm ?? welder.minWallThicknessMm;
+  let maxS = specificCert?.maxWallThicknessMm ?? welder.maxWallThicknessMm;
   if (minS === undefined || maxS === undefined) {
     const sMatch = area.match(/S\s*(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)/i);
     if (sMatch) {
@@ -339,23 +429,28 @@ export function validateWelderNaksAttestation(
   if (minS !== undefined && maxS !== undefined && joint.wallThickness > 0) {
     if (joint.wallThickness < minS || joint.wallThickness > maxS) {
       isThicknessValid = false;
-      warnings.push(`Толщина стенки S${joint.wallThickness} мм выходит за границы аттестации НАКС сварщика (S${minS}–${maxS} мм).`);
+      const certHint = specificCert ? ` по удостоверению ${specificCert.certNumber} (${specificCert.weldingType})` : '';
+      warnings.push(`Толщина стенки S${joint.wallThickness} мм выходит за границы аттестации НАКС сварщика (S${minS}–${maxS} мм)${certHint}.`);
     }
   }
 
-  // 3. Группа стали
+  // 3. Группа стали (приоритет: поля конкретного удостоверения НАКС)
   let isSteelGroupValid = true;
   const jointSteel = (joint.steelGroup || '').toUpperCase().trim();
   if (jointSteel) {
-    const allowedGroups = welder.steelGroups && welder.steelGroups.length > 0
-      ? welder.steelGroups.map((g) => g.toUpperCase().trim())
-      : (area.match(/М\d{2}|M\d{2}/gi) || []).map((g) => g.toUpperCase().trim());
+    const rawGroups = (specificCert?.steelGroups && specificCert.steelGroups.length > 0)
+      ? specificCert.steelGroups
+      : (welder.steelGroups && welder.steelGroups.length > 0)
+      ? welder.steelGroups
+      : (area.match(/М\d{2}|M\d{2}/gi) || []);
+    const allowedGroups = rawGroups.map((g: string) => g.toUpperCase().trim());
 
     if (allowedGroups.length > 0) {
-      const match = allowedGroups.some((g) => jointSteel.includes(g) || g.includes(jointSteel));
+      const match = allowedGroups.some((g: string) => jointSteel.includes(g) || g.includes(jointSteel));
       if (!match) {
         isSteelGroupValid = false;
-        warnings.push(`Группа стали стыка (${joint.steelGroup}) не входит в аттестованные группы сварщика (${allowedGroups.join(', ')}).`);
+        const certHint = specificCert ? ` по удостоверению ${specificCert.certNumber}` : '';
+        warnings.push(`Группа стали стыка (${joint.steelGroup}) не входит в аттестованные группы сварщика (${allowedGroups.join(', ')})${certHint}.`);
       }
     }
   }
@@ -363,13 +458,13 @@ export function validateWelderNaksAttestation(
   // 4. Способ сварки
   let isMethodValid = true;
   const weldMethod = (joint.weldingType || '').trim();
-  if (weldMethod && welder.allowedMethods && welder.allowedMethods.length > 0) {
-    const hasMethod = welder.allowedMethods.some(
-      (m) => m === weldMethod || (weldMethod.includes('+') && m.includes(weldMethod))
-    );
-    if (!hasMethod) {
+  if (weldMethod) {
+    const methodCheck = checkWelderMethodCompliance(welder, weldMethod);
+    if (!methodCheck.isAllowed) {
       isMethodValid = false;
-      warnings.push(`Способ сварки "${weldMethod}" не разрешен в удостоверении НАКС (допущены: ${welder.allowedMethods.join(', ')}).`);
+      warnings.push(
+        `Способ сварки "${weldMethod}" не разрешен в удостоверении НАКС (допущены: ${(welder.allowedMethods || []).join(', ') || '—'}).`
+      );
     }
   }
 

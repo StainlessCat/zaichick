@@ -217,17 +217,16 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
 
           <div className="lg:col-span-4">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1 h-5">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1 h-5 min-h-[20px] max-h-[20px] overflow-hidden leading-none">
               <span className="truncate">Техкарта (ТК) *</span>
               {autoMatchedTechCard && autoMatchedTechCard.number !== form.techCardNumber && (
                 <button
                   type="button"
                   onClick={() => handleSelectTechCard(autoMatchedTechCard.number)}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 font-bold shrink-0 transition-colors"
-                  title={`Автоподбор ТК под Ø${currentJointDiam}×${currentJointWall} мм: ${autoMatchedTechCard.number} (${autoMatchedTechCard.weldingType})`}
+                  className="p-1 rounded text-amber-600 hover:text-amber-700 hover:bg-amber-100 transition-colors shrink-0"
+                  title={`Автоподбор ТК под Ø${currentJointDiam}×${currentJointWall} мм: нажать для применения ${autoMatchedTechCard.number} (${autoMatchedTechCard.weldingType})`}
                 >
-                  <Sparkles className="w-3 h-3 text-amber-500 fill-amber-400 shrink-0" />
-                  <span>По ТК</span>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
                 </button>
               )}
               {autoMatchedTechCard && autoMatchedTechCard.number === form.techCardNumber && (
@@ -359,6 +358,9 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
               value={welder1Stamp}
               options={personalWelders}
               isPrimary
+              requiredWeldingMethod={
+                form.weldingType === 'РАД+РД' ? 'РАД' : form.weldingType
+              }
               referenceDate={form.weldingDate}
               onChange={handleWelder1Change}
             />
@@ -371,6 +373,9 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
               value={welder2Stamp}
               options={personalWelders}
               excludeStamps={welder1Stamp ? [welder1Stamp] : []}
+              requiredWeldingMethod={
+                form.weldingType === 'РАД+РД' ? 'РД' : form.weldingType
+              }
               referenceDate={form.weldingDate}
               onChange={handleWelder2Change}
             />
@@ -383,6 +388,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
               value={brigadeStamp}
               options={brigadeProfiles}
               isBrigade
+              requiredWeldingMethod={form.weldingType}
               referenceDate={form.weldingDate}
               onChange={handleBrigadeStampChange}
             />

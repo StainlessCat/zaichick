@@ -1,0 +1,11 @@
+node_modules
+.git
+.github
+dist
+coverage
+data/*.sqlite*
+data/backups/*
+data/simulation_screenshots
+*.log
+.DS_Store
+Thumbs.db

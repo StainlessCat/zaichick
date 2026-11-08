@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
+import { normalizeTechCard, normalizeWelderProfile } from '../utils/entityNormalizers';
 import {
   AuditLogEntry,
   ColumnTemplate,
@@ -132,6 +133,9 @@ export class UnifiedServerDatabase {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
 
+    // Создаем резервную копию базы данных при старте сервера с ротацией последних 5 копий
+    this.createStartupBackup();
+
     try {
       const nodeSqlite = require('node:sqlite');
       if (nodeSqlite && nodeSqlite.DatabaseSync) {
@@ -151,6 +155,46 @@ export class UnifiedServerDatabase {
     this.engineName = 'Transactional File DB (WAL JSON)';
     this.journalMode = 'ATOMIC_RENAME';
     this.ensureSeededFallback();
+  }
+
+  /**
+   * Создает снимок базы данных SQLite в data/backups/ перед открытием сессии,
+   * выполняя ротацию и сохраняя ровно 5 последних архивных копий.
+   */
+  private createStartupBackup(): void {
+    try {
+      if (!fs.existsSync(SQLITE_DB_PATH)) return;
+      const stat = fs.statSync(SQLITE_DB_PATH);
+      if (stat.size === 0) return;
+
+      const backupsDir = path.join(DATA_DIR, 'backups');
+      if (!fs.existsSync(backupsDir)) {
+        fs.mkdirSync(backupsDir, { recursive: true });
+      }
+
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const backupPath = path.join(backupsDir, `zaychick-backup-${ts}.sqlite`);
+
+      fs.copyFileSync(SQLITE_DB_PATH, backupPath);
+
+      const existingBackups = fs
+        .readdirSync(backupsDir)
+        .filter((f) => f.startsWith('zaychick-backup-') && f.endsWith('.sqlite'))
+        .sort();
+
+      while (existingBackups.length > 5) {
+        const oldest = existingBackups.shift();
+        if (oldest) {
+          try {
+            fs.unlinkSync(path.join(backupsDir, oldest));
+          } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('[ZAYCHICK] Автоматический бэкап при старте пропущен:', err);
+    }
   }
 
   private createSchema() {
@@ -476,7 +520,7 @@ export class UnifiedServerDatabase {
           payload_json = excluded.payload_json
       `);
       (data.welders || []).forEach((w, idx) => {
-        upsertWelder.run(w.stamp, idx, JSON.stringify(w));
+        const nw = normalizeWelderProfile(w); upsertWelder.run(nw.stamp, idx, JSON.stringify(nw));
       });
 
       // 5. Tech Cards (UPSERT + differential delete)
@@ -501,7 +545,7 @@ export class UnifiedServerDatabase {
           payload_json = excluded.payload_json
       `);
       (data.techCards || []).forEach((t, idx) => {
-        upsertTc.run(t.id, idx, t.number || '', JSON.stringify(t));
+        const nt = normalizeTechCard(t); upsertTc.run(nt.id, idx, nt.number || '', JSON.stringify(nt));
       });
 
       // 6. Welding Materials (UPSERT + differential delete)
@@ -927,12 +971,34 @@ export class UnifiedServerDatabase {
     const welders: WelderProfile[] = this.sqliteDb
       .prepare('SELECT payload_json FROM welders ORDER BY sort_order ASC')
       .all()
-      .map((r: any) => JSON.parse(r.payload_json));
+      .map((r: any) => {
+        const w = JSON.parse(r.payload_json);
+        if (w.naksCerts && w.naksCerts.length > 0) return w;
+        const methods = w.allowedMethods && w.allowedMethods.length > 0 ? w.allowedMethods : ['РД'];
+        return {
+          ...w,
+          naksCerts: methods.map((m: any, idx: number) => ({
+            weldingType: m,
+            certNumber: w.certNumber ? `${w.certNumber}-${m}` : `НАКС-${m}-${w.stamp}`,
+            issueDate: w.certIssueDate,
+            expiryDate: w.certExpiryDate,
+            admissionSheetNumber: w.admissionSheetNumber ? `${w.admissionSheetNumber}/${idx + 1}` : undefined,
+            admissionSheetDate: w.admissionSheetDate,
+          })),
+        };
+      });
 
     const techCards: TechCardItem[] = this.sqliteDb
       .prepare('SELECT payload_json FROM tech_cards ORDER BY sort_order ASC')
       .all()
-      .map((r: any) => JSON.parse(r.payload_json));
+      .map((r: any) => {
+        const tc = JSON.parse(r.payload_json);
+        return {
+          ...tc,
+          jointKind: tc.jointKind || (tc.number && tc.number.includes('УГЛ') ? 'Угловое' : 'Стыковое'),
+          elementCombination: tc.elementCombination || 'Труба+Труба',
+        };
+      });
 
     const weldingMaterials: WeldingMaterialCertificate[] = this.sqliteDb
       .prepare('SELECT payload_json FROM welding_materials ORDER BY sort_order ASC')

@@ -1283,50 +1283,64 @@ export function findMatchingTechCard(
   const wall = Number(params.wallThicknessMm) || 0;
   if (!techCards || techCards.length === 0 || diam <= 0) return null;
 
-  // 1. Фильтруем ТК по диапазону диаметров и толщин стенок
-  const matchedRange = techCards.filter((tc) => {
+  // 1. Строгая фильтрация (Hard Constraints): способ сварки, геометрия и диаметр
+  const strictPool = techCards.filter((tc) => {
+    // Способ сварки — строгий фильтр
+    if (params.weldingType && params.weldingType.trim()) {
+      const reqMethod = params.weldingType.trim();
+      if (reqMethod === 'РАД' && tc.weldingType !== 'РАД') return false;
+      if (reqMethod === 'РД' && tc.weldingType !== 'РД') return false;
+      if (reqMethod === 'МП' && tc.weldingType !== 'МП') return false;
+      if (reqMethod === 'РАД+РД' && tc.weldingType !== 'РАД+РД' && tc.weldingType !== 'РАД' && tc.weldingType !== 'РД') {
+        return false;
+      }
+    }
+
+    // Тип соединения (стыковое / угловое) — строгий фильтр
+    if (params.jointKind) {
+      if (tc.jointKind && tc.jointKind !== params.jointKind) {
+        return false;
+      }
+    }
+
+    // Диапазон диаметра
     const dMin = tc.minDiameterMm ?? 0;
     const dMax = tc.maxDiameterMm ?? 9999;
-    const sMin = tc.minWallThicknessMm ?? 0;
-    const sMax = tc.maxWallThicknessMm ?? 999;
-    const diamFit = diam >= dMin && diam <= dMax;
-    const wallFit = wall > 0 ? wall >= sMin && wall <= sMax : true;
-    return diamFit && wallFit;
+    if (diam < dMin || diam > dMax) {
+      return false;
+    }
+
+    return true;
   });
 
-  const pool = matchedRange.length > 0 ? matchedRange : techCards.filter(
-    (tc) => diam >= (tc.minDiameterMm ?? 0) && diam <= (tc.maxDiameterMm ?? 9999)
-  );
-
-  if (pool.length === 0) {
+  if (strictPool.length === 0) {
     return null;
   }
 
-  // Ранжирование кандидатов по совпадению критериев:
-  // - тип соединения (стыковое / угловое)
-  // - комбинация элементов (Труба+Труба, Труба+СДТ, СДТ+СДТ, Труба+ЗРА, СДТ+ЗРА)
-  // - способ сварки (РАД, РД, РАД+РД, МП)
+  // 2. Ранжирование кандидатов по совпадению вторичных критериев:
+  // - точное совпадение комбинации элементов (Труба+Труба, Труба+СДТ, СДТ+СДТ, Труба+ЗРА, СДТ+ЗРА)
+  // - точное попадание по толщине стенки
+  // - точное совпадение способа (при комбинированном поиске)
   // - марка стали
-  const scored = pool.map((tc) => {
+  const scored = strictPool.map((tc) => {
     let score = 0;
-    if (params.jointKind && tc.jointKind === params.jointKind) {
-      score += 30;
-    }
     if (params.elementCombination && tc.elementCombination === params.elementCombination) {
-      score += 25;
+      score += 40;
+    }
+    if (wall > 0 && wall >= tc.minWallThicknessMm && wall <= tc.maxWallThicknessMm) {
+      score += 30;
     }
     if (params.weldingType && tc.weldingType === params.weldingType) {
       score += 20;
     }
+    if (params.jointKind && tc.jointKind === params.jointKind) {
+      score += 15;
+    }
     if (params.steelGrade) {
       const cleanSteel = params.steelGrade.toLowerCase().replace(/сталь\s*|ст\.?\s*/g, '');
       if (tc.steelGroup?.toLowerCase().includes(cleanSteel)) {
-        score += 15;
+        score += 10;
       }
-    }
-    // Точное попадание по толщине стенки
-    if (wall > 0 && wall >= tc.minWallThicknessMm && wall <= tc.maxWallThicknessMm) {
-      score += 10;
     }
     return { tc, score };
   });

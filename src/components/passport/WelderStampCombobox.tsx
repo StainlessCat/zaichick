@@ -9,6 +9,7 @@ import {
 import { WelderProfile } from '../../types/welding';
 import {
   checkNaksCertStatus,
+  checkWelderMethodCompliance,
   findWelderByStamp,
   formatDateDDMMYY,
   normalizeStampString,
@@ -26,6 +27,7 @@ export interface WelderStampComboboxProps {
   isPrimary?: boolean;
   isBrigade?: boolean;
   referenceDate?: string;
+  requiredWeldingMethod?: string;
   onChange: (newStamp: string) => void;
 }
 
@@ -40,6 +42,7 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
   isPrimary = false,
   isBrigade = false,
   referenceDate,
+  requiredWeldingMethod,
   onChange,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -59,9 +62,14 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
         setIsOpen(false);
         const matched = findWelderByStamp(options, inputText, isBrigade);
         if (matched) {
-          setInputText(matched.stamp);
-          if (matched.stamp !== value) {
-            onChange(matched.stamp);
+          const comp = checkWelderMethodCompliance(matched, requiredWeldingMethod);
+          if (comp.isAllowed) {
+            setInputText(matched.stamp);
+            if (matched.stamp !== value) {
+              onChange(matched.stamp);
+            }
+          } else {
+            setInputText(value);
           }
         } else if (!inputText.trim()) {
           setInputText('');
@@ -73,7 +81,7 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [inputText, value, options, isBrigade, onChange]);
+  }, [inputText, value, options, isBrigade, requiredWeldingMethod, onChange]);
 
   const filteredOptions = useMemo(() => {
     const exactCurrent =
@@ -91,6 +99,11 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
     [options, value, inputText, isBrigade]
   );
 
+  const matchedMethodCheck = useMemo(
+    () => checkWelderMethodCompliance(matchedProfile, requiredWeldingMethod),
+    [matchedProfile, requiredWeldingMethod]
+  );
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextVal = e.target.value;
     setInputText(nextVal);
@@ -104,11 +117,23 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
 
     const exactMatch = findWelderByStamp(options, trimmed, isBrigade);
     if (exactMatch) {
-      onChange(exactMatch.stamp);
+      const comp = checkWelderMethodCompliance(exactMatch, requiredWeldingMethod);
+      if (comp.isAllowed) {
+        onChange(exactMatch.stamp);
+      }
     }
   };
 
   const handleSelectOption = (stamp: string) => {
+    if (stamp) {
+      const item = options.find(
+        (o) => normalizeStampString(o.stamp) === normalizeStampString(stamp)
+      );
+      if (item && requiredWeldingMethod) {
+        const comp = checkWelderMethodCompliance(item, requiredWeldingMethod);
+        if (!comp.isAllowed) return;
+      }
+    }
     setInputText(stamp);
     onChange(stamp);
     setIsOpen(false);
@@ -117,8 +142,11 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && isOpen) {
       e.preventDefault();
-      if (filteredOptions.length > 0) {
-        handleSelectOption(filteredOptions[0].stamp);
+      const firstAllowed = filteredOptions.find((opt) =>
+        checkWelderMethodCompliance(opt, requiredWeldingMethod).isAllowed
+      );
+      if (firstAllowed) {
+        handleSelectOption(firstAllowed.stamp);
       } else {
         setIsOpen(false);
       }
@@ -141,7 +169,12 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
           <span>{label}</span>
         </span>
         {matchedProfile && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
+            {!matchedMethodCheck.isAllowed && (
+              <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded">
+                {matchedMethodCheck.reason}
+              </span>
+            )}
             <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
               {matchedProfile.stamp}
             </span>
@@ -255,22 +288,40 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
               const isSelected =
                 normalizeStampString(item.stamp) ===
                 normalizeStampString(value);
+              const compliance = checkWelderMethodCompliance(
+                item,
+                requiredWeldingMethod
+              );
+              const isAllowed = compliance.isAllowed;
+
               return (
                 <button
                   key={item.stamp}
                   type="button"
                   role="option"
                   aria-selected={isSelected}
-                  onClick={() => handleSelectOption(item.stamp)}
+                  disabled={!isAllowed}
+                  onClick={() => {
+                    if (isAllowed) handleSelectOption(item.stamp);
+                  }}
+                  title={!isAllowed ? compliance.reason : undefined}
                   className={`w-full px-3 py-2 text-left text-xs transition-colors flex items-start justify-between gap-2 ${
-                    isSelected
+                    !isAllowed
+                      ? 'opacity-55 cursor-not-allowed bg-slate-50 text-slate-400'
+                      : isSelected
                       ? 'bg-[#e8f1fc] text-[#1e3799]'
                       : 'hover:bg-sky-50/70 text-slate-800'
                   }`}
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="px-1.5 py-0.5 rounded bg-[#1e3799] text-white font-mono text-[11px] font-bold shrink-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        className={`px-1.5 py-0.5 rounded font-mono text-[11px] font-bold shrink-0 ${
+                          !isAllowed
+                            ? 'bg-slate-400 text-white'
+                            : 'bg-[#1e3799] text-white'
+                        }`}
+                      >
                         {item.stamp}
                       </span>
                       <span className="font-semibold truncate">
@@ -278,6 +329,11 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
                           ? `Бригада (${(item.brigadeMembers || []).join(', ')})`
                           : item.fullName}
                       </span>
+                      {!isAllowed && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-600 border border-slate-300">
+                          {compliance.reason || `Нет аттестации на ${requiredWeldingMethod}`}
+                        </span>
+                      )}
                     </div>
                     <div className="text-[10px] text-slate-500 font-mono mt-0.5 truncate flex items-center gap-1.5 flex-wrap">
                       <span>НАКС: {item.certNumber || '—'}</span>
@@ -305,7 +361,7 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
                       })()}
                     </div>
                   </div>
-                  {isSelected && (
+                  {isSelected && isAllowed && (
                     <Check className="w-3.5 h-3.5 text-[#1e3799] shrink-0 mt-1" />
                   )}
                 </button>

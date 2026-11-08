@@ -9,6 +9,8 @@ coverage/
 !.env.example
 data/*.sqlite*
 data/zaychick-fallback.json
+data/backups/
+data/simulation_screenshots/
 .vscode/
 .idea/
 .antigravity/

@@ -27,6 +27,10 @@ import {
   pushHistorySnapshot,
 } from '../utils/weldingLogic';
 import {
+  normalizeTechCard,
+  normalizeWelderProfile,
+} from '../utils/entityNormalizers';
+import {
   FACILITY_OBJECTS,
   INITIAL_AUDIT_LOGS,
   INITIAL_COLUMN_TEMPLATES,
@@ -174,34 +178,13 @@ export function useAppState() {
     const list = Array.isArray(initialSavedState?.welders)
       ? initialSavedState.welders
       : WELDERS_DIRECTORY;
-    return list.map((w) => {
-      if (w.naksCerts && w.naksCerts.length > 0) return w;
-      const initialMatch = WELDERS_DIRECTORY.find((init) => init.stamp === w.stamp);
-      if (initialMatch?.naksCerts && initialMatch.naksCerts.length > 0) {
-        return { ...w, naksCerts: initialMatch.naksCerts };
-      }
-      const methods = w.allowedMethods || ['РД'];
-      const generated = methods.map((m, idx) => ({
-        weldingType: m,
-        certNumber: w.certNumber ? `${w.certNumber}-${m}` : `НАКС-${m}-${w.stamp}`,
-        issueDate: w.certIssueDate,
-        expiryDate: w.certExpiryDate,
-        admissionSheetNumber: w.admissionSheetNumber ? `${w.admissionSheetNumber}/${idx + 1}` : undefined,
-        admissionSheetDate: w.admissionSheetDate,
-      }));
-      return { ...w, naksCerts: generated };
-    });
+    return list.map((w) => normalizeWelderProfile(w));
   });
   const [techCards, setTechCards] = useState<TechCardItem[]>(() => {
     const list = Array.isArray(initialSavedState?.techCards)
       ? initialSavedState.techCards
       : INITIAL_TECH_CARDS;
-    return list.map((tc) => {
-      const initialMatch = INITIAL_TECH_CARDS.find((init) => init.number === tc.number);
-      const jointKind = tc.jointKind || initialMatch?.jointKind || 'Стыковое';
-      const elementCombination = tc.elementCombination || initialMatch?.elementCombination || 'Труба+Труба';
-      return { ...tc, jointKind, elementCombination };
-    });
+    return list.map((tc) => normalizeTechCard(tc));
   });
   const [weldingMaterials, setWeldingMaterials] = useState<
     WeldingMaterialCertificate[]

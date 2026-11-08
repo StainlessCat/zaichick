@@ -109,6 +109,11 @@ export interface WelderNaksCert {
   expiryDate?: string; // Срок действия
   admissionSheetNumber?: string; // Номер допускного листа
   admissionSheetDate?: string; // Дата допускного листа
+  minDiameterMm?: number; // Минимальный аттестованный диаметр трубы Ø, мм
+  maxDiameterMm?: number; // Максимальный аттестованный диаметр трубы Ø, мм
+  minWallThicknessMm?: number; // Минимальная аттестованная толщина стенки S, мм
+  maxWallThicknessMm?: number; // Максимальная аттестованная толщина стенки S, мм
+  steelGroups?: string[]; // Группы свариваемых сталей (М01, М03, М11 и др.)
 }
 
 /**

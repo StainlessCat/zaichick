@@ -94,9 +94,45 @@ async function startServer() {
   // Глобальный лимит тела запроса: 5 МБ для большинства роутов
   app.use(express.json({ limit: '5mb' }));
 
+  // Эндпоинт проверки работоспособности (Health Check для Docker / Kubernetes / мониторинга)
+  app.get('/api/health', (_req: Request, res: Response) => {
+    res.json({
+      status: 'ok',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+      engine: serverDb.getEngineMetadata().engineName,
+    });
+  });
+
+  // Легковесный Rate Limiter для защиты эндпоинта логина (не более 10 попыток в минуту с IP)
+  const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+  const checkLoginRateLimit = (ip: string): boolean => {
+    const now = Date.now();
+    const record = loginAttempts.get(ip);
+    if (!record || now > record.resetAt) {
+      loginAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
+      return true;
+    }
+    if (record.count >= 10) {
+      return false;
+    }
+    record.count += 1;
+    return true;
+  };
+
   // --- АУТЕНТИФИКАЦИЯ И СЕССИОННАЯ БЕЗОПАСНОСТЬ (Proposal 2) ---
   app.post('/api/auth/login', (req: Request, res: Response) => {
     try {
+      const clientIp = (req.ip || req.socket.remoteAddress || 'unknown') as string;
+      if (!checkLoginRateLimit(clientIp)) {
+        res.status(429).json({
+          status: 'error',
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Слишком много попыток входа. Пожалуйста, подождите 1 минуту.',
+        });
+        return;
+      }
+
       const { login, password } = req.body || {};
       if (!login || !password) {
         res.status(400).json({
