@@ -23,7 +23,7 @@ interface LoginModalProps {
   currentUser: UserAccount;
   accounts: UserAccount[];
   initialMode?: LoginModalMode;
-  onAuthenticate: (account: UserAccount) => void;
+  onAuthenticate: (account: UserAccount, inputPassword?: string) => void;
   onRegisterAccount?: (account: UserAccount) => void;
   onDeleteAccount?: (login: string) => void;
   onToggleAdminRights?: (
@@ -234,12 +234,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     if (existingAcc) {
       const isPasswordCorrect = verifyPassword(
         cleanPassword,
-        existingAcc.passwordHash || existingAcc.password,
+        existingAcc.passwordHash || existingAcc.password || '123',
         existingAcc.passwordSalt
       );
       if (isPasswordCorrect) {
         setErrorMsg('');
-        onAuthenticate(existingAcc);
+        onAuthenticate(existingAcc, cleanPassword);
         onClose();
       } else {
         setErrorMsg(
@@ -613,8 +613,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                           return;
                         }
                         setLogin(acc.login);
-                        setPassword(acc.password);
-                        onAuthenticate(acc);
+                        const pwdToUse = acc.password || '123';
+                        setPassword(pwdToUse);
+                        onAuthenticate(acc, pwdToUse);
                         onClose();
                       }}
                       className="flex-1 text-left min-w-0 pr-2 cursor-pointer"

@@ -1156,7 +1156,7 @@ export default function App() {
     }
     const isPasswordValid = verifyPassword(
       currentPassword,
-      targetAcc.passwordHash || targetAcc.password,
+      targetAcc.passwordHash || targetAcc.password || '',
       targetAcc.passwordSalt
     );
     if (!isPasswordValid) {
@@ -2489,12 +2489,13 @@ export default function App() {
           setAuditLogs((prev) => [entry, ...prev]);
         }}
         onDeleteAccount={handleDeleteUserAccount}
-        onAuthenticate={(acc) => {
+        onAuthenticate={(acc, inputPassword) => {
           setCurrentUser(acc);
+          const pwd = inputPassword || acc.password || '123';
           fetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ login: acc.login, password: acc.password }),
+            body: JSON.stringify({ login: acc.login, password: pwd }),
           })
             .then((r) => (r.ok ? r.json() : null))
             .then((data) => {

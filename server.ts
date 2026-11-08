@@ -2,7 +2,8 @@ import express, { NextFunction, Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { serverDb } from './src/server/sqliteDb';
+import { serverDb, sanitizeUserAccountForClient } from './src/server/sqliteDb';
+import { getUserRolePermissions } from './src/utils/rbac';
 
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT_DIR = process.cwd();
@@ -155,7 +156,7 @@ async function startServer() {
         status: 'ok',
         token: result.session.token,
         session: result.session,
-        user: result.user,
+        user: result.user ? sanitizeUserAccountForClient(result.user) : undefined,
       });
     } catch (err: any) {
       res.status(500).json({
@@ -318,14 +319,20 @@ async function startServer() {
           }
         : user;
 
+      const callerUser = authenticatedUser || user;
+      const isAdmin =
+        Boolean(callerUser?.isAdmin) ||
+        getUserRolePermissions(callerUser).category === 'admin';
+      const effectiveForceOverwrite = Boolean(forceOverwrite) && isAdmin;
+
       const result = serverDb.saveJointWithOptimisticLock({
         joint,
         baseJoint,
         expectedVersion:
           typeof expectedVersion === 'number' ? expectedVersion : undefined,
-        forceOverwrite: Boolean(forceOverwrite),
+        forceOverwrite: effectiveForceOverwrite,
         sessionToken,
-        user: authenticatedUser || user,
+        user: callerUser,
       });
 
       if (result.status === 'conflict') {
@@ -372,7 +379,30 @@ async function startServer() {
         clientId,
       } = req.body || {};
 
-      if (!data || typeof data !== 'object') {
+      // Поддержка как вложенного data, так и коллекций на верхнем уровне (обратная совместимость)
+      const incomingData =
+        data ||
+        (req.body &&
+        (req.body.joints ||
+          req.body.projectLineList ||
+          req.body.lrvCatalog ||
+          req.body.welders)
+          ? {
+              joints: req.body.joints,
+              projectLineList: req.body.projectLineList,
+              lrvCatalog: req.body.lrvCatalog,
+              welders: req.body.welders,
+              techCards: req.body.techCards,
+              weldingMaterials: req.body.weldingMaterials,
+              userAccounts: req.body.userAccounts,
+              auditLogs: req.body.auditLogs,
+              facilityGeoOverrides: req.body.facilityGeoOverrides,
+              templates: req.body.templates,
+              activeTemplateId: req.body.activeTemplateId,
+            }
+          : null);
+
+      if (!incomingData || typeof incomingData !== 'object') {
         res.status(400).json({
           status: 'error',
           message: 'Некорректный пакет данных для синхронизации',
@@ -394,13 +424,19 @@ async function startServer() {
           }
         : user;
 
+      const callerUser = authenticatedUser || user;
+      const isAdmin =
+        Boolean(callerUser?.isAdmin) ||
+        getUserRolePermissions(callerUser).category === 'admin';
+      const effectiveForceOverwrite = Boolean(forceOverwrite) && isAdmin;
+
       const result = serverDb.syncStateWithOptimisticLock({
-        data,
+        data: incomingData,
         expectedGlobalRevision,
-        forceOverwrite,
+        forceOverwrite: effectiveForceOverwrite,
         actionLabel: actionLabel || 'Синхронизация данных',
         sessionToken,
-        user: authenticatedUser || user,
+        user: callerUser,
       });
 
       broadcastDbChange({
@@ -425,7 +461,15 @@ async function startServer() {
   });
 
   // 5. Имитация параллельной правки стыка другим пользователем на сервере (для проверки OCC 409 Conflict)
-  app.post('/api/db/simulate-conflict', (req: Request, res: Response) => {
+  app.post('/api/db/simulate-conflict', requireWriteAuth, (req: Request, res: Response) => {
+    // В production запрещаем доступ к тестовому маршруту симуляции конфликтов
+    if (process.env.NODE_ENV === 'production' && process.env.ENABLE_TEST_ROUTES !== 'true') {
+      res.status(403).json({
+        status: 'error',
+        message: 'Тестовый маршрут симуляции конфликтов отключён в production-режиме',
+      });
+      return;
+    }
     try {
       const { jointId, simulatedBy } = req.body || {};
       const sim = serverDb.simulateParallelServerEdit({

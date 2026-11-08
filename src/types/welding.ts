@@ -454,7 +454,7 @@ export interface AuditLogEntry {
 
 export interface UserAccount {
   login: string;
-  password: string;
+  password?: string;
   fullName: string;
   role: string;
   department: string;

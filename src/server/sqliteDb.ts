@@ -44,6 +44,11 @@ import {
   verifyPassword,
 } from './serverAuth';
 
+export function sanitizeUserAccountForClient(acc: UserAccount): UserAccount {
+  const { password, passwordHash, passwordSalt, ...safe } = acc;
+  return safe as UserAccount;
+}
+
 const require = createRequire(import.meta.url);
 
 export interface UnifiedDbDataPayload {
@@ -759,6 +764,23 @@ export class UnifiedServerDatabase {
     }
   }
 
+  private getRawUserAccountByLogin(login: string): UserAccount | null {
+    const cleanLogin = (login || '').trim().toLowerCase();
+    if (!this.sqliteDb) {
+      if (!fs.existsSync(JSON_FALLBACK_PATH)) return null;
+      const raw = JSON.parse(fs.readFileSync(JSON_FALLBACK_PATH, 'utf8'));
+      const acc = (raw.data?.userAccounts || []).find(
+        (a: any) => (a.login || '').trim().toLowerCase() === cleanLogin
+      );
+      return acc || null;
+    }
+    const row = this.sqliteDb
+      .prepare('SELECT payload_json FROM user_accounts WHERE lower(login) = ?')
+      .get(cleanLogin);
+    if (!row) return null;
+    return JSON.parse(row.payload_json);
+  }
+
   public authenticateUser(
     login: string,
     password: string
@@ -769,10 +791,7 @@ export class UnifiedServerDatabase {
     error?: string;
   } {
     const cleanLogin = (login || '').trim().toLowerCase();
-    const state = this.readFullState();
-    const account = state.data.userAccounts.find(
-      (a) => a.login.toLowerCase() === cleanLogin
-    );
+    const account = this.getRawUserAccountByLogin(cleanLogin);
 
     if (!account) {
       return { success: false, error: 'Пользователь с таким логином не найден' };
@@ -780,7 +799,7 @@ export class UnifiedServerDatabase {
 
     const isValid = verifyPassword(
       password,
-      account.passwordHash || account.password,
+      account.passwordHash || account.password || '',
       account.passwordSalt
     );
 
@@ -793,15 +812,15 @@ export class UnifiedServerDatabase {
       const hashed = hashPasswordWithSalt(password);
       account.passwordHash = hashed.hash;
       account.passwordSalt = hashed.salt;
-      const updatedAccounts = state.data.userAccounts.map((a) =>
-        a.login === account.login ? account : a
-      );
-      this.syncStateWithOptimisticLock({
-        data: { userAccounts: updatedAccounts },
-        actionLabel: `Обновление безопасности учетной записи ${account.login}`,
-        user: account,
-        forceOverwrite: true,
-      });
+      delete account.password; // Удаляем открытый пароль при миграции
+
+      if (this.sqliteDb) {
+        try {
+          this.sqliteDb
+            .prepare('UPDATE user_accounts SET payload_json = ? WHERE lower(login) = ?')
+            .run(JSON.stringify(account), cleanLogin);
+        } catch {}
+      }
     }
 
     const session = createAuthenticatedSession(account);
@@ -944,7 +963,10 @@ export class UnifiedServerDatabase {
           },
           activeSessions: Array.from(this.activeSessions.values()),
         },
-        data,
+        data: {
+          ...data,
+          userAccounts: (data.userAccounts || []).map(sanitizeUserAccountForClient),
+        },
       };
     }
 
@@ -1016,7 +1038,7 @@ export class UnifiedServerDatabase {
     const userAccounts: UserAccount[] = this.sqliteDb
       .prepare('SELECT payload_json FROM user_accounts ORDER BY sort_order ASC')
       .all()
-      .map((r: any) => JSON.parse(r.payload_json));
+      .map((r: any) => sanitizeUserAccountForClient(JSON.parse(r.payload_json)));
 
     const geoRows = this.sqliteDb
       .prepare('SELECT object_name, payload_json FROM facility_geo')

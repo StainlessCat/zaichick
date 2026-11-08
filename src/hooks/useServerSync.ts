@@ -198,6 +198,18 @@ export function useServerSync({
     }
     const timer = window.setTimeout(async () => {
       try {
+        const payloadData = {
+          joints,
+          projectLineList,
+          lrvCatalog,
+          welders,
+          techCards,
+          weldingMaterials,
+          userAccounts,
+          auditLogs,
+          facilityGeoOverrides,
+        };
+
         const res = await fetch('/api/db/sync', {
           method: 'POST',
           headers: {
@@ -208,23 +220,21 @@ export function useServerSync({
             clientId: clientIdRef.current,
             sessionToken,
             user: currentUser,
-            joints,
-            projectLineList,
-            lrvCatalog,
-            welders,
-            techCards,
-            weldingMaterials,
-            userAccounts,
-            auditLogs,
-            facilityGeoOverrides,
+            data: payloadData,
+            ...payloadData,
           }),
         });
         if (res.ok) {
           const out = await res.json();
           if (out?.meta) setServerDbMeta(out.meta);
           setIsDbConnected(true);
+        } else {
+          setIsDbConnected(false);
+          const errData = await res.json().catch(() => null);
+          console.warn('[ZAYCHICK Sync] Сервер отклонил пакет синхронизации:', res.status, errData?.message);
         }
-      } catch {
+      } catch (err) {
+        setIsDbConnected(false);
         // local state remains in localStorage as offline buffer
       }
     }, 300);
