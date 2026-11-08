@@ -911,6 +911,14 @@ export class UnifiedServerDatabase {
     return this.authSessions.delete(token);
   }
 
+  public getEngineMetadata(): { engineName: string; journalMode: string; isConnected: boolean } {
+    return {
+      engineName: this.engineName,
+      journalMode: this.journalMode,
+      isConnected: Boolean(this.sqliteDb),
+    };
+  }
+
   public readFullState(): { meta: ServerDbMetadata; data: UnifiedDbDataPayload } {
     if (!this.sqliteDb) {
       const raw = JSON.parse(fs.readFileSync(JSON_FALLBACK_PATH, 'utf8'));
