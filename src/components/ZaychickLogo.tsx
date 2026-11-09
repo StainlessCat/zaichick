@@ -4,29 +4,25 @@ interface ZaychickLogoProps {
   className?: string;
   size?: number;
   variant?: 'header' | 'card' | 'badge' | 'icon-only';
-  showSubtitle?: boolean;
 }
 
 /**
  * Фирменный логотип системы «zaychick»:
- * Геометрический знак «Заяц — сварной стык трубопровода» (Pantone 300 C · #005EB8).
- * Включает точную геометрию ушей-капсул, контура трубы и центральной оси стыка.
+ * Геометрический знак «Заяц — сварной стык трубопровода» и лаконичное имя «zaychick».
  */
 export const ZaychickLogo: React.FC<ZaychickLogoProps> = ({
   className = '',
   size = 40,
   variant = 'header',
-  showSubtitle = true,
 }) => {
   const isHeader = variant === 'header';
   const isIconOnly = variant === 'icon-only';
 
   const iconColor = isHeader ? '#ffffff' : '#005EB8';
   const textColor = isHeader ? 'text-white' : 'text-[#005EB8]';
-  const subtitleColor = isHeader ? 'text-sky-100/90' : 'text-slate-500';
 
   return (
-    <div className={`inline-flex items-center gap-3 select-none ${className}`}>
+    <div className={`inline-flex items-center gap-2.5 select-none ${className}`}>
       {/* Фирменный векторный знак */}
       <div
         className="relative flex items-center justify-center shrink-0"
@@ -82,23 +78,14 @@ export const ZaychickLogo: React.FC<ZaychickLogoProps> = ({
         </svg>
       </div>
 
-      {/* Текстовая часть логотипа (zaychick + подзаголовок) */}
+      {/* Текстовая часть логотипа (только имя zaychick) */}
       {!isIconOnly && (
-        <div className="flex flex-col leading-none">
-          <span
-            className={`font-sans font-bold text-xl sm:text-2xl tracking-tight lowercase ${textColor}`}
-            style={{ letterSpacing: '-0.02em' }}
-          >
-            zaychick
-          </span>
-          {showSubtitle && (
-            <span
-              className={`text-[9px] sm:text-[10px] font-semibold uppercase mt-1 tracking-[0.18em] whitespace-nowrap ${subtitleColor}`}
-            >
-              УЧЁТ СВАРНЫХ СТЫКОВ ТРУБОПРОВОДОВ
-            </span>
-          )}
-        </div>
+        <span
+          className={`font-sans font-bold text-2xl tracking-tight lowercase ${textColor}`}
+          style={{ letterSpacing: '-0.03em' }}
+        >
+          zaychick
+        </span>
       )}
     </div>
   );

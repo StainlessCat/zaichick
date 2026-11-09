@@ -1739,23 +1739,26 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f4f7fb] text-slate-900">
-      {/* ФИРМЕННЫЙ ЧЕРДАК ИНТЕРФЕЙСА: PANTONE 300 C (#005EB8) */}
-      <header className="sticky top-0 z-30 bg-[#005EB8] text-white border-b border-sky-400/20 shadow-md no-print">
+      {/* ЧЕРДАК ИНТЕРФЕЙСА: КЛАССИЧЕСКИЙ СИНИЙ #1e3799 */}
+      <header className="sticky top-0 z-30 bg-[#1e3799] text-white border-b border-sky-400/20 shadow-md no-print">
         <div className="max-w-[1920px] mx-auto px-4 py-2 flex items-center justify-between gap-4">
           {/* Левый верхний угол: Фирменный логотип zaychick (5 кликов открывают скрытую Консоль Автора) */}
           <div
             onClick={handleHeaderLogoSecretClick}
             className="flex items-center min-w-0 shrink-0 cursor-pointer select-none"
-            title="zaychick — Учёт сварных стыков трубопроводов"
+            title="zaychick"
           >
-            <ZaychickLogo variant="header" size={40} />
+            <ZaychickLogo variant="header" size={38} />
           </div>
 
-          {/* Середина чердака: Название текущего раздела с иконкой (полностью прописными буквами) */}
+          {/* Середина чердака: Название текущего раздела шрифтом Century Gothic */}
           <div className="flex items-center justify-center flex-1 min-w-0 px-2 text-center">
             <div className="inline-flex items-center justify-center gap-2 max-w-full">
               {sectionIcons[activeSection]}
-              <h1 className="font-display text-xs sm:text-sm md:text-base font-bold text-white uppercase tracking-wider truncate">
+              <h1
+                className="text-xs sm:text-sm md:text-base font-bold text-white uppercase tracking-wider truncate"
+                style={{ fontFamily: '"Century Gothic", CenturyGothic, AppleGothic, sans-serif' }}
+              >
                 {sectionLabels[activeSection]?.toUpperCase()}
               </h1>
             </div>
