@@ -218,12 +218,34 @@ export class UnifiedServerDatabase {
           }
         }
 
-        // 3. Валидация целостности созданного файла
+        // 3. Валидация целостности созданного файла (размер и сигнатура SQLite format 3)
         if (!fs.existsSync(backupPath) || fs.statSync(backupPath).size < 100) {
           try {
             if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
           } catch {}
           return { success: false, error: 'Резервная копия повреждена или имеет нулевой размер' };
+        }
+
+        try {
+          const fd = fs.openSync(backupPath, 'r');
+          const headerBuf = Buffer.alloc(16);
+          fs.readSync(fd, headerBuf, 0, 16, 0);
+          fs.closeSync(fd);
+          const magicPrefix = Buffer.from('SQLite format 3\0', 'utf8');
+          if (!headerBuf.equals(magicPrefix)) {
+            try {
+              if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+            } catch {}
+            return {
+              success: false,
+              error: 'Резервная копия повреждена: сигнатура заголовка не соответствует SQLite format 3',
+            };
+          }
+        } catch (hdrErr: any) {
+          return {
+            success: false,
+            error: `Не удалось проверить сигнатуру созданной резервной копии: ${hdrErr?.message || hdrErr}`,
+          };
         }
 
         this.rotateBackups(backupsDir, 5);
@@ -233,6 +255,20 @@ export class UnifiedServerDatabase {
       if (fs.existsSync(JSON_FALLBACK_PATH)) {
         const jsonBackupPath = path.join(backupsDir, `zaychick-backup-${ts}-${label}.json`);
         fs.copyFileSync(JSON_FALLBACK_PATH, jsonBackupPath);
+        try {
+          const parsed = JSON.parse(fs.readFileSync(jsonBackupPath, 'utf8'));
+          if (!parsed?.data || !parsed?.meta) {
+            try {
+              if (fs.existsSync(jsonBackupPath)) fs.unlinkSync(jsonBackupPath);
+            } catch {}
+            return { success: false, error: 'JSON-резервная копия повреждена: отсутствуют обязательные секции' };
+          }
+        } catch {
+          try {
+            if (fs.existsSync(jsonBackupPath)) fs.unlinkSync(jsonBackupPath);
+          } catch {}
+          return { success: false, error: 'Некорректный синтаксис JSON в резервной копии' };
+        }
         this.rotateBackups(backupsDir, 5);
         return { success: true, backupPath: jsonBackupPath };
       }

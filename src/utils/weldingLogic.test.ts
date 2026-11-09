@@ -4052,3 +4052,47 @@ test('Sprint 3: Регресс сохранения хешей паролей п
     'Попытка заведения стыка ролью без прав должна возвращать явный статус forbidden (HTTP 403)'
   );
 });
+
+test('Sprint 3: Физическая валидация сигнатуры бэкапа и сквозное восстановление базы данных', async () => {
+  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
+  const fs = await import('node:fs');
+
+  const db = new UnifiedServerDatabase();
+  const backupRes = db.createBackup('verify_restore');
+
+  assert.equal(backupRes.success, true, 'Резервная копия должна создаваться со статусом success: true');
+  assert.ok(backupRes.backupPath, 'Должен быть возвращён путь к созданному файлу');
+  assert.ok(fs.existsSync(backupRes.backupPath!), 'Файл резервной копии должен физически существовать на диске');
+
+  // 1. Проверка сигнатуры заголовка SQLite
+  if (backupRes.backupPath!.endsWith('.sqlite')) {
+    const fd = fs.openSync(backupRes.backupPath!, 'r');
+    const headerBuf = Buffer.alloc(16);
+    fs.readSync(fd, headerBuf, 0, 16, 0);
+    fs.closeSync(fd);
+    const magicPrefix = Buffer.from('SQLite format 3\0', 'utf8');
+    assert.deepEqual(
+      headerBuf,
+      magicPrefix,
+      'Сигнатура заголовка файла бэкапа обязана в точности соответствовать стандарту "SQLite format 3\\0"'
+    );
+
+    // 2. Сквозное восстановление: открываем бэкап в независимом процессе и считываем таблицы
+    const nodeSqlite = await import('node:sqlite');
+    const restoredDb = new (nodeSqlite as any).DatabaseSync(backupRes.backupPath!);
+
+    const jointsCount = restoredDb.prepare('SELECT count(*) as cnt FROM weld_joints').get() as { cnt: number };
+    assert.ok(jointsCount.cnt > 0, 'Восстановленная база обязана содержать записи сварных стыков');
+
+    const usersCount = restoredDb.prepare('SELECT count(*) as cnt FROM user_accounts').get() as { cnt: number };
+    assert.ok(usersCount.cnt > 0, 'Восстановленная база обязана содержать учётные записи пользователей');
+
+    const metaRow = restoredDb.prepare('SELECT global_revision FROM db_meta WHERE id = 1').get() as { global_revision: number };
+    assert.ok(metaRow.global_revision >= 1, 'Восстановленная база обязана содержать метаданные ревизии');
+  } else {
+    // Fallback JSON проверка
+    const parsed = JSON.parse(fs.readFileSync(backupRes.backupPath!, 'utf8'));
+    assert.ok(parsed?.data?.joints?.length > 0, 'JSON бэкап обязан содержать стыки');
+    assert.ok(parsed?.data?.userAccounts?.length > 0, 'JSON бэкап обязан содержать аккаунты');
+  }
+});
