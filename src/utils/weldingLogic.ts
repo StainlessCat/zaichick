@@ -33,6 +33,7 @@ export * from './columns';
 export * from './readiness';
 export * from './journals';
 export * from './weatherService';
+export { ROSGIDROMET_STATIONS, ROSHIDROMET_STATIONS } from '../data/rosgidrometStations';
 
 export interface NaksCertStatusInfo {
   status: 'valid' | 'expiring' | 'expired' | 'unknown';

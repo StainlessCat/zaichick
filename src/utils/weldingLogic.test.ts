@@ -4273,3 +4273,95 @@ test('Метеостанции РФ: поиск реальной метеост�
   );
   assert.equal(unknownResolved.weatherStationId, undefined, 'WMO ID неизвестного объекта должен оставаться пустым');
 });
+
+test('Эксплуатационный план метеостанций: офлайн-реестр Росгидромета, ведомственные АМК, Meteostat fallback и парсер справок УГМС', async () => {
+  const {
+    ROSHIDROMET_STATIONS,
+    VERIFIED_WMO_STATIONS,
+    searchWeatherStations,
+    fetchMeteostatNearbyStations,
+    parseUgmsWeatherCertificateCsv,
+  } = await import('./weldingLogic');
+
+  // 1. Этап 1: Офлайн-реестр Росгидромета РФ
+  assert.ok(ROSHIDROMET_STATIONS.length >= 70, 'Офлайн-реестр обязан содержать более 70 ключевых станций РФ');
+  assert.equal(VERIFIED_WMO_STATIONS.length, ROSHIDROMET_STATIONS.length, 'VERIFIED_WMO_STATIONS должен ссылаться на полный реестр Росгидромета');
+
+  const vologda = ROSHIDROMET_STATIONS.find((s) => s.id === '27037');
+  assert.ok(vologda, 'В реестре должна быть станция Вологда');
+  assert.equal(vologda.name, 'АМСГ Вологда');
+
+  const bovanenkovo = ROSHIDROMET_STATIONS.find((s) => s.id === '20959');
+  assert.ok(bovanenkovo, 'В реестре должно быть Бованенково');
+
+  // 2. Этап 2: Регистрация ведомственных поверенных метеопостов площадки
+  const customAmk = {
+    id: 'amk-vorkuta-4',
+    name: 'АМК КС-4 Воркутинская',
+    region: 'Республика Коми',
+    latitude: 67.55,
+    longitude: 64.12,
+    deviceModel: 'Метеокомплекс АМК-03',
+    verificationCertNumber: 'СП-2026/8841',
+    verificationValidUntil: '2027-12-31',
+    isVerified: true,
+    createdAt: new Date().toISOString(),
+    source: 'custom' as const,
+  };
+
+  // Поиск по номеру свидетельства о поверке ФГИС АРШИН
+  const certSearchResults = searchWeatherStations('СП-2026/8841', 67.55, 64.12, 10, [customAmk]);
+  assert.ok(certSearchResults.length > 0, 'Поиск по номеру свидетельства о поверке должен находить метеопост');
+  assert.equal(certSearchResults[0].id, 'amk-vorkuta-4');
+  assert.equal(certSearchResults[0].source, 'custom');
+  assert.equal(certSearchResults[0].verificationCertNumber, 'СП-2026/8841');
+
+  // Поиск по модели прибора
+  const modelSearchResults = searchWeatherStations('АМК-03', 67.55, 64.12, 10, [customAmk]);
+  assert.ok(modelSearchResults.length > 0, 'Поиск по модели прибора должен находить метеопост');
+  assert.equal(modelSearchResults[0].id, 'amk-vorkuta-4');
+
+  // Приоритет ведомственного метеопоста объекта
+  const emptyQueryResults = searchWeatherStations('', 67.55, 64.12, 10, [customAmk]);
+  assert.equal(emptyQueryResults[0].id, 'amk-vorkuta-4', 'Поверенный метеопост объекта должен быть на 1 месте');
+
+  // 3. Этап 3: Meteostat fallback при отсутствии ключа или оффлайне
+  const fallbackStations = await fetchMeteostatNearbyStations(59.93, 32.34, 3);
+  assert.ok(fallbackStations.length > 0, 'При отсутствии API-ключа должен безопасно возвращаться офлайн-реестр');
+  assert.equal(fallbackStations[0].id, '26078', 'Ближайшая офлайн-станция к Волхову — WMO 26078');
+
+  // 4. Этап 4: Импорт официальной справки УГМС Росгидромета
+  const csvUgmsData = `
+    # Официальная выписка Северного УГМС
+    Дата; Среднесуточная температура
+    2026-06-15; +18,2
+    2026-06-16; +19.4
+    17.06.2026; 17,8
+    18.06.2026; -2.5
+  `;
+
+  const parsedUgms = parseUgmsWeatherCertificateCsv(csvUgmsData, {
+    docNumber: '412-С',
+    docDate: '2026-06-20',
+    issuer: 'ФГБУ Северное УГМС',
+    stationName: 'АМСГ Воркута',
+  });
+
+  assert.equal(parsedUgms.parsedCount, 4, 'Должно быть успешно распознано 4 даты');
+  assert.equal(parsedUgms.skippedCount, 0, 'Не должно быть пропущенных строк');
+  assert.equal(parsedUgms.errors.length, 0, 'Не должно быть ошибок парсинга');
+
+  // Проверка нормализации дат и температур
+  assert.equal(parsedUgms.weatherArchive['2026-06-15'], '+18.2');
+  assert.equal(parsedUgms.weatherArchive['2026-06-16'], '+19.4');
+  assert.equal(parsedUgms.weatherArchive['2026-06-17'], '+17.8');
+  assert.equal(parsedUgms.weatherArchive['2026-06-18'], '-2.5');
+
+  // Проверка метаданных наблюдений
+  const obs = parsedUgms.weatherObservations['2026-06-15'];
+  assert.ok(obs, 'Должен быть сформирован объект наблюдения');
+  assert.equal(obs.sourceType, 'ugms-certificate');
+  assert.equal(obs.status, 'available');
+  assert.ok(obs.sourceDescription.includes('412-С'));
+  assert.ok(obs.sourceDescription.includes('Северное УГМС'));
+});

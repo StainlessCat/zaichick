@@ -52,6 +52,39 @@ export interface ReadinessSummaryRow {
   equivWeldingPct: number;
 }
 
+export interface CustomWeatherStation {
+  id: string; // custom ID, e.g. "amk-1"
+  name: string; // e.g. "АМК КС-4 Воркутинская"
+  region: string;
+  latitude: number;
+  longitude: number;
+  elevationM?: number;
+  deviceModel?: string; // "Метеокомплекс АМК-03"
+  verificationCertNumber?: string; // "Свидетельство о поверке №СП-2026/8841"
+  verificationValidUntil?: string; // YYYY-MM-DD
+  isVerified: boolean;
+  createdAt: string;
+  createdBy?: string;
+  source: 'custom';
+}
+
+export interface WeatherStationMetadata {
+  id: string; // WMO ID / Meteostat ID / Custom ID (напр. '26078' или 'amk-1')
+  name: string; // Наименование метеостанции
+  region: string; // Регион / субъект РФ
+  country: string; // 'RU'
+  latitude: number;
+  longitude: number;
+  elevationM?: number;
+  distanceKm?: number; // Расстояние от объекта (км)
+  wmoId?: string;
+  source: 'meteostat' | 'rosgidromet' | 'custom' | string;
+  deviceModel?: string; // Модель прибора (для ведомственных станций)
+  verificationCertNumber?: string; // № свидетельства о поверке Росстандарта
+  verificationValidUntil?: string; // Срок действия поверки
+  isVerified?: boolean;
+}
+
 export interface FacilityObject {
   id: string;
   name: string;
@@ -60,7 +93,7 @@ export interface FacilityObject {
   weatherStation?: string;
   weatherStationId?: string;
   weatherStationDistanceKm?: number;
-  weatherStationSource?: 'meteostat' | 'open-meteo-era5' | string;
+  weatherStationSource?: 'meteostat' | 'open-meteo-era5' | 'custom' | 'ugms-certificate' | string;
   weatherLastCheckStatus?: 'online' | 'offline';
   weatherLastCheckedAt?: string;
   weatherLastErrorMessage?: string;
@@ -68,6 +101,7 @@ export interface FacilityObject {
   longitude: number;
   weatherArchive?: Record<string, string>;
   weatherObservations?: Record<string, any>;
+  customWeatherStations?: CustomWeatherStation[];
   rdCodes: {
     code: string;
     title: string;

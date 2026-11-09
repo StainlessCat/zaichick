@@ -358,9 +358,14 @@ export function useAppState() {
         ...fac,
         region: over.region,
         weatherStation: over.weatherStation || fac.weatherStation,
+        weatherStationId: over.weatherStationId || fac.weatherStationId,
+        weatherStationDistanceKm: over.weatherStationDistanceKm ?? fac.weatherStationDistanceKm,
+        weatherStationSource: over.weatherStationSource || fac.weatherStationSource,
         latitude: over.latitude,
         longitude: over.longitude,
         weatherArchive: over.weatherArchive || fac.weatherArchive,
+        weatherObservations: over.weatherObservations || fac.weatherObservations,
+        customWeatherStations: over.customWeatherStations || fac.customWeatherStations,
       };
     });
 
@@ -372,10 +377,15 @@ export function useAppState() {
           name: objName,
           shortName: objName,
           region: over.region || 'Не указан',
-          weatherStation: over.weatherStation || `Метеопост ${objName}`,
+          weatherStation: over.weatherStation || 'Метеостанция не привязана',
+          weatherStationId: over.weatherStationId,
+          weatherStationDistanceKm: over.weatherStationDistanceKm,
+          weatherStationSource: over.weatherStationSource,
           latitude: over.latitude,
           longitude: over.longitude,
           weatherArchive: over.weatherArchive,
+          weatherObservations: over.weatherObservations,
+          customWeatherStations: over.customWeatherStations,
           rdCodes: [],
         });
       }
@@ -616,6 +626,7 @@ export function useAppState() {
         longitude: number;
         weatherArchive?: Record<string, string>;
         weatherObservations?: Record<string, any>;
+        customWeatherStations?: any[];
       }
     ) => {
       recordUndoSnapshot(`Смена метеопункта объекта ${facilityName}`);
@@ -637,6 +648,8 @@ export function useAppState() {
             loc.weatherArchive ?? prev[facilityName]?.weatherArchive,
           weatherObservations:
             loc.weatherObservations ?? prev[facilityName]?.weatherObservations,
+          customWeatherStations:
+            loc.customWeatherStations ?? prev[facilityName]?.customWeatherStations,
         },
       }));
       // ВАЖНОЕ ПРАВИЛО: Смена станции не должна молча менять уже записанные температуры стыков!

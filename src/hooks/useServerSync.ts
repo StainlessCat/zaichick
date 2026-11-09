@@ -16,6 +16,7 @@ import {
   normalizeWelderProfile,
   normalizeWeldJoint,
 } from '../utils/entityNormalizers';
+import type { CustomWeatherStation } from '../types/welding';
 
 export interface FacilityGeoOverride {
   region: string;
@@ -30,6 +31,7 @@ export interface FacilityGeoOverride {
   longitude: number;
   weatherArchive?: Record<string, string>;
   weatherObservations?: Record<string, any>;
+  customWeatherStations?: CustomWeatherStation[];
 }
 
 export interface UseServerSyncParams {

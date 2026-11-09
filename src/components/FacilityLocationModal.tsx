@@ -9,17 +9,21 @@ import {
   ChevronUp,
   CloudSun,
   Compass,
+  FileText,
   HelpCircle,
   Loader2,
   MapPin,
+  Plus,
   RefreshCw,
   Search,
+  ShieldCheck,
+  Upload,
   Wifi,
   WifiOff,
   X,
   Zap,
 } from 'lucide-react';
-import { FacilityLocationPreset, FacilityObject, WeldJoint } from '../types/welding';
+import { CustomWeatherStation, FacilityLocationPreset, FacilityObject, WeldJoint } from '../types/welding';
 import {
   calculateHaversineDistanceKm,
   checkWeatherServiceHealth,
@@ -30,8 +34,10 @@ import {
   formatDateDDMMYY,
   formatObservationTemp,
   getFacilityWeatherStationName,
+  parseUgmsWeatherCertificateCsv,
   searchLocationGeocoding,
   searchWeatherStations,
+  UgmsImportResult,
   VERIFIED_WMO_STATIONS,
   WeatherDataSourceType,
   WeatherServiceHealth,
@@ -45,6 +51,7 @@ interface FacilityLocationModalProps {
   facilities: FacilityObject[];
   presets: FacilityLocationPreset[];
   joints?: WeldJoint[];
+  customStations?: CustomWeatherStation[];
   onSaveLocation: (
     objectName: string,
     location: {
@@ -60,6 +67,7 @@ interface FacilityLocationModalProps {
       longitude: number;
       weatherArchive?: Record<string, string>;
       weatherObservations?: Record<string, any>;
+      customWeatherStations?: CustomWeatherStation[];
     }
   ) => void;
   onBulkUpdateJoints?: (
@@ -94,6 +102,27 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
   // 1. Сигнализация доступности сервиса (На связи / Нет связи)
   const [serviceHealth, setServiceHealth] = useState<WeatherServiceHealth | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+
+  // Кастомные поверенные метеопосты площадки (Этап 2)
+  const [customStations, setCustomStations] = useState<CustomWeatherStation[]>([]);
+  const [showAddCustomModal, setShowAddCustomModal] = useState(false);
+  const [newCustomStation, setNewCustomStation] = useState({
+    name: '',
+    deviceModel: 'Метеокомплекс АМК-03',
+    verificationCertNumber: '',
+    verificationValidUntil: '2027-12-31',
+    region: '',
+  });
+
+  // Импорт официальных справок УГМС Росгидромета (Этап 4)
+  const [showUgmsModal, setShowUgmsModal] = useState(false);
+  const [ugmsForm, setUgmsForm] = useState({
+    docNumber: '',
+    docDate: '2026-06-15',
+    issuer: 'ФГБУ Северное УГМС Росгидромета',
+    csvText: '',
+  });
+  const [ugmsParseResult, setUgmsParseResult] = useState<UgmsImportResult | null>(null);
 
   // 2. Сигнализация наличия данных на конкретную дату
   const [testDate, setTestDate] = useState('2026-06-15');
@@ -141,12 +170,13 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
       setWeatherStation(getFacilityWeatherStationName(target));
       setWeatherStationId(target.weatherStationId || '26078');
       setSourceType(
-        target.weatherStationSource === 'open-meteo-era5' ? 'open-meteo-era5' : 'meteostat'
+        (target.weatherStationSource as WeatherDataSourceType) || 'meteostat'
       );
       setLatitude(target.latitude);
       setLongitude(target.longitude);
       setWeatherArchive(target.weatherArchive || {});
       setWeatherObservations(target.weatherObservations || {});
+      setCustomStations(target.customWeatherStations || []);
     } else {
       setSelectedObjName('КС Волховская');
       setRegion('Ленинградская область, г. Волхов');
@@ -157,12 +187,16 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
       setLongitude(32.34);
       setWeatherArchive({});
       setWeatherObservations({});
+      setCustomStations([]);
     }
 
     setSearchQuery('');
     setOnlineLocations([]);
     setIsSearchingOnline(false);
     setShowManualCoords(false);
+    setShowAddCustomModal(false);
+    setShowUgmsModal(false);
+    setUgmsParseResult(null);
     setDateCheckStatus({
       status: 'idle',
       message: 'Выберите дату для проверки наблюдений станции',
@@ -199,23 +233,26 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Сквозной поиск по реестру всех верифицированных станций WMO/Росгидромета
+  // Сквозной поиск по реестру станций WMO/Росгидромета и кастомных метеопостов
   const nearbyStations = useMemo(() => {
-    return searchWeatherStations(searchQuery, latitude, longitude, 30);
-  }, [latitude, longitude, searchQuery]);
+    return searchWeatherStations(searchQuery, latitude, longitude, 30, customStations);
+  }, [latitude, longitude, searchQuery, customStations]);
 
   // Выбор метеостанции
   const handleSelectStation = (st: WeatherStationMetadata, syncCoords = true) => {
     setWeatherStation(`${st.name} (ID: ${st.id})`);
     setWeatherStationId(st.id);
     setRegion(st.region);
+    if (st.source === 'custom') {
+      setSourceType('custom');
+    }
     if (syncCoords) {
       setLatitude(st.latitude);
       setLongitude(st.longitude);
     }
     setDateCheckStatus({
       status: 'idle',
-      message: `Выбрана «${st.name}» (WMO ID: ${st.id}). Проверьте наличие данных на дату.`,
+      message: `Выбрана «${st.name}» (${st.source === 'custom' ? 'Поверенный метеопост' : `WMO ID: ${st.id}`}). Проверьте наличие данных на дату.`,
     });
   };
 
@@ -229,6 +266,72 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
       status: 'idle',
       message: `Площадка привязана к «${geo.name}» (${geo.region}). Ближайшая станция: ${geo.nearestStation.name} (${geo.distanceKm} км).`,
     });
+  };
+
+  // Сохранение нового поверенного метеопоста площадки (Этап 2)
+  const handleSaveCustomStation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCustomStation.name.trim()) return;
+
+    const created: CustomWeatherStation = {
+      id: `amk-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: newCustomStation.name.trim(),
+      deviceModel: newCustomStation.deviceModel.trim() || 'АМК-03',
+      verificationCertNumber: newCustomStation.verificationCertNumber.trim() || 'СП-2026/8841',
+      verificationValidUntil: newCustomStation.verificationValidUntil,
+      isVerified: true,
+      region: newCustomStation.region.trim() || region || 'Регион площадки',
+      latitude: Number(latitude),
+      longitude: Number(longitude),
+      createdAt: new Date().toISOString(),
+      source: 'custom',
+    };
+
+    const updated = [created, ...customStations];
+    setCustomStations(updated);
+    setSourceType('custom');
+    handleSelectStation(created as any, false);
+    setShowAddCustomModal(false);
+    setNewCustomStation({
+      name: '',
+      deviceModel: 'Метеокомплекс АМК-03',
+      verificationCertNumber: '',
+      verificationValidUntil: '2027-12-31',
+      region: '',
+    });
+    setArchiveLoadMessage(
+      `Поверенный метеопост «${created.name}» (Поверка ${created.verificationCertNumber}) успешно зарегистрирован и привязан к объекту.`
+    );
+  };
+
+  // Парсинг текста справки УГМС (Этап 4)
+  const handleParseUgmsText = () => {
+    if (!ugmsForm.csvText.trim()) return;
+    const res = parseUgmsWeatherCertificateCsv(ugmsForm.csvText, {
+      docNumber: ugmsForm.docNumber.trim(),
+      docDate: ugmsForm.docDate.trim(),
+      issuer: ugmsForm.issuer.trim(),
+      stationName: `Справка УГМС №${ugmsForm.docNumber.trim() || 'Б/Н'}`,
+    });
+    setUgmsParseResult(res);
+  };
+
+  // Применение справки УГМС к объекту и архиву (Этап 4)
+  const handleApplyUgmsCertificate = () => {
+    if (!ugmsParseResult || ugmsParseResult.parsedCount === 0) return;
+    setWeatherArchive((prev) => ({ ...prev, ...ugmsParseResult.weatherArchive }));
+    setWeatherObservations((prev) => ({ ...prev, ...ugmsParseResult.weatherObservations }));
+    setSourceType('ugms-certificate');
+    setWeatherStation(ugmsParseResult.docDescription);
+    setWeatherStationId(ugmsForm.docNumber ? `УГМС-${ugmsForm.docNumber}` : 'UGMS-CERT');
+    setShowUgmsModal(false);
+    setDateCheckStatus({
+      status: 'idle',
+      message: `Импортировано ${ugmsParseResult.parsedCount} замеров из «${ugmsParseResult.docDescription}».`,
+    });
+    setArchiveLoadMessage(
+      `Успешно внесено ${ugmsParseResult.parsedCount} сут. фактических наблюдений из официальной справки УГМС.`
+    );
   };
 
   // Переключение объекта
@@ -397,6 +500,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
       longitude: Number(longitude),
       weatherArchive,
       weatherObservations,
+      customWeatherStations: customStations,
     });
     onClose();
   };
@@ -520,7 +624,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
             </select>
           </div>
 
-          {/* 3. ВЫБОР ИСТОЧНИКА ДАННЫХ (Meteostat Daily vs Open-Meteo ERA5 Reanalysis) */}
+          {/* 3. ВЫБОР ИСТОЧНИКА ДАННЫХ (Meteostat / Поверенный метеопост / Справка УГМС / ERA5) */}
           <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2">
             <span className="text-xs font-bold text-slate-800">
               Источник данных метеоархива:
@@ -543,10 +647,60 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
                 />
                 <div>
                   <span className="font-bold text-slate-900 block">
-                    Meteostat Daily (Основной)
+                    Meteostat Daily / Росгидромет (Основной)
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    Фактические наблюдения выбранной метеостанции (model=false, без синтетических данных).
+                    Фактические наблюдения выбранной станции сети Росгидромета/WMO (без синтетических данных).
+                  </span>
+                </div>
+              </label>
+
+              <label
+                className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                  sourceType === 'custom'
+                    ? 'bg-emerald-50 border-emerald-600 ring-1 ring-emerald-600'
+                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="sourceType"
+                  value="custom"
+                  checked={sourceType === 'custom'}
+                  onChange={() => setSourceType('custom')}
+                  className="mt-0.5 text-emerald-600"
+                />
+                <div>
+                  <span className="font-bold text-emerald-950 block">
+                    Поверенный метеопост площадки
+                  </span>
+                  <span className="text-[11px] text-emerald-800 font-medium">
+                    АМК / сертифицированный прибор с поверкой Росстандарта (ФГИС АРШИН).
+                  </span>
+                </div>
+              </label>
+
+              <label
+                className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
+                  sourceType === 'ugms-certificate'
+                    ? 'bg-indigo-50 border-indigo-600 ring-1 ring-indigo-600'
+                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="sourceType"
+                  value="ugms-certificate"
+                  checked={sourceType === 'ugms-certificate'}
+                  onChange={() => setSourceType('ugms-certificate')}
+                  className="mt-0.5 text-indigo-600"
+                />
+                <div>
+                  <span className="font-bold text-indigo-950 block">
+                    Официальная справка УГМС
+                  </span>
+                  <span className="text-[11px] text-indigo-800 font-medium">
+                    Ведомость фактических температур с официальными реквизитами для технадзора.
                   </span>
                 </div>
               </label>
@@ -580,15 +734,239 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
 
           {/* 4. ВЫБОР РЕАЛЬНОЙ МЕТЕОСТАНЦИИ С ОТОБРАЖЕНИЕМ РАССТОЯНИЯ И ИДЕНТИФИКАТОРА */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between flex-wrap gap-1">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-[#1e3799]" />
-                <span>Реестр метеостанций Росгидромета / WMO и подбор по координатам:</span>
+                <span>Реестр станций WMO/РФ и метеопостов площадки:</span>
               </span>
-              <span className="text-[11px] text-slate-500 font-mono">
-                Площадка: {latitude.toFixed(2)}°N, {longitude.toFixed(2)}°E
-              </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddCustomModal(true);
+                    setShowUgmsModal(false);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>+ Поверенный метеопост</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUgmsModal(true);
+                    setShowAddCustomModal(false);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-indigo-700" />
+                  <span>Импорт справки УГМС</span>
+                </button>
+              </div>
             </div>
+
+            {/* Форма регистрации поверенного метеопоста (Этап 2) */}
+            {showAddCustomModal && (
+              <form
+                onSubmit={handleSaveCustomStation}
+                className="p-3 bg-emerald-50/90 rounded-xl border border-emerald-300 space-y-2.5 animate-in fade-in zoom-in-95"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                    <span>Регистрация ведомственного метеопоста площадки</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCustomModal(false)}
+                    className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                      Наименование поста:
+                    </label>
+                    <input
+                      type="text"
+                      value={newCustomStation.name}
+                      onChange={(e) =>
+                        setNewCustomStation({ ...newCustomStation, name: e.target.value })
+                      }
+                      placeholder="напр. АМК КС-4 Воркутинская"
+                      required
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                      Модель средства измерений:
+                    </label>
+                    <input
+                      type="text"
+                      value={newCustomStation.deviceModel}
+                      onChange={(e) =>
+                        setNewCustomStation({ ...newCustomStation, deviceModel: e.target.value })
+                      }
+                      placeholder="Метеокомплекс АМК-03"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                      № свидетельства о поверке:
+                    </label>
+                    <input
+                      type="text"
+                      value={newCustomStation.verificationCertNumber}
+                      onChange={(e) =>
+                        setNewCustomStation({
+                          ...newCustomStation,
+                          verificationCertNumber: e.target.value,
+                        })
+                      }
+                      placeholder="№ СП-2026/8841 (ФГИС АРШИН)"
+                      required
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                      Поверка действительна до:
+                    </label>
+                    <input
+                      type="date"
+                      value={newCustomStation.verificationValidUntil}
+                      onChange={(e) =>
+                        setNewCustomStation({
+                          ...newCustomStation,
+                          verificationValidUntil: e.target.value,
+                        })
+                      }
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddCustomModal(false)}
+                    className="px-3 py-1 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-medium cursor-pointer"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-3 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer flex items-center gap-1"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Зарегистрировать и привязать к объекту</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Форма импорта официальной справки УГМС (Этап 4) */}
+            {showUgmsModal && (
+              <div className="p-3 bg-indigo-50/90 rounded-xl border border-indigo-300 space-y-2.5 animate-in fade-in zoom-in-95">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-indigo-700" />
+                    <span>Импорт ведомости температур по справке УГМС Росгидромета</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowUgmsModal(false)}
+                    className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                      № справки УГМС:
+                    </label>
+                    <input
+                      type="text"
+                      value={ugmsForm.docNumber}
+                      onChange={(e) => setUgmsForm({ ...ugmsForm, docNumber: e.target.value })}
+                      placeholder="напр. 412-С"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                      Дата справки:
+                    </label>
+                    <input
+                      type="date"
+                      value={ugmsForm.docDate}
+                      onChange={(e) => setUgmsForm({ ...ugmsForm, docDate: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-0.5">
+                      Кем выдана:
+                    </label>
+                    <input
+                      type="text"
+                      value={ugmsForm.issuer}
+                      onChange={(e) => setUgmsForm({ ...ugmsForm, issuer: e.target.value })}
+                      placeholder="ФГБУ Северное УГМС"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-bold text-slate-700">
+                      Строки ведомости (Дата; Температура):
+                    </label>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      ГГГГ-ММ-ДД; +18.2 или ДД.ММ.ГГГГ; 18,2
+                    </span>
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={ugmsForm.csvText}
+                    onChange={(e) => setUgmsForm({ ...ugmsForm, csvText: e.target.value })}
+                    placeholder={`2026-06-15; +18.2\n2026-06-16; +19.4\n2026-06-17; +17.8`}
+                    className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-2 pt-1 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleParseUgmsText}
+                    className="px-3 py-1 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Распознать ведомость
+                  </button>
+
+                  {ugmsParseResult && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded border border-emerald-300">
+                        Распознано: {ugmsParseResult.parsedCount} дат
+                      </span>
+                      {ugmsParseResult.parsedCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleApplyUgmsCertificate}
+                          className="px-3 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer flex items-center gap-1"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Применить к объекту и архиву</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Быстрый поиск / фильтр станций */}
             <div className="relative">
@@ -597,7 +975,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск по городу (напр. Курган, Тюмень), названию станции или WMO ID..."
+                placeholder="Поиск по названию станции, городу (напр. Курган), WMO ID или прибору..."
                 className="w-full pl-9 pr-9 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#1e3799]"
               />
               {isSearchingOnline && (
@@ -649,19 +1027,22 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto p-1 bg-slate-50 rounded-xl border border-slate-200">
               {nearbyStations.length === 0 ? (
                 <div className="col-span-full p-4 text-center text-xs text-slate-500 bg-white rounded-lg border border-slate-200">
-                  По запросу «{searchQuery}» метеостанций в локальном реестре не найдено. Попробуйте ввести название ближайшего крупного города.
+                  По запросу «{searchQuery}» станций не найдено. Попробуйте ввести название ближайшего крупного города.
                 </div>
               ) : (
                 nearbyStations.map((st) => {
                   const isSelected = weatherStationId === st.id;
+                  const isCustom = st.source === 'custom';
                   return (
                     <button
                       key={st.id}
                       type="button"
-                      onClick={() => handleSelectStation(st, true)}
+                      onClick={() => handleSelectStation(st, !isCustom)}
                       className={`p-2.5 rounded-lg border text-left transition-all flex items-start justify-between gap-2 cursor-pointer ${
                         isSelected
                           ? 'bg-sky-50 border-[#1e3799] ring-2 ring-[#1e3799]/30 shadow-2xs'
+                          : isCustom
+                          ? 'bg-emerald-50/60 border-emerald-300 hover:bg-emerald-100/60'
                           : 'bg-white border-slate-200 hover:border-sky-400 hover:bg-sky-50/40'
                       }`}
                     >
@@ -670,12 +1051,26 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
                           <span>{st.name}</span>
                           {isSelected && <Check className="w-3.5 h-3.5 text-[#1e3799] shrink-0" />}
                         </div>
-                        <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                          {st.region} · WMO ID: <span className="font-mono font-bold">{st.id}</span>
+                        <div className="text-[11px] text-slate-500 truncate mt-0.5 flex items-center gap-1 flex-wrap">
+                          {isCustom ? (
+                            <span className="font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded text-[10px]">
+                              Поверка {st.verificationCertNumber} ({st.deviceModel || 'АМК'})
+                            </span>
+                          ) : (
+                            <span>
+                              {st.region} · WMO ID: <span className="font-mono font-bold">{st.id}</span>
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
-                        <span className="font-mono font-bold text-[11px] text-[#1e3799] bg-sky-100 px-1.5 py-0.5 rounded">
+                        <span
+                          className={`font-mono font-bold text-[11px] px-1.5 py-0.5 rounded ${
+                            isCustom
+                              ? 'text-emerald-800 bg-emerald-100'
+                              : 'text-[#1e3799] bg-sky-100'
+                          }`}
+                        >
                           {st.distanceKm !== undefined ? `${st.distanceKm} км` : '—'}
                         </span>
                       </div>

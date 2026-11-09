@@ -2460,6 +2460,7 @@ export default function App() {
         facilities={derivedFacilities}
         presets={FACILITY_LOCATION_PRESETS}
         joints={joints}
+        customStations={activeLocationFacility?.customWeatherStations}
         onSaveLocation={handleSaveFacilityLocation}
         onBulkUpdateJoints={handleBulkUpdateJointsTemperaturesFromStation}
         onClose={() => setLocationModalFacilityName(null)}
