@@ -168,7 +168,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
       setSelectedObjName(target.name);
       setRegion(target.region);
       setWeatherStation(getFacilityWeatherStationName(target));
-      setWeatherStationId(target.weatherStationId || '26078');
+      setWeatherStationId(target.weatherStationId || '');
       setSourceType(
         (target.weatherStationSource as WeatherDataSourceType) || 'meteostat'
       );
@@ -178,13 +178,13 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
       setWeatherObservations(target.weatherObservations || {});
       setCustomStations(target.customWeatherStations || []);
     } else {
-      setSelectedObjName('КС Волховская');
-      setRegion('Ленинградская область, г. Волхов');
-      setWeatherStation('Метеостанция г. Волхов (№26078)');
-      setWeatherStationId('26078');
+      setSelectedObjName('');
+      setRegion('');
+      setWeatherStation('Метеостанция не привязана');
+      setWeatherStationId('');
       setSourceType('meteostat');
-      setLatitude(59.93);
-      setLongitude(32.34);
+      setLatitude(55.0);
+      setLongitude(55.0);
       setWeatherArchive({});
       setWeatherObservations({});
       setCustomStations([]);
@@ -341,7 +341,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
     if (found) {
       setRegion(found.region);
       setWeatherStation(getFacilityWeatherStationName(found));
-      setWeatherStationId(found.weatherStationId || '26078');
+      setWeatherStationId(found.weatherStationId || '');
       setSourceType(
         found.weatherStationSource === 'open-meteo-era5' ? 'open-meteo-era5' : 'meteostat'
       );
@@ -359,6 +359,14 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
 
   // Проверка наблюдений на конкретную дату
   const handleCheckDateObservations = async () => {
+    if (!weatherStationId) {
+      setDateCheckStatus({
+        status: 'not_found',
+        message: 'Метеостанция не привязана к объекту. Сначала выберите станцию из каталога или зарегистрируйте поверенный метеопост.',
+      });
+      return;
+    }
+
     setDateCheckStatus({
       status: 'checking',
       message: 'Запрос данных метеонаблюдений...',
@@ -390,7 +398,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
 
     try {
       const obsMap = await fetchStationDailyObservations(
-        { id: weatherStationId || '26078', name: weatherStation, latitude, longitude },
+        { id: weatherStationId, name: weatherStation, latitude, longitude },
         testDate,
         testDate,
         { sourceType }
@@ -429,11 +437,16 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
 
   // Загрузка дневного архива наблюдений за выбранный период
   const handleLoadDailyObservationsArchive = async () => {
+    if (!weatherStationId) {
+      setArchiveLoadMessage('Метеостанция не привязана к объекту. Сначала выберите станцию из каталога или зарегистрируйте поверенный метеопост.');
+      return;
+    }
+
     setIsLoadingArchive(true);
     setArchiveLoadMessage(null);
     try {
       const obsMap = await fetchStationDailyObservations(
-        { id: weatherStationId || '26078', name: weatherStation, latitude, longitude },
+        { id: weatherStationId, name: weatherStation, latitude, longitude },
         periodStart,
         periodEnd,
         { sourceType }
@@ -485,7 +498,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
     onSaveLocation(cleanObjName, {
       region: region.trim() || 'Промышленная площадка',
       weatherStation: weatherStation.trim() || 'Метеостанция объекта',
-      weatherStationId: weatherStationId || '26078',
+      weatherStationId: weatherStationId || undefined,
       weatherStationDistanceKm: calculateHaversineDistanceKm(
         latitude,
         longitude,

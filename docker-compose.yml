@@ -19,7 +19,7 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - ZAYCHICK_REQUIRE_AUTH=true
-      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-AdminSecure2026!}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
     volumes:
       # Постоянное хранилище базы данных SQLite и архивных копий (бэкапов)
       - ./data:/app/data

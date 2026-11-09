@@ -17,11 +17,22 @@ function broadcastDbChange(payload: {
   lastUpdatedBy: string;
   lastAction: string;
   sourceClientId?: string;
+  meta?: any;
 }) {
-  const msg = `data: ${JSON.stringify({
+  const meta = payload.meta || {
+    globalRevision: payload.globalRevision,
+    lastUpdatedAt: payload.lastUpdatedAt,
+    lastUpdatedBy: payload.lastUpdatedBy,
+    lastAction: payload.lastAction,
+  };
+  const json = JSON.stringify({
     type: 'db_updated',
-    ...payload,
-  })}\n\n`;
+    meta,
+    globalRevision: payload.globalRevision,
+    sourceClientId: payload.sourceClientId,
+  });
+  // Отправляем явный event header (event: db_updated) для addEventListener('db_updated') (Замечание аудита №3)
+  const msg = `event: db_updated\ndata: ${json}\n\n`;
   for (const client of sseClients) {
     try {
       client.write(msg);
@@ -306,12 +317,12 @@ async function startServer() {
     res.flushHeaders?.();
 
     const state = serverDb.readFullState();
-    res.write(
-      `data: ${JSON.stringify({
-        type: 'connected',
-        globalRevision: state.meta.globalRevision,
-      })}\n\n`
-    );
+    const json = JSON.stringify({
+      type: 'connected',
+      meta: state.meta,
+      globalRevision: state.meta.globalRevision,
+    });
+    res.write(`event: connected\ndata: ${json}\n\n`);
 
     sseClients.add(res);
 

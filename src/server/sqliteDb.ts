@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'node:crypto';
 import { createRequire } from 'module';
 import { normalizeTechCard, normalizeWelderProfile } from '../utils/entityNormalizers';
 import {
@@ -90,10 +91,6 @@ interface SqliteMetaRecord {
   activeTemplateId: string;
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
-const SQLITE_DB_PATH = path.join(DATA_DIR, 'zaychick.sqlite');
-const JSON_FALLBACK_PATH = path.join(DATA_DIR, 'zaychick-fallback.json');
-
 const FIELD_LABELS_MAP: Record<string, string> = Object.fromEntries(
   COMPARABLE_JOINT_FIELDS.map((c) => [String(c.key), c.label])
 );
@@ -120,10 +117,23 @@ function buildDefaultSeedData(): UnifiedDbDataPayload {
   };
 }
 
+export interface UnifiedServerDbOptions {
+  dataDir?: string;
+  sqliteDbPath?: string;
+  jsonFallbackPath?: string;
+  backupsDir?: string;
+  disableStartupBackup?: boolean;
+}
+
 export class UnifiedServerDatabase {
   private sqliteDb: any = null;
   private engineName = 'SQLite 3 (Native WAL)';
   private journalMode = 'WAL';
+  public readonly dataDir: string;
+  public readonly sqliteDbPath: string;
+  public readonly jsonFallbackPath: string;
+  public readonly backupsDir: string;
+  private readonly disableStartupBackup: boolean;
   private activeSessions = new Map<
     string,
     {
@@ -136,19 +146,33 @@ export class UnifiedServerDatabase {
   >();
   private authSessions = new Map<string, AuthenticatedSession>();
 
-  constructor() {
+  constructor(options?: UnifiedServerDbOptions) {
+    this.dataDir = options?.dataDir ? path.resolve(options.dataDir) : path.resolve(process.cwd(), 'data');
+    this.sqliteDbPath = options?.sqliteDbPath ? path.resolve(options.sqliteDbPath) : path.join(this.dataDir, 'zaychick.sqlite');
+    this.jsonFallbackPath = options?.jsonFallbackPath ? path.resolve(options.jsonFallbackPath) : path.join(this.dataDir, 'zaychick-fallback.json');
+    this.backupsDir = options?.backupsDir ? path.resolve(options.backupsDir) : path.join(this.dataDir, 'backups');
+    this.disableStartupBackup = !!options?.disableStartupBackup;
     this.init();
   }
 
+  public close(): void {
+    try {
+      if (this.sqliteDb && typeof this.sqliteDb.close === 'function') {
+        this.sqliteDb.close();
+        this.sqliteDb = null;
+      }
+    } catch {}
+  }
+
   private init() {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(this.dataDir)) {
+      fs.mkdirSync(this.dataDir, { recursive: true });
     }
 
     try {
       const nodeSqlite = require('node:sqlite');
       if (nodeSqlite && nodeSqlite.DatabaseSync) {
-        this.sqliteDb = new nodeSqlite.DatabaseSync(SQLITE_DB_PATH);
+        this.sqliteDb = new nodeSqlite.DatabaseSync(this.sqliteDbPath);
         this.sqliteDb.exec('PRAGMA journal_mode = WAL;');
         this.sqliteDb.exec('PRAGMA synchronous = NORMAL;');
         this.sqliteDb.exec('PRAGMA busy_timeout = 5000;');
@@ -172,6 +196,7 @@ export class UnifiedServerDatabase {
    * Создает снимок базы данных SQLite в data/backups/ перед открытием сессии.
    */
   private createStartupBackup(): void {
+    if (this.disableStartupBackup) return;
     try {
       this.createBackup('startup');
     } catch (err) {
@@ -181,11 +206,11 @@ export class UnifiedServerDatabase {
 
   /**
    * Создает согласованный моментальный снимок базы данных SQLite (VACUUM INTO + WAL checkpoint)
-   * в папке data/backups/, выполняя ротацию с сохранением 5 последних архивных копий.
+   * в папке backupsDir, выполняя ротацию с сохранением 5 последних архивных копий.
    */
   public createBackup(label = 'manual'): { success: boolean; backupPath?: string; error?: string } {
     try {
-      const backupsDir = path.join(DATA_DIR, 'backups');
+      const backupsDir = this.backupsDir;
       if (!fs.existsSync(backupsDir)) {
         fs.mkdirSync(backupsDir, { recursive: true });
       }
@@ -214,10 +239,10 @@ export class UnifiedServerDatabase {
         if (!createdSuccessfully) {
           try {
             this.sqliteDb.exec('PRAGMA wal_checkpoint(TRUNCATE);');
-            if (!fs.existsSync(SQLITE_DB_PATH)) {
+            if (!fs.existsSync(this.sqliteDbPath)) {
               return { success: false, error: 'Файл базы данных SQLite не найден' };
             }
-            fs.copyFileSync(SQLITE_DB_PATH, backupPath);
+            fs.copyFileSync(this.sqliteDbPath, backupPath);
             createdSuccessfully = true;
           } catch (fallbackErr: any) {
             return {
@@ -261,9 +286,9 @@ export class UnifiedServerDatabase {
         return { success: true, backupPath };
       }
 
-      if (fs.existsSync(JSON_FALLBACK_PATH)) {
+      if (fs.existsSync(this.jsonFallbackPath)) {
         const jsonBackupPath = path.join(backupsDir, `zaychick-backup-${ts}-${label}.json`);
-        fs.copyFileSync(JSON_FALLBACK_PATH, jsonBackupPath);
+        fs.copyFileSync(this.jsonFallbackPath, jsonBackupPath);
         try {
           const parsed = JSON.parse(fs.readFileSync(jsonBackupPath, 'utf8'));
           if (!parsed?.data || !parsed?.meta) {
@@ -426,8 +451,20 @@ export class UnifiedServerDatabase {
           delete adminAcc.password;
         }
         console.log('[ZAYCHICK Security] Пароль администратора инициализирован из переменной окружения INITIAL_ADMIN_PASSWORD.');
+      } else if (process.env.NODE_ENV === 'production') {
+        // В продакшене без INITIAL_ADMIN_PASSWORD генерируем крипто-стойкий случайный пароль
+        const randomPass = crypto.randomBytes(12).toString('base64url');
+        const customHashed = hashPasswordWithSalt(randomPass);
+        const adminAcc = seed.userAccounts.find((u) => u.login === 'admin');
+        if (adminAcc) {
+          adminAcc.passwordHash = customHashed.hash;
+          adminAcc.passwordSalt = customHashed.salt;
+          adminAcc.mustChangePassword = true;
+          delete adminAcc.password;
+        }
+        console.warn(`[ZAYCHICK Security] ВНИМАНИЕ: INITIAL_ADMIN_PASSWORD не задан! Сгенерирован временный пароль для admin: ${randomPass}`);
       } else {
-        console.log('[ZAYCHICK Security] Учётная запись администратора инициализирована со стандартным соленым хешем. Рекомендуется сменить пароль при первом входе.');
+        console.log('[ZAYCHICK Security] Учётная запись администратора инициализирована со стандартным соленым хешем (dev-стенд). Рекомендуется сменить пароль при первом входе.');
       }
       this.writeFullStateToSqlite(
         seed,
@@ -439,7 +476,7 @@ export class UnifiedServerDatabase {
       // Самовосстановление учётных записей в существующей базе данных, если хеши были стёрты:
       try {
         const userRows = this.sqliteDb
-          .prepare('SELECT login, payload_json FROM user_accounts')
+            .prepare('SELECT login, payload_json FROM user_accounts')
           .all() as { login: string; payload_json: string }[];
         const seedMap = new Map(USER_ACCOUNTS.map((u) => [u.login.toLowerCase(), u]));
         const updateStmt = this.sqliteDb.prepare('UPDATE user_accounts SET payload_json = ? WHERE lower(login) = ?');
@@ -452,9 +489,14 @@ export class UnifiedServerDatabase {
               acc.passwordHash = seedAcc.passwordHash;
               acc.passwordSalt = seedAcc.passwordSalt;
             } else {
-              const generated = hashPasswordWithSalt('123');
-              acc.passwordHash = generated.hash;
-              acc.passwordSalt = generated.salt;
+              // Категорический запрет подстановки дефолтного пароля '123' (Замечание аудита №2)
+              // Генерируем крипто-стойкую случайную соль и хеш, требуя явную смену пароля
+              const unusableSalt = crypto.randomBytes(16).toString('hex');
+              const unusableHash = crypto.randomBytes(32).toString('hex');
+              acc.passwordHash = unusableHash;
+              acc.passwordSalt = unusableSalt;
+              acc.mustChangePassword = true;
+              console.warn(`[ZAYCHICK Security] Учётная запись «${acc.login}» не имела пароля. Установлена блокировка до смены пароля администратором.`);
             }
             updateStmt.run(JSON.stringify(acc), acc.login.toLowerCase());
             console.log(`[ZAYCHICK Security] Восстановлены парольные хеши для учётной записи «${acc.login}».`);
@@ -478,7 +520,7 @@ export class UnifiedServerDatabase {
   }
 
   private ensureSeededFallback() {
-    if (!fs.existsSync(JSON_FALLBACK_PATH)) {
+    if (!fs.existsSync(this.jsonFallbackPath)) {
       const seed = buildDefaultSeedData();
       if (process.env.INITIAL_ADMIN_PASSWORD) {
         const customHashed = hashPasswordWithSalt(process.env.INITIAL_ADMIN_PASSWORD);
@@ -500,7 +542,7 @@ export class UnifiedServerDatabase {
         },
         data: seed,
       };
-      fs.writeFileSync(JSON_FALLBACK_PATH, JSON.stringify(payload, null, 2), 'utf8');
+      fs.writeFileSync(this.jsonFallbackPath, JSON.stringify(payload, null, 2), 'utf8');
     }
   }
 
@@ -513,9 +555,9 @@ export class UnifiedServerDatabase {
     if (!this.sqliteDb) {
       // Сохраняем парольные хеши существующих пользователей, если новые записи пришли маскированными
       const existingUserMap = new Map<string, UserAccount>();
-      if (fs.existsSync(JSON_FALLBACK_PATH)) {
+      if (fs.existsSync(this.jsonFallbackPath)) {
         try {
-          const oldRaw = JSON.parse(fs.readFileSync(JSON_FALLBACK_PATH, 'utf8'));
+          const oldRaw = JSON.parse(fs.readFileSync(this.jsonFallbackPath, 'utf8'));
           (oldRaw?.data?.userAccounts || []).forEach((u: UserAccount) => {
             if (u.login) existingUserMap.set(u.login.toLowerCase(), u);
           });
@@ -545,9 +587,9 @@ export class UnifiedServerDatabase {
         },
         data: safeData,
       };
-      const tmp = `${JSON_FALLBACK_PATH}.tmp`;
+      const tmp = `${this.jsonFallbackPath}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(payload), 'utf8');
-      fs.renameSync(tmp, JSON_FALLBACK_PATH);
+      fs.renameSync(tmp, this.jsonFallbackPath);
       return;
     }
 
@@ -968,8 +1010,8 @@ export class UnifiedServerDatabase {
   private getRawUserAccountByLogin(login: string): UserAccount | null {
     const cleanLogin = (login || '').trim().toLowerCase();
     if (!this.sqliteDb) {
-      if (!fs.existsSync(JSON_FALLBACK_PATH)) return null;
-      const raw = JSON.parse(fs.readFileSync(JSON_FALLBACK_PATH, 'utf8'));
+      if (!fs.existsSync(this.jsonFallbackPath)) return null;
+      const raw = JSON.parse(fs.readFileSync(this.jsonFallbackPath, 'utf8'));
       const acc = (raw.data?.userAccounts || []).find(
         (a: any) => (a.login || '').trim().toLowerCase() === cleanLogin
       );
@@ -1154,7 +1196,7 @@ export class UnifiedServerDatabase {
    */
   public readInternalFullState(): { meta: ServerDbMetadata; data: UnifiedDbDataPayload } {
     if (!this.sqliteDb) {
-      const raw = JSON.parse(fs.readFileSync(JSON_FALLBACK_PATH, 'utf8'));
+      const raw = JSON.parse(fs.readFileSync(this.jsonFallbackPath, 'utf8'));
       const data: UnifiedDbDataPayload = raw.data;
       return {
         meta: {

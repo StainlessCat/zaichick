@@ -505,6 +505,7 @@ export interface UserAccount {
   isAdmin?: boolean;
   passwordHash?: string;
   passwordSalt?: string;
+  mustChangePassword?: boolean;
 }
 
 /**

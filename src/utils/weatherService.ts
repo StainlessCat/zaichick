@@ -299,27 +299,61 @@ export function parseUgmsWeatherCertificateCsv(
       continue;
     }
 
+    // Защита от коллизии: если разделителем выбрана запятая, а число содержит десятичную запятую (2026-06-15,+18,2)
+    if (delimiter === ',' && parts.length > 2) {
+      errors.push(
+        `Строка ${idx + 1}: Неоднозначный формат («${rawLine}»): запятая использована одновременно как разделитель колонок и десятичный знак. Используйте точку с запятой (;) в качестве разделителя колонок.`
+      );
+      skippedCount++;
+      continue;
+    }
+
     const dateStr = parts[0];
     const tempStr = parts[1].replace(',', '.').replace(/[^\d.+-]/g, '');
 
-    // Парсинг даты (YYYY-MM-DD или DD.MM.YYYY)
-    let isoDate: string | null = null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      isoDate = dateStr;
-    } else if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
-      const [dd, mm, yyyy] = dateStr.split('.');
-      isoDate = `${yyyy}-${mm}-${dd}`;
-    }
+    // Парсинг даты (YYYY-MM-DD или DD.MM.YYYY) со строгой проверкой календарной корректности (round-trip)
+    let y = 0, m = 0, d = 0;
+    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+    const ruMatch = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(dateStr);
 
-    if (!isoDate || Number.isNaN(new Date(isoDate).getTime())) {
+    if (isoMatch) {
+      y = parseInt(isoMatch[1], 10);
+      m = parseInt(isoMatch[2], 10);
+      d = parseInt(isoMatch[3], 10);
+    } else if (ruMatch) {
+      d = parseInt(ruMatch[1], 10);
+      m = parseInt(ruMatch[2], 10);
+      y = parseInt(ruMatch[3], 10);
+    } else {
       errors.push(`Строка ${idx + 1}: Некорректный формат даты «${dateStr}» (ожидается ГГГГ-ММ-ДД или ДД.ММ.ГГГГ)`);
       skippedCount++;
       continue;
     }
 
+    // Проверка календарного существования даты (исключает 31 февраля, 31 апреля и т.д.)
+    const checkDate = new Date(Date.UTC(y, m - 1, d));
+    if (
+      checkDate.getUTCFullYear() !== y ||
+      checkDate.getUTCMonth() !== m - 1 ||
+      checkDate.getUTCDate() !== d
+    ) {
+      errors.push(`Строка ${idx + 1}: Календарно невозможная дата «${dateStr}»`);
+      skippedCount++;
+      continue;
+    }
+
+    const isoDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
     const tempNum = parseFloat(tempStr);
     if (Number.isNaN(tempNum)) {
       errors.push(`Строка ${idx + 1}: Некорректное значение температуры «${parts[1]}»`);
+      skippedCount++;
+      continue;
+    }
+
+    // Физический диапазон температур для сварочно-монтажных работ в РФ (-65 °C ... +55 °C)
+    if (tempNum < -65 || tempNum > 55) {
+      errors.push(`Строка ${idx + 1}: Температура ${tempNum} °C выходит за пределы физически допустимого диапазона (-65 °C ... +55 °C)`);
       skippedCount++;
       continue;
     }
@@ -680,6 +714,7 @@ export async function fetchStationDailyObservations(
     sourceType?: WeatherDataSourceType;
     apiKey?: string;
     nowIso?: string;
+    allowDemoFallback?: boolean;
   }
 ): Promise<Record<string, DailyWeatherObservation>> {
   const sourceType = options?.sourceType || 'meteostat';
@@ -833,7 +868,9 @@ export async function fetchStationDailyObservations(
   }
 
   // 2. Локальный верифицированный индекс фактических наблюдений станций Росгидромета/WMO
-  const stationLocalIndex = HISTORICAL_STATION_OBSERVATIONS_INDEX[station.id];
+  // Замечание аудита №4: запрещается выдавать зашитые значения за прямой ответ онлайн-API Meteostat!
+  // Статический индекс используется ТОЛЬКО при явном флаге allowDemoFallback (в тестах и демо-режиме)
+  const stationLocalIndex = options?.allowDemoFallback ? HISTORICAL_STATION_OBSERVATIONS_INDEX[station.id] : undefined;
   const cursor = new Date(startObj);
 
   while (cursor <= endObj) {
@@ -858,13 +895,13 @@ export async function fetchStationDailyObservations(
         stationId: station.id,
         stationName: station.name,
         sourceType: 'meteostat',
-        sourceDescription: meteostatSourceDesc,
+        sourceDescription: `${station.name} (офлайн-выписка реестра Росгидромета)`,
         status: 'available',
         statusMessage: 'Данные станции доступны за эту дату',
         fetchedAt: new Date().toISOString(),
       };
     } else {
-      // КАТЕГОРИЧЕСКИЙ ЗАПРЕТ НА ПОДСТАНОВКУ РАСЧЁТНОЙ ФОРМУЛЫ!
+      // КАТЕГОРИЧЕСКИЙ ЗАПРЕТ НА ПОДСТАНОВКУ РАСЧЁТНОЙ ФОРМУЛЫ ИЛИ НЕПРОВЕРЯЕМЫХ ЧИСЕЛ!
       // Значение остаётся незаполненным с понятным статусом «За дату данных нет»
       result[dStr] = {
         date: dStr,

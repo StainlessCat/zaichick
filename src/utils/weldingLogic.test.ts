@@ -3925,6 +3925,9 @@ test('Sprint 4: Strict TechCard matching and Line-specific Welder NDT Quota calc
 });
 
 test('Sprint 2: OCC-контроль ревизий (HTTP 409), согласованный бэкап WAL и scrypt KDF', async () => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
   const { UnifiedServerDatabase } = await import('../server/sqliteDb');
   const { hashPasswordWithSalt, verifyPassword } = await import('../server/serverAuth');
   const { USER_ACCOUNTS } = await import('../data/seedData');
@@ -3941,159 +3944,207 @@ test('Sprint 2: OCC-контроль ревизий (HTTP 409), согласов
     );
   }
 
-  // 2. Инициализация базы данных и проверка согласованного бэкапа
-  const db = new UnifiedServerDatabase();
-  const backupRes = db.createBackup('test_audit');
-  assert.equal(backupRes.success, true, 'Метод createBackup должен завершаться успешно');
-  assert.ok(backupRes.backupPath, 'Метод createBackup должен возвращать путь к файлу');
-
-  // 3. Проверка OCC: syncStateWithOptimisticLock со старой ревизией должна возвращать STALE_GLOBAL_REVISION
-  const state = db.readFullState();
-  const currentRev = state.meta.globalRevision;
-
-  const staleResult = db.syncStateWithOptimisticLock({
-    data: { joints: state.data.joints },
-    expectedGlobalRevision: currentRev - 1, // Устаревшая ревизия
-    forceOverwrite: false,
-    actionLabel: 'Тест конфликта ревизии',
-    user: { login: 'engineer_pto', fullName: 'Инженер', role: 'Инженер ПТО' },
+  // 2. Инициализация ИЗОЛИРОВАННОЙ базы данных во временном каталоге (Замечание аудита №1: не трогать data/)
+  const tmpDir = path.join(os.tmpdir(), `zaychick-test-occ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const db = new UnifiedServerDatabase({
+    dataDir: tmpDir,
+    sqliteDbPath: path.join(tmpDir, 'test.sqlite'),
+    backupsDir: path.join(tmpDir, 'backups'),
+    disableStartupBackup: true,
   });
 
-  assert.equal(staleResult.status, 'conflict', 'При устаревшей ревизии ожидается статус conflict');
-  if (staleResult.status === 'conflict') {
-    assert.equal(staleResult.conflict, 'STALE_GLOBAL_REVISION');
-    assert.equal(staleResult.currentRevision, currentRev);
+  try {
+    const backupRes = db.createBackup('test_audit');
+    assert.equal(backupRes.success, true, 'Метод createBackup должен завершаться успешно');
+    assert.ok(backupRes.backupPath, 'Метод createBackup должен возвращать путь к файлу');
+
+    // 3. Проверка OCC: syncStateWithOptimisticLock со старой ревизией должна возвращать STALE_GLOBAL_REVISION
+    const state = db.readFullState();
+    const currentRev = state.meta.globalRevision;
+
+    const staleResult = db.syncStateWithOptimisticLock({
+      data: { joints: state.data.joints },
+      expectedGlobalRevision: currentRev - 1, // Устаревшая ревизия
+      forceOverwrite: false,
+      actionLabel: 'Тест конфликта ревизии',
+      user: { login: 'engineer_pto', fullName: 'Инженер', role: 'Инженер ПТО' },
+    });
+
+    assert.equal(staleResult.status, 'conflict', 'При устаревшей ревизии ожидается статус conflict');
+    if (staleResult.status === 'conflict') {
+      assert.equal(staleResult.conflict, 'STALE_GLOBAL_REVISION');
+      assert.equal(staleResult.currentRevision, currentRev);
+    }
+
+    // 4. Проверка обхода принудительной перезаписи администратором (forceOverwrite: true)
+    const forceResult = db.syncStateWithOptimisticLock({
+      data: { joints: state.data.joints },
+      expectedGlobalRevision: currentRev - 1,
+      forceOverwrite: true,
+      actionLabel: 'Принудительная синхронизация админом',
+      user: { login: 'admin', fullName: 'Админ', role: 'Администратор системы', isAdmin: true },
+    });
+
+    assert.equal(forceResult.status, 'ok', 'При forceOverwrite: true синхронизация должна успешно применяться');
+  } finally {
+    db.close();
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-
-  // 4. Проверка обхода принудительной перезаписи администратором (forceOverwrite: true)
-  const forceResult = db.syncStateWithOptimisticLock({
-    data: { joints: state.data.joints },
-    expectedGlobalRevision: currentRev - 1,
-    forceOverwrite: true,
-    actionLabel: 'Принудительная синхронизация админом',
-    user: { login: 'admin', fullName: 'Админ', role: 'Администратор системы', isAdmin: true },
-  });
-
-  assert.equal(forceResult.status, 'ok', 'При forceOverwrite: true синхронизация должна успешно применяться');
 });
 
 test('Sprint 3: Регресс сохранения хешей паролей при синхронизации и явный отказ при создании стыка', async () => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
   const { UnifiedServerDatabase } = await import('../server/sqliteDb');
 
-  const db = new UnifiedServerDatabase();
-
-  // 1. Проверяем, что первичный вход успешен
-  const initialAuth = db.authenticateUser('admin', '123');
-  assert.equal(initialAuth.success, true, 'Первичный вход admin/123 должен быть успешен');
-
-  // 2. Получаем состояние через публичный readFullState (где аккаунты маскированы)
-  const publicState = db.readFullState();
-  const maskedAccounts = publicState.data.userAccounts;
-  assert.ok(maskedAccounts.length > 0);
-  assert.equal(maskedAccounts[0].passwordHash, undefined, 'В публичном DTO passwordHash должен быть замаскирован');
-
-  // 3. Выполняем синхронизацию состояния, передавая маскированные аккаунты
-  const syncRes = db.syncStateWithOptimisticLock({
-    data: {
-      userAccounts: maskedAccounts,
-      joints: publicState.data.joints,
-    },
-    actionLabel: 'Тест синхронизации с маскированными аккаунтами',
-    user: { login: 'admin', fullName: 'Админ', role: 'Администратор системы', isAdmin: true },
-    forceOverwrite: true,
-  });
-  assert.equal(syncRes.status, 'ok');
-
-  // 4. КРИТИЧЕСКИЙ РЕГРЕСС-ТЕСТ: повторный вход admin/123 ОБЯЗАН быть успешен!
-  const repeatAuth = db.authenticateUser('admin', '123');
-  assert.equal(
-    repeatAuth.success,
-    true,
-    'Критический регресс: после syncStateWithOptimisticLock парольные хеши в БД не должны затираться!'
-  );
-
-  // 5. Проверка явного отказа (forbidden) при попытке создания стыка без прав
-  const forbiddenSave = db.saveJointWithOptimisticLock({
-    joint: {
-      id: `new-joint-unauthorized-${Date.now()}`,
-      jointNumber: '999',
-      uniqueLineId: 'TEST-LINE',
-      rdCode: 'RD-01',
-      objectName: 'Объект',
-      contour: 'К-1',
-      lineNumber: 'L-1',
-      jointType: 'Монтажный',
-      diameterMm: 159,
-      diameterInch: '6"',
-      wallThickness: 8,
-      lrv1Code: 'L-1',
-      elem1Name: 'Труба',
-      elem1Material: '09Г2С',
-      elem1Ntd: 'ГОСТ',
-      lrv2Code: 'L-2',
-      elem2Name: 'Труба',
-      elem2Material: '09Г2С',
-      elem2Ntd: 'ГОСТ',
-      welderStamp: 'W1',
-      weldingDate: '2026-01-10',
-      vikResult: 'Годен',
-      ndtType: 'РК',
-      ndtResult: 'Годен',
-      updatedAt: '2026-01-10T10:00:00Z',
-      updatedBy: 'Дефектоскопист',
-    } as any,
-    user: { login: 'ndt_petrov', fullName: 'Дефектоскопист', role: 'Специалист ЛНК' },
-    forceOverwrite: false,
+  // Изолированная временная БД для теста
+  const tmpDir = path.join(os.tmpdir(), `zaychick-test-auth-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const db = new UnifiedServerDatabase({
+    dataDir: tmpDir,
+    sqliteDbPath: path.join(tmpDir, 'test.sqlite'),
+    backupsDir: path.join(tmpDir, 'backups'),
+    disableStartupBackup: true,
   });
 
-  assert.equal(
-    forbiddenSave.status,
-    'forbidden',
-    'Попытка заведения стыка ролью без прав должна возвращать явный статус forbidden (HTTP 403)'
-  );
+  try {
+    // 1. Проверяем, что первичный вход успешен
+    const initialAuth = db.authenticateUser('admin', '123');
+    assert.equal(initialAuth.success, true, 'Первичный вход admin/123 должен быть успешен');
+
+    // 2. Получаем состояние через публичный readFullState (где аккаунты маскированы)
+    const publicState = db.readFullState();
+    const maskedAccounts = publicState.data.userAccounts;
+    assert.ok(maskedAccounts.length > 0);
+    assert.equal(maskedAccounts[0].passwordHash, undefined, 'В публичном DTO passwordHash должен быть замаскирован');
+
+    // 3. Выполняем синхронизацию состояния, передавая маскированные аккаунты
+    const syncRes = db.syncStateWithOptimisticLock({
+      data: {
+        userAccounts: maskedAccounts,
+        joints: publicState.data.joints,
+      },
+      actionLabel: 'Тест синхронизации с маскированными аккаунтами',
+      user: { login: 'admin', fullName: 'Админ', role: 'Администратор системы', isAdmin: true },
+      forceOverwrite: true,
+    });
+    assert.equal(syncRes.status, 'ok');
+
+    // 4. КРИТИЧЕСКИЙ РЕГРЕСС-ТЕСТ: повторный вход admin/123 ОБЯЗАН быть успешен!
+    const repeatAuth = db.authenticateUser('admin', '123');
+    assert.equal(
+      repeatAuth.success,
+      true,
+      'Критический регресс: после syncStateWithOptimisticLock парольные хеши в БД не должны затираться!'
+    );
+
+    // 5. Проверка явного отказа (forbidden) при попытке создания стыка без прав
+    const forbiddenSave = db.saveJointWithOptimisticLock({
+      joint: {
+        id: `new-joint-unauthorized-${Date.now()}`,
+        jointNumber: '999',
+        uniqueLineId: 'TEST-LINE',
+        rdCode: 'RD-01',
+        objectName: 'Объект',
+        contour: 'К-1',
+        lineNumber: 'L-1',
+        jointType: 'Монтажный',
+        diameterMm: 159,
+        diameterInch: '6"',
+        wallThickness: 8,
+        lrv1Code: 'L-1',
+        elem1Name: 'Труба',
+        elem1Material: '09Г2С',
+        elem1Ntd: 'ГОСТ',
+        lrv2Code: 'L-2',
+        elem2Name: 'Труба',
+        elem2Material: '09Г2С',
+        elem2Ntd: 'ГОСТ',
+        welderStamp: 'W1',
+        weldingDate: '2026-01-10',
+        vikResult: 'Годен',
+        ndtType: 'РК',
+        ndtResult: 'Годен',
+        updatedAt: '2026-01-10T10:00:00Z',
+        updatedBy: 'Дефектоскопист',
+      } as any,
+      user: { login: 'ndt_petrov', fullName: 'Дефектоскопист', role: 'Специалист ЛНК' },
+      forceOverwrite: false,
+    });
+
+    assert.equal(
+      forbiddenSave.status,
+      'forbidden',
+      'Попытка заведения стыка ролью без прав должна возвращать явный статус forbidden (HTTP 403)'
+    );
+  } finally {
+    db.close();
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
 });
 
 test('Sprint 3: Физическая валидация сигнатуры бэкапа и сквозное восстановление базы данных', async () => {
-  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
+  const os = await import('node:os');
+  const path = await import('node:path');
   const fs = await import('node:fs');
+  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
 
-  const db = new UnifiedServerDatabase();
-  const backupRes = db.createBackup('verify_restore');
+  // Изолированная временная БД для теста бэкапа
+  const tmpDir = path.join(os.tmpdir(), `zaychick-test-backup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const db = new UnifiedServerDatabase({
+    dataDir: tmpDir,
+    sqliteDbPath: path.join(tmpDir, 'test.sqlite'),
+    backupsDir: path.join(tmpDir, 'backups'),
+    disableStartupBackup: true,
+  });
 
-  assert.equal(backupRes.success, true, 'Резервная копия должна создаваться со статусом success: true');
-  assert.ok(backupRes.backupPath, 'Должен быть возвращён путь к созданному файлу');
-  assert.ok(fs.existsSync(backupRes.backupPath!), 'Файл резервной копии должен физически существовать на диске');
+  try {
+    const backupRes = db.createBackup('verify_restore');
 
-  // 1. Проверка сигнатуры заголовка SQLite
-  if (backupRes.backupPath!.endsWith('.sqlite')) {
-    const fd = fs.openSync(backupRes.backupPath!, 'r');
-    const headerBuf = Buffer.alloc(16);
-    fs.readSync(fd, headerBuf, 0, 16, 0);
-    fs.closeSync(fd);
-    const magicPrefix = Buffer.from('SQLite format 3\0', 'utf8');
-    assert.deepEqual(
-      headerBuf,
-      magicPrefix,
-      'Сигнатура заголовка файла бэкапа обязана в точности соответствовать стандарту "SQLite format 3\\0"'
-    );
+    assert.equal(backupRes.success, true, 'Резервная копия должна создаваться со статусом success: true');
+    assert.ok(backupRes.backupPath, 'Должен быть возвращён путь к созданному файлу');
+    assert.ok(fs.existsSync(backupRes.backupPath!), 'Файл резервной копии должен физически существовать на диске');
 
-    // 2. Сквозное восстановление: открываем бэкап в независимом процессе и считываем таблицы
-    const nodeSqlite = await import('node:sqlite');
-    const restoredDb = new (nodeSqlite as any).DatabaseSync(backupRes.backupPath!);
+    // 1. Проверка сигнатуры заголовка SQLite
+    if (backupRes.backupPath!.endsWith('.sqlite')) {
+      const fd = fs.openSync(backupRes.backupPath!, 'r');
+      const headerBuf = Buffer.alloc(16);
+      fs.readSync(fd, headerBuf, 0, 16, 0);
+      fs.closeSync(fd);
+      const magicPrefix = Buffer.from('SQLite format 3\0', 'utf8');
+      assert.deepEqual(
+        headerBuf,
+        magicPrefix,
+        'Сигнатура заголовка файла бэкапа обязана в точности соответствовать стандарту "SQLite format 3\\0"'
+      );
 
-    const jointsCount = restoredDb.prepare('SELECT count(*) as cnt FROM weld_joints').get() as { cnt: number };
-    assert.ok(jointsCount.cnt > 0, 'Восстановленная база обязана содержать записи сварных стыков');
+      // 2. Сквозное восстановление: открываем бэкап в независимом процессе и считываем таблицы
+      const nodeSqlite = await import('node:sqlite');
+      const restoredDb = new (nodeSqlite as any).DatabaseSync(backupRes.backupPath!);
 
-    const usersCount = restoredDb.prepare('SELECT count(*) as cnt FROM user_accounts').get() as { cnt: number };
-    assert.ok(usersCount.cnt > 0, 'Восстановленная база обязана содержать учётные записи пользователей');
+      try {
+        const jointsCount = restoredDb.prepare('SELECT count(*) as cnt FROM weld_joints').get() as { cnt: number };
+        assert.ok(jointsCount.cnt > 0, 'Восстановленная база обязана содержать записи сварных стыков');
 
-    const metaRow = restoredDb.prepare('SELECT global_revision FROM db_meta WHERE id = 1').get() as { global_revision: number };
-    assert.ok(metaRow.global_revision >= 1, 'Восстановленная база обязана содержать метаданные ревизии');
-  } else {
-    // Fallback JSON проверка
-    const parsed = JSON.parse(fs.readFileSync(backupRes.backupPath!, 'utf8'));
-    assert.ok(parsed?.data?.joints?.length > 0, 'JSON бэкап обязан содержать стыки');
-    assert.ok(parsed?.data?.userAccounts?.length > 0, 'JSON бэкап обязан содержать аккаунты');
+        const usersCount = restoredDb.prepare('SELECT count(*) as cnt FROM user_accounts').get() as { cnt: number };
+        assert.ok(usersCount.cnt > 0, 'Восстановленная база обязана содержать учётные записи пользователей');
+
+        const metaRow = restoredDb.prepare('SELECT global_revision FROM db_meta WHERE id = 1').get() as { global_revision: number };
+        assert.ok(metaRow.global_revision >= 1, 'Восстановленная база обязана содержать метаданные ревизии');
+      } finally {
+        try { restoredDb.close(); } catch {}
+      }
+    } else {
+      // Fallback JSON проверка
+      const parsed = JSON.parse(fs.readFileSync(backupRes.backupPath!, 'utf8'));
+      assert.ok(parsed?.data?.joints?.length > 0, 'JSON бэкап обязан содержать стыки');
+    }
+  } finally {
+    db.close();
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
 });
 
@@ -4132,12 +4183,12 @@ test('Sprint 4: Meteostat Daily метеостанции, запрет синт�
   assert.ok(noDataRes.source.includes('За дату данных нет'), 'Источник должен прямо сообщать об отсутствии данных');
 
   // 4. Meteostat Daily observations:
-  // а) Дата с доступными наблюдениями станции 26078
+  // а) Дата с доступными наблюдениями станции 26078 (в тестовом режиме с явным allowDemoFallback)
   const obsMap = await fetchStationDailyObservations(
     { id: '26078', name: 'Метеостанция г. Волхов' },
     '2026-06-15',
     '2026-06-15',
-    { nowIso: '2026-07-01' }
+    { nowIso: '2026-07-01', allowDemoFallback: true }
   );
   assert.ok(obsMap['2026-06-15'], 'Должна присутствовать запись за 2026-06-15');
   assert.equal(obsMap['2026-06-15'].status, 'available');
@@ -4364,4 +4415,61 @@ test('Эксплуатационный план метеостанций: офл
   assert.equal(obs.status, 'available');
   assert.ok(obs.sourceDescription.includes('412-С'));
   assert.ok(obs.sourceDescription.includes('Северное УГМС'));
+});
+
+test('Замечание аудита №6: Парсер УГМС строго отвергает невалидные даты, коллизии разделителей и физически невозможные температуры', async () => {
+  const { parseUgmsWeatherCertificateCsv } = await import('./weldingLogic');
+
+  // 1. Календарно невозможная дата (2026-02-31)
+  const feb31Res = parseUgmsWeatherCertificateCsv('2026-02-31;+18.2');
+  assert.equal(feb31Res.parsedCount, 0, 'Дата 2026-02-31 обязана быть отвергнута');
+  assert.equal(feb31Res.skippedCount, 1);
+  assert.ok(feb31Res.errors.some((e) => e.includes('Календарно невозможная дата')));
+  assert.equal(feb31Res.weatherArchive['2026-02-31'], undefined);
+
+  // 2. Коллизия разделителя колонок и десятичной запятой (2026-06-15,+18,2)
+  const commaCollisionRes = parseUgmsWeatherCertificateCsv('2026-06-15,+18,2');
+  assert.equal(commaCollisionRes.parsedCount, 0, 'Строка с коллизией разделителей не должна молча урезать дробь');
+  assert.equal(commaCollisionRes.skippedCount, 1);
+  assert.ok(commaCollisionRes.errors.some((e) => e.includes('Неоднозначный формат')));
+  assert.equal(commaCollisionRes.weatherArchive['2026-06-15'], undefined);
+
+  // 3. Физически невозможная температура (+999 °C)
+  const hotRes = parseUgmsWeatherCertificateCsv('2026-06-15;999');
+  assert.equal(hotRes.parsedCount, 0, 'Температура +999 °C обязана быть отвергнута');
+  assert.equal(hotRes.skippedCount, 1);
+  assert.ok(hotRes.errors.some((e) => e.includes('выходит за пределы физически допустимого диапазона')));
+  assert.equal(hotRes.weatherArchive['2026-06-15'], undefined);
+
+  // 4. Физически невозможная температура (-120 °C)
+  const coldRes = parseUgmsWeatherCertificateCsv('2026-01-15;-120');
+  assert.equal(coldRes.parsedCount, 0, 'Температура -120 °C обязана быть отвергнута');
+  assert.equal(coldRes.skippedCount, 1);
+  assert.ok(coldRes.errors.some((e) => e.includes('выходит за пределы физически допустимого диапазона')));
+
+  // 5. Валидная строка с точкой с запятой и десятичной запятой принимается без искажений
+  const validRes = parseUgmsWeatherCertificateCsv('2026-06-15;+18,2');
+  assert.equal(validRes.parsedCount, 1);
+  assert.equal(validRes.errors.length, 0);
+  assert.equal(validRes.weatherArchive['2026-06-15'], '+18.2');
+});
+
+test('Замечание аудита №5: Отсутствие привязки станции не подменяется станцией 26078 (Волхов)', async () => {
+  const { resolveFacilityDefaultLocation, fetchStationDailyObservations } = await import('./weldingLogic');
+
+  // Для неизвестного объекта станция обязана оставаться непривязанной
+  const unknownLoc = resolveFacilityDefaultLocation('Участок магистрали №99 (без привязки)');
+  assert.equal(unknownLoc.matched, false);
+  assert.equal(unknownLoc.weatherStationId, undefined, 'WMO ID станции не должен назначаться');
+  assert.ok(unknownLoc.weatherStation.includes('не привязана'));
+
+  // Запрос без allowDemoFallback для станции без API-ключа честно возвращает not_found, а не фейковый Meteostat
+  const noApiRes = await fetchStationDailyObservations(
+    { id: '28661', name: 'АМСГ Курган' },
+    '2026-06-15',
+    '2026-06-15'
+  );
+  assert.ok(noApiRes['2026-06-15']);
+  assert.equal(noApiRes['2026-06-15'].status, 'not_found', 'Без API-ключа статус обязан быть not_found');
+  assert.equal(noApiRes['2026-06-15'].tavg, undefined, 'Температура не должна браться из воздуха');
 });

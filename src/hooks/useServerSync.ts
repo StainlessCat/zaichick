@@ -204,6 +204,25 @@ export function useServerSync({
           // ignore
         }
       });
+      // Фолбэк для прокси-серверов или сред без именованных событий (Замечание аудита №3)
+      es.onmessage = (ev: MessageEvent) => {
+        try {
+          const parsed = JSON.parse(ev.data);
+          if (parsed?.meta) setServerDbMeta(parsed.meta);
+          if (parsed?.type === 'connected') {
+            setIsDbConnected(true);
+          } else if (parsed?.type === 'db_updated') {
+            if (
+              parsed?.sourceClientId &&
+              parsed.sourceClientId !== clientIdRef.current
+            ) {
+              fetchServerDbState(true);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      };
       es.onerror = () => {
         // SSE auto-reconnects
       };
