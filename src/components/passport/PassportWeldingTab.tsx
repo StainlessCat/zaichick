@@ -330,19 +330,37 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
               <span>T возд., °C</span>
             </div>
             <div
-              title={`Источник: ${currentWeatherStationName}`}
-              className="px-2.5 py-2 rounded-md bg-[#f4f8fe] border border-sky-200 flex items-center justify-between text-xs font-mono font-bold text-[#1e3799]"
+              title={
+                form.ambientTemp
+                  ? `Источник: ${currentWeatherStationName} (наблюдения станции)`
+                  : 'За указанную дату фактические наблюдения метеостанции отсутствуют'
+              }
+              className={`px-2.5 py-2 rounded-md border flex items-center justify-between text-xs font-mono font-bold ${
+                form.ambientTemp
+                  ? 'bg-[#f4f8fe] border-sky-200 text-[#1e3799]'
+                  : 'bg-slate-50 border-slate-200 text-slate-400'
+              }`}
             >
-              <span className="inline-flex items-center gap-1">
-                <CloudSun className="w-3.5 h-3.5 shrink-0" />
-                <span>{form.ambientTemp || '—'} °C</span>
+              <span className="inline-flex items-center gap-1.5">
+                <CloudSun className={`w-3.5 h-3.5 shrink-0 ${form.ambientTemp ? 'text-sky-600' : 'text-slate-400'}`} />
+                {form.ambientTemp ? (
+                  <span>{form.ambientTemp} °C</span>
+                ) : (
+                  <span className="italic font-normal text-slate-500">нет данных</span>
+                )}
               </span>
             </div>
             <div
-              className="mt-1 text-[10px] text-slate-500 truncate"
-              title={currentWeatherStationName}
+              className={`mt-1 text-[10px] truncate ${
+                form.ambientTemp ? 'text-slate-500' : 'text-amber-700 font-medium'
+              }`}
+              title={
+                form.ambientTemp
+                  ? currentWeatherStationName
+                  : 'Фактические наблюдения отсутствуют (подстановка расчётных формул запрещена)'
+              }
             >
-              {currentWeatherStationName}
+              {form.ambientTemp ? currentWeatherStationName : 'За дату данных нет'}
             </div>
           </div>
         </div>

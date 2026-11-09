@@ -65,9 +65,16 @@ export interface UnifiedDbDataPayload {
     {
       region: string;
       weatherStation: string;
+      weatherStationId?: string;
+      weatherStationDistanceKm?: number;
+      weatherStationSource?: string;
+      weatherLastCheckStatus?: string;
+      weatherLastCheckedAt?: string;
+      weatherLastErrorMessage?: string;
       latitude: number;
       longitude: number;
       weatherArchive?: Record<string, string>;
+      weatherObservations?: Record<string, any>;
     }
   >;
   templates: ColumnTemplate[];

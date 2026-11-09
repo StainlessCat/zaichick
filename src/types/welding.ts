@@ -58,9 +58,16 @@ export interface FacilityObject {
   shortName: string;
   region: string;
   weatherStation?: string;
+  weatherStationId?: string;
+  weatherStationDistanceKm?: number;
+  weatherStationSource?: 'meteostat' | 'open-meteo-era5' | string;
+  weatherLastCheckStatus?: 'online' | 'offline';
+  weatherLastCheckedAt?: string;
+  weatherLastErrorMessage?: string;
   latitude: number;
   longitude: number;
   weatherArchive?: Record<string, string>;
+  weatherObservations?: Record<string, any>;
   rdCodes: {
     code: string;
     title: string;
@@ -73,6 +80,7 @@ export interface FacilityLocationPreset {
   title: string;
   region: string;
   weatherStation: string;
+  weatherStationId?: string;
   latitude: number;
   longitude: number;
 }
@@ -260,7 +268,8 @@ export interface WeldJoint {
   welderStampsList?: string[]; // Массив личных клейм сварщиков (при сварке несколькими сварщиками)
   brigadeStamp?: string; // Бригадное клеймо (если применимо)
   weldingMaterials: string; // Сварочные материалы
-  ambientTemp: string; // Температура окружающей среды, °C (заполняется автоматически по координатам объекта и дате)
+  ambientTemp: string; // Температура окружающей среды, °C (наблюдения реальной метеостанции или пустая строка при отсутствии)
+  weatherSource?: string; // Источник метеонаблюдений (станция, WMO ID) или статус отсутствия данных
   preheatTemp?: string; // Температура подогрева, °C (заполняется вручную инженером, проверяется по ТК и T возд.)
   responsiblePerson: string; // Ответственное лицо (мастер, прораб)
   welderFullName: string; // ФИО сварщика(ов) — подтягивается автоматически по клейму

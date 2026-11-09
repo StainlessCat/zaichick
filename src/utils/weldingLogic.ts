@@ -23,6 +23,7 @@ import {
   mmToNominalBoreDn,
   resolveLrvItemCategory,
 } from './pipeCalc';
+import { determineDateObservationStatus } from './weatherService';
 
 // Реэкспорт всех специализированных доменных модулей (100% обратная совместимость)
 export * from './dates';
@@ -31,6 +32,7 @@ export * from './history';
 export * from './columns';
 export * from './readiness';
 export * from './journals';
+export * from './weatherService';
 
 export interface NaksCertStatusInfo {
   status: 'valid' | 'expiring' | 'expired' | 'unknown';
@@ -909,68 +911,78 @@ export function estimateAmbientTempByCoordsAndDate(
 }
 
 /**
- * Генерирует посуточный архив среднесуточных температур воздуха (°C) за указанный период (startDateIso .. endDateIso)
- * по координатам метеостанции объекта строительства.
+ * Формирует посуточный архив температур воздуха (°C) за период (startDateIso .. endDateIso)
+ * строго на основе фактических наблюдений реальной метеостанции.
+ * КАТЕГОРИЧЕСКИЙ ЗАПРЕТ: климатические формулы исключены из роли источника архива.
+ * Если фактических наблюдений станции за дату нет — поле остаётся пустым (статус «нет данных»).
  */
 export function generatePeriodWeatherArchive(
   latitude: number,
   longitude: number,
   startDateIso: string,
-  endDateIso: string
+  endDateIso: string,
+  knownArchive?: Record<string, string>
 ): Record<string, string> {
   const archive: Record<string, string> = {};
-  const start = new Date(`${startDateIso}T00:00:00Z`);
-  const end = new Date(`${endDateIso}T00:00:00Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
-    return archive;
-  }
-  const cursor = new Date(start);
-  let safetyCounter = 0;
-  while (cursor <= end && safetyCounter < 750) {
-    const iso = cursor.toISOString().slice(0, 10);
-    const t = estimateAmbientTempByCoordsAndDate(latitude, longitude, iso);
-    archive[iso] = t > 0 ? `+${t}` : `${t}`;
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-    safetyCounter++;
+  if (knownArchive) {
+    Object.assign(archive, knownArchive);
   }
   return archive;
 }
 
 /**
- * Автоматическое получение температуры окружающей среды:
- * 1) Из предзагруженного архива температур объекта за период (weatherArchive[dateStr]), если задан;
- * 2) Через открытый метеосервис Open-Meteo API (ERA5 для прошедших дат или текущий прогноз только для сегодняшней даты);
- * 3) С мгновенным резервным расчётом по климатологической модели метеостанции объекта на выбранную дату сварки.
+ * Получение температуры окружающей среды на дату сварки:
+ * 1) Из предзагруженного архива фактических наблюдений метеостанции объекта (weatherArchive[dateStr]);
+ * 2) Если выбрана явная отдельная опция Open-Meteo ERA5 («реанализ, не наблюдения метеостанции»);
+ * 3) Если наблюдений нет — значение остаётся НЕЗАПОЛНЕННЫМ (пустая строка) со статусом «За дату данных нет»
+ *    или «Данные ещё не поступили».
+ * 
+ * ВНИМАНИЕ: Подстановка расчётных формул/климатических оценок в архив или паспорт стыка ЗАПРЕЩЕНА.
  */
 export async function fetchAmbientTemperatureAuto(
   latitude: number,
   longitude: number,
   dateStr?: string,
-  weatherArchive?: Record<string, string>
-): Promise<{ tempC: string; source: string }> {
+  weatherArchive?: Record<string, string>,
+  options?: {
+    sourceType?: 'meteostat' | 'open-meteo-era5';
+    stationName?: string;
+  }
+): Promise<{ tempC: string; source: string; status?: string }> {
   const todayIso = new Date().toISOString().slice(0, 10);
   const targetDate =
     dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : todayIso;
 
-  // 0. Проверяем предзагруженный архив температур объекта (например, за 2–3 кварталы 2026 г.)
-  if (weatherArchive && weatherArchive[targetDate] !== undefined) {
+  // 1. Проверяем предзагруженный архив фактических наблюдений метеостанции объекта
+  if (weatherArchive && weatherArchive[targetDate] !== undefined && weatherArchive[targetDate].trim() !== '') {
     const rawVal = String(weatherArchive[targetDate]).trim();
     const num = Number(rawVal);
     const formatted =
       !rawVal.startsWith('+') && !rawVal.startsWith('-') && !Number.isNaN(num) && num > 0
         ? `+${num}`
         : rawVal;
+    const stLabel = options?.stationName || 'Метеостанция объекта';
     return {
       tempC: formatted,
-      source: `Метеоархив объекта (${latitude.toFixed(2)}°N, ${longitude.toFixed(2)}°E · ${formatDateDDMMYY(targetDate)})`,
+      source: `Фактические наблюдения: ${stLabel} (${formatDateDDMMYY(targetDate)})`,
+      status: 'available',
     };
   }
 
-  const isHistorical = targetDate < todayIso;
-  const isToday = !dateStr || targetDate === todayIso;
+  const sourceType = options?.sourceType || 'meteostat';
+  const { isPending, isHistorical } = determineDateObservationStatus(targetDate, todayIso);
 
-  // 1. Попытка запроса к реальному архиву метеонаблюдений (Архив Росгидромет / Open-Meteo ERA5 Reanalysis)
-  if (isHistorical) {
+  // 2. Если дата за последние 1–7 дней или будущая — архив ещё не поступил
+  if (isPending) {
+    return {
+      tempC: '',
+      source: 'Данные ещё не поступили (задержка обновления архива метеостанции)',
+      status: 'pending',
+    };
+  }
+
+  // 3. Отдельная маркированная опция Open-Meteo ERA5 (Строго «реанализ, не наблюдения метеостанции»)
+  if (sourceType === 'open-meteo-era5' && isHistorical) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 3500);
@@ -989,48 +1001,22 @@ export async function fetchAmbientTemperatureAuto(
           const formatted = rounded > 0 ? `+${rounded}` : `${rounded}`;
           return {
             tempC: formatted,
-            source: `Метеоархив Open-Meteo/ERA5 (${latitude.toFixed(2)}°N, ${longitude.toFixed(2)}°E · ${formatDateDDMMYY(targetDate)})`,
+            source: `Open-Meteo ERA5 (${latitude.toFixed(2)}°N, ${longitude.toFixed(2)}°E · ${formatDateDDMMYY(targetDate)}) · реанализ, не наблюдения метеостанции`,
+            status: 'available',
           };
         }
       }
     } catch {
-      // Игнорируем сетевые ошибки, переходим к локальной модели
+      // Сетевая ошибка — не подменять архив климатической оценкой незаметно!
     }
   }
 
-  // 2. Текущая температура с метеостанции в реальном времени (только если дата не указана или равна сегодняшней)
-  if (isToday) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3200);
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude.toFixed(
-        2
-      )}&longitude=${longitude.toFixed(2)}&current=temperature_2m&timezone=auto`;
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timer);
-      if (res.ok) {
-        const data = await res.json();
-        const liveTemp = data?.current?.temperature_2m;
-        if (typeof liveTemp === 'number') {
-          const rounded = Math.round(liveTemp * 10) / 10;
-          const formatted = rounded > 0 ? `+${rounded}` : `${rounded}`;
-          return {
-            tempC: formatted,
-            source: `Метеостанция Open-Meteo (${latitude.toFixed(2)}°N, ${longitude.toFixed(2)}°E · ${formatDateDDMMYY(targetDate)})`,
-          };
-        }
-      }
-    } catch {
-      // Fallback to deterministic meteorological archive calculation
-    }
-  }
-
-  // 3. Автономная детерминированная модель (СП 131.13330 Строительная климатология) строго на дату targetDate
-  const calc = estimateAmbientTempByCoordsAndDate(latitude, longitude, targetDate);
-  const formatted = calc > 0 ? `+${calc}` : `${calc}`;
+  // 4. Если наблюдений нет — КАТЕГОРИЧЕСКИЙ ЗАПРЕТ НА ПОДМЕНУ РАСЧЁТНОЙ ФОРМУЛОЙ.
+  // Поле остаётся пустым, статус «За дату данных нет».
   return {
-    tempC: formatted,
-    source: `Авто-метеопост площадки (${latitude.toFixed(2)}°N, ${longitude.toFixed(2)}°E · ${formatDateDDMMYY(targetDate)})`,
+    tempC: '',
+    source: 'За дату данных нет (наблюдения на метеостанции отсутствуют)',
+    status: 'not_found',
   };
 }
 

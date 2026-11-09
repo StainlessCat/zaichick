@@ -18,7 +18,6 @@ import {
   ALL_COLUMNS,
   DEFAULT_COLUMN_KEYS,
   deriveFacilitiesFromLineList,
-  estimateAmbientTempByCoordsAndDate,
   fetchAmbientTemperatureAuto,
   generatePeriodWeatherArchive,
   MAX_HISTORY_STEPS,
@@ -44,6 +43,7 @@ import {
   WELDERS_DIRECTORY,
 } from '../data/seedData';
 import { mergeDynamicInspectors } from '../utils/rbac';
+import { FacilityGeoOverride } from './useServerSync';
 import type { FullSystemBackupPayload } from '../components/BackupAndResetModal';
 import type { LoginModalMode } from '../components/LoginModal';
 
@@ -79,16 +79,7 @@ export interface AppDataSnapshot {
   welders: WelderProfile[];
   techCards: TechCardItem[];
   weldingMaterials: WeldingMaterialCertificate[];
-  facilityGeoOverrides: Record<
-    string,
-    {
-      region: string;
-      weatherStation: string;
-      latitude: number;
-      longitude: number;
-      weatherArchive?: Record<string, string>;
-    }
-  >;
+  facilityGeoOverrides: Record<string, FacilityGeoOverride>;
 }
 
 export type PersistedAppState = FullSystemBackupPayload['data'] & {
@@ -196,16 +187,7 @@ export function useAppState() {
 
   // Геокоординаты и метеопосты
   const [facilityGeoOverrides, setFacilityGeoOverrides] = useState<
-    Record<
-      string,
-      {
-        region: string;
-        weatherStation: string;
-        latitude: number;
-        longitude: number;
-        weatherArchive?: Record<string, string>;
-      }
-    >
+    Record<string, FacilityGeoOverride>
   >(() =>
     initialSavedState?.facilityGeoOverrides &&
     typeof initialSavedState.facilityGeoOverrides === 'object'
@@ -623,41 +605,77 @@ export function useAppState() {
       loc: {
         region: string;
         weatherStation: string;
+        weatherStationId?: string;
+        weatherStationDistanceKm?: number;
+        weatherStationSource?: string;
+        weatherLastCheckStatus?: string;
+        weatherLastCheckedAt?: string;
+        weatherLastErrorMessage?: string;
         latitude: number;
         longitude: number;
         weatherArchive?: Record<string, string>;
+        weatherObservations?: Record<string, any>;
       }
     ) => {
       recordUndoSnapshot(`Смена метеопункта объекта ${facilityName}`);
       setFacilityGeoOverrides((prev) => ({
         ...prev,
         [facilityName]: {
+          ...prev[facilityName],
           region: loc.region,
           weatherStation: loc.weatherStation,
+          weatherStationId: loc.weatherStationId,
+          weatherStationDistanceKm: loc.weatherStationDistanceKm,
+          weatherStationSource: loc.weatherStationSource,
+          weatherLastCheckStatus: loc.weatherLastCheckStatus,
+          weatherLastCheckedAt: loc.weatherLastCheckedAt,
+          weatherLastErrorMessage: loc.weatherLastErrorMessage,
           latitude: loc.latitude,
           longitude: loc.longitude,
           weatherArchive:
             loc.weatherArchive ?? prev[facilityName]?.weatherArchive,
+          weatherObservations:
+            loc.weatherObservations ?? prev[facilityName]?.weatherObservations,
         },
       }));
+      // ВАЖНОЕ ПРАВИЛО: Смена станции не должна молча менять уже записанные температуры стыков!
+      // Массовое обновление выполняется строго по отдельной явной команде с подтверждением.
+    },
+    [recordUndoSnapshot]
+  );
 
+  const handleBulkUpdateJointsTemperaturesFromStation = useCallback(
+    (facilityName: string, confirm = false): { updatedCount: number; message: string } => {
+      if (!confirm) {
+        return { updatedCount: 0, message: 'Требуется явное подтверждение пользователя' };
+      }
+      const fac = derivedFacilities.find((f) => f.name === facilityName);
+      if (!fac || !fac.weatherArchive || Object.keys(fac.weatherArchive).length === 0) {
+        return { updatedCount: 0, message: 'У объекта нет загруженного архива наблюдений метеостанции' };
+      }
+      const archive = fac.weatherArchive;
+      let count = 0;
+      recordUndoSnapshot(`Массовое обновление температур стыков объекта ${facilityName} по метеостанции`);
       setJoints((prev) =>
         prev.map((j) => {
           if (j.objectName !== facilityName) return j;
-          if (loc.weatherArchive && loc.weatherArchive[j.weldingDate]) {
-            return { ...j, ambientTemp: loc.weatherArchive[j.weldingDate] };
+          if (j.weldingDate && archive[j.weldingDate] !== undefined && archive[j.weldingDate].trim() !== '') {
+            count++;
+            return {
+              ...j,
+              ambientTemp: archive[j.weldingDate],
+              weatherSource: fac.weatherStation || 'Метеостанция объекта',
+            };
           }
-          const est = estimateAmbientTempByCoordsAndDate(
-            loc.latitude,
-            loc.longitude,
-            j.weldingDate
-          );
-          const formatted = est > 0 ? `+${est}` : `${est}`;
-          return { ...j, ambientTemp: formatted };
+          return j;
         })
       );
+      return {
+        updatedCount: count,
+        message: `Успешно обновлено ${count} стыков по фактическим наблюдениям станции`,
+      };
     },
-    [recordUndoSnapshot]
+    [derivedFacilities, recordUndoSnapshot]
   );
 
   const handleCreateStandaloneObject = useCallback(
@@ -769,6 +787,7 @@ export function useAppState() {
     activeLocationFacility,
     activeColumnDefs,
     handleSaveFacilityLocation,
+    handleBulkUpdateJointsTemperaturesFromStation,
     handleCreateStandaloneObject,
   };
 }

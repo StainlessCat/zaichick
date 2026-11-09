@@ -199,6 +199,7 @@ export default function App() {
     activeLocationFacility,
     activeColumnDefs,
     handleSaveFacilityLocation,
+    handleBulkUpdateJointsTemperaturesFromStation,
     handleCreateStandaloneObject,
   } = appState;
 
@@ -2456,7 +2457,9 @@ export default function App() {
         facility={activeLocationFacility}
         facilities={derivedFacilities}
         presets={FACILITY_LOCATION_PRESETS}
+        joints={joints}
         onSaveLocation={handleSaveFacilityLocation}
+        onBulkUpdateJoints={handleBulkUpdateJointsTemperaturesFromStation}
         onClose={() => setLocationModalFacilityName(null)}
       />
 

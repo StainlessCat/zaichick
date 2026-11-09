@@ -51,7 +51,6 @@ import {
   checkNaksCertStatus,
   detectLrvConnectionType,
   detectLrvElementType,
-  estimateAmbientTempByCoordsAndDate,
   filterLrvByDiameter,
   filterLrvCatalogByRd,
   findWelderByStamp,
@@ -229,12 +228,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     if (initialJoint) return { ...initialJoint };
     const initLineNum = firstLineObj?.lineNumber || 'ФП1.2/1';
     const initDate = '2026-06-15';
-    const archivedTemp = firstFac.weatherArchive?.[initDate];
-    const autoTemp = estimateAmbientTempByCoordsAndDate(
-      firstFac.latitude,
-      firstFac.longitude,
-      initDate
-    );
+    const archivedTemp = firstFac.weatherArchive?.[initDate] || '';
     const defaultPersonalWelder = welders.find((w) => !w.isBrigade);
     return {
       id: `j-${Date.now()}`,
@@ -278,7 +272,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
         techCards[0]?.recommendedMaterials ||
         weldingMaterialsList[0]?.brandAndDiameter ||
         'Св-08Г2С Ø2.0 / УОНИ-13/55 Ø3.0',
-      ambientTemp: archivedTemp || (autoTemp > 0 ? `+${autoTemp}` : `${autoTemp}`),
+      ambientTemp: archivedTemp,
       preheatTemp: '130',
       responsiblePerson:
         defaultPersonalWelder?.crewForeman || 'Мастер СМР Громов И.А.',
@@ -465,19 +459,13 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
         facilities.find((f) => f.name === initialJoint.objectName) ||
         facilities[0] ||
         fallbackEmptyFac;
-      const computedAutoTemp = initialJoint.weldingDate
-        ? estimateAmbientTempByCoordsAndDate(
-            fac.latitude,
-            fac.longitude,
-            initialJoint.weldingDate
-          )
-        : null;
+      const archivedTemp = initialJoint.weldingDate
+        ? fac.weatherArchive?.[initialJoint.weldingDate]
+        : undefined;
       const autoTempFormatted =
-        computedAutoTemp !== null
-          ? computedAutoTemp > 0
-            ? `+${computedAutoTemp}`
-            : `${computedAutoTemp}`
-          : initialJoint.ambientTemp;
+        archivedTemp !== undefined && archivedTemp.trim() !== ''
+          ? archivedTemp
+          : initialJoint.ambientTemp || '';
 
       const parsedStamps =
         initialJoint.welderStampsList && initialJoint.welderStampsList.length > 0
@@ -578,12 +566,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     const lrv2 = sameDiamLrvs[1] || sameDiamLrvs[0] || lrv1;
 
     const initDate = '2026-06-15';
-    const archivedTemp = firstFac.weatherArchive?.[initDate];
-    const autoTemp = estimateAmbientTempByCoordsAndDate(
-      firstFac.latitude,
-      firstFac.longitude,
-      initDate
-    );
+    const archivedTemp = firstFac.weatherArchive?.[initDate] || '';
     const defaultWelder = personalWelders[0];
 
     setWelder1Stamp(defaultWelder ? defaultWelder.stamp : '');
@@ -624,7 +607,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       elem2Length:
         lrv2 && detectLrvElementType(lrv2.shortName) === 'Труба' ? '11.8' : '0.35',
       weldingDate: initDate,
-      ambientTemp: archivedTemp || (autoTemp > 0 ? `+${autoTemp}` : `${autoTemp}`),
+      ambientTemp: archivedTemp,
       preheatTemp: '130',
       weldingType: techCards[0]?.weldingType || 'РАД+РД',
       gostJointType: 'С17',
@@ -687,14 +670,10 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       );
       return;
     }
-    const calc = estimateAmbientTempByCoordsAndDate(
-      fac.latitude,
-      fac.longitude,
-      form.weldingDate
-    );
-    const formatted = calc > 0 ? `+${calc}` : `${calc}`;
+    // Если фактических наблюдений в архиве станции нет — оставляем поле пустым (статус «нет данных»).
+    // Запрещено незаметно подставлять климатическую расчетную температуру!
     setForm((prev) =>
-      prev.ambientTemp === formatted ? prev : { ...prev, ambientTemp: formatted }
+      prev.ambientTemp === '' ? prev : { ...prev, ambientTemp: '' }
     );
   }, [form.objectName, form.weldingDate, facilities, isOpen]);
 

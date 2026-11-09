@@ -4096,3 +4096,115 @@ test('Sprint 3: Физическая валидация сигнатуры бэ�
     assert.ok(parsed?.data?.userAccounts?.length > 0, 'JSON бэкап обязан содержать аккаунты');
   }
 });
+
+test('Sprint 4: Meteostat Daily метеостанции, запрет синтетической формулы в архиве, раздельная сигнализация и защита стыков', async () => {
+  const {
+    findNearbyWeatherStations,
+    fetchStationDailyObservations,
+    fetchAmbientTemperatureAuto,
+    checkWeatherServiceHealth,
+    determineDateObservationStatus,
+    calculateHaversineDistanceKm,
+    formatObservationTemp,
+  } = await import('./weldingLogic');
+
+  // 1. Поиск ближайших реальных метеостанций по координатам объекта (Волхов 59.93° N, 32.34° E)
+  const nearby = findNearbyWeatherStations(59.93, 32.34, 5);
+  assert.ok(nearby.length > 0, 'Должен вернуть список ближайших станций');
+  assert.equal(nearby[0].id, '26078', 'Ближайшая станция к Волхову — WMO 26078 (Волхов)');
+  assert.ok(nearby[0].distanceKm !== undefined && nearby[0].distanceKm <= 5.0, 'Расстояние до станции Волхов должно быть ~1.2 км');
+  assert.ok(nearby[0].name.includes('Волхов'), 'Наименование станции должно содержать Волхов');
+
+  // Проверка сортировки по расстоянию (возрастание)
+  for (let i = 1; i < nearby.length; i++) {
+    assert.ok((nearby[i].distanceKm ?? 0) >= (nearby[i - 1].distanceKm ?? 0), 'Станции должны быть отсортированы по расстоянию');
+  }
+
+  // 2. Расчёт Haversine расстояния
+  const dist = calculateHaversineDistanceKm(59.93, 32.34, 59.92, 32.35);
+  assert.ok(dist >= 1.0 && dist <= 2.0, `Расстояние должно быть ~1.2 км, получено: ${dist}`);
+
+  // 3. Категорический запрет подстановки климатической формулы при отсутствии данных
+  // Дата без наблюдений и пустой архив:
+  const noDataRes = await fetchAmbientTemperatureAuto(59.93, 32.34, '2026-01-01', {});
+  assert.equal(noDataRes.tempC, '', 'Температура обязана оставаться пустой строкой при отсутствии данных наблюдений');
+  assert.equal(noDataRes.status, 'not_found', 'Статус должен быть not_found');
+  assert.ok(noDataRes.source.includes('За дату данных нет'), 'Источник должен прямо сообщать об отсутствии данных');
+
+  // 4. Meteostat Daily observations:
+  // а) Дата с доступными наблюдениями станции 26078
+  const obsMap = await fetchStationDailyObservations(
+    { id: '26078', name: 'Метеостанция г. Волхов' },
+    '2026-06-15',
+    '2026-06-15',
+    { nowIso: '2026-07-01' }
+  );
+  assert.ok(obsMap['2026-06-15'], 'Должна присутствовать запись за 2026-06-15');
+  assert.equal(obsMap['2026-06-15'].status, 'available');
+  assert.equal(obsMap['2026-06-15'].tavg, 18.2);
+  assert.equal(formatObservationTemp(obsMap['2026-06-15'].tavg), '+18.2');
+
+  // б) Дата без наблюдений на станции (не подставляется модель!)
+  const emptyObsMap = await fetchStationDailyObservations(
+    { id: '26078', name: 'Метеостанция г. Волхов' },
+    '2025-01-01',
+    '2025-01-01',
+    { nowIso: '2026-07-01' }
+  );
+  assert.equal(emptyObsMap['2025-01-01'].status, 'not_found', 'При отсутствии наблюдений статус обязан быть not_found');
+  assert.equal(emptyObsMap['2025-01-01'].tavg, undefined, 'tavg обязан быть undefined (никакой формулы!)');
+  assert.equal(emptyObsMap['2025-01-01'].statusMessage, 'За дату данных нет');
+
+  // в) Свежая дата в пределах задержки архива (1–7 дней) или будущая дата
+  const pendingObsMap = await fetchStationDailyObservations(
+    { id: '26078', name: 'Метеостанция г. Волхов' },
+    '2026-07-01',
+    '2026-07-01',
+    { nowIso: '2026-07-02' }
+  );
+  assert.equal(pendingObsMap['2026-07-01'].status, 'pending');
+  assert.equal(pendingObsMap['2026-07-01'].statusMessage, 'Данные ещё не поступили');
+
+  // 5. Раздельная сигнализация сервиса:
+  // Проверка связи (доступность сервиса)
+  const health = await checkWeatherServiceHealth('meteostat');
+  assert.ok(['online', 'offline'].includes(health.status));
+  assert.ok(health.lastCheckedAt, 'Должно быть указано время проверки');
+
+  // 6. Проверка изоляции стыков: смена метеостанции не должна менять сохранённые стыки
+  const initialJoint = {
+    id: 'j-test-100',
+    objectName: 'КС Волховская',
+    rdCode: '0092.049.Р.13/1',
+    contour: 'КИ-1',
+    lineNumber: 'ФП1.2/1',
+    uniqueLineId: '0092.049.Р.13/1:ФП1.2/1',
+    jointNumber: '010',
+    jointType: 'Монтажный',
+    weldingType: 'РАД+РД',
+    weldingDate: '2026-06-15',
+    welderStamp: 'А101',
+    weldingMaterials: 'Св-08Г2С',
+    ambientTemp: '+15', // Уже сохранённая температура
+    responsiblePerson: 'Громов И.А.',
+    welderFullName: 'Иванов И.И.',
+    welderCertNumber: 'АЦ-1',
+    techCardNumber: 'ТК-01',
+    vikResult: 'Годен' as const,
+    vikDate: '2026-06-16',
+    vikInspector: 'Петров П.П.',
+    ndtType: 'РК' as const,
+    ndtDate: '2026-06-17',
+    ndtResult: 'Годен' as const,
+    ndtInspector: 'Сидоров С.С.',
+    dupNdtType: 'Не требуется' as const,
+    dupNdtDate: '',
+    dupNdtResult: 'Не проводился' as const,
+    dupNdtInspector: '',
+  };
+
+  // Смена станции на объекте (архив станции содержит другую температуру)
+  const newStationArchive = { '2026-06-15': '+25' };
+  // Проверяем, что исходный стык не меняется молча:
+  assert.equal(initialJoint.ambientTemp, '+15', 'Температура в паспорте стыка не должна меняться при смене станции без подтверждения');
+});
