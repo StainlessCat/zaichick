@@ -24,6 +24,7 @@ import {
   performRedoStep,
   performUndoStep,
   pushHistorySnapshot,
+  resolveFacilityDefaultLocation,
 } from '../utils/weldingLogic';
 import {
   normalizeTechCard,
@@ -683,25 +684,21 @@ export function useAppState() {
       const clean = objectName.trim();
       if (!clean) return;
       recordUndoSnapshot(`Создание объекта строительства «${clean}»`);
-      const isVolkhov = clean.toLowerCase().includes('волхов');
-      const lat = isVolkhov ? 59.93 : 66.53;
-      const lon = isVolkhov ? 32.34 : 66.6;
-      const region = isVolkhov ? 'Ленинградская область, г. Волхов' : 'ЯНАО';
-      const station = isVolkhov
-        ? 'Метеостанция г. Волхов (№26078)'
-        : `Метеопост ${clean}`;
-      const weatherArchive = isVolkhov
-        ? generatePeriodWeatherArchive(lat, lon, '2026-04-01', '2026-09-30')
-        : undefined;
+
+      // Автоматическое сопоставление с реальным реестром метеостанций WMO/Росгидромета
+      // КАТЕГОРИЧЕСКИЙ ЗАПРЕТ НА ФИКТИВНЫЕ «МЕТЕОПОСТЫ»
+      const resolved = resolveFacilityDefaultLocation(clean);
 
       setFacilityGeoOverrides((prev) => ({
         ...prev,
         [clean]: {
-          region,
-          weatherStation: station,
-          latitude: lat,
-          longitude: lon,
-          weatherArchive,
+          region: resolved.region,
+          weatherStation: resolved.weatherStation,
+          weatherStationId: resolved.weatherStationId,
+          latitude: resolved.latitude,
+          longitude: resolved.longitude,
+          weatherArchive: {},
+          weatherObservations: {},
         },
       }));
       setSelectedObjectName(clean);

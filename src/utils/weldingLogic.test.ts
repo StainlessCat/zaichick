@@ -4208,3 +4208,68 @@ test('Sprint 4: Meteostat Daily метеостанции, запрет синт�
   // Проверяем, что исходный стык не меняется молча:
   assert.equal(initialJoint.ambientTemp, '+15', 'Температура в паспорте стыка не должна меняться при смене станции без подтверждения');
 });
+
+test('Метеостанции РФ: поиск реальной метеостанции (Курган WMO 28661), геокодинг и категорический запрет фиктивных метеопостов', async () => {
+  const {
+    searchWeatherStations,
+    resolveFacilityDefaultLocation,
+    findNearbyWeatherStations,
+    calculateHaversineDistanceKm,
+    VERIFIED_WMO_STATIONS,
+  } = await import('./weldingLogic');
+
+  // 1. Полнотекстовый поиск по реестру метеостанций по запросу "Курган"
+  const kurganResults = searchWeatherStations('Курган');
+  assert.ok(kurganResults.length > 0, 'Поиск по "Курган" обязан находить реальную метеостанцию');
+  const kurganStation = kurganResults[0];
+  assert.equal(kurganStation.id, '28661', 'WMO ID метеостанции Курган должен быть 28661');
+  assert.equal(kurganStation.name, 'АМСГ Курган');
+  assert.equal(kurganStation.region, 'Курганская область');
+  assert.equal(kurganStation.latitude, 55.47);
+  assert.equal(kurganStation.longitude, 65.42);
+
+  // 2. Поиск по WMO ID "28661"
+  const idResults = searchWeatherStations('28661');
+  assert.ok(idResults.length > 0, 'Поиск по WMO ID должен находить станцию');
+  assert.equal(idResults[0].id, '28661');
+
+  // 3. Поиск станций городов ТЭК и ключевых регионов
+  const tyumenResults = searchWeatherStations('Тюмень');
+  assert.ok(tyumenResults.length > 0 && tyumenResults[0].id === '28367', 'Должна быть станция Тюмень (28367)');
+
+  const chelyabinskResults = searchWeatherStations('Челябинск');
+  assert.ok(chelyabinskResults.length > 0 && chelyabinskResults[0].id === '28642', 'Должна быть станция Челябинск (28642)');
+
+  const ekbResults = searchWeatherStations('Екатеринбург');
+  assert.ok(ekbResults.length > 0 && ekbResults[0].id === '28440', 'Должна быть станция Екатеринбург (28440)');
+
+  // 4. Расчёт расстояния от координат г. Курган (55.47, 65.42)
+  const nearbyKurgan = findNearbyWeatherStations(55.47, 65.42, 3);
+  assert.equal(nearbyKurgan[0].id, '28661', 'Ближайшая станция к координатам Кургана — АМСГ Курган');
+  assert.equal(nearbyKurgan[0].distanceKm, 0.0, 'Расстояние до станции Курган от координат города должно быть 0 км');
+
+  // 5. Автоматическое сопоставление при создании объекта "Курган"
+  const resolvedKurgan = resolveFacilityDefaultLocation('Курган');
+  assert.equal(resolvedKurgan.matched, true, 'Город Курган должен быть распознан');
+  assert.equal(resolvedKurgan.weatherStationId, '28661');
+  assert.equal(resolvedKurgan.region, 'Курганская область');
+  assert.equal(resolvedKurgan.weatherStation, 'АМСГ Курган (ID: 28661)');
+
+  const resolvedKsKurgan = resolveFacilityDefaultLocation('КС Курганская');
+  assert.equal(resolvedKsKurgan.matched, true, 'Объект "КС Курганская" должен быть сопоставлен с Курганом');
+  assert.equal(resolvedKsKurgan.weatherStationId, '28661');
+
+  // 6. КАТЕГОРИЧЕСКИЙ ЗАПРЕТ НА ВЫДУМАННЫЕ МЕТЕОПОСТЫ:
+  // При создании неизвестного объекта система НЕ должна создавать фиктивный "Метеопост"
+  const unknownResolved = resolveFacilityDefaultLocation('Участок магистрали №99');
+  assert.equal(unknownResolved.matched, false, 'Неизвестный объект не должен привязываться к случайной станции');
+  assert.ok(
+    !unknownResolved.weatherStation.includes('Метеопост Участок'),
+    'Категорически запрещено генерировать фиктивные имена вида "Метеопост <Объект>"'
+  );
+  assert.ok(
+    unknownResolved.weatherStation.includes('Метеостанция не привязана'),
+    'Для неизвестного объекта должно требоваться явное подтверждение станции в свойствах объекта'
+  );
+  assert.equal(unknownResolved.weatherStationId, undefined, 'WMO ID неизвестного объекта должен оставаться пустым');
+});

@@ -30,10 +30,13 @@ import {
   formatDateDDMMYY,
   formatObservationTemp,
   getFacilityWeatherStationName,
+  searchLocationGeocoding,
+  searchWeatherStations,
   VERIFIED_WMO_STATIONS,
   WeatherDataSourceType,
   WeatherServiceHealth,
   WeatherStationMetadata,
+  GeocodingSearchResult,
 } from '../utils/weldingLogic';
 
 interface FacilityLocationModalProps {
@@ -108,8 +111,10 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
   const [isLoadingArchive, setIsLoadingArchive] = useState(false);
   const [archiveLoadMessage, setArchiveLoadMessage] = useState<string | null>(null);
 
-  // Поиск станций
+  // Поиск станций и онлайн-геокодинг
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchingOnline, setIsSearchingOnline] = useState(false);
+  const [onlineLocations, setOnlineLocations] = useState<GeocodingSearchResult[]>([]);
   const [showManualCoords, setShowManualCoords] = useState(false);
 
   // Диалог подтверждения массового обновления стыков
@@ -155,6 +160,8 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
     }
 
     setSearchQuery('');
+    setOnlineLocations([]);
+    setIsSearchingOnline(false);
     setShowManualCoords(false);
     setDateCheckStatus({
       status: 'idle',
@@ -168,27 +175,59 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
     performHealthCheck('meteostat');
   }, [isOpen, facility, facilities]);
 
-  // Нахождение ближайших реальных станций по координатам объекта
+  // Онлайн-геокодинг городов РФ через Open-Meteo Geocoding
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setOnlineLocations([]);
+      setIsSearchingOnline(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingOnline(true);
+      try {
+        const results = await searchLocationGeocoding(q);
+        setOnlineLocations(results);
+      } catch {
+        setOnlineLocations([]);
+      } finally {
+        setIsSearchingOnline(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Сквозной поиск по реестру всех верифицированных станций WMO/Росгидромета
   const nearbyStations = useMemo(() => {
-    const list = findNearbyWeatherStations(latitude, longitude, 12);
-    if (!searchQuery.trim()) return list;
-    const q = searchQuery.toLowerCase().trim();
-    return list.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.id.toLowerCase().includes(q) ||
-        s.region.toLowerCase().includes(q)
-    );
+    return searchWeatherStations(searchQuery, latitude, longitude, 30);
   }, [latitude, longitude, searchQuery]);
 
   // Выбор метеостанции
-  const handleSelectStation = (st: WeatherStationMetadata) => {
+  const handleSelectStation = (st: WeatherStationMetadata, syncCoords = true) => {
     setWeatherStation(`${st.name} (ID: ${st.id})`);
     setWeatherStationId(st.id);
     setRegion(st.region);
+    if (syncCoords) {
+      setLatitude(st.latitude);
+      setLongitude(st.longitude);
+    }
     setDateCheckStatus({
       status: 'idle',
-      message: `Выбрана ${st.name}. Проверьте наличие данных на дату.`,
+      message: `Выбрана «${st.name}» (WMO ID: ${st.id}). Проверьте наличие данных на дату.`,
+    });
+  };
+
+  // Выбор населённого пункта из геокодера
+  const handleSelectGeocodedLocation = (geo: GeocodingSearchResult) => {
+    setLatitude(geo.latitude);
+    setLongitude(geo.longitude);
+    setRegion(geo.region);
+    handleSelectStation(geo.nearestStation, false);
+    setDateCheckStatus({
+      status: 'idle',
+      message: `Площадка привязана к «${geo.name}» (${geo.region}). Ближайшая станция: ${geo.nearestStation.name} (${geo.distanceKm} км).`,
     });
   };
 
@@ -541,60 +580,109 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
 
           {/* 4. ВЫБОР РЕАЛЬНОЙ МЕТЕОСТАНЦИИ С ОТОБРАЖЕНИЕМ РАССТОЯНИЯ И ИДЕНТИФИКАТОРА */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-1">
               <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-[#1e3799]" />
-                <span>Ближайшие реальные метеостанции по координатам площадки:</span>
+                <span>Реестр метеостанций Росгидромета / WMO и подбор по координатам:</span>
               </span>
-              <span className="text-[11px] text-slate-500">
-                Координаты: {latitude.toFixed(2)}°N, {longitude.toFixed(2)}°E
+              <span className="text-[11px] text-slate-500 font-mono">
+                Площадка: {latitude.toFixed(2)}°N, {longitude.toFixed(2)}°E
               </span>
             </div>
 
-            {/* Быстрый фильтр станций */}
+            {/* Быстрый поиск / фильтр станций */}
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Фильтр станций по названию, WMO ID или городу..."
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#1e3799]"
+                placeholder="Поиск по городу (напр. Курган, Тюмень), названию станции или WMO ID..."
+                className="w-full pl-9 pr-9 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#1e3799]"
               />
+              {isSearchingOnline && (
+                <Loader2 className="w-4 h-4 absolute right-3 top-2.5 animate-spin text-[#1e3799]" />
+              )}
             </div>
 
-            {/* Список станций с расстоянием (км) и WMO ID */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1 bg-slate-50 rounded-xl border border-slate-200">
-              {nearbyStations.map((st) => {
-                const isSelected = weatherStationId === st.id;
-                return (
-                  <button
-                    key={st.id}
-                    type="button"
-                    onClick={() => handleSelectStation(st)}
-                    className={`p-2.5 rounded-lg border text-left transition-all flex items-start justify-between gap-2 cursor-pointer ${
-                      isSelected
-                        ? 'bg-sky-50 border-[#1e3799] ring-2 ring-[#1e3799]/30 shadow-2xs'
-                        : 'bg-white border-slate-200 hover:border-sky-400 hover:bg-sky-50/40'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="font-bold text-xs text-slate-900 truncate flex items-center gap-1.5">
-                        <span>{st.name}</span>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-[#1e3799] shrink-0" />}
+            {/* Результаты онлайн-геокодинга городов РФ */}
+            {onlineLocations.length > 0 && (
+              <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 space-y-1.5">
+                <div className="text-[11px] font-bold text-amber-950 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Compass className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Геокодер населённых пунктов (найдено: {onlineLocations.length})</span>
+                  </span>
+                  <span className="text-[10px] text-amber-800">
+                    Нажмите «Привязать» для центрирования координат
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {onlineLocations.map((loc) => (
+                    <button
+                      key={loc.id}
+                      type="button"
+                      onClick={() => handleSelectGeocodedLocation(loc)}
+                      className="p-2 bg-white rounded-lg border border-amber-200 hover:border-[#1e3799] text-left flex items-start justify-between gap-2 transition-all cursor-pointer shadow-2xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-slate-900 truncate">
+                          {loc.name}
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                          {loc.region}
+                        </div>
+                        <div className="text-[10px] text-sky-800 font-medium truncate mt-0.5">
+                          Станция: {loc.nearestStation.name} (WMO {loc.nearestStation.id})
+                        </div>
                       </div>
-                      <div className="text-[11px] text-slate-500 truncate mt-0.5">
-                        {st.region} · WMO ID: <span className="font-mono font-bold">{st.id}</span>
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <span className="font-mono font-bold text-[11px] text-[#1e3799] bg-sky-100 px-1.5 py-0.5 rounded">
-                        {st.distanceKm} км
+                      <span className="shrink-0 text-[10px] font-bold text-[#1e3799] bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200">
+                        {loc.distanceKm} км
                       </span>
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Список станций с расстоянием (км) и WMO ID */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto p-1 bg-slate-50 rounded-xl border border-slate-200">
+              {nearbyStations.length === 0 ? (
+                <div className="col-span-full p-4 text-center text-xs text-slate-500 bg-white rounded-lg border border-slate-200">
+                  По запросу «{searchQuery}» метеостанций в локальном реестре не найдено. Попробуйте ввести название ближайшего крупного города.
+                </div>
+              ) : (
+                nearbyStations.map((st) => {
+                  const isSelected = weatherStationId === st.id;
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => handleSelectStation(st, true)}
+                      className={`p-2.5 rounded-lg border text-left transition-all flex items-start justify-between gap-2 cursor-pointer ${
+                        isSelected
+                          ? 'bg-sky-50 border-[#1e3799] ring-2 ring-[#1e3799]/30 shadow-2xs'
+                          : 'bg-white border-slate-200 hover:border-sky-400 hover:bg-sky-50/40'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-slate-900 truncate flex items-center gap-1.5">
+                          <span>{st.name}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-[#1e3799] shrink-0" />}
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                          {st.region} · WMO ID: <span className="font-mono font-bold">{st.id}</span>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className="font-mono font-bold text-[11px] text-[#1e3799] bg-sky-100 px-1.5 py-0.5 rounded">
+                          {st.distanceKm !== undefined ? `${st.distanceKm} км` : '—'}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -606,10 +694,18 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
                   Подтверждённая метеостанция для объекта
                 </span>
                 <div className="font-bold text-sm text-[#1e3799] truncate">
-                  {weatherStation}
+                  {weatherStation || 'Метеостанция не привязана'}
                 </div>
                 <div className="text-[11px] text-slate-600 mt-0.5">
-                  WMO ID: <span className="font-mono font-bold">{weatherStationId}</span> · {region}
+                  {weatherStationId ? (
+                    <>
+                      WMO ID: <span className="font-mono font-bold">{weatherStationId}</span> · {region}
+                    </>
+                  ) : (
+                    <span className="text-amber-800 font-bold bg-amber-100 px-2 py-0.5 rounded">
+                      Станция не выбрана · Выберите реальную метеостанцию из реестра выше
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="shrink-0 text-right">

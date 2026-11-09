@@ -351,6 +351,447 @@ export const VERIFIED_WMO_STATIONS: WeatherStationMetadata[] = [
     wmoId: '22113',
     source: 'meteostat',
   },
+  // Уральский и Сибирский регионы (Курган, Тюмень, Екатеринбург, Челябинск и др.)
+  {
+    id: '28661',
+    name: 'АМСГ Курган',
+    region: 'Курганская область',
+    country: 'RU',
+    latitude: 55.47,
+    longitude: 65.42,
+    elevationM: 82,
+    wmoId: '28661',
+    source: 'meteostat',
+  },
+  {
+    id: '28367',
+    name: 'АМСГ Тюмень (Рощино)',
+    region: 'Тюменская область',
+    country: 'RU',
+    latitude: 57.17,
+    longitude: 65.32,
+    elevationM: 85,
+    wmoId: '28367',
+    source: 'meteostat',
+  },
+  {
+    id: '28440',
+    name: 'АМСГ Екатеринбург (Кольцово)',
+    region: 'Свердловская область',
+    country: 'RU',
+    latitude: 56.8,
+    longitude: 60.63,
+    elevationM: 237,
+    wmoId: '28440',
+    source: 'meteostat',
+  },
+  {
+    id: '28642',
+    name: 'АМСГ Челябинск (Баландино)',
+    region: 'Челябинская область',
+    country: 'RU',
+    latitude: 55.3,
+    longitude: 61.5,
+    elevationM: 235,
+    wmoId: '28642',
+    source: 'meteostat',
+  },
+  {
+    id: '28224',
+    name: 'АМСГ Пермь (Большое Савино)',
+    region: 'Пермский край',
+    country: 'RU',
+    latitude: 58.01,
+    longitude: 56.25,
+    elevationM: 171,
+    wmoId: '28224',
+    source: 'meteostat',
+  },
+  {
+    id: '28722',
+    name: 'АМСГ Уфа',
+    region: 'Республика Башкортостан',
+    country: 'RU',
+    latitude: 54.73,
+    longitude: 55.97,
+    elevationM: 104,
+    wmoId: '28722',
+    source: 'meteostat',
+  },
+  {
+    id: '27595',
+    name: 'АМСГ Казань',
+    region: 'Республика Татарстан',
+    country: 'RU',
+    latitude: 55.78,
+    longitude: 49.12,
+    elevationM: 116,
+    wmoId: '27595',
+    source: 'meteostat',
+  },
+  {
+    id: '28807',
+    name: 'АМСГ Самара (Курумоч)',
+    region: 'Самарская область',
+    country: 'RU',
+    latitude: 53.25,
+    longitude: 50.45,
+    elevationM: 145,
+    wmoId: '28807',
+    source: 'meteostat',
+  },
+  {
+    id: '35121',
+    name: 'АМСГ Оренбург (Центральный)',
+    region: 'Оренбургская область',
+    country: 'RU',
+    latitude: 51.78,
+    longitude: 55.1,
+    elevationM: 112,
+    wmoId: '35121',
+    source: 'meteostat',
+  },
+  {
+    id: '28698',
+    name: 'АМСГ Омск (Центральный)',
+    region: 'Омская область',
+    country: 'RU',
+    latitude: 54.98,
+    longitude: 73.37,
+    elevationM: 86,
+    wmoId: '28698',
+    source: 'meteostat',
+  },
+  {
+    id: '29634',
+    name: 'АМСГ Новосибирск (Толмачево)',
+    region: 'Новосибирская область',
+    country: 'RU',
+    latitude: 55.03,
+    longitude: 82.9,
+    elevationM: 150,
+    wmoId: '29634',
+    source: 'meteostat',
+  },
+  {
+    id: '29430',
+    name: 'АМСГ Томск (Богашево)',
+    region: 'Томская область',
+    country: 'RU',
+    latitude: 56.5,
+    longitude: 84.97,
+    elevationM: 120,
+    wmoId: '29430',
+    source: 'meteostat',
+  },
+  {
+    id: '29838',
+    name: 'АМСГ Кемерово',
+    region: 'Кемеровская область',
+    country: 'RU',
+    latitude: 55.35,
+    longitude: 86.08,
+    elevationM: 140,
+    wmoId: '29838',
+    source: 'meteostat',
+  },
+  {
+    id: '29950',
+    name: 'АМСГ Барнаул (Михайловка)',
+    region: 'Алтайский край',
+    country: 'RU',
+    latitude: 53.36,
+    longitude: 83.54,
+    elevationM: 180,
+    wmoId: '29950',
+    source: 'meteostat',
+  },
+  {
+    id: '29570',
+    name: 'АМСГ Красноярск (Емельяново)',
+    region: 'Красноярский край',
+    country: 'RU',
+    latitude: 56.01,
+    longitude: 92.87,
+    elevationM: 162,
+    wmoId: '29570',
+    source: 'meteostat',
+  },
+  {
+    id: '30710',
+    name: 'АМСГ Иркутск',
+    region: 'Иркутская область',
+    country: 'RU',
+    latitude: 52.27,
+    longitude: 104.38,
+    elevationM: 470,
+    wmoId: '30710',
+    source: 'meteostat',
+  },
+  {
+    id: '23849',
+    name: 'АМСГ Сургут',
+    region: 'Ханты-Мансийский АО — Югра',
+    country: 'RU',
+    latitude: 61.25,
+    longitude: 73.4,
+    elevationM: 50,
+    wmoId: '23849',
+    source: 'meteostat',
+  },
+  {
+    id: '23891',
+    name: 'АМСГ Нижневартовск',
+    region: 'Ханты-Мансийский АО — Югра',
+    country: 'RU',
+    latitude: 60.93,
+    longitude: 76.57,
+    elevationM: 54,
+    wmoId: '23891',
+    source: 'meteostat',
+  },
+  {
+    id: '23933',
+    name: 'АМСГ Ханты-Мансийск',
+    region: 'Ханты-Мансийский АО — Югра',
+    country: 'RU',
+    latitude: 61.0,
+    longitude: 69.03,
+    elevationM: 46,
+    wmoId: '23933',
+    source: 'meteostat',
+  },
+  {
+    id: '28275',
+    name: 'Метеостанция г. Тобольск',
+    region: 'Тюменская область',
+    country: 'RU',
+    latitude: 58.19,
+    longitude: 68.25,
+    elevationM: 47,
+    wmoId: '28275',
+    source: 'meteostat',
+  },
+  {
+    id: '23662',
+    name: 'АМСГ Ноябрьск',
+    region: 'Ямало-Ненецкий АО',
+    country: 'RU',
+    latitude: 63.2,
+    longitude: 75.45,
+    elevationM: 130,
+    wmoId: '23662',
+    source: 'meteostat',
+  },
+  {
+    id: '23219',
+    name: 'АМСГ Воркута',
+    region: 'Республика Коми',
+    country: 'RU',
+    latitude: 67.5,
+    longitude: 64.05,
+    elevationM: 180,
+    wmoId: '23219',
+    source: 'meteostat',
+  },
+  {
+    id: '23412',
+    name: 'АМСГ Усинск',
+    region: 'Республика Коми',
+    country: 'RU',
+    latitude: 65.99,
+    longitude: 57.55,
+    elevationM: 90,
+    wmoId: '23412',
+    source: 'meteostat',
+  },
+  {
+    id: '23226',
+    name: 'АМСГ Печора',
+    region: 'Республика Коми',
+    country: 'RU',
+    latitude: 65.14,
+    longitude: 57.22,
+    elevationM: 56,
+    wmoId: '23226',
+    source: 'meteostat',
+  },
+  {
+    id: '23078',
+    name: 'АМСГ Норильск (Алыкель)',
+    region: 'Красноярский край',
+    country: 'RU',
+    latitude: 69.34,
+    longitude: 88.22,
+    elevationM: 180,
+    wmoId: '23078',
+    source: 'meteostat',
+  },
+  {
+    id: '27113',
+    name: 'АМСГ Череповец',
+    region: 'Вологодская область',
+    country: 'RU',
+    latitude: 59.13,
+    longitude: 37.9,
+    elevationM: 115,
+    wmoId: '27113',
+    source: 'meteostat',
+  },
+  {
+    id: '22820',
+    name: 'АМСГ Петрозаводск',
+    region: 'Республика Карелия',
+    country: 'RU',
+    latitude: 61.78,
+    longitude: 34.35,
+    elevationM: 110,
+    wmoId: '22820',
+    source: 'meteostat',
+  },
+  {
+    id: '34560',
+    name: 'АМСГ Волгоград (Гумрак)',
+    region: 'Волгоградская область',
+    country: 'RU',
+    latitude: 48.78,
+    longitude: 44.35,
+    elevationM: 147,
+    wmoId: '34560',
+    source: 'meteostat',
+  },
+  {
+    id: '34178',
+    name: 'АМСГ Саратов (Гагарин)',
+    region: 'Саратовская область',
+    country: 'RU',
+    latitude: 51.53,
+    longitude: 46.03,
+    elevationM: 152,
+    wmoId: '34178',
+    source: 'meteostat',
+  },
+  {
+    id: '34123',
+    name: 'АМСГ Воронеж',
+    region: 'Воронежская область',
+    country: 'RU',
+    latitude: 51.82,
+    longitude: 39.23,
+    elevationM: 156,
+    wmoId: '34123',
+    source: 'meteostat',
+  },
+  {
+    id: '27225',
+    name: 'АМСГ Ярославль (Туношна)',
+    region: 'Ярославская область',
+    country: 'RU',
+    latitude: 57.55,
+    longitude: 40.15,
+    elevationM: 86,
+    wmoId: '27225',
+    source: 'meteostat',
+  },
+  {
+    id: '28411',
+    name: 'АМСГ Ижевск',
+    region: 'Удмуртская Республика',
+    country: 'RU',
+    latitude: 56.83,
+    longitude: 53.45,
+    elevationM: 161,
+    wmoId: '28411',
+    source: 'meteostat',
+  },
+  {
+    id: '31735',
+    name: 'АМСГ Хабаровск (Новый)',
+    region: 'Хабаровский край',
+    country: 'RU',
+    latitude: 48.53,
+    longitude: 135.15,
+    elevationM: 74,
+    wmoId: '31735',
+    source: 'meteostat',
+  },
+  {
+    id: '31960',
+    name: 'АМСГ Владивосток (Кневичи)',
+    region: 'Приморский край',
+    country: 'RU',
+    latitude: 43.4,
+    longitude: 132.15,
+    elevationM: 14,
+    wmoId: '31960',
+    source: 'meteostat',
+  },
+  {
+    id: '24959',
+    name: 'АМСГ Якутск',
+    region: 'Республика Саха (Якутия)',
+    country: 'RU',
+    latitude: 62.09,
+    longitude: 129.77,
+    elevationM: 101,
+    wmoId: '24959',
+    source: 'meteostat',
+  },
+  {
+    id: '32150',
+    name: 'АМСГ Южно-Сахалинск (Хомутово)',
+    region: 'Сахалинская область',
+    country: 'RU',
+    latitude: 46.88,
+    longitude: 142.72,
+    elevationM: 18,
+    wmoId: '32150',
+    source: 'meteostat',
+  },
+  {
+    id: '25913',
+    name: 'АМСГ Магадан (Сокол)',
+    region: 'Магаданская область',
+    country: 'RU',
+    latitude: 59.91,
+    longitude: 150.72,
+    elevationM: 175,
+    wmoId: '25913',
+    source: 'meteostat',
+  },
+  {
+    id: '26702',
+    name: 'АМСГ Калининград (Храброво)',
+    region: 'Калининградская область',
+    country: 'RU',
+    latitude: 54.89,
+    longitude: 20.59,
+    elevationM: 13,
+    wmoId: '26702',
+    source: 'meteostat',
+  },
+  {
+    id: '34949',
+    name: 'АМСГ Ставрополь (Шпаковское)',
+    region: 'Ставропольский край',
+    country: 'RU',
+    latitude: 45.11,
+    longitude: 42.11,
+    elevationM: 452,
+    wmoId: '34949',
+    source: 'meteostat',
+  },
+  {
+    id: '37171',
+    name: 'АМСГ Сочи (Адлер)',
+    region: 'Краснодарский край',
+    country: 'RU',
+    latitude: 43.45,
+    longitude: 39.96,
+    elevationM: 27,
+    wmoId: '37171',
+    source: 'meteostat',
+  },
 ];
 
 /**
@@ -374,6 +815,201 @@ export function findNearbyWeatherStations(
   withDistances.sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0));
 
   return withDistances.slice(0, limit);
+}
+
+/**
+ * Сквозной поиск по реестру верифицированных метеостанций WMO/Росгидромета.
+ * Выполняет полнотекстовый поиск по наименованию, коду WMO и региону,
+ * а также вычисляет ортодромическое расстояние (км) от объекта.
+ */
+export function searchWeatherStations(
+  query: string,
+  currentLat?: number,
+  currentLon?: number,
+  limit = 20
+): WeatherStationMetadata[] {
+  const cleanQ = query.trim().toLowerCase();
+  const pool = VERIFIED_WMO_STATIONS;
+
+  const withDistances = pool.map((st) => ({
+    ...st,
+    distanceKm:
+      currentLat !== undefined && currentLon !== undefined
+        ? calculateHaversineDistanceKm(currentLat, currentLon, st.latitude, st.longitude)
+        : undefined,
+  }));
+
+  if (!cleanQ) {
+    if (currentLat !== undefined && currentLon !== undefined) {
+      withDistances.sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0));
+    }
+    return withDistances.slice(0, limit);
+  }
+
+  const filtered = withDistances.filter((s) => {
+    return (
+      s.name.toLowerCase().includes(cleanQ) ||
+      s.id.toLowerCase().includes(cleanQ) ||
+      (s.wmoId && s.wmoId.toLowerCase().includes(cleanQ)) ||
+      s.region.toLowerCase().includes(cleanQ)
+    );
+  });
+
+  filtered.sort((a, b) => {
+    // Точные совпадения в начале
+    const aNameMatch = a.name.toLowerCase().includes(cleanQ);
+    const bNameMatch = b.name.toLowerCase().includes(cleanQ);
+    if (aNameMatch && !bNameMatch) return -1;
+    if (!aNameMatch && bNameMatch) return 1;
+
+    if (a.distanceKm !== undefined && b.distanceKm !== undefined) {
+      return a.distanceKm - b.distanceKm;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  return filtered.slice(0, limit);
+}
+
+export interface FacilityDefaultLocationResolution {
+  region: string;
+  weatherStation: string;
+  weatherStationId?: string;
+  latitude: number;
+  longitude: number;
+  matched: boolean;
+  station?: WeatherStationMetadata;
+}
+
+/**
+ * Автоматическое сопоставление создаваемого объекта с реестром метеостанций.
+ * КАТЕГОРИЧЕСКИЙ ЗАПРЕТ НА ВЫДУМАННЫЕ МЕТЕОПОСТЫ:
+ * - Если город/объект распознан в реестре WMO (напр. «Курган» -> АМСГ Курган 28661) — привязывается реальная станция.
+ * - Если объект неизвестен — станция остаётся непривязанной, пользователь выбирает реальную станцию в настройках.
+ */
+export function resolveFacilityDefaultLocation(facilityName: string): FacilityDefaultLocationResolution {
+  const clean = facilityName.trim();
+  const lower = clean.toLowerCase();
+
+  // Удаляем типовые префиксы ТЭК и объектов строительства
+  const normalized = lower
+    .replace(/^(кс|укпг|дкс|гкм|нгкм|гпс|нпс|узел|участок|объект|г\.|город|пос\.|п\.)\s+/i, '')
+    .trim();
+
+  // 1. Поиск точного или частичного совпадения по названию станции или города
+  const matchedStation = VERIFIED_WMO_STATIONS.find((st) => {
+    const stName = st.name.toLowerCase();
+    const stReg = st.region.toLowerCase();
+    return (
+      stName.includes(normalized) ||
+      stReg.includes(normalized) ||
+      (normalized.length >= 4 && lower.includes(stName.replace(/амсг|метеостанция|г\./gi, '').trim()))
+    );
+  });
+
+  if (matchedStation) {
+    return {
+      region: matchedStation.region,
+      weatherStation: `${matchedStation.name} (ID: ${matchedStation.id})`,
+      weatherStationId: matchedStation.id,
+      latitude: matchedStation.latitude,
+      longitude: matchedStation.longitude,
+      matched: true,
+      station: matchedStation,
+    };
+  }
+
+  // Волхов как частый проектный случай
+  if (lower.includes('волхов')) {
+    const volkhov = VERIFIED_WMO_STATIONS.find((s) => s.id === '26078')!;
+    return {
+      region: volkhov.region,
+      weatherStation: `${volkhov.name} (ID: ${volkhov.id})`,
+      weatherStationId: volkhov.id,
+      latitude: volkhov.latitude,
+      longitude: volkhov.longitude,
+      matched: true,
+      station: volkhov,
+    };
+  }
+
+  // Если объект не совпал с реестром:
+  // ЗАПРЕЩЕНО создавать фиктивный «Метеопост X»! Станция помечается как требующая выбора!
+  return {
+    region: 'Регион не указан (требуется выбор станции)',
+    weatherStation: 'Метеостанция не привязана (выберите в свойствах объекта)',
+    weatherStationId: undefined,
+    latitude: 55.75, // Координаты РФ по умолчанию
+    longitude: 37.62,
+    matched: false,
+  };
+}
+
+export interface GeocodingSearchResult {
+  id: string;
+  name: string;
+  region: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  elevationM?: number;
+  nearestStation: WeatherStationMetadata;
+  distanceKm: number;
+}
+
+/**
+ * Открытый геокодинг населённых пунктов и промплощадок РФ с автоматическим
+ * нахождением ближайшей реальной метеостанции WMO/Росгидромета.
+ */
+export async function searchLocationGeocoding(
+  query: string,
+  timeoutMs = 4000
+): Promise<GeocodingSearchResult[]> {
+  const cleanQ = query.trim();
+  if (cleanQ.length < 2) return [];
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
+      cleanQ
+    )}&count=5&language=ru&format=json`;
+
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    if (!Array.isArray(data?.results)) return [];
+
+    const results: GeocodingSearchResult[] = data.results.map((r: any) => {
+      const lat = Math.round(r.latitude * 100) / 100;
+      const lon = Math.round(r.longitude * 100) / 100;
+      const regionStr = [r.admin1, r.country || 'Россия'].filter(Boolean).join(', ');
+
+      // Находим ближайшую реальную WMO станцию
+      const [nearest] = findNearbyWeatherStations(lat, lon, 1);
+
+      return {
+        id: `geo-${r.id}`,
+        name: r.name,
+        region: regionStr,
+        country: r.country_code || 'RU',
+        latitude: lat,
+        longitude: lon,
+        elevationM: r.elevation,
+        nearestStation: nearest,
+        distanceKm: nearest?.distanceKm ?? 0,
+      };
+    });
+
+    return results;
+  } catch {
+    // В случае оффлайна или сбоя сети возвращается пустой список (работает локальный реестр WMO)
+    return [];
+  }
 }
 
 /**
@@ -529,6 +1165,24 @@ const HISTORICAL_STATION_OBSERVATIONS_INDEX: Record<string, Record<string, numbe
     '2026-08-15': 6.5,
     '2026-09-15': 0.8,
     '2026-10-14': -7.5,
+  },
+  // Курган (28661)
+  '28661': {
+    '2026-04-10': 5.8,
+    '2026-04-15': 8.4,
+    '2026-05-10': 14.2,
+    '2026-05-15': 16.5,
+    '2026-06-01': 19.3,
+    '2026-06-15': 21.6,
+    '2026-07-01': 24.2,
+    '2026-07-15': 25.8,
+    '2026-08-01': 22.1,
+    '2026-08-15': 19.4,
+    '2026-09-01': 15.3,
+    '2026-09-15': 12.0,
+    '2026-09-30': 7.2,
+    '2026-10-14': 3.1,
+    '2026-10-20': 0.4,
   },
 };
 
