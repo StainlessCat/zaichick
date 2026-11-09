@@ -1739,16 +1739,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f4f7fb] text-slate-900">
-      {/* ЧЕРДАК ИНТЕРФЕЙСА СТРОГО ЦВЕТА #1e3799 */}
-      <header className="sticky top-0 z-30 bg-[#1e3799] text-white border-b border-sky-400/20 shadow-md no-print">
-        <div className="max-w-[1920px] mx-auto px-4 py-2.5 flex items-center justify-between gap-4">
-          {/* Левый верхний угол: Логотип и название (5 кликов открывают скрытую Консоль Автора) */}
+      {/* ФИРМЕННЫЙ ЧЕРДАК ИНТЕРФЕЙСА: PANTONE 300 C (#005EB8) */}
+      <header className="sticky top-0 z-30 bg-[#005EB8] text-white border-b border-sky-400/20 shadow-md no-print">
+        <div className="max-w-[1920px] mx-auto px-4 py-2 flex items-center justify-between gap-4">
+          {/* Левый верхний угол: Фирменный логотип zaychick (5 кликов открывают скрытую Консоль Автора) */}
           <div
             onClick={handleHeaderLogoSecretClick}
             className="flex items-center min-w-0 shrink-0 cursor-pointer select-none"
-            title="ZAYCHICK — Цифровая система учёта сварки и НК"
+            title="zaychick — Учёт сварных стыков трубопроводов"
           >
-            <ZaychickLogo variant="header" size={38} />
+            <ZaychickLogo variant="header" size={40} />
           </div>
 
           {/* Середина чердака: Название текущего раздела с иконкой (полностью прописными буквами) */}

@@ -23,7 +23,7 @@ async function getPdfMakeInstance(): Promise<any> {
 }
 
 export function buildUserGuideBookletDocDefinition(): TDocumentDefinitions {
-  const brandNavy = '#1e3799';
+  const brandNavy = '#005EB8';
   const brandSky = '#f4f8fe';
   const borderSlate = '#cbd5e1';
   const textDark = '#0f172a';
@@ -456,6 +456,20 @@ export function buildUserGuideBookletDocDefinition(): TDocumentDefinitions {
         margin: [0, 0, 0, 12],
       },
       {
+        text: 'Метеостанции объекта, поверка приборов (АРШИН) и справки УГМС',
+        fontSize: 11,
+        bold: true,
+        color: brandNavy,
+        margin: [0, 0, 0, 4],
+      },
+      {
+        text: 'В программе zaychick действует строгий запрет на синтетические формулы: температура воздуха берется только из офлайн-реестра WMO/Росгидромета РФ (более 100 станций), поверенного метеопоста площадки (с поверкой Росстандарта) или официальной справки УГМС (импорт CSV). Опция Open-Meteo ERA5 строго маркируется как математический реанализ ECMWF.',
+        fontSize: 9.0,
+        color: textDark,
+        lineHeight: 1.3,
+        margin: [0, 0, 0, 8],
+      },
+      {
         text: 'Как добавить дополнительный (непроектный) стык 011, 012...',
         fontSize: 11,
         bold: true,
@@ -806,7 +820,7 @@ export async function exportWeldingJournalToPdfA3(
   colNumbers: string[],
   rows: string[][]
 ): Promise<void> {
-  const brandNavy = '#1e3799';
+  const brandNavy = '#005EB8';
   const isSto = colNumbers.length > 20;
   const fontSize = isSto ? 5.2 : 7.5;
   const widths = colNumbers.map(() => 'auto');

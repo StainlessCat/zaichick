@@ -4,6 +4,7 @@ import {
   BookOpen,
   CheckCircle2,
   ClipboardCheck,
+  CloudSun,
   Database,
   Download,
   FileSpreadsheet,
@@ -583,6 +584,45 @@ export const UserGuideBookletView: React.FC = () => {
                       Чтобы не закрывать и не открывать окно для каждого стыка, используйте кнопки <strong>«◄ Пред.»</strong> и <strong>«След. ►»</strong> в синей шапке окна или нажмите <strong>«Сохранить и след. ►» (<code className="font-mono">Ctrl + Enter</code>)</strong> — программа сохранит текущий стык и сразу откроет следующий стык по порядку (<code className="font-mono">010 ➔ 020 ➔ 030</code>).
                     </li>
                   </ol>
+                </div>
+              </div>
+
+              {/* Работа с метеопунктом объекта, справками УГМС и метеостанциями */}
+              <div className="p-5 rounded-lg border border-sky-200 bg-[#f4f8fe] space-y-3">
+                <div className="flex items-center gap-2">
+                  <CloudSun className="w-4 h-4 text-[#005EB8]" />
+                  <h3 className="text-sm font-bold text-slate-900">
+                    2.3. Работа с метеостанциями, справками УГМС и актированной погодой
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-700 leading-relaxed">
+                  При указании даты сварки программа автоматически заполняет графу температуры окружающего воздуха. В системе <strong>zaychick</strong> действует отраслевой стандарт достоверности данных:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 bg-white rounded border border-slate-200 space-y-1">
+                    <div className="font-bold text-[#005EB8]">1. Офлайн-реестр станций Росгидромета РФ</div>
+                    <div className="text-slate-600">
+                      Встроенная база станций WMO/Росгидромета по всей территории РФ (от Кургана и Вологды до Бованенково и Сабетты). Работает без интернета в закрытом контуре.
+                    </div>
+                  </div>
+                  <div className="p-3 bg-white rounded border border-slate-200 space-y-1">
+                    <div className="font-bold text-[#005EB8]">2. Поверенный метеопост площадки (АМК)</div>
+                    <div className="text-slate-600">
+                      Кнопка <strong>«+ Поверенный метеопост»</strong> в окне объекта: внесение локального прибора с номером свидетельства ФГИС «АРШИН» и сроком поверки.
+                    </div>
+                  </div>
+                  <div className="p-3 bg-white rounded border border-slate-200 space-y-1">
+                    <div className="font-bold text-[#005EB8]">3. Официальная справка УГМС (Импорт)</div>
+                    <div className="text-slate-600">
+                      Кнопка <strong>«Импорт справки УГМС»</strong>: загрузка ведомостей замера температур с автоматическим распознаванием дат (ГГГГ-ММ-ДД / ДД.ММ.ГГГГ) и фиксацией источника в журнале.
+                    </div>
+                  </div>
+                  <div className="p-3 bg-white rounded border border-slate-200 space-y-1">
+                    <div className="font-bold text-amber-700">4. Предупреждение по Open-Meteo ERA5</div>
+                    <div className="text-slate-600">
+                      ERA5 — это математический реанализ ECMWF по сетке 25×25 км. Применяется только как справочная опция и строго маркируется в паспорте стыка как расчетный реанализ.
+                    </div>
+                  </div>
                 </div>
               </div>
 
