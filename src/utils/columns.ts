@@ -299,6 +299,14 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
     isNumeric: true,
   },
   {
+    key: 'weatherSource',
+    label: 'Источник метеоданных',
+    shortLabel: 'Метеостанция',
+    group: 'welding',
+    groupLabel: 'Сварка (Производство)',
+    minWidth: 160,
+  },
+  {
     key: 'preheatTemp',
     label: 'Темп. подогрева, °C',
     shortLabel: 'T подогр., °C',

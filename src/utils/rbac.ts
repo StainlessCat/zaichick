@@ -116,6 +116,7 @@ export const PTO_EDITABLE_JOINT_FIELDS = new Set<keyof WeldJoint>([
   'welderFullName',
   'welderCertNumber',
   'ambientTemp',
+  'weatherSource',
   'preheatTemp',
   'weldingMaterials',
   'techCardNumber',

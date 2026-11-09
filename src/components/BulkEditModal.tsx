@@ -37,7 +37,12 @@ interface BulkEditModalProps {
   selectedJoints: WeldJoint[];
   welders: WelderProfile[];
   inspectors: InspectorProfile[];
-  facilityCoords: { latitude: number; longitude: number };
+  facilityCoords: {
+    latitude: number;
+    longitude: number;
+    weatherArchive?: Record<string, string>;
+    weatherStation?: string;
+  };
   currentUser?: UserAccount;
   onApplyBulkUpdate: (patch: Partial<WeldJoint>) => void;
 }
@@ -130,7 +135,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     const res = await fetchAmbientTemperatureAuto(
       facilityCoords.latitude,
       facilityCoords.longitude,
-      weldingDate
+      weldingDate,
+      facilityCoords.weatherArchive,
+      { stationName: facilityCoords.weatherStation }
     );
     setAmbientTemp(res.tempC);
     setWeatherSource(res.source);
@@ -173,6 +180,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
       if (enableWeldingDate) {
         rawPatch.weldingDate = weldingDate;
         rawPatch.ambientTemp = ambientTemp;
+        if (weatherSource) {
+          rawPatch.weatherSource = weatherSource;
+        }
       }
 
       if (enableWeldingSpecs) {

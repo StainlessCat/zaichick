@@ -22,6 +22,7 @@ export const COMPARABLE_JOINT_FIELDS: { key: keyof WeldJoint; label: string }[] 
   { key: 'hardnessTestInfo', label: 'Твердость металла шва' },
   { key: 'ndtReportNumber', label: '№ заключения НК' },
   { key: 'ferritePhaseInfo', label: 'Измерение ферритной фазы' },
+  { key: 'weatherSource', label: 'Источник метеонаблюдений' },
 ];
 
 function formatFieldVal(key: string, val: unknown): string {

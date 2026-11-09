@@ -2379,6 +2379,8 @@ export default function App() {
         facilityCoords={{
           latitude: currentFacility.latitude,
           longitude: currentFacility.longitude,
+          weatherArchive: currentFacility.weatherArchive,
+          weatherStation: currentFacility.weatherStation,
         }}
         currentUser={currentUser}
         onApplyBulkUpdate={handleApplyBulkUpdate}
