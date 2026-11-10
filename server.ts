@@ -401,6 +401,16 @@ async function startServer() {
         return;
       }
 
+      if (result.status === 'duplicate') {
+        res.status(409).json({
+          status: 'error',
+          code: 'DUPLICATE_JOINT_NUMBER',
+          message: result.error,
+          meta: result.meta,
+        });
+        return;
+      }
+
       broadcastDbChange({
         globalRevision: result.meta.globalRevision,
         lastUpdatedAt: result.meta.lastUpdatedAt,

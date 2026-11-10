@@ -719,6 +719,11 @@ export default function App() {
       return;
     }
 
+    if (localOcc.status === 'duplicate') {
+      alert(`[Ошибка уникальности] ${localOcc.error}`);
+      return;
+    }
+
     setJoints(localOcc.updatedJoints);
     if (auditEntriesToPersist.length > 0) {
       setAuditLogs((prev) => [...auditEntriesToPersist, ...prev]);

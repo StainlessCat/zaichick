@@ -432,6 +432,20 @@ export class UnifiedServerDatabase {
         created_at TEXT NOT NULL,
         expires_at TEXT NOT NULL
       );
+
+      -- Автоматическая дедупликация исторических дубликатов и создание уникального индекса
+      DELETE FROM weld_joints WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY LOWER(TRIM(unique_line_id)), LOWER(TRIM(joint_number))
+            ORDER BY updated_at DESC, version DESC, id DESC
+          ) as rn
+          FROM weld_joints
+        ) WHERE rn > 1
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_weld_joints_line_number
+      ON weld_joints (LOWER(TRIM(unique_line_id)), LOWER(TRIM(joint_number)));
     `);
   }
 
@@ -1393,6 +1407,11 @@ export class UnifiedServerDatabase {
         status: 'forbidden';
         error: string;
         meta: ServerDbMetadata;
+      }
+    | {
+        status: 'duplicate';
+        error: string;
+        meta: ServerDbMetadata;
       } {
     const { meta, data } = this.readInternalFullState();
 
@@ -1444,6 +1463,14 @@ export class UnifiedServerDatabase {
       return {
         status: 'conflict',
         conflict: occResult.conflict,
+        meta,
+      };
+    }
+
+    if (occResult.status === 'duplicate') {
+      return {
+        status: 'duplicate',
+        error: occResult.error,
         meta,
       };
     }

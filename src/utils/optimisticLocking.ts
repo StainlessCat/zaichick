@@ -166,6 +166,10 @@ export function applyOptimisticJointSave(params: {
   | {
       status: 'conflict';
       conflict: OptimisticLockConflictPayload;
+    }
+  | {
+      status: 'duplicate';
+      error: string;
     } {
   const {
     currentJoints,
@@ -249,6 +253,30 @@ export function applyOptimisticJointSave(params: {
       savedJoint,
       updatedJoints,
       auditEntries,
+    };
+  }
+
+  // Защита от создания дубликатов стыков на одной технологической линии
+  const incomingNumberNorm = (incomingJoint.jointNumber || '').trim().toLowerCase();
+  const incomingLineKey = (
+    incomingJoint.uniqueLineId ||
+    `${incomingJoint.rdCode || ''}__${incomingJoint.lineNumber || ''}`
+  ).trim().toLowerCase();
+
+  const duplicate = currentJoints.find((j) => {
+    if (j.id === incomingJoint.id) return false;
+    const jLineKey = (
+      j.uniqueLineId ||
+      `${j.rdCode || ''}__${j.lineNumber || ''}`
+    ).trim().toLowerCase();
+    if (jLineKey !== incomingLineKey) return false;
+    return (j.jointNumber || '').trim().toLowerCase() === incomingNumberNorm;
+  });
+
+  if (duplicate) {
+    return {
+      status: 'duplicate',
+      error: `Стык с номером «${incomingJoint.jointNumber}» уже зарегистрирован на линии «${incomingJoint.lineNumber || incomingJoint.uniqueLineId}» (ID: ${duplicate.id}). Дублирование номеров стыков в пределах одной линии категорически запрещено исполнительными нормативами.`,
     };
   }
 

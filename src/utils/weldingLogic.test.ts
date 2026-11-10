@@ -4689,3 +4689,98 @@ test('Аудит copilotAnalysis п. 3: Выборочный дублирующ�
     'Стык, не требующий НК по категории трубопровода, при сданном ВИК обязан быть принят'
   );
 });
+
+test('Аудит copilotAnalysis п. 4: Запрет создания дубликатов номеров стыков на одной технологической линии', () => {
+  const testUser = {
+    login: 'pto_ivanov',
+    fullName: 'Иванов И.И.',
+    role: 'Инженер ПТО',
+  };
+
+  const existingJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'joint-existing-1',
+    uniqueLineId: 'LINE-001',
+    lineNumber: '001',
+    jointNumber: 'Стык-1',
+    version: 1,
+  };
+
+  const currentJoints = [existingJoint];
+
+  // 1. Попытка создать новый стык с тем же номером на той же линии (другой ID) -> duplicate
+  const duplicateNewJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'joint-new-duplicate',
+    uniqueLineId: 'LINE-001',
+    lineNumber: '001',
+    jointNumber: '  стык-1  ', // проверка регистронезависимости и пробелов
+  };
+
+  const resultDuplicate = applyOptimisticJointSave({
+    currentJoints,
+    incomingJoint: duplicateNewJoint,
+    expectedVersion: undefined,
+    baseJoint: undefined,
+    user: testUser,
+  });
+
+  assert.equal(resultDuplicate.status, 'duplicate');
+  if (resultDuplicate.status === 'duplicate') {
+    assert.match(resultDuplicate.error, /уже зарегистрирован на линии/);
+  }
+
+  // 2. Создание стыка с другим номером на той же линии -> ok
+  const validNewJointSameLine: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'joint-valid-diff-num',
+    uniqueLineId: 'LINE-001',
+    lineNumber: '001',
+    jointNumber: 'Стык-2',
+  };
+
+  const resultValidSameLine = applyOptimisticJointSave({
+    currentJoints,
+    incomingJoint: validNewJointSameLine,
+    expectedVersion: undefined,
+    baseJoint: undefined,
+    user: testUser,
+  });
+
+  assert.equal(resultValidSameLine.status, 'ok');
+
+  // 3. Создание стыка с тем же номером, но на ДРУГОЙ линии -> ok
+  const validNewJointDiffLine: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'joint-valid-diff-line',
+    uniqueLineId: 'LINE-002',
+    lineNumber: '002',
+    jointNumber: 'Стык-1',
+  };
+
+  const resultValidDiffLine = applyOptimisticJointSave({
+    currentJoints,
+    incomingJoint: validNewJointDiffLine,
+    expectedVersion: undefined,
+    baseJoint: undefined,
+    user: testUser,
+  });
+
+  assert.equal(resultValidDiffLine.status, 'ok');
+
+  // 4. Редактирование существующего стыка (тот же ID и тот же номер) -> ok
+  const editExistingJoint: WeldJoint = {
+    ...existingJoint,
+    preheatTemp: '+120',
+  };
+
+  const resultEditExisting = applyOptimisticJointSave({
+    currentJoints,
+    incomingJoint: editExistingJoint,
+    expectedVersion: 1,
+    baseJoint: existingJoint,
+    user: testUser,
+  });
+
+  assert.equal(resultEditExisting.status, 'ok');
+});
