@@ -433,6 +433,29 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       .map((j) => j.jointNumber);
   }, [allJoints, form.rdCode, form.lineNumber, form.id]);
 
+  const duplicateJointOnLine = useMemo(() => {
+    const candidateNumber = (form.jointNumber || '').trim().toLowerCase();
+    if (!candidateNumber) return null;
+    const currentLineKey = (
+      form.uniqueLineId ||
+      buildUniqueLineId(form.rdCode, form.lineNumber) ||
+      `${form.rdCode || ''}__${form.lineNumber || ''}`
+    ).trim().toLowerCase();
+
+    return (
+      allJoints.find((j) => {
+        if (j.id === form.id) return false;
+        const jLineKey = (
+          j.uniqueLineId ||
+          buildUniqueLineId(j.rdCode, j.lineNumber) ||
+          `${j.rdCode || ''}__${j.lineNumber || ''}`
+        ).trim().toLowerCase();
+        if (jLineKey !== currentLineKey) return false;
+        return (j.jointNumber || '').trim().toLowerCase() === candidateNumber;
+      }) || null
+    );
+  }, [allJoints, form.id, form.jointNumber, form.uniqueLineId, form.rdCode, form.lineNumber]);
+
   // Инициализация состояния при открытии модального окна
   useEffect(() => {
     if (!isOpen) return;
@@ -951,6 +974,13 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError('');
+
+    if (duplicateJointOnLine) {
+      setValidationError(
+        `Стык с номером «${form.jointNumber}» уже зарегистрирован на линии «${form.lineNumber || form.uniqueLineId}» (ID: ${duplicateJointOnLine.id}). Дублирование номеров стыков на одной линии категорически запрещено.`
+      );
+      return;
+    }
 
     if (!canSaveAnyField) {
       setValidationError(
@@ -1641,11 +1671,24 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                           }))
                         }
                         aria-label="Номер стыка"
-                        className="w-full px-3 py-1.5 bg-white border border-[#1e3799] rounded font-mono font-bold text-sm text-[#1e3799]"
+                        className={`w-full px-3 py-1.5 rounded font-mono font-bold text-sm transition-colors ${
+                          duplicateJointOnLine
+                            ? 'bg-red-50 border-2 border-red-500 text-red-900 focus:outline-none focus:ring-2 focus:ring-red-400'
+                            : 'bg-white border border-[#1e3799] text-[#1e3799]'
+                        }`}
                       />
-                      <div className="text-[10px] text-slate-500 mt-1">
-                        После добавления стыка его номер не подлежит переименованию
-                      </div>
+                      {duplicateJointOnLine ? (
+                        <div className="mt-1.5 p-2 rounded-lg bg-red-50 border border-red-300 text-red-900 text-[11px] flex items-start gap-1.5 font-medium shadow-xs">
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
+                          <span>
+                            Стык с номером «{form.jointNumber}» уже существует на этой линии (ID: {duplicateJointOnLine.id}). Дублирование номеров стыков запрещено.
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-slate-500 mt-1">
+                          После добавления стыка его номер не подлежит переименованию
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1868,7 +1911,8 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
               )}
               <button
                 type="submit"
-                disabled={!canSaveAnyField}
+                disabled={!canSaveAnyField || Boolean(duplicateJointOnLine)}
+                title={Boolean(duplicateJointOnLine) ? `Сохранение заблокировано: номер стыка «${form.jointNumber}» уже занят на этой линии` : undefined}
                 className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed shadow-xs cursor-pointer transition-colors"
               >
                 {canSaveAnyField ? (

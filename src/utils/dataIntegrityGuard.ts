@@ -997,6 +997,39 @@ export function validateWeldJointComprehensive(params: {
   // =========================================================================
   // БЛОК 4: ССЫЛОЧНАЯ ЦЕЛОСТНОСТЬ И УНИКАЛЬНОСТЬ ЗАВОДСКИХ НОМЕРОВ ДЕТАЛЕЙ
   // =========================================================================
+
+  // 4.1 Контроль уникальности номера стыка в пределах технологической линии
+  const targetLineKey = (
+    joint.uniqueLineId ||
+    buildUniqueLineId(joint.rdCode, joint.lineNumber) ||
+    `${joint.rdCode || ''}__${joint.lineNumber || ''}`
+  ).trim().toLowerCase();
+
+  const candidateNumberNorm = (joint.jointNumber || '').trim().toLowerCase();
+
+  if (candidateNumberNorm) {
+    const duplicate = allJoints.find((j) => {
+      if (j.id === joint.id) return false;
+      const jLineKey = (
+        j.uniqueLineId ||
+        buildUniqueLineId(j.rdCode, j.lineNumber) ||
+        `${j.rdCode || ''}__${j.lineNumber || ''}`
+      ).trim().toLowerCase();
+      if (jLineKey !== targetLineKey) return false;
+      return (j.jointNumber || '').trim().toLowerCase() === candidateNumberNorm;
+    });
+
+    if (duplicate) {
+      issues.push({
+        id: `ref-duplicate-joint-number-${duplicate.id}`,
+        category: 'referential',
+        severity: 'error',
+        field: 'jointNumber',
+        title: 'Дубликат номера стыка на линии',
+        message: `Стык с номером «${joint.jointNumber}» уже зарегистрирован на линии «${joint.lineNumber || joint.uniqueLineId}» (ID: ${duplicate.id}). Дублирование номеров стыков категорически запрещено нормативными правилами.`,
+      });
+    }
+  }
   for (const [elemIdx, facNum, elemName] of [
     [1, joint.elem1FactoryNumber, joint.elem1Name] as const,
     [2, joint.elem2FactoryNumber, joint.elem2Name] as const,

@@ -148,6 +148,29 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
 }) => {
   const parentRef = useRef<HTMLDivElement>(null);
 
+  // Карта дубликатов номеров стыков на технологических линиях (п. 6 аудита)
+  const duplicateJointIds = useMemo(() => {
+    const keyMap = new Map<string, string[]>();
+    for (const j of joints) {
+      const lineKey = (
+        j.uniqueLineId ||
+        `${j.rdCode || ''}__${j.lineNumber || ''}`
+      ).trim().toLowerCase();
+      const numNorm = (j.jointNumber || '').trim().toLowerCase();
+      const composite = `${lineKey}:::${numNorm}`;
+      const list = keyMap.get(composite) || [];
+      list.push(j.id);
+      keyMap.set(composite, list);
+    }
+    const dupIds = new Set<string>();
+    for (const ids of keyMap.values()) {
+      if (ids.length > 1) {
+        for (const id of ids) dupIds.add(id);
+      }
+    }
+    return dupIds;
+  }, [joints]);
+
   // Виртуализация таблицы с помощью @tanstack/react-virtual
   // Позволяет легко рендерить 10 000+ стыков с плавным 60 FPS скроллом
   const rowVirtualizer = useVirtualizer({
@@ -369,6 +392,16 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Предупреждение об обнаруженных дубликатах стыков на технологических линиях */}
+      {duplicateJointIds.size > 0 && (
+        <div className="bg-red-50 rounded-xl border border-red-300 px-4 py-2.5 flex items-center gap-2 text-xs text-red-900 shadow-xs">
+          <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+          <div className="flex-1 font-medium">
+            <span className="font-bold">Обнаружены дубликаты стыков ({duplicateJointIds.size} записей):</span> в пределах одной технологической линии зарегистрированы повторяющиеся номера стыков. Дублирование блокирует официальную сдачу документации и отмечено красным бейджем «ДУБЛЬ».
+          </div>
+        </div>
+      )}
 
       {/* Индикатор активных фильтров, диапазона дат или выделенных строк */}
       {(activeFilterKeys.length > 0 ||
@@ -681,6 +714,14 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
                                       title="Дополнительный стык"
                                     >
                                       (доп.)
+                                    </span>
+                                  )}
+                                  {duplicateJointIds.has(joint.id) && (
+                                    <span
+                                      className="ml-1.5 px-1.5 py-0.5 rounded bg-red-100 text-red-800 text-[10px] font-bold border border-red-300 shrink-0 animate-pulse"
+                                      title="Критическая ошибка: номер этого стыка дублируется на данной линии!"
+                                    >
+                                      ДУБЛЬ
                                     </span>
                                   )}
                                   {isIncomplete && (

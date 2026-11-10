@@ -4835,3 +4835,75 @@ test('Аудит copilotAnalysis п. 5: Защита состояния и ма�
 
   assert.equal(occCheck.status, 'duplicate');
 });
+
+test('Аудит copilotAnalysis п. 6: Клиентская валидация дубликатов номеров стыков в validateWeldJointComprehensive', () => {
+  const existingJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'joint-line1-010',
+    uniqueLineId: 'LINE-101',
+    lineNumber: '101',
+    jointNumber: '010',
+  };
+
+  const allJoints = [existingJoint];
+
+  // 1. Попытка создать/сохранить стык с тем же номером на той же линии -> critical error, isValidToSave = false
+  const duplicateCandidate: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'joint-line1-dup',
+    uniqueLineId: 'LINE-101',
+    lineNumber: '101',
+    jointNumber: '  010  ',
+  };
+
+  const dupValidation = validateWeldJointComprehensive({
+    joint: duplicateCandidate,
+    allJoints,
+    projectLineList: [],
+    lrvCatalog: [],
+    welders: [],
+    techCards: [],
+    weldingMaterials: [],
+  });
+
+  assert.equal(dupValidation.isValidToSave, false, 'Дубликат номера стыка на линии должен блокировать сохранение (isValidToSave = false)');
+  const dupError = dupValidation.errors.find((e) => e.field === 'jointNumber');
+  assert.ok(dupError, 'В массиве критических ошибок должна присутствовать ошибка по полю jointNumber');
+  assert.match(dupError.message, /уже зарегистрирован на линии/);
+
+  // 2. Стык с тем же номером, но на ДРУГОЙ линии -> валидно
+  const diffLineCandidate: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'joint-line2-ok',
+    uniqueLineId: 'LINE-202',
+    lineNumber: '202',
+    jointNumber: '010',
+  };
+
+  const diffLineValidation = validateWeldJointComprehensive({
+    joint: diffLineCandidate,
+    allJoints,
+    projectLineList: [],
+    lrvCatalog: [],
+    welders: [],
+    techCards: [],
+    weldingMaterials: [],
+  });
+
+  const diffLineDupError = diffLineValidation.errors.find((e) => e.field === 'jointNumber');
+  assert.equal(diffLineDupError, undefined, 'Одинаковый номер на другой линии не считается дубликатом');
+
+  // 3. Сохранение самого себя (тот же ID) -> валидно
+  const selfValidation = validateWeldJointComprehensive({
+    joint: existingJoint,
+    allJoints,
+    projectLineList: [],
+    lrvCatalog: [],
+    welders: [],
+    techCards: [],
+    weldingMaterials: [],
+  });
+
+  const selfDupError = selfValidation.errors.find((e) => e.field === 'jointNumber');
+  assert.equal(selfDupError, undefined, 'Сам себя стык не считает дубликатом');
+});
