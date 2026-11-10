@@ -264,20 +264,19 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       weldingType: techCards[0]?.weldingType || 'РАД+РД',
       gostJointType: 'С17',
       weldingPosition: 'В1',
-      weldingDate: initDate,
-      welderStamp: defaultPersonalWelder?.stamp || '',
-      welderStampsList: defaultPersonalWelder ? [defaultPersonalWelder.stamp] : [],
+      weldingDate: '',
+      welderStamp: '',
+      welderStampsList: [],
       brigadeStamp: '',
       weldingMaterials:
         techCards[0]?.recommendedMaterials ||
         weldingMaterialsList[0]?.brandAndDiameter ||
         'Св-08Г2С Ø2.0 / УОНИ-13/55 Ø3.0',
-      ambientTemp: archivedTemp,
-      preheatTemp: '130',
-      responsiblePerson:
-        defaultPersonalWelder?.crewForeman || 'Мастер СМР Громов И.А.',
-      welderFullName: defaultPersonalWelder?.fullName || '',
-      welderCertNumber: defaultPersonalWelder?.certNumber || '',
+      ambientTemp: '',
+      preheatTemp: '',
+      responsiblePerson: '',
+      welderFullName: '',
+      welderCertNumber: '',
       techCardNumber: techCards[0]?.number || '',
       vikResult: 'Не проводился',
       vikDate: '',
@@ -522,7 +521,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
 
       setForm({
         ...initialJoint,
-        ambientTemp: initialJoint.ambientTemp || autoTempFormatted,
+        ambientTemp: initialJoint.ambientTemp ?? '',
         elem1Name: initLrv1?.shortName || initialJoint.elem1Name,
         elem1Material: initLrv1?.material || initialJoint.elem1Material,
         elem1Ntd: initLrv1?.ntd || initialJoint.elem1Ntd,
@@ -555,7 +554,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
         elem2Length: initialJoint.elem2Length ?? '',
         gostJointType: initialJoint.gostJointType || 'С17',
         weldingPosition: initialJoint.weldingPosition || 'В1',
-        preheatTemp: initialJoint.preheatTemp ?? '130',
+        preheatTemp: initialJoint.preheatTemp ?? '',
       });
       const num = parseInt(initialJoint.jointNumber, 10);
       setIsSupplementaryMode(
@@ -588,11 +587,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       : rdLrvs;
     const lrv2 = sameDiamLrvs[1] || sameDiamLrvs[0] || lrv1;
 
-    const initDate = '2026-06-15';
-    const archivedTemp = firstFac.weatherArchive?.[initDate] || '';
-    const defaultWelder = personalWelders[0];
-
-    setWelder1Stamp(defaultWelder ? defaultWelder.stamp : '');
+    setWelder1Stamp('');
     setWelder2Stamp('');
     setBrigadeStamp('');
 
@@ -616,9 +611,8 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       elem1DiameterMm: lrv1?.diameterMm || 159,
       elem1WallThickness: lrv1?.wallThickness || 8.0,
       elem1Manufacturer: lrv1?.manufacturer || '',
-      elem1FactoryNumber: 'Пл.40812-01',
-      elem1Length:
-        lrv1 && detectLrvElementType(lrv1.shortName) !== 'Труба' ? '0.35' : '11.8',
+      elem1FactoryNumber: '',
+      elem1Length: '',
       lrv2Code: lrv2?.lrvCode || '',
       elem2Name: lrv2?.shortName || '',
       elem2Material: lrv2?.material || '09Г2С',
@@ -626,20 +620,19 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       elem2DiameterMm: lrv1?.diameterMm || 159,
       elem2WallThickness: lrv1?.wallThickness || 8.0,
       elem2Manufacturer: lrv2?.manufacturer || '',
-      elem2FactoryNumber: 'ОТВ-26-01',
-      elem2Length:
-        lrv2 && detectLrvElementType(lrv2.shortName) === 'Труба' ? '11.8' : '0.35',
-      weldingDate: initDate,
-      ambientTemp: archivedTemp,
-      preheatTemp: '130',
+      elem2FactoryNumber: '',
+      elem2Length: '',
+      weldingDate: '',
+      ambientTemp: '',
+      preheatTemp: '',
       weldingType: techCards[0]?.weldingType || 'РАД+РД',
       gostJointType: 'С17',
       weldingPosition: 'В1',
-      welderStamp: defaultWelder?.stamp || '',
-      welderStampsList: defaultWelder ? [defaultWelder.stamp] : [],
-      welderFullName: defaultWelder?.fullName || '',
-      welderCertNumber: defaultWelder?.certNumber || '',
-      responsiblePerson: defaultWelder?.crewForeman || 'Мастер СМР Громов И.А.',
+      welderStamp: '',
+      welderStampsList: [],
+      welderFullName: '',
+      welderCertNumber: '',
+      responsiblePerson: '',
       techCardNumber: techCards[0]?.number || '',
       vikResult: 'Не проводился',
       vikDate: '',
@@ -677,6 +670,8 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
   // Автоматический пересчёт температуры воздуха при изменении объекта или даты сварки (с приоритетом метеоархива объекта)
   useEffect(() => {
     if (!isOpen || !form.weldingDate) return;
+    // В режиме редактирования существующего стыка сохранённая температура никогда не затирается и не перезаписывается автоматически!
+    if (mode === 'edit') return;
     const fac =
       facilities.find((f) => f.name === form.objectName) || facilities[0];
     if (!fac) return;
@@ -1800,6 +1795,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   personalWelders={personalWelders}
                   brigadeProfiles={brigadeProfiles}
                   currentWeatherStationName={currentWeatherStationName}
+                  archivedStationTemp={form.weldingDate ? currentFacility.weatherArchive?.[form.weldingDate] : undefined}
                   selectedTechCard={selectedTechCard}
                   weldingTypeValidation={weldingTypeValidation}
                   preheatValidation={preheatValidation}

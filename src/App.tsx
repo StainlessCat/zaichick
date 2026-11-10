@@ -693,6 +693,14 @@ export default function App() {
         return;
       }
 
+      if (response.status === 422 && result?.code === 'DOMAIN_VALIDATION_FAILED') {
+        const errorList = Array.isArray(result.errors)
+          ? result.errors.map((e: any) => `• [${e.category?.toUpperCase() || 'ОШИБКА'}] ${e.title}: ${e.message}`).join('\n')
+          : result.message;
+        alert(`[Отказ сервера: нарушение доменных правил]\n\n${errorList}`);
+        return;
+      }
+
       if (!response.ok) {
         alert(`[Ошибка сервера SQLite]\nНе удалось сохранить стык в СУБД: ${result?.message || ('HTTP ' + response.status)}`);
         return;

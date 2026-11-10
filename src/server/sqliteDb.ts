@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'node:crypto';
 import { createRequire } from 'module';
 import { normalizeTechCard, normalizeWelderProfile } from '../utils/entityNormalizers';
+import { validateWeldJointComprehensive, ValidationIssue } from '../utils/dataIntegrityGuard';
 import {
   AuditLogEntry,
   ColumnTemplate,
@@ -147,11 +148,25 @@ export class UnifiedServerDatabase {
   private authSessions = new Map<string, AuthenticatedSession>();
 
   constructor(options?: UnifiedServerDbOptions) {
-    this.dataDir = options?.dataDir ? path.resolve(options.dataDir) : path.resolve(process.cwd(), 'data');
-    this.sqliteDbPath = options?.sqliteDbPath ? path.resolve(options.sqliteDbPath) : path.join(this.dataDir, 'zaychick.sqlite');
-    this.jsonFallbackPath = options?.jsonFallbackPath ? path.resolve(options.jsonFallbackPath) : path.join(this.dataDir, 'zaychick-fallback.json');
-    this.backupsDir = options?.backupsDir ? path.resolve(options.backupsDir) : path.join(this.dataDir, 'backups');
-    this.disableStartupBackup = !!options?.disableStartupBackup;
+    const envDataDir = process.env.ZAYCHICK_DATA_DIR;
+    const envDbPath = process.env.ZAYCHICK_SQLITE_PATH;
+    this.dataDir = options?.dataDir
+      ? path.resolve(options.dataDir)
+      : envDataDir
+      ? path.resolve(envDataDir)
+      : path.resolve(process.cwd(), 'data');
+    this.sqliteDbPath = options?.sqliteDbPath
+      ? path.resolve(options.sqliteDbPath)
+      : envDbPath
+      ? path.resolve(envDbPath)
+      : path.join(this.dataDir, 'zaychick.sqlite');
+    this.jsonFallbackPath = options?.jsonFallbackPath
+      ? path.resolve(options.jsonFallbackPath)
+      : path.join(this.dataDir, 'zaychick-fallback.json');
+    this.backupsDir = options?.backupsDir
+      ? path.resolve(options.backupsDir)
+      : path.join(this.dataDir, 'backups');
+    this.disableStartupBackup = Boolean(options?.disableStartupBackup || envDbPath);
     this.init();
   }
 
@@ -1412,6 +1427,12 @@ export class UnifiedServerDatabase {
         status: 'duplicate';
         error: string;
         meta: ServerDbMetadata;
+      }
+    | {
+        status: 'validation_error';
+        error: string;
+        errors: ValidationIssue[];
+        meta: ServerDbMetadata;
       } {
     const { meta, data } = this.readInternalFullState();
 
@@ -1448,6 +1469,26 @@ export class UnifiedServerDatabase {
           effectiveUser
         )
       : params.joint;
+
+    // Доменная валидация перед сохранением стыка (серверный барьер НТД)
+    const validationSummary = validateWeldJointComprehensive({
+      joint: sanitizedIncomingJoint,
+      allJoints: data.joints,
+      projectLineList: data.projectLineList || [],
+      lrvCatalog: data.lrvCatalog || [],
+      welders: data.welders || [],
+      techCards: data.techCards || [],
+      weldingMaterials: data.weldingMaterials || [],
+    });
+
+    if (!validationSummary.isValidToSave) {
+      return {
+        status: 'validation_error',
+        error: `Нарушение доменных правил и требований НТД: обнаружено ${validationSummary.errors.length} критических несоответствий`,
+        errors: validationSummary.errors,
+        meta,
+      };
+    }
 
     const occResult = applyOptimisticJointSave({
       currentJoints: data.joints,

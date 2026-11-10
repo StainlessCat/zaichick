@@ -54,6 +54,7 @@ export interface PassportWeldingTabProps {
   personalWelders: WelderProfile[];
   brigadeProfiles: WelderProfile[];
   currentWeatherStationName: string;
+  archivedStationTemp?: string;
   selectedTechCard?: TechCardItem;
   weldingTypeValidation: { isValid: boolean; message: string };
   preheatValidation: { isValid: boolean; message: string; requiredMinC: number };
@@ -78,6 +79,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
   personalWelders,
   brigadeProfiles,
   currentWeatherStationName,
+  archivedStationTemp,
   selectedTechCard,
   weldingTypeValidation,
   preheatValidation,
@@ -328,39 +330,110 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           <div className="lg:col-span-2">
             <div className="flex items-center justify-between text-xs font-medium text-slate-600 mb-1 h-5">
               <span>T возд., °C</span>
+              {form.ambientTemp ? (
+                <span
+                  className={`text-[9px] px-1 py-0.2 rounded font-sans font-semibold ${
+                    archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
+                      ? 'bg-sky-100 text-sky-800'
+                      : 'bg-emerald-100 text-emerald-800'
+                  }`}
+                  title={
+                    archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
+                      ? `Данные получены из архива метеостанции ${currentWeatherStationName}`
+                      : 'Фактический замер температуры поверенным термометром при сварке на объекте'
+                  }
+                >
+                  {archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
+                    ? 'Метеостанция'
+                    : 'Замер на трассе'}
+                </span>
+              ) : (
+                <span className="text-[9px] px-1 py-0.2 rounded font-sans bg-slate-100 text-slate-500">
+                  Нет данных
+                </span>
+              )}
             </div>
-            <div
-              title={
-                form.ambientTemp
-                  ? `Источник: ${currentWeatherStationName} (наблюдения станции)`
-                  : 'За указанную дату фактические наблюдения метеостанции отсутствуют'
-              }
-              className={`px-2.5 py-2 rounded-md border flex items-center justify-between text-xs font-mono font-bold ${
-                form.ambientTemp
-                  ? 'bg-[#f4f8fe] border-sky-200 text-[#1e3799]'
-                  : 'bg-slate-50 border-slate-200 text-slate-400'
-              }`}
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <CloudSun className={`w-3.5 h-3.5 shrink-0 ${form.ambientTemp ? 'text-sky-600' : 'text-slate-400'}`} />
-                {form.ambientTemp ? (
-                  <span>{form.ambientTemp} °C</span>
-                ) : (
-                  <span className="italic font-normal text-slate-500">нет данных</span>
-                )}
+
+            {rbac.canEditPrepAndWeldingFields ? (
+              <div className="relative">
+                <input
+                  type="text"
+                  value={form.ambientTemp || ''}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      ambientTemp: normalizeDecimalInput(e.target.value),
+                    }))
+                  }
+                  placeholder="нет данных"
+                  title="Температура воздуха: введите фактический замер на трассе или используйте данные метеостанции"
+                  className={`w-full pl-7 pr-2 py-1.5 rounded-md border text-xs font-mono font-bold transition-colors ${
+                    form.ambientTemp
+                      ? archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
+                        ? 'bg-[#f4f8fe] border-sky-300 text-[#1e3799]'
+                        : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                      : 'bg-slate-50 border-slate-200 text-slate-500'
+                  }`}
+                />
+                <CloudSun
+                  className={`w-3.5 h-3.5 absolute left-2 top-2.5 ${
+                    form.ambientTemp
+                      ? archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
+                        ? 'text-sky-600'
+                        : 'text-emerald-600'
+                      : 'text-slate-400'
+                  }`}
+                />
+              </div>
+            ) : (
+              <div
+                title={
+                  form.ambientTemp
+                    ? `Источник: ${currentWeatherStationName} (наблюдения станции)`
+                    : 'За указанную дату фактические наблюдения метеостанции отсутствуют'
+                }
+                className={`px-2.5 py-2 rounded-md border flex items-center justify-between text-xs font-mono font-bold ${
+                  form.ambientTemp
+                    ? 'bg-[#f4f8fe] border-sky-200 text-[#1e3799]'
+                    : 'bg-slate-50 border-slate-200 text-slate-400'
+                }`}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <CloudSun className={`w-3.5 h-3.5 shrink-0 ${form.ambientTemp ? 'text-sky-600' : 'text-slate-400'}`} />
+                  {form.ambientTemp ? (
+                    <span>{form.ambientTemp} °C</span>
+                  ) : (
+                    <span className="italic font-normal text-slate-500">нет данных</span>
+                  )}
+                </span>
+              </div>
+            )}
+
+            <div className="mt-1 flex items-center justify-between text-[10px]">
+              <span
+                className="truncate text-slate-500"
+                title={currentWeatherStationName}
+              >
+                {currentWeatherStationName}
               </span>
-            </div>
-            <div
-              className={`mt-1 text-[10px] truncate ${
-                form.ambientTemp ? 'text-slate-500' : 'text-amber-700 font-medium'
-              }`}
-              title={
-                form.ambientTemp
-                  ? currentWeatherStationName
-                  : 'Фактические наблюдения отсутствуют (подстановка расчётных формул запрещена)'
-              }
-            >
-              {form.ambientTemp ? currentWeatherStationName : 'За дату данных нет'}
+              {archivedStationTemp && form.ambientTemp !== archivedStationTemp && form.ambientTemp !== '+' + archivedStationTemp && rbac.canEditPrepAndWeldingFields && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const raw = String(archivedStationTemp).trim();
+                    const num = Number(raw);
+                    const fmt =
+                      !raw.startsWith('+') && !raw.startsWith('-') && !Number.isNaN(num) && num > 0
+                        ? `+${num}`
+                        : raw;
+                    setForm((prev) => ({ ...prev, ambientTemp: fmt }));
+                  }}
+                  className="text-sky-700 hover:text-sky-900 font-semibold underline shrink-0 cursor-pointer ml-1"
+                  title={`Подставить значение метеостанции (${archivedStationTemp} °C)`}
+                >
+                  Из архива (${archivedStationTemp}°)
+                </button>
+              )}
             </div>
           </div>
         </div>

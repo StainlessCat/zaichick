@@ -69,7 +69,7 @@ export async function saveWorkbookFile(
 export async function exportAllJointsToFile(
   joints: WeldJoint[],
   format: 'xlsx' | 'csv',
-  options?: { isDraftUnsynced?: boolean; unsyncedCount?: number }
+  options?: { isDraftUnsynced?: boolean; unsyncedCount?: number; isDraftIncomplete?: boolean; missingCount?: number }
 ): Promise<void> {
   const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
 
@@ -129,7 +129,7 @@ export async function exportWeldingJournalToExcel(
   standard: JournalStandard,
   materials: WeldingMaterialCertificate[] = [],
   lrvCatalog: LRVItem[] = [],
-  options?: { isDraftUnsynced?: boolean; unsyncedCount?: number }
+  options?: { isDraftUnsynced?: boolean; unsyncedCount?: number; isDraftIncomplete?: boolean; missingCount?: number }
 ): Promise<void> {
   const XLSX = await getXlsx();
   const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
@@ -163,7 +163,7 @@ export async function exportWeldingJournalToExcel(
   const workbook = XLSX.utils.book_new();
   const sheetName = isGost ? 'Журнал ГОСТ 32569' : 'Журнал СТО Газпром';
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-  const jPrefix = options?.isDraftUnsynced ? 'ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_' : '';
+  const jPrefix = options?.isDraftUnsynced ? 'ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_' : (options?.isDraftIncomplete ? 'ЧЕРНОВИК_НЕПОЛНЫЕ_РЕКВИЗИТЫ_' : '');
   await saveWorkbookFile(
     workbook,
     `${jPrefix}Журнал_сварки_${standard.replace(/\s+/g, '_')}_${dateStamp}.xlsx`

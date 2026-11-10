@@ -1,3 +1,4 @@
+import { validateJournalCompleteness } from '../utils/journals';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -684,20 +685,36 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     [baseChronologicalJoints, columnFilters, activeGetters]
   );
 
-  // Подсчёт стыков с проведённым контролем, но без номеров заключений
-  const missingReportJointsCount = useMemo(() => {
-    return chronologicalJoints.filter((j) => {
-      const hasVikDone = j.vikResult && j.vikResult !== 'Не проводился';
-      const hasNdtDone =
-        j.ndtType &&
-        j.ndtType !== 'Не требуется' &&
-        j.ndtResult &&
-        j.ndtResult !== 'Не проводился';
-      const vikMissing = hasVikDone && !j.vikReportNumber?.trim();
-      const ndtMissing = hasNdtDone && !j.ndtReportNumber?.trim();
-      return vikMissing || ndtMissing;
-    }).length;
-  }, [chronologicalJoints]);
+  // Нормативный контроль полноты журнала
+  const journalCompleteness = useMemo(() => {
+    return validateJournalCompleteness(chronologicalJoints, standard);
+  }, [chronologicalJoints, standard]);
+
+  const confirmCompletenessBeforeExport = (): { proceed: boolean; isDraftIncomplete: boolean; missingCount: number } => {
+    if (journalCompleteness.isFullyComplete) {
+      return { proceed: true, isDraftIncomplete: false, missingCount: 0 };
+    }
+
+    const { missingSummary, jointsWithMissingDataCount } = journalCompleteness;
+    const lines: string[] = [];
+    if (missingSummary.missingDates > 0) lines.push(`• Не указана дата сварки: ${missingSummary.missingDates}`);
+    if (missingSummary.missingWelders > 0) lines.push(`• Не указано клеймо сварщика: ${missingSummary.missingWelders}`);
+    if (missingSummary.missingTechCards > 0) lines.push(`• Не привязана техкарта (ТК): ${missingSummary.missingTechCards}`);
+    if (missingSummary.missingVikReports > 0) lines.push(`• Не внесен номер заключения ВИК: ${missingSummary.missingVikReports}`);
+    if (missingSummary.missingNdtReports > 0) lines.push(`• Не внесен номер заключения НК: ${missingSummary.missingNdtReports}`);
+    if (missingSummary.missingRepairDetails > 0) lines.push(`• Не заполнены реквизиты ремонта: ${missingSummary.missingRepairDetails}`);
+    if (missingSummary.missingResponsiblePerson > 0) lines.push(`• Не указан ответственный мастер: ${missingSummary.missingResponsiblePerson}`);
+
+    const proceed = window.confirm(
+      `ПРЕДУПРЕЖДЕНИЕ О ПОЛНОТЕ ДАННЫХ ЖУРНАЛА:\n\nВ формируемом журнале «${standard}» (${chronologicalJoints.length} стыков) обнаружены пропуски обязательных реквизитов в ${jointsWithMissingDataCount} стыках:\n${lines.join('\n')}\n\nВАЖНО: Экспорт документа сам по себе не подтверждает нормативную пригодность и не заменяет проверку ответственного лица (главного сварщика / инженера ПТО).\n\nДокумент будет выгружен с грифом «ЧЕРНОВИК: ТРЕБУЕТСЯ ЗАПОЛНЕНИЕ РЕКВИЗИТОВ».\n\nПродолжить экспорт черновика?`
+    );
+
+    return {
+      proceed,
+      isDraftIncomplete: true,
+      missingCount: jointsWithMissingDataCount,
+    };
+  };
 
   const handleApplyFilter = (colKey: string, vals: string[] | undefined) => {
     setColumnFilters((prev) => {
@@ -710,6 +727,8 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
 
   const handleExportCsv = () => {
     if (!confirmIfUnsynced()) return;
+    const comp = confirmCompletenessBeforeExport();
+    if (!comp.proceed) return;
     const headers =
       standard === 'ГОСТ 32569-2013'
         ? GOST_32569_2013_JOURNAL_COLUMNS.map((c) => c.label)
@@ -761,12 +780,19 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
 
   const handleExportXlsx = () => {
     if (!confirmIfUnsynced()) return;
+    const comp = confirmCompletenessBeforeExport();
+    if (!comp.proceed) return;
     exportWeldingJournalToExcel(
       chronologicalJoints,
       standard,
       materials,
       lrvCatalog,
-      { isDraftUnsynced: isOfflineOrUnsynced, unsyncedCount: pendingSyncCount }
+      {
+        isDraftUnsynced: isOfflineOrUnsynced,
+        unsyncedCount: pendingSyncCount,
+        isDraftIncomplete: comp.isDraftIncomplete,
+        missingCount: comp.missingCount,
+      }
     );
     showToast(
       `Книга Excel по форме «${standard}» (${chronologicalJoints.length} зап.) успешно сформирована и скачана.`
@@ -795,6 +821,8 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         : '');
 
     if (!confirmIfUnsynced()) return;
+    const comp = confirmCompletenessBeforeExport();
+    if (!comp.proceed) return;
     exportWeldingJournalToPdfA3(
       standard,
       displayObjectName,
@@ -802,7 +830,12 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
       headers,
       colNumbers,
       rows,
-      { isDraftUnsynced: isOfflineOrUnsynced, unsyncedCount: pendingSyncCount }
+      {
+        isDraftUnsynced: isOfflineOrUnsynced,
+        unsyncedCount: pendingSyncCount,
+        isDraftIncomplete: comp.isDraftIncomplete,
+        missingCount: comp.missingCount,
+      }
     );
     try {
       window.print();
@@ -1366,15 +1399,26 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
           </div>
         </div>
 
-        {missingReportJointsCount > 0 && (
-          <div className="mx-6 my-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
+        {!journalCompleteness.isFullyComplete && (
+          <div className="mx-6 my-3 p-3.5 rounded-lg bg-amber-50 border border-amber-300 text-xs text-amber-950 flex items-start gap-3 shadow-xs">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <div className="space-y-0.5">
-              <span className="font-semibold text-amber-950">
-                Внимание: в {missingReportJointsCount} сварных соединениях не указаны номера заключений ВИК / НК
-              </span>
-              <p className="text-[11px] text-amber-800 leading-relaxed">
-                В чистовом журнале соответствующие графы останутся пустыми до внесения официальных номеров заключений из лаборатории контроля в паспорте стыка.
+            <div className="space-y-1">
+              <div className="font-bold flex items-center gap-2">
+                <span>Контроль полноты: в {journalCompleteness.jointsWithMissingDataCount} из {chronologicalJoints.length} стыков не заполнены обязательные реквизиты</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-200/70 text-amber-900 font-semibold">
+                  Требуется заполнение
+                </span>
+              </div>
+              <div className="text-[11px] text-amber-900 flex flex-wrap gap-x-3 gap-y-1">
+                {journalCompleteness.missingSummary.missingDates > 0 && <span>• Без даты: <strong>{journalCompleteness.missingSummary.missingDates}</strong></span>}
+                {journalCompleteness.missingSummary.missingWelders > 0 && <span>• Без клейма: <strong>{journalCompleteness.missingSummary.missingWelders}</strong></span>}
+                {journalCompleteness.missingSummary.missingTechCards > 0 && <span>• Без ТК: <strong>{journalCompleteness.missingSummary.missingTechCards}</strong></span>}
+                {journalCompleteness.missingSummary.missingVikReports > 0 && <span>• Без № ВИК: <strong>{journalCompleteness.missingSummary.missingVikReports}</strong></span>}
+                {journalCompleteness.missingSummary.missingNdtReports > 0 && <span>• Без № НК: <strong>{journalCompleteness.missingSummary.missingNdtReports}</strong></span>}
+                {journalCompleteness.missingSummary.missingRepairDetails > 0 && <span>• Реквизиты ремонта: <strong>{journalCompleteness.missingSummary.missingRepairDetails}</strong></span>}
+              </div>
+              <p className="text-[10px] text-amber-800 leading-relaxed pt-0.5">
+                Выгрузка чистового документа не заменяет проверку ответственного лица. При экспорте с пропусками файл маркируется как черновик.
               </p>
             </div>
           </div>

@@ -4907,3 +4907,152 @@ test('Аудит copilotAnalysis п. 6: Клиентская валидация 
   const selfDupError = selfValidation.errors.find((e) => e.field === 'jointNumber');
   assert.equal(selfDupError, undefined, 'Сам себя стык не считает дубликатом');
 });
+
+
+// =========================================================================
+// ТЕСТЫ: АУДИТ copilotAnalysis (п. 1–10, требования C, D, E, F, G)
+// =========================================================================
+
+test('Аудит copilotAnalysis: validateJournalCompleteness выявляет пропуски обязательных реквизитов', async () => {
+  const { validateJournalCompleteness } = await import('./journals');
+
+  const incompleteJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'test-j-inc',
+    weldingDate: '', // пропуск даты
+    welderStamp: '', // пропуск клейма
+    welderStampsList: [],
+    vikResult: 'Годен',
+    vikReportNumber: '', // пропуск заключения ВИК
+    ndtType: 'РК',
+    ndtResult: 'Годен',
+    ndtReportNumber: '', // пропуск заключения НК
+    responsiblePerson: '', // пропуск мастера
+  };
+
+  const completeness = validateJournalCompleteness([incompleteJoint], 'СТО Газпром 15-1.1-002-2023');
+  assert.equal(completeness.isFullyComplete, false, 'Журнал с пропусками не должен быть помечен как полный');
+  assert.equal(completeness.jointsWithMissingDataCount, 1);
+  assert.ok(completeness.missingSummary.missingDates >= 1, 'Обнаружен пропуск даты сварки');
+  assert.ok(completeness.missingSummary.missingWelders >= 1, 'Обнаружен пропуск клейма');
+  assert.ok(completeness.missingSummary.missingVikReports >= 1, 'Обнаружен пропуск номера ВИК');
+  assert.ok(completeness.missingSummary.missingNdtReports >= 1, 'Обнаружен пропуск номера НК');
+  assert.ok(completeness.missingSummary.missingResponsiblePerson >= 1, 'Обнаружен пропуск мастера');
+
+  // Полный стык со всеми реквизитами
+  const completeJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'test-j-comp',
+    weldingDate: '2026-06-15',
+    welderStamp: 'СВ10',
+    welderStampsList: ['СВ10'],
+    techCardNumber: 'ТК-01',
+    vikResult: 'Годен',
+    vikReportNumber: 'АКТ-ВИК-101',
+    ndtType: 'РК',
+    ndtResult: 'Годен',
+    ndtReportNumber: 'ЗАКЛ-РК-202',
+    responsiblePerson: 'Иванов И.И.',
+  };
+
+  const compFull = validateJournalCompleteness([completeJoint], 'СТО Газпром 15-1.1-002-2023');
+  assert.equal(compFull.isFullyComplete, true, 'Полный стык должен давать isFullyComplete = true');
+  assert.equal(compFull.jointsWithMissingDataCount, 0);
+});
+
+test('Аудит copilotAnalysis: критические несоответствия НТД (НАКС, способ сварки, ВИК перед НК) блокируют валидацию с severity=error', () => {
+  const expiredWelder: WelderProfile = {
+    id: 'w-exp',
+    stamp: 'СВ-ПРОСРОЧЕН',
+    fullName: 'Сидоров С.С.',
+    certNumber: 'АЦСТ-00-11111',
+    certIssueDate: '2022-01-01',
+    certExpiryDate: '2024-01-01', // Просрочен к 2026 году!
+    admissionSheetNumber: 'ДЛ-1',
+    admissionSheetDate: '2022-01-10',
+    allowedMethods: ['РАД'],
+    minDiameterMm: 50,
+    maxDiameterMm: 1000,
+    minWallThicknessMm: 3,
+    maxWallThicknessMm: 20,
+    isBrigade: false,
+  };
+
+  // 1. Сварка с просроченным НАКС
+  const jointWithExpiredWelder: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-naks-exp',
+    weldingDate: '2026-06-15',
+    welderStamp: 'СВ-ПРОСРОЧЕН',
+    welderStampsList: ['СВ-ПРОСРОЧЕН'],
+    weldingType: 'РАД',
+    vikResult: 'Не проводился',
+    ndtType: 'Не требуется',
+  };
+
+  const naksValidation = validateWeldJointComprehensive({
+    joint: jointWithExpiredWelder,
+    allJoints: [],
+    projectLineList: [],
+    lrvCatalog: [],
+    welders: [expiredWelder],
+    techCards: [],
+    weldingMaterials: [],
+  });
+
+  assert.equal(naksValidation.isValidToSave, false, 'Просроченный НАКС должен блокировать сохранение');
+  const naksError = naksValidation.errors.find((e) => e.id.includes('chr-naks-expired'));
+  assert.ok(naksError, 'Обнаружена критическая ошибка chr-naks-expired');
+  assert.equal(naksError.severity, 'error');
+
+  // 2. Способ сварки не входит в аттестацию НАКС
+  const jointWrongMethod: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-wrong-method',
+    weldingDate: '2023-06-15', // когда НАКС ещё действовал
+    welderStamp: 'СВ-ПРОСРОЧЕН',
+    welderStampsList: ['СВ-ПРОСРОЧЕН'],
+    weldingType: 'АФ', // У сварщика только РАД!
+    vikResult: 'Не проводился',
+    ndtType: 'Не требуется',
+  };
+
+  const methodValidation = validateWeldJointComprehensive({
+    joint: jointWrongMethod,
+    allJoints: [],
+    projectLineList: [],
+    lrvCatalog: [],
+    welders: [expiredWelder],
+    techCards: [],
+    weldingMaterials: [],
+  });
+
+  assert.equal(methodValidation.isValidToSave, false, 'Недопустимый метод сварщика должен блокировать сохранение');
+  const methodError = methodValidation.errors.find((e) => e.id.includes('tech-welder-method'));
+  assert.ok(methodError, 'Обнаружена ошибка tech-welder-method');
+  assert.equal(methodError.severity, 'error');
+
+  // 3. НК Годен без годного ВИК
+  const jointNdtWithoutVik: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-ndt-novik',
+    vikResult: 'Не проводился', // ВИК не сдан!
+    ndtType: 'РК',
+    ndtResult: 'Годен', // НК не может быть Годен без ВИК
+  };
+
+  const ndtValidation = validateWeldJointComprehensive({
+    joint: jointNdtWithoutVik,
+    allJoints: [],
+    projectLineList: [],
+    lrvCatalog: [],
+    welders: [],
+    techCards: [],
+    weldingMaterials: [],
+  });
+
+  assert.equal(ndtValidation.isValidToSave, false, 'Положительный НК без годного ВИК должен блокировать сохранение');
+  const ndtError = ndtValidation.errors.find((e) => e.id === 'ndt-valid-without-vik');
+  assert.ok(ndtError, 'Обнаружена ошибка ndt-valid-without-vik');
+  assert.equal(ndtError.severity, 'error');
+});

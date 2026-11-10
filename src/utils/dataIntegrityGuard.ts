@@ -686,7 +686,7 @@ export function validateWeldJointComprehensive(params: {
         issues.push({
           id: `chr-naks-expired-${stamp}`,
           category: 'chronology',
-          severity: 'warning',
+          severity: 'error',
           field: 'welderStamp',
           title: `Истек срок удостоверения НАКС (${welder.stamp})`,
           message: `На дату сварки (${formatDateDDMMYY(wIso)}) срок действия удостоверения НАКС № ${welder.certNumber} у сварщика ${welder.fullName} истек (${formatDateDDMMYY(expIso)}).`,
@@ -700,7 +700,7 @@ export function validateWeldJointComprehensive(params: {
         issues.push({
           id: `chr-naks-not-issued-${stamp}`,
           category: 'chronology',
-          severity: 'warning',
+          severity: 'error',
           field: 'welderStamp',
           title: `Дата сварки раньше выдачи НАКС (${welder.stamp})`,
           message: `Дата сварки (${formatDateDDMMYY(wIso)}) раньше даты выдачи удостоверения НАКС № ${welder.certNumber} (${formatDateDDMMYY(issIso)}).`,
@@ -714,7 +714,7 @@ export function validateWeldJointComprehensive(params: {
         issues.push({
           id: `chr-admission-sheet-${stamp}`,
           category: 'chronology',
-          severity: 'warning',
+          severity: 'error',
           field: 'welderStamp',
           title: `Сварка раньше даты допускного листа (${welder.stamp})`,
           message: `Дата сварки (${formatDateDDMMYY(wIso)}) раньше оформления допускного листа № ${welder.admissionSheetNumber || 'б/н'} от ${formatDateDDMMYY(admIso)}.`,
@@ -732,7 +732,7 @@ export function validateWeldJointComprehensive(params: {
       issues.push({
         id: `tech-welder-method-${stamp}`,
         category: 'tech',
-        severity: 'warning',
+        severity: 'error',
         field: 'weldingType',
         title: `Способ сварки не входит в допуск НАКС (${welder.stamp})`,
         message: `Сварщик ${welder.fullName} (${welder.stamp}) аттестован на [${welder.allowedMethods.join(', ')}], но для стыка указан вид сварки «${joint.weldingType}».`,
@@ -936,7 +936,7 @@ export function validateWeldJointComprehensive(params: {
     issues.push({
       id: 'ndt-valid-without-vik',
       category: 'ndt',
-      severity: 'warning',
+      severity: 'error',
       field: 'ndtResult',
       title: 'Положительный НК без годного ВИК',
       message: `По физическому контролю (${joint.ndtType}) выставлено заключение «Годен», однако по ВИК статус «${joint.vikResult}». По нормам НК допускается только после успешного ВИК.`,

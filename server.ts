@@ -411,6 +411,17 @@ async function startServer() {
         return;
       }
 
+      if (result.status === 'validation_error') {
+        res.status(422).json({
+          status: 'error',
+          code: 'DOMAIN_VALIDATION_FAILED',
+          message: result.error,
+          errors: result.errors,
+          meta: result.meta,
+        });
+        return;
+      }
+
       broadcastDbChange({
         globalRevision: result.meta.globalRevision,
         lastUpdatedAt: result.meta.lastUpdatedAt,

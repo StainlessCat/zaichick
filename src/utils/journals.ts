@@ -1,4 +1,5 @@
 import {
+  JournalStandard,
   LRVItem,
   WeldingMaterialCertificate,
   WeldJoint,
@@ -1364,5 +1365,147 @@ export function formatStoGazpromJournalRow(
     col48,
     col49,
     cells,
+  };
+}
+
+
+// =========================================================================
+// КОНТРОЛЬ ПОЛНОТЫ ЖУРНАЛОВ СВАРОЧНЫХ РАБОТ ПЕРЕД ВЫПУСКОМ (XLSX / PDF / ПЕЧАТЬ)
+// =========================================================================
+
+export interface JournalMissingField {
+  field: string;
+  label: string;
+}
+
+export interface JournalJointMissingItem {
+  jointId: string;
+  jointNumber: string;
+  lineNumber: string;
+  missingFields: JournalMissingField[];
+}
+
+export interface JournalCompletenessSummary {
+  isFullyComplete: boolean;
+  totalJoints: number;
+  jointsWithMissingDataCount: number;
+  missingSummary: {
+    missingDates: number;
+    missingWelders: number;
+    missingTechCards: number;
+    missingVikReports: number;
+    missingNdtReports: number;
+    missingRepairDetails: number;
+    missingResponsiblePerson: number;
+  };
+  missingItems: JournalJointMissingItem[];
+}
+
+/**
+ * Проверяет нормативную полноту сведений журнала сварочных работ (СТО Газпром / ГОСТ)
+ * перед официальной выгрузкой или печатью.
+ */
+export function validateJournalCompleteness(
+  joints: WeldJoint[],
+  standard: JournalStandard = 'СТО Газпром 15-1.1-002-2023'
+): JournalCompletenessSummary {
+  const missingItems: JournalJointMissingItem[] = [];
+  const missingSummary = {
+    missingDates: 0,
+    missingWelders: 0,
+    missingTechCards: 0,
+    missingVikReports: 0,
+    missingNdtReports: 0,
+    missingRepairDetails: 0,
+    missingResponsiblePerson: 0,
+  };
+
+  for (const j of joints) {
+    const missingFields: JournalMissingField[] = [];
+
+    // 1. Дата сварки
+    if (!j.weldingDate || String(j.weldingDate).trim() === '') {
+      missingFields.push({ field: 'weldingDate', label: 'Дата сварки' });
+      missingSummary.missingDates++;
+    }
+
+    // 2. Клеймо сварщика
+    const hasWelder =
+      (j.welderStampsList && j.welderStampsList.length > 0) ||
+      (j.welderStamp && String(j.welderStamp).trim() !== '');
+    if (!hasWelder) {
+      missingFields.push({ field: 'welderStamp', label: 'Клеймо сварщика' });
+      missingSummary.missingWelders++;
+    }
+
+    // 3. Номер техкарты (ТК)
+    if (!j.techCardNumber || String(j.techCardNumber).trim() === '') {
+      missingFields.push({ field: 'techCardNumber', label: 'Техкарта (ТК)' });
+      missingSummary.missingTechCards++;
+    }
+
+    // 4. Заключение ВИК
+    const vikConducted =
+      j.vikResult === 'Годен' ||
+      j.vikResult === 'Ремонт' ||
+      (j.vikDate && String(j.vikDate).trim() !== '');
+    if (vikConducted && (!j.vikReportNumber || String(j.vikReportNumber).trim() === '')) {
+      missingFields.push({ field: 'vikReportNumber', label: 'Номер заключения/акта ВИК' });
+      missingSummary.missingVikReports++;
+    }
+
+    // 5. Заключение физического НК (РК, УЗК и др.)
+    const ndtConducted =
+      j.ndtType &&
+      j.ndtType !== 'Не требуется' &&
+      (j.ndtResult === 'Годен' ||
+        j.ndtResult === 'Ремонт' ||
+        (j.ndtDate && String(j.ndtDate).trim() !== ''));
+    if (ndtConducted && (!j.ndtReportNumber || String(j.ndtReportNumber).trim() === '')) {
+      missingFields.push({ field: 'ndtReportNumber', label: `Номер заключения ${j.ndtType || 'НК'}` });
+      missingSummary.missingNdtReports++;
+    }
+
+    // 6. Реквизиты ремонта
+    const isRep =
+      j.vikResult === 'Ремонт' ||
+      j.ndtResult === 'Ремонт' ||
+      Boolean(j.repairAction);
+    if (isRep) {
+      const missingRep: string[] = [];
+      if (!j.repairDate) missingRep.push('дата ремонта');
+      if (!j.repairWelderStamp) missingRep.push('клеймо сварщика ремонта');
+      if (!j.repairVikNumber && !j.repairNdtNumber) missingRep.push('заключение контроля после ремонта');
+      if (missingRep.length > 0) {
+        missingFields.push({
+          field: 'repairDetails',
+          label: `Реквизиты ремонта (${missingRep.join(', ')})`,
+        });
+        missingSummary.missingRepairDetails++;
+      }
+    }
+
+    // 7. Ответственное лицо (мастер / прораб)
+    if (!j.responsiblePerson || String(j.responsiblePerson).trim() === '') {
+      missingFields.push({ field: 'responsiblePerson', label: 'Ответственное лицо (мастер)' });
+      missingSummary.missingResponsiblePerson++;
+    }
+
+    if (missingFields.length > 0) {
+      missingItems.push({
+        jointId: j.id,
+        jointNumber: j.jointNumber,
+        lineNumber: j.lineNumber,
+        missingFields,
+      });
+    }
+  }
+
+  return {
+    isFullyComplete: missingItems.length === 0,
+    totalJoints: joints.length,
+    jointsWithMissingDataCount: missingItems.length,
+    missingSummary,
+    missingItems,
   };
 }
