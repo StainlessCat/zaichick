@@ -818,42 +818,49 @@ export async function exportWeldingJournalToPdfA3(
   rdCode: string,
   headers: string[],
   colNumbers: string[],
-  rows: string[][]
+  rows: string[][],
+  options?: { isDraftUnsynced?: boolean; unsyncedCount?: number }
 ): Promise<void> {
   const brandNavy = '#005EB8';
   const isSto = colNumbers.length > 20;
   const fontSize = isSto ? 5.2 : 7.5;
   const widths = colNumbers.map(() => 'auto');
 
-  const docDef: TDocumentDefinitions = {
-    info: {
-      title: `Журнал сварочных работ (${standardTitle})`,
-      author: 'ZAYCHICK',
+  const contentList: any[] = [
+    {
+      text:
+        standardTitle === 'ГОСТ 32569-2013'
+          ? 'ЖУРНАЛ СВАРКИ ТЕХНОЛОГИЧЕСКИХ СТАЛЬНЫХ ТРУБОПРОВОДОВ (ПО ГОСТ 32569-2013)'
+          : 'ЖУРНАЛ СВАРОЧНЫХ РАБОТ (ПО ФОРМЕ СТО ГАЗПРОМ 15-1.1-002-2023)',
+      fontSize: 11,
+      bold: true,
+      color: brandNavy,
+      margin: [0, 0, 0, 2],
     },
-    pageSize: 'A3',
-    pageOrientation: 'landscape',
-    pageMargins: [16, 20, 16, 22],
-    content: [
-      {
-        text:
-          standardTitle === 'ГОСТ 32569-2013'
-            ? 'ЖУРНАЛ СВАРКИ ТЕХНОЛОГИЧЕСКИХ СТАЛЬНЫХ ТРУБОПРОВОДОВ (ПО ГОСТ 32569-2013)'
-            : 'ЖУРНАЛ СВАРОЧНЫХ РАБОТ (ПО ФОРМЕ СТО ГАЗПРОМ 15-1.1-002-2023)',
-        fontSize: 11,
-        bold: true,
-        color: brandNavy,
-        margin: [0, 0, 0, 2],
-      },
-      {
-        text: `Объект: ${objectName === 'ALL' ? 'Сводный реестр' : objectName} · Шифр РД: ${
-          rdCode === 'ALL' ? 'Все шифры РД' : rdCode
-        } · Всего записей: ${rows.length}`,
-        fontSize: 8.5,
-        color: '#334155',
-        margin: [0, 0, 0, 8],
-      },
-      {
-        table: {
+    {
+      text: `Объект: ${objectName === 'ALL' ? 'Сводный реестр' : objectName} · Шифр РД: ${
+        rdCode === 'ALL' ? 'Все шифры РД' : rdCode
+      } · Всего записей: ${rows.length}`,
+      fontSize: 8.5,
+      color: '#334155',
+      margin: [0, 0, 0, 8],
+    },
+  ];
+
+  if (options?.isDraftUnsynced) {
+    contentList.push({
+      text: `ВНИМАНИЕ: ДОКУМЕНТ СФОРМИРОВАН В АВТОНОМНОМ РЕЖИМЕ (ОЖИДАЕТ СИНХРОНИЗАЦИИ С СЕРВЕРОМ: ${
+        options.unsyncedCount || 1
+      } ИЗМ.). НЕ ЯВЛЯЕТСЯ ОФИЦИАЛЬНОЙ ИСПОЛНИТЕЛЬНОЙ ДОКУМЕНТАЦИЕЙ ДО ПОДТВЕРЖДЕНИЯ СУБД.`,
+      fontSize: 8.5,
+      bold: true,
+      color: '#dc2626',
+      margin: [0, 0, 0, 6],
+    });
+  }
+
+  contentList.push({
+    table: {
           headerRows: 2,
           widths,
           body: [
@@ -890,14 +897,26 @@ export async function exportWeldingJournalToPdfA3(
           paddingTop: () => 2,
           paddingBottom: () => 2,
         },
-      },
-    ],
+      });
+
+  const docDef: any = {
+    info: {
+      title: options?.isDraftUnsynced
+        ? `[ЧЕРНОВИК] Журнал сварочных работ (${standardTitle})`
+        : `Журнал сварочных работ (${standardTitle})`,
+      author: 'ZAYCHICK',
+    },
+    pageSize: 'A3',
+    pageOrientation: 'landscape',
+    pageMargins: [16, 20, 16, 22],
+    content: contentList,
     defaultStyle: {
       font: 'Roboto',
     },
   };
 
-  const fileName = `Журнал_сварки_А3_${standardTitle.replace(/[\s/]+/g, '_')}.pdf`;
+  const fileNamePrefix = options?.isDraftUnsynced ? 'ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_' : '';
+  const fileName = `${fileNamePrefix}Журнал_сварки_А3_${standardTitle.replace(/[\s/]+/g, '_')}.pdf`;
   const pdfMake = await getPdfMakeInstance();
   const pdfDoc = pdfMake.createPdf(docDef);
   if (typeof (pdfDoc as any).getBlob === 'function') {

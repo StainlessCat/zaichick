@@ -88,6 +88,9 @@ export function useServerSync({
   );
   const [isDbConnected, setIsDbConnected] = useState<boolean>(true);
   const [isDbSyncing, setIsDbSyncing] = useState<boolean>(false);
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
+  const [lastSyncAttemptAt, setLastSyncAttemptAt] = useState<string | null>(null);
   const [isServerDbModalOpen, setIsServerDbModalOpen] =
     useState<boolean>(false);
   const [activeConflict, setActiveConflict] =
@@ -154,13 +157,16 @@ export function useServerSync({
           setServerDbMeta(payload.meta);
         }
         setIsDbConnected(true);
+        setPendingSyncCount(0);
+        setLastSyncError(null);
         hasLoadedServerInitialRef.current = true;
         window.setTimeout(() => {
           isApplyingServerStateRef.current = false;
         }, 60);
       }
-    } catch {
+    } catch (err: any) {
       setIsDbConnected(false);
+      setLastSyncError(err?.message || 'Не удалось загрузить состояние с сервера СУБД SQLite');
     } finally {
       if (!silent) setIsDbSyncing(false);
     }
@@ -235,13 +241,75 @@ export function useServerSync({
     };
   }, []);
 
+  // Немедленная ручная отправка локального состояния на сервер СУБД (Retry Sync)
+  const triggerImmediateSync = async (): Promise<boolean> => {
+    setIsDbSyncing(true);
+    setLastSyncAttemptAt(new Date().toISOString());
+    try {
+      const payloadData = {
+        joints,
+        projectLineList,
+        lrvCatalog,
+        welders,
+        techCards,
+        weldingMaterials,
+        userAccounts,
+        auditLogs,
+        facilityGeoOverrides,
+      };
+
+      const res = await fetch('/api/db/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
+        },
+        body: JSON.stringify({
+          clientId: clientIdRef.current,
+          sessionToken,
+          user: currentUser,
+          expectedGlobalRevision: serverDbMeta?.globalRevision,
+          data: payloadData,
+          ...payloadData,
+        }),
+      });
+
+      if (res.ok) {
+        const out = await res.json();
+        if (out?.meta) setServerDbMeta(out.meta);
+        setIsDbConnected(true);
+        setPendingSyncCount(0);
+        setLastSyncError(null);
+        return true;
+      } else {
+        const errData = await res.json().catch(() => null);
+        const errMsg = errData?.message || `HTTP ${res.status}`;
+        setIsDbConnected(false);
+        setLastSyncError(errMsg);
+        if (res.status === 409) {
+          fetchServerDbState(true);
+        }
+        return false;
+      }
+    } catch (err: any) {
+      setIsDbConnected(false);
+      setLastSyncError(err?.message || 'Сервер СУБД SQLite временно недоступен');
+      return false;
+    } finally {
+      setIsDbSyncing(false);
+    }
+  };
+
   // Автоматическая синхронизация справочников и групповых правок в серверную СУБД SQLite
   useEffect(() => {
     if (!hasLoadedServerInitialRef.current || isApplyingServerStateRef.current) {
       return;
     }
+    setPendingSyncCount((prev) => Math.max(1, prev + 1));
     const timer = window.setTimeout(async () => {
       try {
+        setIsDbSyncing(true);
+        setLastSyncAttemptAt(new Date().toISOString());
         const payloadData = {
           joints,
           projectLineList,
@@ -273,19 +341,25 @@ export function useServerSync({
           const out = await res.json();
           if (out?.meta) setServerDbMeta(out.meta);
           setIsDbConnected(true);
+          setPendingSyncCount(0);
+          setLastSyncError(null);
         } else {
           setIsDbConnected(false);
           const errData = await res.json().catch(() => null);
+          const errMsg = errData?.message || `HTTP ${res.status}`;
+          setLastSyncError(errMsg);
           if (res.status === 409) {
             console.warn('[ZAYCHICK Sync] Обнаружен конфликт ревизий (OCC 409). Актуализация данных с сервера...');
             fetchServerDbState(true);
           } else {
-            console.warn('[ZAYCHICK Sync] Сервер отклонил пакет синхронизации:', res.status, errData?.message);
+            console.warn('[ZAYCHICK Sync] Сервер отклонил пакет синхронизации:', res.status, errMsg);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
         setIsDbConnected(false);
-        // local state remains in localStorage as offline buffer
+        setLastSyncError(err?.message || 'Сетевой сбой при синхронизации с СУБД');
+      } finally {
+        setIsDbSyncing(false);
       }
     }, 300);
     return () => window.clearTimeout(timer);
@@ -310,6 +384,12 @@ export function useServerSync({
     setIsDbConnected,
     isDbSyncing,
     setIsDbSyncing,
+    pendingSyncCount,
+    setPendingSyncCount,
+    lastSyncError,
+    setLastSyncError,
+    lastSyncAttemptAt,
+    triggerImmediateSync,
     isServerDbModalOpen,
     setIsServerDbModalOpen,
     activeConflict,

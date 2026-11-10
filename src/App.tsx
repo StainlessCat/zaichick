@@ -33,6 +33,8 @@ import {
   SlidersHorizontal,
   Trash2,
   Undo2,
+  RotateCw,
+  AlertTriangle,
   Wrench,
 } from 'lucide-react';
 import {
@@ -210,6 +212,11 @@ export default function App() {
     setIsDbConnected,
     isDbSyncing,
     setIsDbSyncing,
+    pendingSyncCount,
+    setPendingSyncCount,
+    lastSyncError,
+    setLastSyncError,
+    triggerImmediateSync,
     isServerDbModalOpen,
     setIsServerDbModalOpen,
     activeConflict,
@@ -676,6 +683,21 @@ export default function App() {
         return;
       }
 
+      if (response.status === 409 && result?.code === 'DUPLICATE_JOINT_NUMBER') {
+        alert(`[Ошибка уникальности]\n${result.message || 'Стык с таким номером уже существует на линии.'}`);
+        return;
+      }
+
+      if (response.status === 403) {
+        alert(`[Отказ в доступе RBAC]\n${result.message || 'У вашей учётной записи недостаточно прав на изменение этих полей.'}`);
+        return;
+      }
+
+      if (!response.ok) {
+        alert(`[Ошибка сервера SQLite]\nНе удалось сохранить стык в СУБД: ${result?.message || ('HTTP ' + response.status)}`);
+        return;
+      }
+
       if (response.ok && result?.savedJoint) {
         isApplyingServerStateRef.current = true;
         const committed: WeldJoint = result.savedJoint;
@@ -688,45 +710,56 @@ export default function App() {
           setAuditLogs((prev) => [...auditEntriesToPersist, ...prev]);
         }
         if (result.meta) setServerDbMeta(result.meta);
+        setIsDbConnected(true);
+        setPendingSyncCount(0);
+        setLastSyncError(null);
         window.setTimeout(() => {
           isApplyingServerStateRef.current = false;
         }, 60);
         return;
       }
-    } catch {
-      // Offline / локальный резервный контур с оптимистической проверкой версий
+    } catch (err: any) {
+      // Offline / разрыв соединения с сервером
+      setIsDbConnected(false);
+      setPendingSyncCount((c) => c + 1);
+      setLastSyncError(err?.message || 'Сетевой сбой при обращении к серверу');
+
+      // Локальное резервное сохранение в буфер браузера
+      const localOcc = applyOptimisticJointSave({
+        currentJoints: joints,
+        incomingJoint: {
+          ...savedJoint,
+          isSupplementary,
+        },
+        expectedVersion: expectedVersion ?? undefined,
+        baseJoint: baseSnapshot,
+        user: currentUser,
+        fieldLabels: FIELD_LABELS_MAP,
+        timestampIso: nowIso,
+        forceOverwrite: false,
+      });
+
+      if (localOcc.status === 'conflict') {
+        setActiveConflict(localOcc.conflict);
+        return;
+      }
+
+      if (localOcc.status === 'duplicate') {
+        alert(`[Ошибка уникальности] ${localOcc.error}`);
+        return;
+      }
+
+      setJoints(localOcc.updatedJoints);
+      if (auditEntriesToPersist.length > 0) {
+        setAuditLogs((prev) => [...auditEntriesToPersist, ...prev]);
+      }
+
+      alert(
+        `[АВТОНОМНЫЙ РЕЖИМ]\nСвязь с сервером СУБД SQLite отсутствует (${err?.message || 'ошибка сети'}).\nСтык сохранён только в локальный буфер браузера (ожидает синхронизации).\n\nВНИМАНИЕ: До подтверждения сервером официальный журнал формировать запрещено.`
+      );
+      return;
     } finally {
       setIsDbSyncing(false);
-    }
-
-    // Локальное применение через чистый движок оптимистической блокировки
-    const localOcc = applyOptimisticJointSave({
-      currentJoints: joints,
-      incomingJoint: {
-        ...savedJoint,
-        isSupplementary,
-      },
-      expectedVersion: expectedVersion ?? undefined,
-      baseJoint: baseSnapshot,
-      user: currentUser,
-      fieldLabels: FIELD_LABELS_MAP,
-      timestampIso: nowIso,
-      forceOverwrite: false,
-    });
-
-    if (localOcc.status === 'conflict') {
-      setActiveConflict(localOcc.conflict);
-      return;
-    }
-
-    if (localOcc.status === 'duplicate') {
-      alert(`[Ошибка уникальности] ${localOcc.error}`);
-      return;
-    }
-
-    setJoints(localOcc.updatedJoints);
-    if (auditEntriesToPersist.length > 0) {
-      setAuditLogs((prev) => [...auditEntriesToPersist, ...prev]);
     }
   };
 
@@ -1769,8 +1802,43 @@ export default function App() {
             </div>
           </div>
 
-          {/* Правый верхний угол: Иконочные кнопки Undo / Redo и Кнопка-бутерброд */}
+          {/* Правый верхний угол: Статус СУБД / Синхронизации + Undo/Redo + Меню */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Постоянный индикатор синхронизации с СУБД SQLite (п.5 аудита) */}
+            {isDbConnected && pendingSyncCount === 0 ? (
+              <button
+                type="button"
+                onClick={() => setIsServerDbModalOpen(true)}
+                title="Серверная база SQLite онлайн. Все данные синхронизированы."
+                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-100 text-xs font-mono transition-colors cursor-pointer"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span>SQLite WAL · rev #{serverDbMeta?.globalRevision ?? 1}</span>
+              </button>
+            ) : isDbSyncing ? (
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-400/40 text-sky-100 text-xs font-mono">
+                <RotateCw className="w-3.5 h-3.5 animate-spin text-sky-300 shrink-0" />
+                <span>Синхронизация...</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/25 border border-amber-400/50 text-amber-100 text-xs font-semibold animate-pulse">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span>Не синхронизировано ({pendingSyncCount})</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await triggerImmediateSync();
+                    if (!ok) {
+                      alert(`Не удалось подключиться к серверу СУБД: ${lastSyncError || 'Сетевая ошибка'}`);
+                    }
+                  }}
+                  title="Повторить отправку пакета синхронизации на сервер"
+                  className="ml-1 p-0.5 rounded hover:bg-amber-400/20 text-amber-200 transition-colors cursor-pointer"
+                >
+                  <RotateCw className="w-3 h-3 text-amber-300" />
+                </button>
+              </div>
+            )}
             <div
               className="flex items-center gap-1 bg-white/10 border border-sky-300/30 rounded-lg p-1"
               role="group"
@@ -1849,7 +1917,18 @@ export default function App() {
           setLoginModalInitialMode('admin_password');
           setIsLoginModalOpen(true);
         }}
-        onExportAllJoints={(fmt) => exportAllJointsToFile(joints, fmt)}
+        onExportAllJoints={(fmt) => {
+          if (!isDbConnected || pendingSyncCount > 0) {
+            const proceed = window.confirm(
+              `ВНИМАНИЕ: Имеются несинхронизированные данные (${pendingSyncCount} изм.) или отсутствует подключение к СУБД SQLite.\n\nФайл будет выгружен с префиксом ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО. Продолжить?`
+            );
+            if (!proceed) return;
+          }
+          exportAllJointsToFile(joints, fmt, {
+            isDraftUnsynced: !isDbConnected || pendingSyncCount > 0,
+            unsyncedCount: pendingSyncCount,
+          });
+        }}
         onOpenFacilityLocation={(objName) => setLocationModalFacilityName(objName)}
         onOpenBackupModal={() =>
           setBackupModalState({ isOpen: true, initialTab: 'backup' })
@@ -2255,6 +2334,8 @@ export default function App() {
             selectedRdCode={selectedRdCode}
             onSelectObjectName={setSelectedObjectName}
             onSelectRdCode={setSelectedRdCode}
+            isDbConnected={isDbConnected}
+            pendingSyncCount={pendingSyncCount}
             onEditJoint={(j) =>
               setPassportModal({
                 isOpen: true,
@@ -2557,6 +2638,9 @@ export default function App() {
         dbMeta={serverDbMeta}
         isConnected={isDbConnected}
         isSyncing={isDbSyncing}
+        pendingSyncCount={pendingSyncCount}
+        lastSyncError={lastSyncError}
+        onRetrySync={triggerImmediateSync}
         joints={scopedJoints.length > 0 ? scopedJoints : joints}
         onRefreshFromServer={() => fetchServerDbState(false)}
         onTriggerSimulatedConflict={handleTriggerSimulatedConflict}

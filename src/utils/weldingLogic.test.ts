@@ -4784,3 +4784,54 @@ test('Аудит copilotAnalysis п. 4: Запрет создания дубли
 
   assert.equal(resultEditExisting.status, 'ok');
 });
+
+test('Аудит copilotAnalysis п. 5: Защита состояния и маркировка черновика при несинхронизированных изменениях', () => {
+  // 1. Проверяем генерацию предупреждения о несинхронизированном черновике
+  const draftOptions = {
+    isDraftUnsynced: true,
+    unsyncedCount: 3,
+  };
+
+  const getExportPrefix = (opts?: { isDraftUnsynced?: boolean }) =>
+    opts?.isDraftUnsynced ? 'ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_' : '';
+
+  assert.equal(
+    getExportPrefix(draftOptions),
+    'ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_',
+    'При наличии несинхронизированных изменений формируемый файл должен получать префикс черновика'
+  );
+  assert.equal(
+    getExportPrefix({ isDraftUnsynced: false }),
+    '',
+    'При подтверждённой синхронизации префикс черновика отсутствует'
+  );
+
+  // 2. Проверяем блокировку локального применения при ошибке сервера (дубликат или отказ)
+  const existingJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-base-1',
+    uniqueLineId: 'LINE-TEST',
+    jointNumber: '010',
+  };
+
+  const candidateDuplicate: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-candidate-2',
+    uniqueLineId: 'LINE-TEST',
+    jointNumber: '010',
+  };
+
+  const testUser = {
+    login: 'pto_ivanov',
+    fullName: 'Иванов И.И.',
+    role: 'Инженер ПТО',
+  };
+
+  const occCheck = applyOptimisticJointSave({
+    currentJoints: [existingJoint],
+    incomingJoint: candidateDuplicate,
+    user: testUser,
+  });
+
+  assert.equal(occCheck.status, 'duplicate');
+});

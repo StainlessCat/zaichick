@@ -68,7 +68,8 @@ export async function saveWorkbookFile(
  */
 export async function exportAllJointsToFile(
   joints: WeldJoint[],
-  format: 'xlsx' | 'csv'
+  format: 'xlsx' | 'csv',
+  options?: { isDraftUnsynced?: boolean; unsyncedCount?: number }
 ): Promise<void> {
   const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
 
@@ -95,7 +96,8 @@ export async function exportAllJointsToFile(
     }));
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Реестр стыков');
-    await saveWorkbookFile(workbook, `ZAYCHICK_Reestr_Stykov_${dateStamp}.xlsx`);
+    const prefix = options?.isDraftUnsynced ? "ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_" : "";
+    await saveWorkbookFile(workbook, `${prefix}ZAYCHICK_Reestr_Stykov_${dateStamp}.xlsx`);
     return;
   }
 
@@ -115,7 +117,8 @@ export async function exportAllJointsToFile(
 
   const csvContent = '\uFEFF' + [headers.join(';'), ...csvRows].join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  triggerBlobDownload(blob, `ZAYCHICK_Reestr_Stykov_${dateStamp}.csv`);
+  const csvPrefix = options?.isDraftUnsynced ? "ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_" : "";
+  triggerBlobDownload(blob, `${csvPrefix}ZAYCHICK_Reestr_Stykov_${dateStamp}.csv`);
 }
 
 /**
@@ -125,7 +128,8 @@ export async function exportWeldingJournalToExcel(
   joints: WeldJoint[],
   standard: JournalStandard,
   materials: WeldingMaterialCertificate[] = [],
-  lrvCatalog: LRVItem[] = []
+  lrvCatalog: LRVItem[] = [],
+  options?: { isDraftUnsynced?: boolean; unsyncedCount?: number }
 ): Promise<void> {
   const XLSX = await getXlsx();
   const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
@@ -159,9 +163,10 @@ export async function exportWeldingJournalToExcel(
   const workbook = XLSX.utils.book_new();
   const sheetName = isGost ? 'Журнал ГОСТ 32569' : 'Журнал СТО Газпром';
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  const jPrefix = options?.isDraftUnsynced ? 'ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_' : '';
   await saveWorkbookFile(
     workbook,
-    `Журнал_сварки_${standard.replace(/\s+/g, '_')}_${dateStamp}.xlsx`
+    `${jPrefix}Журнал_сварки_${standard.replace(/\s+/g, '_')}_${dateStamp}.xlsx`
   );
 }
 

@@ -27,6 +27,9 @@ interface ServerDbStatusModalProps {
   onRefreshFromServer?: () => Promise<void>;
   onForceSyncFromServer?: () => Promise<void>;
   onTriggerSimulatedConflict: (jointId: string) => Promise<void>;
+  pendingSyncCount?: number;
+  lastSyncError?: string | null;
+  onRetrySync?: () => Promise<boolean>;
 }
 
 export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
@@ -40,6 +43,9 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
   onRefreshFromServer: onRefreshProp,
   onForceSyncFromServer,
   onTriggerSimulatedConflict,
+  pendingSyncCount = 0,
+  lastSyncError = null,
+  onRetrySync,
 }) => {
   const joints = jointsProp || sampleJoints || [];
   const onRefreshFromServer = onRefreshProp || onForceSyncFromServer || (async () => {});

@@ -59,6 +59,8 @@ interface WeldingJournalsViewProps {
   onEditJoint: (joint: WeldJoint) => void;
   onSelectObjectName?: (name: string) => void;
   onSelectRdCode?: (rd: string) => void;
+  isDbConnected?: boolean;
+  pendingSyncCount?: number;
 }
 
 const STO_COL_MAP: Record<StoGazpromColumnKey, StoGazpromJournalColumnDef> =
@@ -78,6 +80,8 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
   onEditJoint,
   onSelectObjectName,
   onSelectRdCode,
+  isDbConnected = true,
+  pendingSyncCount = 0,
 }) => {
   // По умолчанию открываем форму по СТО Газпром 15-1.1-002-2023 (49 граф)
   const [standard, setStandard] = useState<JournalStandard>(
@@ -705,6 +709,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
   };
 
   const handleExportCsv = () => {
+    if (!confirmIfUnsynced()) return;
     const headers =
       standard === 'ГОСТ 32569-2013'
         ? GOST_32569_2013_JOURNAL_COLUMNS.map((c) => c.label)
@@ -743,12 +748,25 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     showToast(`Журнал (${chronologicalJoints.length} зап.) выгружен в файл «${fileName}».`);
   };
 
+  const isOfflineOrUnsynced = !isDbConnected || pendingSyncCount > 0;
+
+  const confirmIfUnsynced = (): boolean => {
+    if (isOfflineOrUnsynced) {
+      return window.confirm(
+        `ВНИМАНИЕ: В системе имеются несинхронизированные данные (${pendingSyncCount} изм.) или отсутствует связь с сервером СУБД SQLite.\n\nОфициальное формирование журнала заблокировано до подтверждения сервером.\nДокумент будет выгружен с грифом «ЧЕРНОВИК (НЕ СИНХРОНИЗИРОВАНО)». Продолжить выгрузку черновика?`
+      );
+    }
+    return true;
+  };
+
   const handleExportXlsx = () => {
+    if (!confirmIfUnsynced()) return;
     exportWeldingJournalToExcel(
       chronologicalJoints,
       standard,
       materials,
-      lrvCatalog
+      lrvCatalog,
+      { isDraftUnsynced: isOfflineOrUnsynced, unsyncedCount: pendingSyncCount }
     );
     showToast(
       `Книга Excel по форме «${standard}» (${chronologicalJoints.length} зап.) успешно сформирована и скачана.`
@@ -776,13 +794,15 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
         ? ` (Линия: ${selectedLineItem.lineNumber})`
         : '');
 
+    if (!confirmIfUnsynced()) return;
     exportWeldingJournalToPdfA3(
       standard,
       displayObjectName,
       currentRdCode || 'ALL',
       headers,
       colNumbers,
-      rows
+      rows,
+      { isDraftUnsynced: isOfflineOrUnsynced, unsyncedCount: pendingSyncCount }
     );
     try {
       window.print();
@@ -827,6 +847,17 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
 
   return (
     <div className="space-y-4 print-journal-container">
+      {isOfflineOrUnsynced && (
+        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-3 no-print shadow-xs">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="font-bold">ВНИМАНИЕ: Автономный режим (ожидает синхронизации {pendingSyncCount} изм.)</span>
+            <p className="mt-0.5 text-amber-800 text-[11px]">
+              Данные журнала в данный момент не подтверждены серверной СУБД SQLite. Официальная печать и сдача журнала технадзору заблокированы до восстановления связи с сервером. Выгрузка доступна исключительно в виде черновика с водяным знаком.
+            </p>
+          </div>
+        </div>
+      )}
       {actionToast && (
         <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-semibold flex items-center justify-between gap-2 no-print shadow-xs">
           <div className="flex items-center gap-2">
