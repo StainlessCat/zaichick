@@ -284,20 +284,22 @@ export function computeLineListItemStatus(
     if (isWelded) {
       weldedJoints += 1;
 
-      // Проверка прохождения РК
+      // Проверка фактического выполнения РК (исключаем «В работе», «Не проводился» и открытый «Ремонт»)
       const hasRk =
-        (j.ndtType === 'РК' && Boolean(j.ndtResult)) ||
-        (j.dupNdtType === 'РК' && Boolean(j.dupNdtResult)) ||
-        j.repairNdtResult === 'Годен';
+        ((j.ndtType === 'РК' || j.ndtType === 'РК+УЗК') && j.ndtResult === 'Годен') ||
+        (j.dupNdtType === 'РК' && j.dupNdtResult === 'Годен') ||
+        (j.repairNdtType === 'РК' && j.repairNdtResult === 'Годен') ||
+        (j.repairDupNdtType === 'РК' && j.repairDupNdtResult === 'Годен');
       if (hasRk) {
         rkControlled += 1;
       }
 
-      // Проверка прохождения УЗК
+      // Проверка фактического выполнения УЗК (исключаем «В работе», «Не проводился» и открытый «Ремонт»)
       const hasUzk =
-        (j.ndtType === 'УЗК' && Boolean(j.ndtResult)) ||
-        (j.dupNdtType === 'УЗК' && Boolean(j.dupNdtResult)) ||
-        j.repairDupNdtResult === 'Годен';
+        ((j.ndtType === 'УЗК' || j.ndtType === 'РК+УЗК') && j.ndtResult === 'Годен') ||
+        (j.dupNdtType === 'УЗК' && j.dupNdtResult === 'Годен') ||
+        (j.repairNdtType === 'УЗК' && j.repairNdtResult === 'Годен') ||
+        (j.repairDupNdtType === 'УЗК' && j.repairDupNdtResult === 'Годен');
       if (hasUzk) {
         uzkControlled += 1;
       }
@@ -336,9 +338,15 @@ export function computeLineListItemStatus(
     }
 
     const hasAnyNdt =
-      (Boolean(j.ndtType) && j.ndtType !== 'Не требуется' && Boolean(j.ndtResult) && j.ndtResult !== 'Не проводился') ||
-      (Boolean(j.dupNdtType) && j.dupNdtType !== 'Не требуется' && Boolean(j.dupNdtResult) && j.dupNdtResult !== 'Не проводился') ||
-      j.repairNdtResult === 'Годен';
+      (Boolean(j.ndtType) &&
+        j.ndtType !== 'Не требуется' &&
+        j.ndtResult === 'Годен') ||
+      (Boolean(j.dupNdtType) &&
+        j.dupNdtType !== 'Не требуется' &&
+        j.dupNdtResult === 'Годен') ||
+      j.repairNdtResult === 'Годен' ||
+      j.repairDupNdtResult === 'Годен' ||
+      isJointFullyAccepted(j);
 
     stamps.forEach((s) => {
       const cur = welderStats.get(s) || { welded: 0, controlled: 0 };

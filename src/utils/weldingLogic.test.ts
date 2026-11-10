@@ -4534,3 +4534,97 @@ test('Аудит copilotAnalysis п. 1: Запрет синтетических 
   assert.equal(gostRowWith.col15, 'Годен, № ЗАК-ВИК-102-26, 10.10.26');
   assert.equal(gostRowWith.col16, 'РК, Годен, № ЗАК-РК-104-26, 12.10.26');
 });
+
+
+test('Аудит copilotAnalysis п. 2: Исключение статусов «В работе» и открытого «Ремонта» из зачёта квот НК', async () => {
+  const { calculateWelderNdtQuotas, calculateLineNdtProgress, computeLineListItemStatus } = await import('./weldingLogic');
+
+  const testLine: ProjectLineItem = {
+    id: 'line-test-quota',
+    uniqueLineId: 'LINE-QUOTA-01',
+    rdCode: 'RD-001',
+    lineNumber: '01',
+    objectName: 'Объект-1',
+    lineName: 'Линия 01',
+    product: 'Газ',
+    testContour: 'К-1',
+    weldingNtd: 'СТО Газпром',
+    controlNtd: 'СТО Газпром',
+    qualityLevel: 'B',
+    pipelineCategory: 'I',
+    workingPressure: '10.0',
+    workingTemperature: '+20',
+    rkPercent: 100,
+    uzkPercent: 0,
+    pvkPercent: 0,
+    manualStatus: '',
+    testDate: '2026-10-10',
+  };
+
+  const jointInWork: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-in-work',
+    uniqueLineId: 'LINE-QUOTA-01',
+    lineNumber: '01',
+    weldingDate: '2026-10-10',
+    welderStamp: 'В001',
+    welderStampsList: ['В001'],
+    vikResult: 'Годен',
+    ndtType: 'РК',
+    ndtResult: 'В работе',
+    dupNdtType: 'Не требуется',
+    dupNdtResult: 'Не проводился',
+  };
+
+  // 1. Прогресс линии не должен считать стык «В работе» как выполненный РК
+  const lineProgInWork = calculateLineNdtProgress([jointInWork], testLine);
+  assert.equal(lineProgInWork.inspectedRkCount, 0, 'Стык «В работе» НЕ должен засчитываться в проверенный РК');
+  assert.equal(lineProgInWork.actualRkPct, 0);
+  assert.equal(lineProgInWork.isRkFulfilled, false);
+
+  const lineStatusInWork = computeLineListItemStatus(testLine, [jointInWork]);
+  assert.equal(lineStatusInWork.rkControlled, 0, 'В лайнлисте rkControlled обязан быть 0 при статусе «В работе»');
+  assert.equal(lineStatusInWork.ndtStatus, 'insufficient');
+
+  // 2. Квота сварщика: стык «В работе» не засчитывается в проверенные
+  const quotasInWork = calculateWelderNdtQuotas([jointInWork], [testLine]);
+  const welderInWork = quotasInWork.find((q) => q.stamp === 'В001');
+  assert.ok(welderInWork);
+  assert.equal(welderInWork.inspectedCount, 0, 'Стык «В работе» не должен считаться проверенным для сварщика');
+  assert.equal(welderInWork.actualNdtPct, 0);
+  assert.equal(welderInWork.isCompliant, false);
+
+  // 3. Стык со статусом «Ремонт» (брак НК, ремонт еще не выполнен)
+  const jointInRepair: WeldJoint = {
+    ...jointInWork,
+    ndtResult: 'Ремонт',
+    repairAction: 'Ремонт',
+    repairVikResult: 'Не проводился',
+    repairNdtResult: 'Не проводился',
+  };
+
+  const lineProgRepair = calculateLineNdtProgress([jointInRepair], testLine);
+  assert.equal(lineProgRepair.inspectedRkCount, 0, 'Забракованный неотремонтированный стык НЕ сдаёт план РК линии');
+  assert.equal(lineProgRepair.isRkFulfilled, false);
+
+  const quotasRepair = calculateWelderNdtQuotas([jointInRepair], [testLine]);
+  const welderRepair = quotasRepair.find((q) => q.stamp === 'В001');
+  assert.ok(welderRepair);
+  assert.equal(welderRepair.defectCount, 1, 'Стык с браком должен быть учтен в defectCount');
+  assert.equal(welderRepair.penaltyRequiredJoints, 2, 'При 1 браке назначается +2 штрафных стыка контроля');
+  assert.equal(welderRepair.isCompliant, false);
+  assert.equal(welderRepair.status, 'penalty_required');
+
+  // 4. После положительного переконтроля (ремонт закрыт) стык засчитывается в выполнение
+  const jointRepaired: WeldJoint = {
+    ...jointInRepair,
+    repairVikResult: 'Годен',
+    repairNdtType: 'РК',
+    repairNdtResult: 'Годен',
+  };
+
+  const lineProgRepaired = calculateLineNdtProgress([jointRepaired], testLine);
+  assert.equal(lineProgRepaired.inspectedRkCount, 1, 'После успешного переконтроля РК засчитывается в объем линии');
+  assert.equal(lineProgRepaired.actualRkPct, 100);
+  assert.equal(lineProgRepaired.isRkFulfilled, true);
+});

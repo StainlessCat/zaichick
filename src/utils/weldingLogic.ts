@@ -23,6 +23,7 @@ import {
   mmToNominalBoreDn,
   resolveLrvItemCategory,
 } from './pipeCalc';
+import { isJointFullyAccepted } from './readiness';
 import { determineDateObservationStatus } from './weatherService';
 
 // Реэкспорт всех специализированных доменных модулей (100% обратная совместимость)
@@ -551,13 +552,38 @@ export function calculateWelderNdtQuotas(
     }
 
     const isWelded = Boolean(j.weldingDate);
-    const hasNdt = Boolean(j.ndtResult && j.ndtResult !== 'Не проводился');
+    // Контроль завершен лабораторией с финальным результатом (исключаем «В работе» и «Не проводился»)
+    const hasPrimaryNdtFinished =
+      Boolean(j.ndtResult) &&
+      j.ndtResult !== 'Не проводился' &&
+      j.ndtResult !== 'В работе' &&
+      j.ndtType !== 'Не требуется';
+    const hasDupNdtFinished =
+      Boolean(j.dupNdtResult) &&
+      j.dupNdtResult !== 'Не проводился' &&
+      j.dupNdtResult !== 'В работе' &&
+      j.dupNdtType !== 'Не требуется';
+    const hasRepairNdtFinished =
+      Boolean(j.repairNdtResult) &&
+      j.repairNdtResult !== 'Не проводился' &&
+      j.repairNdtResult !== 'В работе' &&
+      j.repairNdtType !== 'Не требуется';
+
     const isDefect =
       j.ndtResult === 'Ремонт' ||
       j.ndtResult === 'Вырезать' ||
       j.vikResult === 'Ремонт' ||
-      j.vikResult === 'Вырезать';
-    const isPassed = j.ndtResult === 'Годен' || j.vikResult === 'Годен';
+      j.vikResult === 'Вырезать' ||
+      j.dupNdtResult === 'Ремонт' ||
+      j.dupNdtResult === 'Вырезать';
+
+    // Стык фактически проконтролирован, если получен вердикт лаборатории
+    const hasNdt = hasPrimaryNdtFinished || hasDupNdtFinished || hasRepairNdtFinished;
+
+    // Стык принят по НК: полностью принят (в т.ч. после ремонта) либо первично годен без дефектов
+    const isPassed =
+      isJointFullyAccepted(j) ||
+      (!isDefect && (j.ndtResult === 'Годен' || j.dupNdtResult === 'Годен'));
 
     for (const stamp of stamps) {
       if (!welderStats.has(stamp)) {
@@ -595,15 +621,15 @@ export function calculateWelderNdtQuotas(
     const requiredNdtPct = stat.highestRequiredPct;
     const hasMinimumJointInspected = totalWelded === 0 || inspectedCount >= 1;
 
-    // Правило удвоения при браке: +2 стыка на каждый дефектный стык
+    // Правило удвоения при браке: +2 стыка на каждый дефектный стык (п. 5.7 СТО Газпром 15-1.3-004-2023)
     const penaltyRequiredJoints = defectCount * 2;
+    const requiredTotalWithPenalty =
+      Math.ceil((totalWelded * requiredNdtPct) / 100) + penaltyRequiredJoints;
     const hasPenaltyFulfilled =
       defectCount === 0 ||
-      inspectedCount >=
-        Math.min(
-          totalWelded,
-          Math.ceil((totalWelded * requiredNdtPct) / 100) + penaltyRequiredJoints
-        );
+      (totalWelded >= requiredTotalWithPenalty &&
+        inspectedCount >= requiredTotalWithPenalty &&
+        passedCount >= Math.ceil((totalWelded * requiredNdtPct) / 100));
 
     let isCompliant = true;
     let status: 'compliant' | 'warning' | 'penalty_required' | 'critical' = 'compliant';
@@ -671,18 +697,25 @@ export function calculateLineNdtProgress(
   const totalJoints = lineJoints.length;
   const weldedJoints = lineJoints.filter((j) => Boolean(j.weldingDate)).length;
 
-  const inspectedRkCount = lineJoints.filter(
-    (j) =>
-      (j.ndtType === 'РК' || j.ndtType === 'РК+УЗК') &&
-      Boolean(j.ndtResult && j.ndtResult !== 'Не проводился')
-  ).length;
+  const inspectedRkCount = lineJoints.filter((j) => {
+    const isPrimaryRk =
+      (j.ndtType === 'РК' || j.ndtType === 'РК+УЗК') && j.ndtResult === 'Годен';
+    const isDupRk = j.dupNdtType === 'РК' && j.dupNdtResult === 'Годен';
+    const isRepairRk =
+      (j.repairNdtType === 'РК' && j.repairNdtResult === 'Годен') ||
+      (j.repairDupNdtType === 'РК' && j.repairDupNdtResult === 'Годен');
+    return isPrimaryRk || isDupRk || isRepairRk;
+  }).length;
 
-  const inspectedUzkCount = lineJoints.filter(
-    (j) =>
-      (j.ndtType === 'УЗК' || j.ndtType === 'РК+УЗК' || j.dupNdtType === 'УЗК') &&
-      (Boolean(j.ndtResult && j.ndtResult !== 'Не проводился') ||
-        Boolean(j.dupNdtResult && j.dupNdtResult !== 'Не проводился'))
-  ).length;
+  const inspectedUzkCount = lineJoints.filter((j) => {
+    const isPrimaryUzk =
+      (j.ndtType === 'УЗК' || j.ndtType === 'РК+УЗК') && j.ndtResult === 'Годен';
+    const isDupUzk = j.dupNdtType === 'УЗК' && j.dupNdtResult === 'Годен';
+    const isRepairUzk =
+      (j.repairNdtType === 'УЗК' && j.repairNdtResult === 'Годен') ||
+      (j.repairDupNdtType === 'УЗК' && j.repairDupNdtResult === 'Годен');
+    return isPrimaryUzk || isDupUzk || isRepairUzk;
+  }).length;
 
   const requiredRkPct = line.rkPercent || 0;
   const requiredUzkPct = line.uzkPercent || 0;
