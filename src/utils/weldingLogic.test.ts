@@ -4628,3 +4628,64 @@ test('Аудит copilotAnalysis п. 2: Исключение статусов «
   assert.equal(lineProgRepaired.actualRkPct, 100);
   assert.equal(lineProgRepaired.isRkFulfilled, true);
 });
+
+test('Аудит copilotAnalysis п. 3: Выборочный дублирующий контроль и критерий сдачи стыка isJointFullyAccepted', () => {
+  const baseJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-selective-dup',
+    weldingDate: '2026-10-10',
+    welderStamp: 'С01',
+    vikResult: 'Годен',
+    ndtType: 'РК',
+    ndtResult: 'Годен',
+    dupNdtType: 'УЗК', // Дублирующий контроль регламентирован для линии
+    dupNdtResult: 'Не проводился', // Стык НЕ попал в 20% выборочную квоту
+  };
+
+  // 1. Стык вне выборки дублирующего контроля, сдавший 100% первичный ВИК и РК, ОБЯЗАН быть принят
+  assert.equal(
+    isJointFullyAccepted(baseJoint),
+    true,
+    'Стык без дублирующего контроля при сданных ВИК и РК обязан быть принят (isJointFullyAccepted = true)'
+  );
+
+  // 2. Стык попал в выборку дублирования и находится «В работе» — приёмка блокируется
+  const jointInWork: WeldJoint = {
+    ...baseJoint,
+    dupNdtResult: 'В работе',
+  };
+  assert.equal(
+    isJointFullyAccepted(jointInWork),
+    false,
+    'При статусе дублирующего контроля «В работе» стык не может считаться принятым'
+  );
+
+  // 3. Дублирующий контроль выявил брак («Ремонт») — стык бракуется
+  const jointDefect: WeldJoint = {
+    ...baseJoint,
+    dupNdtResult: 'Ремонт',
+  };
+  assert.equal(isJointDefective(jointDefect), true, 'Брак по дублирующему контролю квалифицирует стык как дефектный');
+  assert.equal(isJointFullyAccepted(jointDefect), false);
+
+  // 4. Дублирующий контроль сдан («Годен») — стык принят
+  const jointDupPassed: WeldJoint = {
+    ...baseJoint,
+    dupNdtResult: 'Годен',
+  };
+  assert.equal(isJointFullyAccepted(jointDupPassed), true);
+
+  // 5. Линия категории V, где физический НК не требуется (только 100% ВИК)
+  const jointNoNdtNeeded: WeldJoint = {
+    ...baseJoint,
+    ndtType: 'Не требуется',
+    ndtResult: 'Не проводился',
+    dupNdtType: 'Не требуется',
+    dupNdtResult: 'Не проводился',
+  };
+  assert.equal(
+    isJointFullyAccepted(jointNoNdtNeeded),
+    true,
+    'Стык, не требующий НК по категории трубопровода, при сданном ВИК обязан быть принят'
+  );
+});

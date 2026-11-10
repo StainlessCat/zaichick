@@ -30,9 +30,18 @@ export interface ReadinessRow {
  * либо начаты ремонтные работы).
  */
 export function isJointDefective(
-  joint: Pick<WeldJoint, 'vikResult' | 'ndtResult' | 'dupNdtResult'> & {
-    repairAction?: string;
-  }
+  joint: Partial<
+    Pick<
+      WeldJoint,
+      | 'vikResult'
+      | 'ndtResult'
+      | 'dupNdtResult'
+      | 'repairAction'
+      | 'repairVikResult'
+      | 'repairNdtResult'
+      | 'repairDupNdtResult'
+    >
+  >
 ): boolean {
   if (
     joint.vikResult === 'Ремонт' ||
@@ -40,7 +49,13 @@ export function isJointDefective(
     joint.ndtResult === 'Ремонт' ||
     joint.ndtResult === 'Вырезать' ||
     joint.dupNdtResult === 'Ремонт' ||
-    joint.dupNdtResult === 'Вырезать'
+    joint.dupNdtResult === 'Вырезать' ||
+    joint.repairVikResult === 'Ремонт' ||
+    joint.repairVikResult === 'Вырезать' ||
+    joint.repairNdtResult === 'Ремонт' ||
+    joint.repairNdtResult === 'Вырезать' ||
+    joint.repairDupNdtResult === 'Ремонт' ||
+    joint.repairDupNdtResult === 'Вырезать'
   ) {
     return true;
   }
@@ -66,9 +81,20 @@ export function isJointFullyAccepted(joint: WeldJoint): boolean {
   if (!hadDefect) {
     // Случай 1: Первичный контроль прошёл успешно без ремонта
     const primaryVikOk = joint.vikResult === 'Годен';
-    const primaryNdtOk = joint.ndtResult === 'Годен';
+    const primaryNdtOk =
+      !joint.ndtType ||
+      joint.ndtType === 'Не требуется' ||
+      joint.ndtResult === 'Годен';
+
+    // Дублирующий контроль (графы 28–31 СТО Газпром): выборочный контроль (10–20%).
+    // Стык принят, если дублирование не требуется, либо стык не вошел в выборку («Не проводился»),
+    // либо вошел в выборку и успешно сдан («Годен»). Статус «В работе» блокирует приёмку.
     const dupOkOrNotRequired =
-      joint.dupNdtType === 'Не требуется' || joint.dupNdtResult === 'Годен';
+      !joint.dupNdtType ||
+      joint.dupNdtType === 'Не требуется' ||
+      !joint.dupNdtResult ||
+      joint.dupNdtResult === 'Не проводился' ||
+      joint.dupNdtResult === 'Годен';
 
     return primaryVikOk && primaryNdtOk && dupOkOrNotRequired;
   }
@@ -91,6 +117,8 @@ export function isJointFullyAccepted(joint: WeldJoint): boolean {
     const postDupOk =
       !joint.repairDupNdtType ||
       joint.repairDupNdtType === 'Не требуется' ||
+      !joint.repairDupNdtResult ||
+      joint.repairDupNdtResult === 'Не проводился' ||
       joint.repairDupNdtResult === 'Годен';
 
     return postVikOk && postNdtOk && postDupOk;
