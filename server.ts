@@ -1,4 +1,5 @@
 import express, { NextFunction, Request, Response } from 'express';
+import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
@@ -616,10 +617,14 @@ async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
   const distDir = path.join(ROOT_DIR, 'dist');
   const prebuiltDir = path.join(ROOT_DIR, 'prebuilt');
+  const httpServer = http.createServer(app);
 
   if (!isProd) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -634,9 +639,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(
-      `[ZAYCHICK Server DBMS] Единая серверная СУБД SQLite (WAL + OCC) запущена: http://0.0.0.0:${PORT}`
+      `[ZAYCHICK Server DBMS] Единая серверная СУБД SQLite (WAL + OCC) запущена: http://localhost:${PORT}`
     );
   });
 }
