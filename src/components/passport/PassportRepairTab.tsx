@@ -358,7 +358,7 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
                     form.repairVikResult === 'Не проводился'
                   }
                   value={form.repairVikNumber || ''}
-                  placeholder={`ВИК-Р-${form.jointNumber}`}
+                  placeholder="Напр.: ЗАК-ВИК-Р-01"
                   onChange={(e) =>
                     setForm((prev) => ({
                       ...prev,
@@ -497,7 +497,7 @@ export const PassportRepairTab: React.FC<PassportRepairTabProps> = ({
                     form.repairNdtResult === 'Не проводился'
                   }
                   value={form.repairNdtNumber || ''}
-                  placeholder={`${form.repairNdtType || 'НК'}-Р-${form.jointNumber}`}
+                  placeholder="Напр.: ЗАК-РК-Р-01"
                   onChange={(e) =>
                     setForm((prev) => ({
                       ...prev,

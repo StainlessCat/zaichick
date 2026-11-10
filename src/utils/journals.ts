@@ -421,44 +421,26 @@ export function formatGost32569JournalRow(
     col9 = '+120…+150 °С';
   }
 
-  const refDate =
-    formatDateDDMMYY(joint.vikDate) || formatDateDDMMYY(joint.weldingDate) || '';
   const customCol10 = normalizeGostNotApplicable(joint.rootWeldControl);
-  const col10 =
-    customCol10 ||
-    (joint.weldingDate
-      ? `Годен${refDate ? `, ${refDate}` : ''}`
-      : 'н/п');
+  const col10 = customCol10 || 'н/п';
 
   const isAlloySteel = Boolean(
     joint.elem1Material?.includes('Х') || joint.elem2Material?.includes('Х')
   );
   const customCol11 = normalizeGostNotApplicable(joint.steeloscopyInfo);
-  const col11 =
-    customCol11 ||
-    (isAlloySteel
-      ? `Соответствует, СТ-${joint.jointNumber}${refDate ? `, ${refDate}` : ''}`
-      : 'н/п');
+  const col11 = customCol11 || 'н/п';
 
   const col12 = normalizeGostNotApplicable(joint.heatTreatOperator) || 'н/п';
   const col13 = normalizeGostNotApplicable(joint.heatTreatDiagramNumber) || 'н/п';
 
-  const ndtDateFormatted =
-    formatDateDDMMYY(joint.ndtDate) || refDate || '';
   const customCol14 = normalizeGostNotApplicable(joint.hardnessTestInfo);
-  const col14 =
-    customCol14 ||
-    (joint.wallThickness >= 12 && joint.weldingDate
-      ? `HB 185, ТВ-${joint.jointNumber}${
-          ndtDateFormatted ? `, ${ndtDateFormatted}` : ''
-        }`
-      : 'н/п');
+  const col14 = customCol14 || 'н/п';
 
   const col15 =
     joint.vikResult && joint.vikResult !== 'Не проводился'
       ? `${joint.vikResult}${
-          joint.vikDate ? `, ${formatDateDDMMYY(joint.vikDate)}` : ''
-        }`
+          joint.vikReportNumber?.trim() ? `, № ${joint.vikReportNumber.trim()}` : ''
+        }${joint.vikDate ? `, ${formatDateDDMMYY(joint.vikDate)}` : ''}`
       : 'н/п';
 
   let col16: string;
@@ -468,11 +450,10 @@ export function formatGost32569JournalRow(
     joint.ndtResult &&
     joint.ndtResult !== 'Не проводился'
   ) {
-    const repNo =
-      joint.ndtReportNumber?.trim() || `${joint.ndtType}-${joint.jointNumber}`;
-    col16 = `${joint.ndtType}, ${joint.ndtResult}, ${repNo}${
-      joint.ndtDate ? `, ${formatDateDDMMYY(joint.ndtDate)}` : ''
-    }`;
+    const repNo = joint.ndtReportNumber?.trim();
+    const repPart = repNo ? `, № ${repNo}` : '';
+    const datePart = joint.ndtDate ? `, ${formatDateDDMMYY(joint.ndtDate)}` : '';
+    col16 = `${joint.ndtType}, ${joint.ndtResult}${repPart}${datePart}`;
   } else {
     col16 = 'н/п';
   }
@@ -481,13 +462,7 @@ export function formatGost32569JournalRow(
     joint.elem1Material.includes('12Х18Н10Т') ||
     joint.elem2Material.includes('12Х18Н10Т');
   const customCol17 = normalizeGostNotApplicable(joint.ferritePhaseInfo);
-  const col17 =
-    customCol17 ||
-    (isAustenitic && joint.weldingDate
-      ? `4,2%, ФФ-${joint.jointNumber}${
-          ndtDateFormatted ? `, ${ndtDateFormatted}` : ''
-        }`
-      : 'н/п');
+  const col17 = customCol17 || 'н/п';
 
   const record: Record<Gost32569ColumnKey, string> = {
     col1,
@@ -1162,7 +1137,7 @@ export function formatStoGazpromJournalRow(
 
   const hasVik =
     Boolean(joint.vikResult) && joint.vikResult !== 'Не проводился';
-  const col21 = hasVik ? `ВИК-${joint.jointNumber}` : 'н/п';
+  const col21 = hasVik ? (joint.vikReportNumber?.trim() || '') : 'н/п';
   const col22 = hasVik ? formatDateDDMMYY(joint.vikDate) || 'н/п' : 'н/п';
   const col23 = hasVik ? joint.vikResult : 'н/п';
 
@@ -1179,9 +1154,7 @@ export function formatStoGazpromJournalRow(
     joint.ndtResult !== 'Не проводился';
   const col24 =
     joint.ndtType && joint.ndtType !== 'Не требуется' ? joint.ndtType : 'н/п';
-  const col25 = hasNdt
-    ? joint.ndtReportNumber?.trim() || `${joint.ndtType}-${joint.jointNumber}`
-    : 'н/п';
+  const col25 = hasNdt ? (joint.ndtReportNumber?.trim() || '') : 'н/п';
   const col26 = hasNdt ? formatDateDDMMYY(joint.ndtDate) || 'н/п' : 'н/п';
   const col27 = hasNdt ? joint.ndtResult : 'н/п';
 
@@ -1197,7 +1170,7 @@ export function formatStoGazpromJournalRow(
       joint.dupNdtResult === 'Ремонт' ||
       joint.dupNdtResult === 'Вырезать'
     ) {
-      col29 = `${joint.dupNdtType}-Д-${joint.jointNumber}`;
+      col29 = joint.dupNdtReportNumber?.trim() || '';
       col30 = formatDateDDMMYY(joint.dupNdtDate) || 'н/п';
       col31 = joint.dupNdtResult === 'Вырезать' ? 'Ремонт' : joint.dupNdtResult;
     } else {
@@ -1224,10 +1197,7 @@ export function formatStoGazpromJournalRow(
         : 'Ремонт');
     col33 =
       formatDateDDMMYY(joint.repairDate || joint.ndtDate || joint.vikDate) || 'н/п';
-    col34 = (
-      joint.repairTechCard ||
-      (joint.techCardNumber ? `${joint.techCardNumber}-Р` : 'ТК-Р')
-    ).trim();
+    col34 = (joint.repairTechCard || '').trim() || 'н/п';
     col35 = (joint.repairWelderStamp || col18 || '').trim() || 'н/п';
     col36 = extractSurnameOnly(joint.repairForeman || joint.responsiblePerson);
   }
@@ -1248,16 +1218,12 @@ export function formatStoGazpromJournalRow(
     const hasRepairVik =
       Boolean(joint.repairVikResult) && joint.repairVikResult !== 'Не проводился';
     if (hasRepairVik) {
-      col38 = joint.repairVikNumber?.trim() || `ВИК-Р-${joint.jointNumber}`;
+      col38 = joint.repairVikNumber?.trim() || '';
       col39 = formatDateDDMMYY(joint.repairVikDate) || 'н/п';
       col40 =
         joint.repairVikResult === 'Годен' || joint.repairVikResult === 'Ремонт'
           ? joint.repairVikResult
           : 'н/п';
-    } else if (joint.dupNdtResult === 'Годен' && isPrimaryRepair) {
-      col38 = `ВИК-Р-${joint.jointNumber}`;
-      col39 = formatDateDDMMYY(joint.dupNdtDate || joint.ndtDate) || 'н/п';
-      col40 = 'Годен';
     }
 
     const hasSpecializedNdt =
@@ -1268,24 +1234,12 @@ export function formatStoGazpromJournalRow(
 
     if (hasSpecializedNdt) {
       col41 = joint.repairNdtType!;
-      col42 =
-        joint.repairNdtNumber?.trim() ||
-        `${joint.repairNdtType}-Р-${joint.jointNumber}`;
+      col42 = joint.repairNdtNumber?.trim() || '';
       col43 = formatDateDDMMYY(joint.repairNdtDate) || 'н/п';
       col44 =
         joint.repairNdtResult === 'Годен' || joint.repairNdtResult === 'Ремонт'
           ? joint.repairNdtResult
           : 'н/п';
-    } else if (
-      isPrimaryRepair &&
-      joint.dupNdtType &&
-      joint.dupNdtType !== 'Не требуется' &&
-      (joint.dupNdtResult === 'Годен' || joint.dupNdtResult === 'Ремонт')
-    ) {
-      col41 = joint.dupNdtType;
-      col42 = `${joint.dupNdtType}-Р-${joint.jointNumber}`;
-      col43 = formatDateDDMMYY(joint.dupNdtDate) || 'н/п';
-      col44 = joint.dupNdtResult;
     }
 
     const hasSpecializedDupNdt =
@@ -1296,9 +1250,7 @@ export function formatStoGazpromJournalRow(
 
     if (hasSpecializedDupNdt) {
       col45 = joint.repairDupNdtType!;
-      col46 =
-        joint.repairDupNdtNumber?.trim() ||
-        `${joint.repairDupNdtType}-РД-${joint.jointNumber}`;
+      col46 = joint.repairDupNdtNumber?.trim() || '';
       col47 = formatDateDDMMYY(joint.repairDupNdtDate) || 'н/п';
       col48 =
         joint.repairDupNdtResult === 'Годен' || joint.repairDupNdtResult === 'Ремонт'

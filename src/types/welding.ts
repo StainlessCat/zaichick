@@ -310,22 +310,25 @@ export interface WeldJoint {
   welderCertNumber: string; // № удостоверения сварщика(ов) — подтягивается автоматически по клейму
   techCardNumber: string; // № технологической карты (из выпадающего списка ТК)
 
-  // 3. Контроль ВИК (3 поля)
+  // 3. Контроль ВИК (4 поля)
   vikResult: ControlResult; // Результат контроля ВИК
   vikDate: string; // Дата контроля ВИК
   vikInspector: string; // ФИО дефектоскописта ВИК
+  vikReportNumber?: string; // Графа 21: № заключения (акта) контроля ВИК
 
-  // 4. Неразрушающий контроль НК (4 поля)
+  // 4. Неразрушающий контроль НК (5 полей)
   ndtType: NdtMethod; // Тип неразрушающего контроля
   ndtDate: string; // Дата контроля НК
   ndtResult: ControlResult; // Результат НК
   ndtInspector: string; // ФИО дефектоскописта НК
+  ndtReportNumber?: string; // Графа 25 СТО Газпром / Графа 16 ГОСТ 32569: № заключения неразрушающего контроля
 
-  // 5. Дублирующий контроль (4 поля)
+  // 5. Дублирующий контроль (5 полей)
   dupNdtType: NdtMethod; // Тип дублирующего контроля
   dupNdtDate: string; // Дата дублирующего контроля
   dupNdtResult: ControlResult; // Результат дублирующего контроля
   dupNdtInspector: string; // ФИО дефектоскописта дубл. контроля
+  dupNdtReportNumber?: string; // Графа 29: № заключения дублирующего контроля
 
   // 6. Дополнительные графы журнала сварки по ГОСТ 32569-2013
   rootWeldControl?: string; // Графа 10: Отметка о контроле корня шва
@@ -333,7 +336,6 @@ export interface WeldJoint {
   heatTreatOperator?: string; // Графа 12: Ф.И.О. оператора термиста, личное клеймо
   heatTreatDiagramNumber?: string; // Графа 13: № диаграммы по журналу термообработки сварных соединений
   hardnessTestInfo?: string; // Графа 14: Твердость металла шва, N заключения, дата
-  ndtReportNumber?: string; // Графа 16: № заключения неразрушающего контроля
   ferritePhaseInfo?: string; // Графа 17: Результаты измерения ферритной фазы в металле шва, N заключения, дата
 
   // 7. Сведения о проведении ремонта (СТО Газпром графы 32–37, ГОСТ 32569 графа 15)
@@ -389,7 +391,6 @@ export type WeldJointFieldKey = keyof Omit<
   | 'heatTreatOperator'
   | 'heatTreatDiagramNumber'
   | 'hardnessTestInfo'
-  | 'ndtReportNumber'
   | 'ferritePhaseInfo'
   | 'updatedAt'
   | 'updatedBy'

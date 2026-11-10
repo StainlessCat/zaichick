@@ -1568,15 +1568,20 @@ test('COMPREHENSIVE 10-USER SIMULATION: registration of 10 users, collaborative 
   assert.equal(isJointCurrentlyInRepair(joints[1]), true, 'Стык 020 должен числиться в активном ремонте');
   assert.equal(isJointFullyAccepted(joints[1]), false);
 
-  // Закрытие ремонта стыка 020 повторным контролем «РК» -> «Годен»
+  // Закрытие ремонта стыка 020 контролем после ремонта (ВИК и РК -> «Годен»)
   joints = applyBulkUpdateToJoints(
     joints,
     [joints[1].id],
     {
-      dupNdtType: 'РК',
-      dupNdtResult: 'Годен',
-      dupNdtDate: '2026-10-19',
-      dupNdtInspector: 'Лебедев С.А.',
+      repairVikResult: 'Годен',
+      repairVikDate: '2026-10-19',
+      repairVikInspector: 'Лебедев С.А.',
+      repairVikNumber: 'ЗАК-ВИК-Р-020',
+      repairNdtType: 'РК',
+      repairNdtResult: 'Годен',
+      repairNdtDate: '2026-10-19',
+      repairNdtInspector: 'Лебедев С.А.',
+      repairNdtNumber: 'ЗАК-РК-Р-020',
     },
     {
       login: 'lnk_lebedev',
@@ -1690,7 +1695,9 @@ test('COMPREHENSIVE 10-USER SIMULATION: registration of 10 users, collaborative 
       assert.equal(stoRow.col31, 'н/п', 'При браке первичного контроля дублирующий контроль (гр. 31) равен н/п');
       assert.equal(stoRow.col32, 'Ремонт', 'В графе 32 указывается Ремонт');
       assert.equal(stoRow.col36, 'Громов', 'В графе 36 указывается только фамилия мастера');
+      assert.equal(stoRow.col38, 'ЗАК-ВИК-Р-020', 'В графе 38 фактический номер заключения ВИК после ремонта');
       assert.equal(stoRow.col40, 'Годен', 'В графе 40 ВИК после ремонта — Годен');
+      assert.equal(stoRow.col42, 'ЗАК-РК-Р-020', 'В графе 42 фактический номер заключения НК после ремонта');
       assert.equal(stoRow.col44, 'Годен', 'В графе 44 ФМК после ремонта — Годен');
     }
   });
@@ -4472,4 +4479,58 @@ test('Замечание аудита №5: Отсутствие привязк�
   assert.ok(noApiRes['2026-06-15']);
   assert.equal(noApiRes['2026-06-15'].status, 'not_found', 'Без API-ключа статус обязан быть not_found');
   assert.equal(noApiRes['2026-06-15'].tavg, undefined, 'Температура не должна браться из воздуха');
+});
+
+test('Аудит copilotAnalysis п. 1: Запрет синтетических номеров заключений в журналах СТО Газпром и ГОСТ 32569', () => {
+  // Стык с проведённым контролем, но БЕЗ номеров заключений
+  const jointWithoutReports: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    vikResult: 'Годен',
+    vikDate: '2026-10-10',
+    vikReportNumber: '', // не указан
+    ndtType: 'РК',
+    ndtResult: 'Годен',
+    ndtDate: '2026-10-12',
+    ndtReportNumber: '', // не указан
+    dupNdtType: 'Не требуется',
+  };
+
+  const stoRowWithout = formatStoGazpromJournalRow(jointWithoutReports, 0, INITIAL_LRV_CATALOG);
+  // Графа 21: номер заключения ВИК — должна быть ПУСТОЙ, а не "ВИК-010"
+  assert.equal(stoRowWithout.col21, '', 'При отсутствии vikReportNumber графа 21 должна быть пустой');
+  assert.equal(stoRowWithout.col21.includes('ВИК-'), false);
+  // Графа 25: номер заключения НК — должна быть ПУСТОЙ, а не "РК-010"
+  assert.equal(stoRowWithout.col25, '', 'При отсутствии ndtReportNumber графа 25 должна быть пустой');
+  assert.equal(stoRowWithout.col25.includes('РК-'), false);
+
+  const gostRowWithout = formatGost32569JournalRow(jointWithoutReports, 0, INITIAL_WELDING_MATERIALS);
+  // Графа 15 ГОСТ: ВИК
+  assert.equal(gostRowWithout.col15, 'Годен, 10.10.26');
+  // Графа 16 ГОСТ: НК — без выдуманного номера
+  assert.equal(gostRowWithout.col16, 'РК, Годен, 12.10.26');
+  assert.equal(gostRowWithout.col16.includes('РК-010'), false);
+  // Графа 10, 11, 14, 17 ГОСТ — без выдуманных префиксов
+  assert.equal(gostRowWithout.col11, 'н/п', 'Стилоскопирование без явной записи не должно выдумывать СТ-010');
+  assert.equal(gostRowWithout.col14, 'н/п', 'Твердость без явной записи не должна выдумывать ТВ-010');
+  assert.equal(gostRowWithout.col17, 'н/п', 'Ферритная фаза без явной записи не должна выдумывать ФФ-010');
+
+  // Стык с РЕАЛЬНЫМИ номерами заключений лаборатории
+  const jointWithReports: WeldJoint = {
+    ...jointWithoutReports,
+    vikReportNumber: 'ЗАК-ВИК-102-26',
+    ndtReportNumber: 'ЗАК-РК-104-26',
+    dupNdtType: 'УЗК',
+    dupNdtResult: 'Годен',
+    dupNdtDate: '2026-10-13',
+    dupNdtReportNumber: 'ЗАК-УЗК-089-26',
+  };
+
+  const stoRowWith = formatStoGazpromJournalRow(jointWithReports, 0, INITIAL_LRV_CATALOG);
+  assert.equal(stoRowWith.col21, 'ЗАК-ВИК-102-26');
+  assert.equal(stoRowWith.col25, 'ЗАК-РК-104-26');
+  assert.equal(stoRowWith.col29, 'ЗАК-УЗК-089-26');
+
+  const gostRowWith = formatGost32569JournalRow(jointWithReports, 0, INITIAL_WELDING_MATERIALS);
+  assert.equal(gostRowWith.col15, 'Годен, № ЗАК-ВИК-102-26, 10.10.26');
+  assert.equal(gostRowWith.col16, 'РК, Годен, № ЗАК-РК-104-26, 12.10.26');
 });

@@ -680,6 +680,21 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
     [baseChronologicalJoints, columnFilters, activeGetters]
   );
 
+  // Подсчёт стыков с проведённым контролем, но без номеров заключений
+  const missingReportJointsCount = useMemo(() => {
+    return chronologicalJoints.filter((j) => {
+      const hasVikDone = j.vikResult && j.vikResult !== 'Не проводился';
+      const hasNdtDone =
+        j.ndtType &&
+        j.ndtType !== 'Не требуется' &&
+        j.ndtResult &&
+        j.ndtResult !== 'Не проводился';
+      const vikMissing = hasVikDone && !j.vikReportNumber?.trim();
+      const ndtMissing = hasNdtDone && !j.ndtReportNumber?.trim();
+      return vikMissing || ndtMissing;
+    }).length;
+  }, [chronologicalJoints]);
+
   const handleApplyFilter = (colKey: string, vals: string[] | undefined) => {
     setColumnFilters((prev) => {
       const next = { ...prev };
@@ -1319,6 +1334,20 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
             <div>Дата формирования: {currentFormationDate}</div>
           </div>
         </div>
+
+        {missingReportJointsCount > 0 && (
+          <div className="mx-6 my-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <span className="font-semibold text-amber-950">
+                Внимание: в {missingReportJointsCount} сварных соединениях не указаны номера заключений ВИК / НК
+              </span>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                В чистовом журнале соответствующие графы останутся пустыми до внесения официальных номеров заключений из лаборатории контроля в паспорте стыка.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="overflow-x-auto overflow-y-auto min-h-[380px] max-h-[calc(100vh-235px)] print-journal-scroll table-scroll-container">
           {standard === 'ГОСТ 32569-2013' ? (

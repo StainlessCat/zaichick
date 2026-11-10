@@ -367,7 +367,14 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
     groupLabel: 'Контроль ВИК',
     minWidth: 165,
   },
-  // Неразрушающий контроль НК (4 поля)
+  {
+    key: 'vikReportNumber',
+    label: '№ закл. ВИК',
+    group: 'vik',
+    groupLabel: 'Контроль ВИК',
+    minWidth: 135,
+  },
+  // Неразрушающий контроль НК (5 полей)
   {
     key: 'ndtType',
     label: 'Тип НК',
@@ -391,13 +398,20 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
     minWidth: 135,
   },
   {
+    key: 'ndtReportNumber',
+    label: '№ закл. НК',
+    group: 'ndt',
+    groupLabel: 'Неразрушающий контроль (НК)',
+    minWidth: 140,
+  },
+  {
     key: 'ndtInspector',
     label: 'Дефектоскопист НК',
     group: 'ndt',
     groupLabel: 'Неразрушающий контроль (НК)',
     minWidth: 165,
   },
-  // Дублирующий контроль (4 поля)
+  // Дублирующий контроль (5 полей)
   {
     key: 'dupNdtType',
     label: 'Тип дубл. контроля',
@@ -416,6 +430,13 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
   {
     key: 'dupNdtResult',
     label: 'Результат дубл. НК',
+    group: 'dup_ndt',
+    groupLabel: 'Дублирующий НК',
+    minWidth: 145,
+  },
+  {
+    key: 'dupNdtReportNumber',
+    label: '№ закл. дубл. НК',
     group: 'dup_ndt',
     groupLabel: 'Дублирующий НК',
     minWidth: 145,

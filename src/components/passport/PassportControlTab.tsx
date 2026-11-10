@@ -117,6 +117,8 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
                   return {
                     ...prev,
                     vikResult: nextVik,
+                    vikReportNumber:
+                      nextVik === 'Не проводился' ? '' : prev.vikReportNumber,
                     vikDate: nextVik === 'Не проводился' ? '' : prev.vikDate,
                     vikInspector:
                       nextVik === 'Не проводился' ? '' : prev.vikInspector,
@@ -155,6 +157,21 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
               <option value="В работе">В работе</option>
               <option value="Не проводился">Не проводился</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-600 mb-0.5">
+              № заключения ВИК
+            </label>
+            <input
+              type="text"
+              value={form.vikReportNumber || ''}
+              disabled={form.vikResult === 'Не проводился'}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, vikReportNumber: e.target.value }))
+              }
+              placeholder="Напр.: ЗАК-ВИК-102-26"
+              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
+            />
           </div>
           <div>
             <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
@@ -212,6 +229,8 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
                   setForm((prev) => ({
                     ...prev,
                     ndtType: nextType,
+                    ndtReportNumber:
+                      nextType === 'Не требуется' ? '' : prev.ndtReportNumber,
                     ndtResult:
                       nextType === 'Не требуется'
                         ? 'Не проводился'
@@ -247,6 +266,8 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
                     return {
                       ...prev,
                       ndtResult: nextRes,
+                      ndtReportNumber:
+                        nextRes === 'Не проводился' ? '' : prev.ndtReportNumber,
                       ndtDate: nextRes === 'Не проводился' ? '' : prev.ndtDate,
                       ndtInspector:
                         nextRes === 'Не проводился' ? '' : prev.ndtInspector,
@@ -294,6 +315,24 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
                 <option value="Не проводился">Не проводился</option>
               </select>
             </div>
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-600 mb-0.5">
+              № заключения НК
+            </label>
+            <input
+              type="text"
+              value={form.ndtReportNumber || ''}
+              disabled={
+                form.ndtType === 'Не требуется' ||
+                form.ndtResult === 'Не проводился'
+              }
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, ndtReportNumber: e.target.value }))
+              }
+              placeholder="Напр.: ЗАК-РК-104-26"
+              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
+            />
           </div>
           <div>
             <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
@@ -382,6 +421,10 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
                       setForm((prev) => ({
                         ...prev,
                         dupNdtType: nextDupType,
+                        dupNdtReportNumber:
+                          nextDupType === 'Не требуется'
+                            ? ''
+                            : prev.dupNdtReportNumber,
                         dupNdtResult:
                           nextDupType === 'Не требуется'
                             ? 'Не проводился'
@@ -420,6 +463,10 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
                         return {
                           ...prev,
                           dupNdtResult: nextDupRes,
+                          dupNdtReportNumber:
+                            nextDupRes === 'Не проводился'
+                              ? ''
+                              : prev.dupNdtReportNumber,
                           dupNdtDate:
                             nextDupRes === 'Не проводился' ? '' : prev.dupNdtDate,
                           dupNdtInspector:
@@ -458,6 +505,27 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
                     <option value="В работе">В работе</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-[11px] text-slate-600 mb-0.5">
+                  № заключения дубл. НК
+                </label>
+                <input
+                  type="text"
+                  value={form.dupNdtReportNumber || ''}
+                  disabled={
+                    form.dupNdtType === 'Не требуется' ||
+                    form.dupNdtResult === 'Не проводился'
+                  }
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      dupNdtReportNumber: e.target.value,
+                    }))
+                  }
+                  placeholder="Напр.: ЗАК-УЗК-089-26"
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
+                />
               </div>
               <div>
                 <label className="flex items-center justify-between text-[11px] text-slate-600 mb-0.5">
@@ -535,7 +603,7 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, rootWeldControl: e.target.value }))
               }
-              placeholder="Авто: Годен, дата ВИК"
+              placeholder="н/п / Годен"
               className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
             />
           </div>
@@ -553,7 +621,7 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, steeloscopyInfo: e.target.value }))
               }
-              placeholder="н/п / Соответствует, СТ-..."
+              placeholder="н/п / Соответствует, акт №..."
               className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
             />
           </div>
@@ -610,7 +678,7 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, hardnessTestInfo: e.target.value }))
               }
-              placeholder="н/п / HB 185, ТВ-..."
+              placeholder="н/п / HB 185, акт №..."
               className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
             />
           </div>
@@ -628,7 +696,7 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, ndtReportNumber: e.target.value }))
               }
-              placeholder={`Авто: ${form.ndtType}-${form.jointNumber}`}
+              placeholder="Напр.: ЗАК-РК-104-26"
               className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400"
             />
           </div>
@@ -646,7 +714,7 @@ export const PassportControlTab: React.FC<PassportControlTabProps> = ({
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, ferritePhaseInfo: e.target.value }))
               }
-              placeholder="н/п / 4,2%, ФФ-..."
+              placeholder="н/п / 4,2%, акт №..."
               className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs disabled:bg-slate-100 disabled:text-slate-400"
             />
           </div>
