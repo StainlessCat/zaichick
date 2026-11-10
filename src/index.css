@@ -3,9 +3,9 @@
 @layer base {
   :root {
     --font-display: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-sans: 'Public Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'IBM Plex Mono', monospace;
-    --font-century-gothic: 'Century Gothic', CenturyGothic, AppleGothic, sans-serif;
+    --font-century-gothic: 'Jost', 'Century Gothic', CenturyGothic, AppleGothic, sans-serif;
     --brand-navy: #1e3799;
     --brand-navy-dark: #15276e;
     --brand-sky: #e8f1fc;
@@ -23,7 +23,7 @@
   }
 
   .font-century-gothic {
-    font-family: 'Century Gothic', CenturyGothic, AppleGothic, sans-serif;
+    font-family: var(--font-century-gothic);
   }
 
   .font-mono, .tabular-nums {

@@ -1756,8 +1756,8 @@ export default function App() {
             <div className="inline-flex items-center justify-center gap-2 max-w-full">
               {sectionIcons[activeSection]}
               <h1
-                className="text-xs sm:text-sm md:text-base font-bold text-white uppercase tracking-wider truncate"
-                style={{ fontFamily: '"Century Gothic", CenturyGothic, AppleGothic, sans-serif' }}
+                className="text-xs sm:text-sm md:text-base font-bold text-white uppercase tracking-wider truncate font-century-gothic"
+                style={{ fontFamily: '"Jost", "Century Gothic", CenturyGothic, AppleGothic, sans-serif' }}
               >
                 {sectionLabels[activeSection]?.toUpperCase()}
               </h1>

@@ -98,7 +98,8 @@ $$\text{EDI} = D_{\text{inch}} \times K_{\text{толщ}}(S)$$
 
 ### 4.1. Фирменный стиль
 * **Основной брендовый цвет чердака**: `#1e3799` (глубокий классический инженерный синий). Шапки окон, первичные кнопки действий.
-* **Шрифт названий разделов в шапке**: **Century Gothic** (`font-family: 'Century Gothic', CenturyGothic, AppleGothic, sans-serif`).
+* **Шрифт названий разделов в шапке**: открытый геометрический аналог Century Gothic с полной поддержкой кириллицы **Jost** с фолбэком на Century Gothic (`font-family: 'Jost', 'Century Gothic', CenturyGothic, AppleGothic, sans-serif`).
+* **Основной шрифт интерфейса (`font-sans`)**: **Manrope** (`font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif`) с нативной поддержкой кириллицы.
 * **Фирменный логотип**: геометрический знак «Заяц — сварной стык трубопровода» и лаконичное имя **`zaychick`** строчными буквами без вспомогательных подзаголовков.
 * **Статусные индикаторы**:
   * «Годен» — `text-emerald-700 bg-emerald-50 border-emerald-300`
