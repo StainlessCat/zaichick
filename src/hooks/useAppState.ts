@@ -45,13 +45,11 @@ import {
 } from '../data/seedData';
 import { mergeDynamicInspectors } from '../utils/rbac';
 import { FacilityGeoOverride } from './useServerSync';
-import type { FullSystemBackupPayload } from '../components/BackupAndResetModal';
 import type { LoginModalMode } from '../components/LoginModal';
 
 export const STORAGE_KEYS = {
   TEMPLATES: 'zaychick_column_templates_v2',
   ACTIVE_TPL: 'zaychick_active_template_id_v2',
-  FULL_STATE: 'zaychick_app_full_state_v1',
 };
 
 export const EMPTY_FACILITY_FALLBACK: FacilityObject = {
@@ -83,48 +81,20 @@ export interface AppDataSnapshot {
   facilityGeoOverrides: Record<string, FacilityGeoOverride>;
 }
 
-export type PersistedAppState = FullSystemBackupPayload['data'] & {
-  selectedObjectName?: string;
-  selectedRdCode?: string;
-};
-
-export function loadSavedFullState(): Partial<PersistedAppState> | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.FULL_STATE);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      return parsed;
-    }
-  } catch {
-    // ignore storage read errors
-  }
-  return null;
-}
-
 export function useAppState() {
-  const initialSavedState = useMemo(() => loadSavedFullState(), []);
-
-  // Авторизованный пользователь и пул учётных записей
-  const [userAccounts, setUserAccounts] = useState<UserAccount[]>(() =>
-    Array.isArray(initialSavedState?.userAccounts) &&
-    initialSavedState.userAccounts.length > 0
-      ? initialSavedState.userAccounts
-      : USER_ACCOUNTS
-  );
-  const [currentUser, setCurrentUser] = useState<UserAccount>(() =>
-    Array.isArray(initialSavedState?.userAccounts) &&
-    initialSavedState.userAccounts.length > 0
-      ? initialSavedState.userAccounts[0]
-      : USER_ACCOUNTS[0]
-  );
-  const [sessionToken, setSessionToken] = useState<string | null>(() => {
+  // Очищаем устаревший полный дамп БД и небезопасный токен в localStorage при переходе на PostgreSQL + HttpOnly Cookie
+  useEffect(() => {
     try {
-      return localStorage.getItem('zaychick_session_token');
+      localStorage.removeItem('zaychick_app_full_state_v1');
+      localStorage.removeItem('zaychick_session_token');
     } catch {
-      return null;
+      // ignore
     }
-  });
+  }, []);
+
+  // Авторизованный пользователь и пул учётных записей (загружается с сервера /api/auth/session)
+  const [userAccounts, setUserAccounts] = useState<UserAccount[]>(USER_ACCOUNTS);
+  const [currentUser, setCurrentUser] = useState<UserAccount>(USER_ACCOUNTS[0]);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginModalInitialMode, setLoginModalInitialMode] =
     useState<LoginModalMode>('login');
@@ -132,69 +102,30 @@ export function useAppState() {
   // Выбор объекта и раздела программы
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<AppSection>('registry');
-  const [selectedObjectName, setSelectedObjectName] = useState<string>(() =>
-    typeof initialSavedState?.selectedObjectName === 'string'
-      ? initialSavedState.selectedObjectName
-      : FACILITY_OBJECTS[0].name
-  );
-  const [selectedRdCode, setSelectedRdCode] = useState<string>(() =>
-    typeof initialSavedState?.selectedRdCode === 'string'
-      ? initialSavedState.selectedRdCode
-      : 'ALL'
-  );
+  const [selectedObjectName, setSelectedObjectName] = useState<string>(FACILITY_OBJECTS[0].name);
+  const [selectedRdCode, setSelectedRdCode] = useState<string>('ALL');
 
-  // Основные коллекции системы
-  const [joints, setJoints] = useState<WeldJoint[]>(() =>
-    Array.isArray(initialSavedState?.joints)
-      ? initialSavedState.joints
-      : INITIAL_JOINTS
-  );
-  const [projectLineList, setProjectLineList] = useState<ProjectLineItem[]>(() =>
-    Array.isArray(initialSavedState?.projectLineList)
-      ? initialSavedState.projectLineList
-      : INITIAL_PROJECT_LINELIST
-  );
-  const [lrvCatalog, setLrvCatalog] = useState<LRVItem[]>(() =>
-    Array.isArray(initialSavedState?.lrvCatalog)
-      ? initialSavedState.lrvCatalog
-      : INITIAL_LRV_CATALOG
-  );
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() =>
-    Array.isArray(initialSavedState?.auditLogs)
-      ? initialSavedState.auditLogs
-      : INITIAL_AUDIT_LOGS
-  );
+  // Основные коллекции системы (источник истины — PostgreSQL через FastAPI REST API)
+  const [serverFacilities, setServerFacilities] = useState<FacilityObject[]>(FACILITY_OBJECTS);
+  const [joints, setJoints] = useState<WeldJoint[]>(INITIAL_JOINTS);
+  const [projectLineList, setProjectLineList] = useState<ProjectLineItem[]>(INITIAL_PROJECT_LINELIST);
+  const [lrvCatalog, setLrvCatalog] = useState<LRVItem[]>(INITIAL_LRV_CATALOG);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(INITIAL_AUDIT_LOGS);
 
   // Справочники сварки
-  const [welders, setWelders] = useState<WelderProfile[]>(() => {
-    const list = Array.isArray(initialSavedState?.welders)
-      ? initialSavedState.welders
-      : WELDERS_DIRECTORY;
-    return list.map((w) => normalizeWelderProfile(w));
-  });
-  const [techCards, setTechCards] = useState<TechCardItem[]>(() => {
-    const list = Array.isArray(initialSavedState?.techCards)
-      ? initialSavedState.techCards
-      : INITIAL_TECH_CARDS;
-    return list.map((tc) => normalizeTechCard(tc));
-  });
-  const [weldingMaterials, setWeldingMaterials] = useState<
-    WeldingMaterialCertificate[]
-  >(() =>
-    Array.isArray(initialSavedState?.weldingMaterials)
-      ? initialSavedState.weldingMaterials
-      : INITIAL_WELDING_MATERIALS
+  const [welders, setWelders] = useState<WelderProfile[]>(() =>
+    WELDERS_DIRECTORY.map((w) => normalizeWelderProfile(w))
   );
+  const [techCards, setTechCards] = useState<TechCardItem[]>(() =>
+    INITIAL_TECH_CARDS.map((tc) => normalizeTechCard(tc))
+  );
+  const [weldingMaterials, setWeldingMaterials] =
+    useState<WeldingMaterialCertificate[]>(INITIAL_WELDING_MATERIALS);
 
   // Геокоординаты и метеопосты
   const [facilityGeoOverrides, setFacilityGeoOverrides] = useState<
     Record<string, FacilityGeoOverride>
-  >(() =>
-    initialSavedState?.facilityGeoOverrides &&
-    typeof initialSavedState.facilityGeoOverrides === 'object'
-      ? initialSavedState.facilityGeoOverrides
-      : {}
-  );
+  >({});
   const [locationModalFacilityName, setLocationModalFacilityName] = useState<
     string | null
   >(null);
@@ -344,11 +275,11 @@ export function useAppState() {
     loading: false,
   });
 
-  // Производные списки объектов
+  // Производные списки объектов (из серверного списка facilities + лайнлиста)
   const derivedFacilities = useMemo(() => {
     const base = deriveFacilitiesFromLineList(
       projectLineList,
-      FACILITY_OBJECTS,
+      serverFacilities.length > 0 ? serverFacilities : FACILITY_OBJECTS,
       true
     );
     const merged = base.map((fac) => {
@@ -392,7 +323,7 @@ export function useAppState() {
     });
 
     return merged;
-  }, [projectLineList, facilityGeoOverrides]);
+  }, [projectLineList, serverFacilities, facilityGeoOverrides]);
 
   const dynamicInspectors = useMemo(
     () => mergeDynamicInspectors(INSPECTORS_DIRECTORY, userAccounts),
@@ -407,44 +338,7 @@ export function useAppState() {
     [derivedFacilities, selectedObjectName]
   );
 
-  // Автосохранение полного состояния в localStorage
-  useEffect(() => {
-    try {
-      const stateToPersist: Partial<PersistedAppState> = {
-        joints,
-        projectLineList,
-        lrvCatalog,
-        auditLogs,
-        welders,
-        techCards,
-        weldingMaterials,
-        userAccounts,
-        facilityGeoOverrides,
-        selectedObjectName,
-        selectedRdCode,
-      };
-      localStorage.setItem(
-        STORAGE_KEYS.FULL_STATE,
-        JSON.stringify(stateToPersist)
-      );
-    } catch {
-      // ignore quota
-    }
-  }, [
-    joints,
-    projectLineList,
-    lrvCatalog,
-    auditLogs,
-    welders,
-    techCards,
-    weldingMaterials,
-    userAccounts,
-    facilityGeoOverrides,
-    selectedObjectName,
-    selectedRdCode,
-  ]);
-
-  // Сохранение шаблонов колонок
+  // Сохранение шаблонов колонок (UI настройки)
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
@@ -734,8 +628,8 @@ export function useAppState() {
     setUserAccounts,
     currentUser,
     setCurrentUser,
-    sessionToken,
-    setSessionToken,
+    serverFacilities,
+    setServerFacilities,
     isLoginModalOpen,
     setIsLoginModalOpen,
     loginModalInitialMode,

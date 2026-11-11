@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiError, zaychickApi } from '../api';
 import type {
   AuditLogEntry,
+  ColumnTemplate,
+  CustomWeatherStation,
+  FacilityObject,
   LRVItem,
   OptimisticLockConflictPayload,
   ProjectLineItem,
@@ -11,12 +15,7 @@ import type {
   WeldingMaterialCertificate,
   WeldJoint,
 } from '../types/welding';
-import {
-  normalizeTechCard,
-  normalizeWelderProfile,
-  normalizeWeldJoint,
-} from '../utils/entityNormalizers';
-import type { CustomWeatherStation } from '../types/welding';
+import { getUserRolePermissions } from '../utils/rbac';
 
 export interface FacilityGeoOverride {
   region: string;
@@ -35,355 +34,394 @@ export interface FacilityGeoOverride {
 }
 
 export interface UseServerSyncParams {
-  currentUser: UserAccount;
-  sessionToken: string | null;
-  joints: WeldJoint[];
+  currentUser: UserAccount | null;
+  setCurrentUser: React.Dispatch<React.SetStateAction<UserAccount>>;
+  setIsLoginModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setServerFacilities: React.Dispatch<React.SetStateAction<FacilityObject[]>>;
   setJoints: React.Dispatch<React.SetStateAction<WeldJoint[]>>;
-  projectLineList: ProjectLineItem[];
   setProjectLineList: React.Dispatch<React.SetStateAction<ProjectLineItem[]>>;
-  lrvCatalog: LRVItem[];
   setLrvCatalog: React.Dispatch<React.SetStateAction<LRVItem[]>>;
-  welders: WelderProfile[];
   setWelders: React.Dispatch<React.SetStateAction<WelderProfile[]>>;
-  techCards: TechCardItem[];
   setTechCards: React.Dispatch<React.SetStateAction<TechCardItem[]>>;
-  weldingMaterials: WeldingMaterialCertificate[];
-  setWeldingMaterials: React.Dispatch<
-    React.SetStateAction<WeldingMaterialCertificate[]>
-  >;
-  userAccounts: UserAccount[];
+  setWeldingMaterials: React.Dispatch<React.SetStateAction<WeldingMaterialCertificate[]>>;
   setUserAccounts: React.Dispatch<React.SetStateAction<UserAccount[]>>;
-  auditLogs: AuditLogEntry[];
   setAuditLogs: React.Dispatch<React.SetStateAction<AuditLogEntry[]>>;
-  facilityGeoOverrides: Record<string, FacilityGeoOverride>;
+  setTemplates?: React.Dispatch<React.SetStateAction<ColumnTemplate[]>>;
   setFacilityGeoOverrides: React.Dispatch<
     React.SetStateAction<Record<string, FacilityGeoOverride>>
   >;
 }
 
+interface SseDeltaEnvelope {
+  event?: string;
+  entity_type?: string;
+  entity_id?: string;
+  version?: number;
+  updated_by?: string;
+  timestamp?: string;
+  data?: Record<string, unknown>;
+}
+
+const DELTA_EVENTS = [
+  'joint.created',
+  'joint.updated',
+  'joint.deleted',
+  'line.created',
+  'line.updated',
+  'line.deleted',
+  'lrv.created',
+  'lrv.updated',
+  'lrv.superseded',
+  'lrv.deleted',
+  'welder.created',
+  'welder.updated',
+  'welder.deleted',
+  'wps.created',
+  'wps.updated',
+  'wps.deleted',
+  'material.created',
+  'material.updated',
+  'material.deleted',
+  'facility.created',
+  'facility.updated',
+  'facility.deleted',
+  'template.created',
+  'template.updated',
+  'template.deleted',
+  'user.created',
+  'user.updated',
+];
+
 export function useServerSync({
   currentUser,
-  sessionToken,
-  joints,
+  setCurrentUser,
+  setIsLoginModalOpen,
+  setServerFacilities,
   setJoints,
-  projectLineList,
   setProjectLineList,
-  lrvCatalog,
   setLrvCatalog,
-  welders,
   setWelders,
-  techCards,
   setTechCards,
-  weldingMaterials,
   setWeldingMaterials,
-  userAccounts,
   setUserAccounts,
-  auditLogs,
   setAuditLogs,
-  facilityGeoOverrides,
+  setTemplates,
   setFacilityGeoOverrides,
 }: UseServerSyncParams) {
-  const [serverDbMeta, setServerDbMeta] = useState<ServerDbMetadata | null>(
-    null
-  );
-  const [isDbConnected, setIsDbConnected] = useState<boolean>(true);
+  const [serverDbMeta, setServerDbMeta] = useState<ServerDbMetadata | null>(null);
+  const [isDbConnected, setIsDbConnected] = useState<boolean>(false);
   const [isDbSyncing, setIsDbSyncing] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [lastSyncError, setLastSyncError] = useState<string | null>(null);
   const [lastSyncAttemptAt, setLastSyncAttemptAt] = useState<string | null>(null);
-  const [isServerDbModalOpen, setIsServerDbModalOpen] =
-    useState<boolean>(false);
+  const [isServerDbModalOpen, setIsServerDbModalOpen] = useState<boolean>(false);
   const [activeConflict, setActiveConflict] =
     useState<OptimisticLockConflictPayload | null>(null);
 
-  const clientIdRef = useRef<string>(
-    `sess-${Math.random().toString(36).slice(2, 9)}`
-  );
+  const clientIdRef = useRef<string>(`pg-${Math.random().toString(36).slice(2, 9)}`);
   const isApplyingServerStateRef = useRef<boolean>(false);
-  const hasLoadedServerInitialRef = useRef<boolean>(false);
 
-  const fetchServerDbState = async (silent = false) => {
-    if (!silent) setIsDbSyncing(true);
-    try {
-      const token =
-        sessionToken ||
-        (typeof window !== 'undefined'
-          ? localStorage.getItem('zaychick_session_token') || ''
-          : '');
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['x-session-token'] = token;
-      }
-      const params = new URLSearchParams({
-        clientId: clientIdRef.current,
-        userLogin: currentUser.login,
-        userFullName: currentUser.fullName,
-        userRole: currentUser.role,
-        ...(token ? { token } : {}),
+  const applyGeoFromFacilities = useCallback(
+    (facilities: FacilityObject[]) => {
+      setServerFacilities(facilities);
+      setFacilityGeoOverrides((prev) => {
+        const next = { ...prev };
+        for (const fac of facilities) {
+          next[fac.name] = {
+            ...next[fac.name],
+            region: fac.region || next[fac.name]?.region || '',
+            weatherStation:
+              fac.weatherStation || next[fac.name]?.weatherStation || 'Метеостанция не выбрана',
+            weatherStationId: fac.weatherStationId || next[fac.name]?.weatherStationId,
+            weatherStationDistanceKm:
+              fac.weatherStationDistanceKm ?? next[fac.name]?.weatherStationDistanceKm,
+            weatherStationSource:
+              fac.weatherStationSource || next[fac.name]?.weatherStationSource,
+            weatherLastCheckStatus:
+              fac.weatherLastCheckStatus || next[fac.name]?.weatherLastCheckStatus,
+            weatherLastCheckedAt:
+              fac.weatherLastCheckedAt || next[fac.name]?.weatherLastCheckedAt,
+            weatherLastErrorMessage:
+              fac.weatherLastErrorMessage || next[fac.name]?.weatherLastErrorMessage,
+            latitude: fac.latitude ?? next[fac.name]?.latitude ?? 66.53,
+            longitude: fac.longitude ?? next[fac.name]?.longitude ?? 66.6,
+            customWeatherStations:
+              fac.customWeatherStations && fac.customWeatherStations.length > 0
+                ? fac.customWeatherStations
+                : next[fac.name]?.customWeatherStations,
+          };
+        }
+        return next;
       });
-      const res = await fetch(`/api/db/state?${params.toString()}`, { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const payload = await res.json();
-      if (payload && payload.data) {
-        isApplyingServerStateRef.current = true;
-        if (Array.isArray(payload.data.joints)) setJoints(payload.data.joints);
-        if (Array.isArray(payload.data.projectLineList))
-          setProjectLineList(payload.data.projectLineList);
-        if (Array.isArray(payload.data.lrvCatalog))
-          setLrvCatalog(payload.data.lrvCatalog);
-        if (Array.isArray(payload.data.welders)) {
-          setWelders(payload.data.welders.map((w: WelderProfile) => normalizeWelderProfile(w)));
-        }
-        if (Array.isArray(payload.data.techCards)) {
-          setTechCards(payload.data.techCards.map((tc: TechCardItem) => normalizeTechCard(tc)));
-        }
-        if (Array.isArray(payload.data.weldingMaterials))
-          setWeldingMaterials(payload.data.weldingMaterials);
-        if (
-          Array.isArray(payload.data.userAccounts) &&
-          payload.data.userAccounts.length > 0
-        ) {
-          setUserAccounts(payload.data.userAccounts);
-        }
-        if (Array.isArray(payload.data.auditLogs))
-          setAuditLogs(payload.data.auditLogs);
-        if (
-          payload.data.facilityGeoOverrides &&
-          typeof payload.data.facilityGeoOverrides === 'object'
-        ) {
-          setFacilityGeoOverrides(payload.data.facilityGeoOverrides);
-        }
-        if (payload.meta) {
-          setServerDbMeta(payload.meta);
-        }
-        setIsDbConnected(true);
-        setPendingSyncCount(0);
-        setLastSyncError(null);
-        hasLoadedServerInitialRef.current = true;
-        window.setTimeout(() => {
-          isApplyingServerStateRef.current = false;
-        }, 60);
-      }
-    } catch (err: any) {
-      setIsDbConnected(false);
-      setLastSyncError(err?.message || 'Не удалось загрузить состояние с сервера СУБД SQLite');
-    } finally {
-      if (!silent) setIsDbSyncing(false);
-    }
-  };
+    },
+    [setFacilityGeoOverrides, setServerFacilities]
+  );
 
-  // Загрузка начального состояния из серверной СУБД SQLite и подписка на SSE-события
-  useEffect(() => {
-    fetchServerDbState(false);
-
-    let es: EventSource | null = null;
-    try {
-      const token =
-        sessionToken ||
-        (typeof window !== 'undefined'
-          ? localStorage.getItem('zaychick_session_token') || ''
-          : '');
-      const sseUrl = `/api/db/events?clientId=${encodeURIComponent(
-        clientIdRef.current
-      )}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
-      es = new EventSource(sseUrl);
-      es.addEventListener('connected', (ev: MessageEvent) => {
-        try {
-          const parsed = JSON.parse(ev.data);
-          if (parsed?.meta) setServerDbMeta(parsed.meta);
-          setIsDbConnected(true);
-        } catch {
-          // ignore
-        }
-      });
-      es.addEventListener('db_updated', (ev: MessageEvent) => {
-        try {
-          const parsed = JSON.parse(ev.data);
-          if (parsed?.meta) setServerDbMeta(parsed.meta);
-          if (
-            parsed?.sourceClientId &&
-            parsed.sourceClientId !== clientIdRef.current
-          ) {
-            fetchServerDbState(true);
-          }
-        } catch {
-          // ignore
-        }
-      });
-      // Фолбэк для прокси-серверов или сред без именованных событий (Замечание аудита №3)
-      es.onmessage = (ev: MessageEvent) => {
-        try {
-          const parsed = JSON.parse(ev.data);
-          if (parsed?.meta) setServerDbMeta(parsed.meta);
-          if (parsed?.type === 'connected') {
-            setIsDbConnected(true);
-          } else if (parsed?.type === 'db_updated') {
-            if (
-              parsed?.sourceClientId &&
-              parsed.sourceClientId !== clientIdRef.current
-            ) {
-              fetchServerDbState(true);
-            }
-          }
-        } catch {
-          // ignore
-        }
-      };
-      es.onerror = () => {
-        // SSE auto-reconnects
-      };
-    } catch {
-      // ignore if SSE unavailable
-    }
-
-    return () => {
-      if (es) es.close();
-    };
-  }, []);
-
-  // Немедленная ручная отправка локального состояния на сервер СУБД (Retry Sync)
-  const triggerImmediateSync = async (): Promise<boolean> => {
-    setIsDbSyncing(true);
-    setLastSyncAttemptAt(new Date().toISOString());
-    try {
-      const payloadData = {
-        joints,
-        projectLineList,
-        lrvCatalog,
-        welders,
-        techCards,
-        weldingMaterials,
-        userAccounts,
-        auditLogs,
-        facilityGeoOverrides,
-      };
-
-      const res = await fetch('/api/db/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
-        },
-        body: JSON.stringify({
-          clientId: clientIdRef.current,
-          sessionToken,
-          user: currentUser,
-          expectedGlobalRevision: serverDbMeta?.globalRevision,
-          data: payloadData,
-          ...payloadData,
-        }),
-      });
-
-      if (res.ok) {
-        const out = await res.json();
-        if (out?.meta) setServerDbMeta(out.meta);
-        setIsDbConnected(true);
-        setPendingSyncCount(0);
-        setLastSyncError(null);
-        return true;
-      } else {
-        const errData = await res.json().catch(() => null);
-        const errMsg = errData?.message || `HTTP ${res.status}`;
-        setIsDbConnected(false);
-        setLastSyncError(errMsg);
-        if (res.status === 409) {
-          fetchServerDbState(true);
-        }
-        return false;
-      }
-    } catch (err: any) {
-      setIsDbConnected(false);
-      setLastSyncError(err?.message || 'Сервер СУБД SQLite временно недоступен');
-      return false;
-    } finally {
-      setIsDbSyncing(false);
-    }
-  };
-
-  // Автоматическая синхронизация справочников и групповых правок в серверную СУБД SQLite
-  useEffect(() => {
-    if (!hasLoadedServerInitialRef.current || isApplyingServerStateRef.current) {
-      return;
-    }
-    setPendingSyncCount((prev) => Math.max(1, prev + 1));
-    const timer = window.setTimeout(async () => {
+  const fetchServerDbState = useCallback(
+    async (silent = false): Promise<boolean> => {
+      if (!silent) setIsDbSyncing(true);
+      setLastSyncAttemptAt(new Date().toISOString());
       try {
-        setIsDbSyncing(true);
-        setLastSyncAttemptAt(new Date().toISOString());
-        const payloadData = {
+        const session = await zaychickApi.getSession();
+        setCurrentUser(session.user);
+        setIsAuthenticated(true);
+
+        const perms = getUserRolePermissions(session.user);
+        const [
+          facilities,
+          lines,
           joints,
-          projectLineList,
-          lrvCatalog,
+          lrv,
           welders,
           techCards,
-          weldingMaterials,
-          userAccounts,
+          materials,
+          templates,
           auditLogs,
-          facilityGeoOverrides,
-        };
+          users,
+        ] = await Promise.all([
+          zaychickApi.listFacilities(),
+          zaychickApi.listLines(),
+          zaychickApi.listJoints(),
+          zaychickApi.listLrv(),
+          zaychickApi.listWelders(),
+          zaychickApi.listTechCards(),
+          zaychickApi.listMaterials(),
+          zaychickApi.listTemplates().catch(() => [] as ColumnTemplate[]),
+          zaychickApi.listAuditLogs(1, 200).catch(() => [] as AuditLogEntry[]),
+          perms.category === 'admin'
+            ? zaychickApi.listUsers().catch(() => [] as UserAccount[])
+            : Promise.resolve([session.user]),
+        ]);
 
-        const res = await fetch('/api/db/sync', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
+        isApplyingServerStateRef.current = true;
+        applyGeoFromFacilities(facilities);
+        setProjectLineList(lines);
+        setJoints(joints);
+        setLrvCatalog(lrv);
+        setWelders(welders);
+        setTechCards(techCards);
+        setWeldingMaterials(materials);
+        if (setTemplates && templates.length > 0) {
+          setTemplates(templates);
+        }
+        setAuditLogs(auditLogs);
+        if (users.length > 0) {
+          setUserAccounts(users);
+        }
+
+        setServerDbMeta((prev) => ({
+          engine: 'PostgreSQL 16 (SQLAlchemy Async + Asyncpg)',
+          journalMode: 'MVCC / ACID Transactions',
+          dbFilePath: 'FastAPI REST + SSE Delta Bus',
+          globalRevision: (prev?.globalRevision ?? 0) + 1,
+          lastUpdatedAt: new Date().toISOString(),
+          lastUpdatedBy: session.user.fullName,
+          lastAction: 'Загрузка с сервера (REST API)',
+          counts: {
+            joints: joints.length,
+            projectLineList: lines.length,
+            lrvCatalog: lrv.length,
+            welders: welders.length,
+            techCards: techCards.length,
+            weldingMaterials: materials.length,
+            userAccounts: users.length,
+            auditLogs: auditLogs.length,
           },
-          body: JSON.stringify({
-            clientId: clientIdRef.current,
-            sessionToken,
-            user: currentUser,
-            expectedGlobalRevision: serverDbMeta?.globalRevision,
-            data: payloadData,
-            ...payloadData,
-          }),
-        });
-        if (res.ok) {
-          const out = await res.json();
-          if (out?.meta) setServerDbMeta(out.meta);
+          activeSessions: [
+            {
+              sessionId: clientIdRef.current,
+              login: session.user.login,
+              fullName: session.user.fullName,
+              role: session.user.role,
+              lastSeenAt: new Date().toISOString(),
+            },
+          ],
+        }));
+
+        setIsDbConnected(true);
+        setPendingSyncCount(0);
+        setLastSyncError(null);
+        window.setTimeout(() => {
+          isApplyingServerStateRef.current = false;
+        }, 50);
+        return true;
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          setIsAuthenticated(false);
           setIsDbConnected(true);
-          setPendingSyncCount(0);
-          setLastSyncError(null);
-        } else {
-          setIsDbConnected(false);
-          const errData = await res.json().catch(() => null);
-          const errMsg = errData?.message || `HTTP ${res.status}`;
-          setLastSyncError(errMsg);
-          if (res.status === 409) {
-            console.warn('[ZAYCHICK Sync] Обнаружен конфликт ревизий (OCC 409). Актуализация данных с сервера...');
-            fetchServerDbState(true);
-          } else {
-            console.warn('[ZAYCHICK Sync] Сервер отклонил пакет синхронизации:', res.status, errMsg);
+          setLastSyncError('Требуется авторизация на сервере');
+          setIsLoginModalOpen(true);
+          return false;
+        }
+        setIsDbConnected(false);
+        setLastSyncError(
+          err instanceof Error ? err.message : 'Сервер FastAPI / PostgreSQL недоступен'
+        );
+        return false;
+      } finally {
+        if (!silent) setIsDbSyncing(false);
+      }
+    },
+    [
+      applyGeoFromFacilities,
+      setAuditLogs,
+      setCurrentUser,
+      setIsLoginModalOpen,
+      setJoints,
+      setLrvCatalog,
+      setProjectLineList,
+      setTechCards,
+      setTemplates,
+      setUserAccounts,
+      setWeldingMaterials,
+      setWelders,
+    ]
+  );
+
+  // Initial load via HttpOnly cookie session
+  useEffect(() => {
+    fetchServerDbState(false);
+  }, [fetchServerDbState]);
+
+  const handleDeltaEvent = useCallback(
+    async (env: SseDeltaEnvelope) => {
+      const entityType = env.entity_type || '';
+      const eventName = env.event || '';
+      const entityId = env.entity_id || '';
+
+      setServerDbMeta((prev) =>
+        prev
+          ? {
+              ...prev,
+              globalRevision: prev.globalRevision + 1,
+              lastUpdatedAt: env.timestamp || new Date().toISOString(),
+              lastUpdatedBy: env.updated_by || prev.lastUpdatedBy,
+              lastAction: `SSE: ${eventName}`,
+            }
+          : prev
+      );
+
+      try {
+        if (entityType === 'joint') {
+          if (eventName.endsWith('.deleted') && entityId) {
+            setJoints((prev) => prev.filter((j) => j.id !== entityId));
+          } else if (entityId) {
+            const fresh = await zaychickApi.getJoint(entityId);
+            setJoints((prev) =>
+              prev.some((j) => j.id === fresh.id)
+                ? prev.map((j) => (j.id === fresh.id ? fresh : j))
+                : [fresh, ...prev]
+            );
+          }
+        } else if (entityType === 'line') {
+          const lines = await zaychickApi.listLines();
+          setProjectLineList(lines);
+        } else if (entityType === 'lrv') {
+          const items = await zaychickApi.listLrv();
+          setLrvCatalog(items);
+        } else if (entityType === 'welder') {
+          const welders = await zaychickApi.listWelders();
+          setWelders(welders);
+        } else if (entityType === 'tech_card' || entityType === 'wps') {
+          const cards = await zaychickApi.listTechCards();
+          setTechCards(cards);
+        } else if (entityType === 'welding_material' || entityType === 'material') {
+          const mats = await zaychickApi.listMaterials();
+          setWeldingMaterials(mats);
+        } else if (entityType === 'facility') {
+          const facs = await zaychickApi.listFacilities();
+          applyGeoFromFacilities(facs);
+        } else if (entityType === 'template' && setTemplates) {
+          const tpls = await zaychickApi.listTemplates();
+          if (tpls.length > 0) setTemplates(tpls);
+        } else if (entityType === 'user') {
+          const perms = currentUser ? getUserRolePermissions(currentUser) : null;
+          if (perms?.category === 'admin') {
+            const users = await zaychickApi.listUsers();
+            setUserAccounts(users);
           }
         }
-      } catch (err: any) {
-        setIsDbConnected(false);
-        setLastSyncError(err?.message || 'Сетевой сбой при синхронизации с СУБД');
-      } finally {
-        setIsDbSyncing(false);
+        const logs = await zaychickApi.listAuditLogs(1, 200).catch(() => null);
+        if (logs) setAuditLogs(logs);
+      } catch {
+        // Ignore transient SSE delta fetch failure
       }
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [
-    joints,
-    projectLineList,
-    lrvCatalog,
-    welders,
-    techCards,
-    weldingMaterials,
-    userAccounts,
-    auditLogs,
-    facilityGeoOverrides,
-    currentUser,
-    sessionToken,
-  ]);
+    },
+    [
+      applyGeoFromFacilities,
+      currentUser,
+      setAuditLogs,
+      setJoints,
+      setLrvCatalog,
+      setProjectLineList,
+      setTechCards,
+      setTemplates,
+      setUserAccounts,
+      setWeldingMaterials,
+      setWelders,
+    ]
+  );
+
+  // Pinpoint SSE Delta subscription authenticated strictly via HttpOnly Cookie
+  useEffect(() => {
+    if (!isAuthenticated || typeof EventSource === 'undefined') return;
+
+    const es = new EventSource('/api/events/stream', { withCredentials: true });
+    es.addEventListener('connected', () => {
+      setIsDbConnected(true);
+    });
+
+    const onDelta = (ev: MessageEvent) => {
+      try {
+        const parsed = JSON.parse(ev.data) as SseDeltaEnvelope;
+        void handleDeltaEvent(parsed);
+      } catch {
+        // ignore malformed frames
+      }
+    };
+
+    for (const evtName of DELTA_EVENTS) {
+      es.addEventListener(evtName, onDelta);
+    }
+
+    es.onerror = () => {
+      // Browser EventSource reconnects automatically
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [isAuthenticated, handleDeltaEvent]);
+
+  const triggerImmediateSync = useCallback(async (): Promise<boolean> => {
+    return fetchServerDbState(false);
+  }, [fetchServerDbState]);
+
+  const bumpRevisionMeta = useCallback((actionLabel: string, byUser?: string) => {
+    setServerDbMeta((prev) =>
+      prev
+        ? {
+            ...prev,
+            globalRevision: prev.globalRevision + 1,
+            lastUpdatedAt: new Date().toISOString(),
+            lastUpdatedBy: byUser || prev.lastUpdatedBy,
+            lastAction: actionLabel,
+          }
+        : prev
+    );
+  }, []);
 
   return {
     serverDbMeta,
     setServerDbMeta,
+    bumpRevisionMeta,
     isDbConnected,
     setIsDbConnected,
     isDbSyncing,
     setIsDbSyncing,
+    isAuthenticated,
+    setIsAuthenticated,
     pendingSyncCount,
     setPendingSyncCount,
     lastSyncError,

@@ -13,7 +13,10 @@ import {
   isJointCurrentlyInRepair,
   isJointFullyAccepted,
 } from '../utils/weldingLogic';
-import { triggerBlobDownload } from '../utils/excelUtils';
+import {
+  exportReadinessReportToExcel,
+  triggerBlobDownload,
+} from '../utils/excelUtils';
 import {
   applyTableColumnFiltersAndSort,
   TableColumnFilterHeader,
@@ -220,6 +223,16 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
     setTimeout(() => setExportToast(''), 4000);
   };
 
+  const handleExportReportXlsx = async () => {
+    try {
+      await exportReadinessReportToExcel(condition);
+      setExportToast(`Серверный отчёт готовности и квот НК (.XLSX) успешно сформирован.`);
+    } catch (err: any) {
+      setExportToast(`Ошибка серверной выгрузки .XLSX: ${err?.message || 'Проверьте авторизацию'}`);
+    }
+    setTimeout(() => setExportToast(''), 4500);
+  };
+
   return (
     <div className="space-y-4">
       {exportToast && (
@@ -277,8 +290,17 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
 
           <button
             type="button"
+            onClick={handleExportReportXlsx}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 whitespace-nowrap cursor-pointer"
+          >
+            <Download className="w-4 h-4" />
+            <span>Выгрузить (.XLSX)</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleExportReport}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] whitespace-nowrap cursor-pointer"
           >
             <Download className="w-4 h-4" />
             <span>Выгрузить сводку (.CSV)</span>

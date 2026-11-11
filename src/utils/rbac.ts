@@ -9,6 +9,7 @@ export type RbacRoleCategory = 'admin' | 'technologist' | 'pto' | 'ndt' | 'custo
 
 export type RbacUserPayload = {
   role?: string;
+  backendRole?: 'ADMIN' | 'PTO' | 'OGS' | 'PIL' | 'VIEWER';
   department?: string;
   login?: string;
   fullName?: string;
@@ -162,9 +163,14 @@ export function detectRbacRoleCategory(
   user: RbacUserPayload | null | undefined
 ): RbacRoleCategory {
   if (!user) return 'pto';
-  if (user.isAdmin === true) {
+  if (user.isAdmin === true || user.backendRole === 'ADMIN') {
     return 'admin';
   }
+  if (user.backendRole === 'VIEWER') return 'customer';
+  if (user.backendRole === 'OGS') return 'technologist';
+  if (user.backendRole === 'PIL') return 'ndt';
+  if (user.backendRole === 'PTO') return 'pto';
+
   const combined = `${user.role || ''} ${user.department || ''} ${user.login || ''}`.toLowerCase();
 
   if (
@@ -181,6 +187,7 @@ export function detectRbacRoleCategory(
     combined.includes('заказчик') ||
     combined.includes('стройконтрол') ||
     combined.includes('строительного контроля') ||
+    combined.includes('viewer') ||
     combined.startsWith('cust_')
   ) {
     return 'customer';

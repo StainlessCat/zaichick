@@ -100,11 +100,11 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
                       : 'bg-amber-400/20 text-amber-200 border border-amber-400/40'
                   }`}
                 >
-                  {isConnected ? 'ONLINE · WAL' : 'АВТОНОМНЫЙ КЭШ'}
+                  {isConnected ? 'ONLINE · POSTGRESQL' : 'НЕТ СВЯЗИ С СЕРВЕРОМ'}
                 </span>
               </div>
               <p className="text-xs text-sky-200 mt-0.5">
-                Многопользовательское транзакционное ядро SQLite 3 (WAL) + контроль версий записей (OCC HTTP 409)
+                Многопользовательское транзакционное ядро PostgreSQL 16 + контроль версий записей (OCC HTTP 409)
               </p>
             </div>
           </div>
@@ -128,10 +128,10 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
                 <span>Ядро серверной СУБД</span>
               </div>
               <div className="mt-1 font-bold text-slate-900 text-sm">
-                {dbMeta?.engine || 'SQLite 3 (Native WAL)'}
+                {dbMeta?.engine || 'PostgreSQL 16 (Asyncpg)'}
               </div>
               <div className="text-[11px] font-mono text-slate-500 mt-0.5">
-                Файл: {dbMeta?.dbFilePath || 'data/zaychick.sqlite'}
+                Endpoint: {dbMeta?.dbFilePath || 'PostgreSQL /api/* + SSE /api/events/stream'}
               </div>
             </div>
 
@@ -183,7 +183,7 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
                 <span>Реляционные таблицы в единой серверной базе данных:</span>
               </div>
               <span className="text-[11px] font-mono text-emerald-700 font-semibold">
-                PRAGMA journal_mode = WAL
+                PostgreSQL 16 (MVCC + OCC)
               </span>
             </div>
 

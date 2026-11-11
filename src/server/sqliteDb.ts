@@ -51,6 +51,93 @@ export function sanitizeUserAccountForClient(acc: UserAccount): UserAccount {
   return safe as UserAccount;
 }
 
+const IGNORED_JOINT_META_KEYS = new Set(['version', 'updatedAt', 'updatedBy']);
+
+function areJointPayloadsEquivalent(a: WeldJoint, b: WeldJoint): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    if (IGNORED_JOINT_META_KEYS.has(k)) continue;
+    const va = (a as unknown as Record<string, unknown>)[k];
+    const vb = (b as unknown as Record<string, unknown>)[k];
+    if (va === vb) continue;
+    if (va == null && vb == null) continue;
+    if (JSON.stringify(va ?? null) !== JSON.stringify(vb ?? null)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function normalizeJointPairKey(
+  joint: Pick<WeldJoint, 'uniqueLineId' | 'jointNumber'>
+): string {
+  const line = (joint.uniqueLineId || '').trim().toLowerCase();
+  const num = (joint.jointNumber || '').trim().toLowerCase();
+  return `${line}\u0000${num}`;
+}
+
+export interface QuarantinedDuplicateJointRecord {
+  quarantineId: string;
+  originalJointId: string;
+  keptJointId: string;
+  normalizedUniqueLineId: string;
+  normalizedJointNumber: string;
+  reason: string;
+  quarantinedAt: string;
+  jointNumber: string;
+  uniqueLineId: string;
+  rdCode: string;
+  objectName: string;
+  version: number;
+  updatedAt: string;
+  updatedBy: string;
+  payload: WeldJoint;
+}
+
+export function mapDbMutationResultToHttpError(
+  result:
+    | { status: 'forbidden'; error: string; meta: unknown }
+    | { status: 'duplicate'; error: string; meta: unknown }
+    | { status: 'validation_error'; error: string; errors: unknown[]; meta: unknown }
+    | { status: string }
+): { httpStatus: 403 | 409 | 422; body: Record<string, unknown> } | null {
+  if (result.status === 'forbidden' && 'error' in result) {
+    return {
+      httpStatus: 403,
+      body: {
+        status: 'error',
+        code: 'FORBIDDEN',
+        message: result.error,
+        meta: result.meta,
+      },
+    };
+  }
+  if (result.status === 'duplicate' && 'error' in result) {
+    return {
+      httpStatus: 409,
+      body: {
+        status: 'error',
+        code: 'DUPLICATE_JOINT_NUMBER',
+        message: result.error,
+        meta: result.meta,
+      },
+    };
+  }
+  if (result.status === 'validation_error' && 'error' in result) {
+    return {
+      httpStatus: 422,
+      body: {
+        status: 'error',
+        code: 'DOMAIN_VALIDATION_FAILED',
+        message: result.error,
+        errors: 'errors' in result ? result.errors : [],
+        meta: result.meta,
+      },
+    };
+  }
+  return null;
+}
+
 const require = createRequire(import.meta.url);
 
 export interface UnifiedDbDataPayload {
@@ -135,6 +222,7 @@ export class UnifiedServerDatabase {
   public readonly jsonFallbackPath: string;
   public readonly backupsDir: string;
   private readonly disableStartupBackup: boolean;
+  private lastPreMigrationBackupPath: string | null = null;
   private activeSessions = new Map<
     string,
     {
@@ -184,6 +272,9 @@ export class UnifiedServerDatabase {
       fs.mkdirSync(this.dataDir, { recursive: true });
     }
 
+    const hadExistingDbFile =
+      fs.existsSync(this.sqliteDbPath) && fs.statSync(this.sqliteDbPath).size > 0;
+
     try {
       const nodeSqlite = require('node:sqlite');
       if (nodeSqlite && nodeSqlite.DatabaseSync) {
@@ -191,13 +282,31 @@ export class UnifiedServerDatabase {
         this.sqliteDb.exec('PRAGMA journal_mode = WAL;');
         this.sqliteDb.exec('PRAGMA synchronous = NORMAL;');
         this.sqliteDb.exec('PRAGMA busy_timeout = 5000;');
-        this.createSchema();
+        this.createBaseTables();
+
+        const migrationNeeded =
+          !this.hasUniqueJointIndex() || this.hasDuplicateJointsInTable();
+        if (hadExistingDbFile && migrationNeeded) {
+          const preMigrationBackup = this.createBackup('pre-migration');
+          if (!preMigrationBackup.success) {
+            throw new Error(
+              preMigrationBackup.error ||
+                'Не удалось создать согласованный предмиграционный бэкап перед миграцией дубликатов'
+            );
+          }
+          this.lastPreMigrationBackupPath = preMigrationBackup.backupPath || null;
+        }
+
+        this.migrateDuplicateJointsAndEnsureIndex();
         this.ensureSeeded();
         this.restorePersistentSessions();
         this.createStartupBackup();
         return;
       }
-    } catch {
+    } catch (err) {
+      if (hadExistingDbFile && this.sqliteDb) {
+        throw err;
+      }
       // Fallback if running on older Node without node:sqlite
     }
 
@@ -205,6 +314,78 @@ export class UnifiedServerDatabase {
     this.journalMode = 'ATOMIC_RENAME';
     this.ensureSeededFallback();
     this.createStartupBackup();
+  }
+
+  public getLastPreMigrationBackupPath(): string | null {
+    return this.lastPreMigrationBackupPath;
+  }
+
+  public getQuarantinedDuplicateJoints(): QuarantinedDuplicateJointRecord[] {
+    if (!this.sqliteDb) return [];
+    const rows = this.sqliteDb
+      .prepare(
+        `SELECT
+          quarantine_id,
+          original_joint_id,
+          kept_joint_id,
+          normalized_unique_line_id,
+          normalized_joint_number,
+          reason,
+          quarantined_at,
+          joint_number,
+          unique_line_id,
+          rd_code,
+          object_name,
+          version,
+          updated_at,
+          updated_by,
+          payload_json
+        FROM duplicate_joints_quarantine
+        ORDER BY quarantined_at ASC, quarantine_id ASC`
+      )
+      .all() as any[];
+
+    return rows.map((r) => ({
+      quarantineId: r.quarantine_id,
+      originalJointId: r.original_joint_id,
+      keptJointId: r.kept_joint_id,
+      normalizedUniqueLineId: r.normalized_unique_line_id,
+      normalizedJointNumber: r.normalized_joint_number,
+      reason: r.reason,
+      quarantinedAt: r.quarantined_at,
+      jointNumber: r.joint_number,
+      uniqueLineId: r.unique_line_id,
+      rdCode: r.rd_code,
+      objectName: r.object_name,
+      version: Number(r.version) || 1,
+      updatedAt: r.updated_at,
+      updatedBy: r.updated_by,
+      payload: JSON.parse(r.payload_json) as WeldJoint,
+    }));
+  }
+
+  private hasUniqueJointIndex(): boolean {
+    if (!this.sqliteDb) return false;
+    const row = this.sqliteDb
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_weld_joints_line_number'"
+      )
+      .get();
+    return Boolean(row);
+  }
+
+  private hasDuplicateJointsInTable(): boolean {
+    if (!this.sqliteDb) return false;
+    const row = this.sqliteDb
+      .prepare(
+        `SELECT 1 AS has_dup
+         FROM weld_joints
+         GROUP BY LOWER(TRIM(unique_line_id)), LOWER(TRIM(joint_number))
+         HAVING COUNT(*) > 1
+         LIMIT 1`
+      )
+      .get();
+    return Boolean(row);
   }
 
   /**
@@ -347,7 +528,7 @@ export class UnifiedServerDatabase {
     } catch {}
   }
 
-  private createSchema() {
+  private createBaseTables() {
     if (!this.sqliteDb) return;
     this.sqliteDb.exec(`
       CREATE TABLE IF NOT EXISTS db_meta (
@@ -448,20 +629,140 @@ export class UnifiedServerDatabase {
         expires_at TEXT NOT NULL
       );
 
-      -- Автоматическая дедупликация исторических дубликатов и создание уникального индекса
-      DELETE FROM weld_joints WHERE id IN (
-        SELECT id FROM (
-          SELECT id, ROW_NUMBER() OVER (
-            PARTITION BY LOWER(TRIM(unique_line_id)), LOWER(TRIM(joint_number))
-            ORDER BY updated_at DESC, version DESC, id DESC
-          ) as rn
-          FROM weld_joints
-        ) WHERE rn > 1
+      CREATE TABLE IF NOT EXISTS duplicate_joints_quarantine (
+        quarantine_id TEXT PRIMARY KEY,
+        original_joint_id TEXT NOT NULL,
+        kept_joint_id TEXT NOT NULL,
+        normalized_unique_line_id TEXT NOT NULL,
+        normalized_joint_number TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        quarantined_at TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        joint_number TEXT NOT NULL,
+        unique_line_id TEXT NOT NULL,
+        rd_code TEXT NOT NULL,
+        object_name TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL,
+        updated_by TEXT NOT NULL,
+        payload_json TEXT NOT NULL
       );
-
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_weld_joints_line_number
-      ON weld_joints (LOWER(TRIM(unique_line_id)), LOWER(TRIM(joint_number)));
     `);
+  }
+
+  private migrateDuplicateJointsAndEnsureIndex() {
+    if (!this.sqliteDb) return;
+
+    this.sqliteDb.exec('BEGIN IMMEDIATE;');
+    try {
+      const duplicateRows = this.sqliteDb
+        .prepare(
+          `WITH ranked AS (
+             SELECT
+               id,
+               sort_order,
+               joint_number,
+               unique_line_id,
+               rd_code,
+               object_name,
+               version,
+               updated_at,
+               updated_by,
+               payload_json,
+               LOWER(TRIM(unique_line_id)) AS norm_line,
+               LOWER(TRIM(joint_number)) AS norm_num,
+               FIRST_VALUE(id) OVER (
+                 PARTITION BY LOWER(TRIM(unique_line_id)), LOWER(TRIM(joint_number))
+                 ORDER BY updated_at DESC, version DESC, id DESC
+               ) AS kept_id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY LOWER(TRIM(unique_line_id)), LOWER(TRIM(joint_number))
+                 ORDER BY updated_at DESC, version DESC, id DESC
+               ) AS rn
+             FROM weld_joints
+           )
+           SELECT
+             id,
+             sort_order,
+             joint_number,
+             unique_line_id,
+             rd_code,
+             object_name,
+             version,
+             updated_at,
+             updated_by,
+             payload_json,
+             norm_line,
+             norm_num,
+             kept_id
+           FROM ranked
+           WHERE rn > 1`
+        )
+        .all() as any[];
+
+      if (duplicateRows.length > 0) {
+        const nowIso = new Date().toISOString();
+        const insertQuarantine = this.sqliteDb.prepare(`
+          INSERT OR IGNORE INTO duplicate_joints_quarantine (
+            quarantine_id,
+            original_joint_id,
+            kept_joint_id,
+            normalized_unique_line_id,
+            normalized_joint_number,
+            reason,
+            quarantined_at,
+            sort_order,
+            joint_number,
+            unique_line_id,
+            rd_code,
+            object_name,
+            version,
+            updated_at,
+            updated_by,
+            payload_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const deleteDuplicateJoint = this.sqliteDb.prepare(
+          'DELETE FROM weld_joints WHERE id = ?'
+        );
+
+        for (const row of duplicateRows) {
+          const quarantineId = `q-${row.id}`;
+          const reason = `Перемещено в карантин при создании уникального индекса (line="${row.norm_line}", joint="${row.norm_num}"): дубликат записи, оставлена более актуальная запись ${row.kept_id}`;
+          insertQuarantine.run(
+            quarantineId,
+            row.id,
+            row.kept_id,
+            row.norm_line,
+            row.norm_num,
+            reason,
+            nowIso,
+            Number(row.sort_order) || 0,
+            row.joint_number || '',
+            row.unique_line_id || '',
+            row.rd_code || '',
+            row.object_name || '',
+            Number(row.version) || 1,
+            row.updated_at || '',
+            row.updated_by || '',
+            row.payload_json
+          );
+          deleteDuplicateJoint.run(row.id);
+        }
+      }
+
+      this.sqliteDb.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_weld_joints_line_number
+        ON weld_joints (LOWER(TRIM(unique_line_id)), LOWER(TRIM(joint_number)));
+      `);
+
+      this.sqliteDb.exec('COMMIT;');
+    } catch (err) {
+      try {
+        this.sqliteDb.exec('ROLLBACK;');
+      } catch {}
+      throw err;
+    }
   }
 
   private ensureSeeded() {
@@ -1470,6 +1771,21 @@ export class UnifiedServerDatabase {
         )
       : params.joint;
 
+    // Явная проверка дубликата (линия + номер стыка) до доменной валидации и записи в SQLite
+    const incomingPairKey = normalizeJointPairKey(sanitizedIncomingJoint);
+    const duplicateJoint = data.joints.find(
+      (j) =>
+        j.id !== sanitizedIncomingJoint.id &&
+        normalizeJointPairKey(j) === incomingPairKey
+    );
+    if (duplicateJoint) {
+      return {
+        status: 'duplicate',
+        error: `Стык с номером «${sanitizedIncomingJoint.jointNumber}» уже зарегистрирован на линии «${sanitizedIncomingJoint.lineNumber || sanitizedIncomingJoint.uniqueLineId}» (ID: ${duplicateJoint.id}). Дублирование номеров стыков на одной линии запрещено.`,
+        meta,
+      };
+    }
+
     // Доменная валидация перед сохранением стыка (серверный барьер НТД)
     const validationSummary = validateWeldJointComprehensive({
       joint: sanitizedIncomingJoint,
@@ -1579,6 +1895,22 @@ export class UnifiedServerDatabase {
         expectedRevision: number;
         meta: ServerDbMetadata;
         data: UnifiedDbDataPayload;
+      }
+    | {
+        status: 'forbidden';
+        error: string;
+        meta: ServerDbMetadata;
+      }
+    | {
+        status: 'duplicate';
+        error: string;
+        meta: ServerDbMetadata;
+      }
+    | {
+        status: 'validation_error';
+        error: string;
+        errors: ValidationIssue[];
+        meta: ServerDbMetadata;
       } {
     const current = this.readInternalFullState();
 
@@ -1617,22 +1949,85 @@ export class UnifiedServerDatabase {
     const perms = getUserRolePermissions(effectiveUser);
     const bypassRbac = Boolean(params.forceOverwrite);
 
-    // При обновлении стыков автоматически инкрементируем version тех стыков, которые изменились, и применяем RBAC
+    // Сначала вычисляем доступные справочники с учётом RBAC, чтобы доменная проверка стыков использовала актуальный состав слияния
+    const canEditLineList = bypassRbac || perms.canEditLineList;
+    const canEditLrv = bypassRbac || perms.canEditLrvCatalog;
+    const canEditTech = bypassRbac || perms.canEditWeldingTech;
+    const canEditGeo = bypassRbac || perms.canEditLineList || perms.category === 'admin';
+    const canEditUsers =
+      bypassRbac ||
+      perms.category === 'admin' ||
+      Boolean((effectiveUser as any)?.isAdmin);
+
+    const nextProjectLineList = canEditLineList
+      ? params.data.projectLineList ?? current.data.projectLineList
+      : current.data.projectLineList;
+    const nextLrvCatalog = canEditLrv
+      ? params.data.lrvCatalog ?? current.data.lrvCatalog
+      : current.data.lrvCatalog;
+    const nextWelders = canEditTech
+      ? params.data.welders ?? current.data.welders
+      : current.data.welders;
+    const nextTechCards = canEditTech
+      ? params.data.techCards ?? current.data.techCards
+      : current.data.techCards;
+    const nextWeldingMaterials = canEditTech
+      ? params.data.weldingMaterials ?? current.data.weldingMaterials
+      : current.data.weldingMaterials;
+
+    // При обновлении стыков применяем RBAC, правила слияния, проверку дубликатов и доменную валидацию ТОЛЬКО для затронутых записей
     const prevJointMap = new Map(current.data.joints.map((j) => [j.id, j]));
     let nextJoints = current.data.joints;
+    let touchedJoints: WeldJoint[] = [];
+
     if (params.data.joints !== undefined) {
+      const incomingHasNewJoints = params.data.joints.some(
+        (j) => !prevJointMap.has(j.id)
+      );
+
+      if (!bypassRbac && !perms.canCreateOrDeleteJoints && incomingHasNewJoints) {
+        return {
+          status: 'forbidden',
+          error:
+            'У вашей роли отсутствуют полномочия на заведение новых сварных стыков в систему',
+          meta: current.meta,
+        };
+      }
+
       if (
         !bypassRbac &&
         !perms.canCreateOrDeleteJoints &&
         !perms.canEditPrepAndWeldingFields &&
         !perms.canEditNdtFields
       ) {
+        const hasAnyJointEdit = params.data.joints.some((incoming) => {
+          const prev = prevJointMap.get(incoming.id);
+          return !prev || !areJointPayloadsEquivalent(prev, incoming);
+        });
+        if (hasAnyJointEdit) {
+          return {
+            status: 'forbidden',
+            error:
+              'У вашей роли отсутствуют полномочия на изменение данных сварных стыков',
+            meta: current.meta,
+          };
+        }
         nextJoints = current.data.joints;
       } else {
-        const rawIncoming =
-          !bypassRbac && !perms.canCreateOrDeleteJoints
-            ? params.data.joints.filter((j) => prevJointMap.has(j.id))
-            : params.data.joints;
+        let rawIncoming: WeldJoint[];
+        if (!bypassRbac && !perms.canCreateOrDeleteJoints) {
+          // Роли без права удаления/создания могут обновлять только существующие стыки, не удаляя серверные записи
+          const incomingById = new Map(
+            params.data.joints
+              .filter((j) => prevJointMap.has(j.id))
+              .map((j) => [j.id, j])
+          );
+          rawIncoming = current.data.joints.map(
+            (prev) => incomingById.get(prev.id) ?? prev
+          );
+        } else {
+          rawIncoming = params.data.joints;
+        }
 
         nextJoints = rawIncoming.map((rawJ) => {
           const prev = prevJointMap.get(rawJ.id);
@@ -1642,7 +2037,8 @@ export class UnifiedServerDatabase {
           if (!prev) {
             return { ...j, version: j.version ?? 1 };
           }
-          if (prev.updatedAt !== j.updatedAt) {
+          const payloadChanged = !areJointPayloadsEquivalent(prev, j);
+          if (payloadChanged || prev.updatedAt !== j.updatedAt) {
             return {
               ...j,
               version:
@@ -1652,17 +2048,69 @@ export class UnifiedServerDatabase {
           }
           return { ...j, version: prev.version ?? j.version ?? 1 };
         });
+
+        touchedJoints = nextJoints.filter((j) => {
+          const prev = prevJointMap.get(j.id);
+          return !prev || !areJointPayloadsEquivalent(prev, j);
+        });
       }
     }
 
-    const canEditLineList = bypassRbac || perms.canEditLineList;
-    const canEditLrv = bypassRbac || perms.canEditLrvCatalog;
-    const canEditTech = bypassRbac || perms.canEditWeldingTech;
-    const canEditGeo = bypassRbac || perms.canEditLineList || perms.category === 'admin';
-    const canEditUsers =
-      bypassRbac ||
-      perms.category === 'admin' ||
-      Boolean((effectiveUser as any)?.isAdmin);
+    if (touchedJoints.length > 0) {
+      const touchedIds = new Set(touchedJoints.map((j) => j.id));
+      const seenByPair = new Map<string, WeldJoint>();
+
+      for (const j of nextJoints) {
+        const key = normalizeJointPairKey(j);
+        const existing = seenByPair.get(key);
+        if (existing) {
+          if (touchedIds.has(j.id) || touchedIds.has(existing.id)) {
+            const conflicting = touchedIds.has(j.id) ? j : existing;
+            const other = conflicting.id === j.id ? existing : j;
+            return {
+              status: 'duplicate',
+              error: `Стык с номером «${conflicting.jointNumber}» уже зарегистрирован на линии «${conflicting.lineNumber || conflicting.uniqueLineId}» (ID: ${other.id}). Дублирование номеров стыков на одной линии запрещено.`,
+              meta: current.meta,
+            };
+          }
+        } else {
+          seenByPair.set(key, j);
+        }
+      }
+
+      const aggregatedErrors: ValidationIssue[] = [];
+      const failedJointLabels: string[] = [];
+
+      for (const tj of touchedJoints) {
+        const validationSummary = validateWeldJointComprehensive({
+          joint: tj,
+          allJoints: nextJoints,
+          projectLineList: nextProjectLineList,
+          lrvCatalog: nextLrvCatalog,
+          welders: nextWelders,
+          techCards: nextTechCards,
+          weldingMaterials: nextWeldingMaterials,
+        });
+        if (!validationSummary.isValidToSave) {
+          failedJointLabels.push(tj.jointNumber || tj.id);
+          for (const err of validationSummary.errors) {
+            aggregatedErrors.push({
+              ...err,
+              message: `Стык №${tj.jointNumber || tj.id}: ${err.message}`,
+            });
+          }
+        }
+      }
+
+      if (aggregatedErrors.length > 0) {
+        return {
+          status: 'validation_error',
+          error: `Нарушение доменных правил и требований НТД (${failedJointLabels.slice(0, 5).join(', ')}): обнаружено ${aggregatedErrors.length} критических несоответствий`,
+          errors: aggregatedErrors,
+          meta: current.meta,
+        };
+      }
+    }
 
     const canClearOrShrinkAuditLogs = bypassRbac || perms.category === 'admin';
     const nextAuditLogs =
@@ -1689,21 +2137,11 @@ export class UnifiedServerDatabase {
 
     const mergedData: UnifiedDbDataPayload = {
       joints: nextJoints,
-      projectLineList: canEditLineList
-        ? params.data.projectLineList ?? current.data.projectLineList
-        : current.data.projectLineList,
-      lrvCatalog: canEditLrv
-        ? params.data.lrvCatalog ?? current.data.lrvCatalog
-        : current.data.lrvCatalog,
-      welders: canEditTech
-        ? params.data.welders ?? current.data.welders
-        : current.data.welders,
-      techCards: canEditTech
-        ? params.data.techCards ?? current.data.techCards
-        : current.data.techCards,
-      weldingMaterials: canEditTech
-        ? params.data.weldingMaterials ?? current.data.weldingMaterials
-        : current.data.weldingMaterials,
+      projectLineList: nextProjectLineList,
+      lrvCatalog: nextLrvCatalog,
+      welders: nextWelders,
+      techCards: nextTechCards,
+      weldingMaterials: nextWeldingMaterials,
       userAccounts: nextUserAccounts,
       auditLogs: nextAuditLogs,
       facilityGeoOverrides: canEditGeo

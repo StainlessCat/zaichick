@@ -87,6 +87,7 @@ export interface WeatherStationMetadata {
 
 export interface FacilityObject {
   id: string;
+  version?: number;
   name: string;
   shortName: string;
   region: string;
@@ -121,6 +122,7 @@ export interface FacilityLocationPreset {
 
 export interface LRVItem {
   id: string;
+  facilityId?: string;
   lrvCode: string; // Уникальный внутренний код закупок для конкретного Шифра РД
   rdCode: string; // Строгая привязка к Шифру РД
   objectName: string;
@@ -163,6 +165,7 @@ export interface WelderNaksCert {
  */
 export interface WelderProfile {
   id?: string;
+  version?: number;
   stamp: string; // Личное клеймо сварщика (напр. А142) или бригадное клеймо (напр. БР-01)
   isBrigade?: boolean; // Признак бригадного клейма
   brigadeMembers?: string[]; // Клейма сварщиков, входящих в бригаду
@@ -207,6 +210,7 @@ export type ElementCombination =
  */
 export interface TechCardItem {
   id: string;
+  version?: number;
   number: string; // Шифр ТК (напр. ТК-045-РАД/РД-01)
   title: string; // Наименование ТК
   weldingType: WeldingType; // Способ сварки
@@ -227,6 +231,7 @@ export interface TechCardItem {
  */
 export interface WeldingMaterialCertificate {
   id: string;
+  version?: number;
   brandAndDiameter: string; // Марка и диаметр (напр. Св-08Г2С Ø2.0 / УОНИ-13/55 Ø3.0)
   materialType: 'Проволока сварочная' | 'Электроды покрытые' | 'Защитный газ' | 'Комбинированный комплект (РАД+РД)';
   weldingMethod: WeldingType;
@@ -248,6 +253,8 @@ export interface InspectorProfile {
  */
 export interface WeldJoint {
   id: string;
+  lineId?: string;
+  facilityId?: string;
   // Архитектурная привязка (из лайнлиста, нередактируемый справочный блок для созданного стыка)
   objectName: string;
   rdCode: string;
@@ -497,12 +504,17 @@ export interface AuditLogEntry {
 }
 
 export interface UserAccount {
+  id?: string;
   login: string;
   password?: string;
   fullName: string;
   role: string;
+  backendRole?: 'ADMIN' | 'PTO' | 'OGS' | 'PIL' | 'VIEWER';
   department: string;
+  positionTitle?: string;
+  isActive?: boolean;
   sessionNumber: number;
+  version?: number;
   isAdmin?: boolean;
   passwordHash?: string;
   passwordSalt?: string;
@@ -515,6 +527,7 @@ export interface UserAccount {
  */
 export interface ProjectLineItem {
   id: string;
+  facilityId?: string;
   objectName: string; // 1. Название объекта
   rdCode: string; // 2. Шифр РД
   lineNumber: string; // 3. Номер линии

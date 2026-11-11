@@ -1,11 +1,5 @@
-import type * as XLSXType from 'xlsx';
-
-let cachedXlsx: typeof XLSXType | null = null;
-async function getXlsx(): Promise<typeof XLSXType> {
-  if (cachedXlsx) return cachedXlsx;
-  cachedXlsx = await import('xlsx');
-  return cachedXlsx;
-}
+import { zaychickApi } from '../api';
+import { parseSpreadsheetFile, triggerBlobDownload } from './excelUtils';
 import {
   LRVItem,
   ProjectLineItem,
@@ -670,115 +664,25 @@ export function parseAndValidateJointsImport(
 }
 
 /**
- * Генерирует и скачивает шаблон Excel (.xlsx) для импорта стыков с образцами данных
+ * Скачивает шаблон Excel (.xlsx) для импорта стыков с серверного openpyxl эндпоинта
  */
 export async function exportJointsExcelTemplate(
   projectLineList: ProjectLineItem[],
-  lrvCatalog: LRVItem[]
+  _lrvCatalog: LRVItem[]
 ): Promise<void> {
-  const line1 = projectLineList[0] || {
-    rdCode: '0092.049.Р.13/1 0004 УКПГ.045.0077.001-TX3',
-    lineNumber: 'ФП1.2/1',
-  };
-  const line2 = projectLineList[1] || projectLineList[0] || {
-    rdCode: '0092.049.Р.13/1 0004 УКПГ.045.0077.001-TX3',
-    lineNumber: 'ГС-104/2',
-  };
-
-  const lrv1 = lrvCatalog[0]?.lrvCode || 'ЛРВ-001ТХ3-0412';
-  const lrv2 = lrvCatalog[1]?.lrvCode || 'ЛРВ-001ТХ3-0415';
-  const lrv3 = lrvCatalog[2]?.lrvCode || 'ЛРВ-001ТХ3-0428';
-
-  const rows = [
-    {
-      'Шифр РД': line1.rdCode,
-      'Номер линии': line1.lineNumber,
-      'Номер стыка': '010',
-      'Диаметр, мм': 159,
-      'Толщина стенки, мм': 8.0,
-      'Код ЛРВ 1': lrv1,
-      'Код ЛРВ 2': lrv2,
-      'Тип соединения (ГОСТ 16037-80)': 'С17',
-    },
-    {
-      'Шифр РД': line1.rdCode,
-      'Номер линии': line1.lineNumber,
-      'Номер стыка': '020',
-      'Диаметр, мм': 159,
-      'Толщина стенки, мм': 8.0,
-      'Код ЛРВ 1': lrv2,
-      'Код ЛРВ 2': lrv3,
-      'Тип соединения (ГОСТ 16037-80)': 'С17',
-    },
-    {
-      'Шифр РД': line1.rdCode,
-      'Номер линии': line1.lineNumber,
-      'Номер стыка': '011',
-      'Диаметр, мм': 159,
-      'Толщина стенки, мм': 8.0,
-      'Код ЛРВ 1': lrv1,
-      'Код ЛРВ 2': lrv2,
-      'Тип соединения (ГОСТ 16037-80)': 'С17',
-    },
-    {
-      'Шифр РД': line2.rdCode,
-      'Номер линии': line2.lineNumber,
-      'Номер стыка': '010',
-      'Диаметр, мм': 89,
-      'Толщина стенки, мм': 5.0,
-      'Код ЛРВ 1': lrvCatalog[3]?.lrvCode || '001-TX3-04',
-      'Код ЛРВ 2': lrvCatalog[4]?.lrvCode || '001-TX3-05',
-      'Тип соединения (ГОСТ 16037-80)': 'У4',
-    },
-  ];
-
-  const XLSX = await getXlsx();
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  worksheet['!cols'] = [
-    { wch: 38 }, // Шифр РД
-    { wch: 16 }, // Номер линии
-    { wch: 14 }, // Номер стыка
-    { wch: 14 }, // Диаметр, мм
-    { wch: 20 }, // Толщина стенки, мм
-    { wch: 16 }, // Код ЛРВ 1
-    { wch: 16 }, // Код ЛРВ 2
-    { wch: 28 }, // Тип соединения
-  ];
-
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Шаблон импорта стыков');
-  try {
-    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    const blob = new Blob([wbout], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'ZAYCHICK_Shablon_Import_Stykov.xlsx';
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.setTimeout(() => URL.revokeObjectURL(url), 2500);
-  } catch {
-    XLSX.writeFile(workbook, 'ZAYCHICK_Shablon_Import_Stykov.xlsx');
-  }
+  const line1 = projectLineList[0];
+  const { blob, filename } = await zaychickApi.downloadJointsTemplateXlsx(
+    line1?.rdCode,
+    line1?.lineNumber
+  );
+  triggerBlobDownload(blob, filename);
 }
 
 /**
- * Читает файл Excel (.xlsx, .xls) или CSV в массив JSON объектов
+ * Читает файл Excel (.xlsx) через серверный openpyxl или CSV в массив JSON объектов
  */
 export async function readExcelFileRows(
   file: File
 ): Promise<Record<string, unknown>[]> {
-  const XLSX = await getXlsx();
-  const arrayBuffer = await file.arrayBuffer();
-  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) return [];
-  const worksheet = workbook.Sheets[firstSheetName];
-  return XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-    defval: '',
-  });
+  return parseSpreadsheetFile(file);
 }

@@ -1395,20 +1395,34 @@ export interface JournalCompletenessSummary {
     missingTechCards: number;
     missingVikReports: number;
     missingNdtReports: number;
+    missingDupNdtReports: number;
     missingRepairDetails: number;
+    missingRepairVikReports: number;
+    missingRepairNdtReports: number;
+    missingRepairDupNdtReports: number;
     missingResponsiblePerson: number;
   };
   missingItems: JournalJointMissingItem[];
 }
 
+function hasNonEmptyText(val?: string | null): boolean {
+  return Boolean(val && String(val).trim() !== '');
+}
+
+function isConductedOutcome(res?: string | null): boolean {
+  return res === 'Годен' || res === 'Ремонт' || res === 'Вырезать';
+}
+
 /**
  * Проверяет нормативную полноту сведений журнала сварочных работ (СТО Газпром / ГОСТ)
- * перед официальной выгрузкой или печатью.
+ * перед официальной выгрузкой или печатью, сверяя обязательные реквизиты с фактически
+ * проведёнными видами контроля и экспортируемыми графами выбранной формы.
  */
 export function validateJournalCompleteness(
   joints: WeldJoint[],
   standard: JournalStandard = 'СТО Газпром 15-1.1-002-2023'
 ): JournalCompletenessSummary {
+  const isStoGazprom = standard !== 'ГОСТ 32569-2013';
   const missingItems: JournalJointMissingItem[] = [];
   const missingSummary = {
     missingDates: 0,
@@ -1416,7 +1430,11 @@ export function validateJournalCompleteness(
     missingTechCards: 0,
     missingVikReports: 0,
     missingNdtReports: 0,
+    missingDupNdtReports: 0,
     missingRepairDetails: 0,
+    missingRepairVikReports: 0,
+    missingRepairNdtReports: 0,
+    missingRepairDupNdtReports: 0,
     missingResponsiblePerson: 0,
   };
 
@@ -1424,7 +1442,7 @@ export function validateJournalCompleteness(
     const missingFields: JournalMissingField[] = [];
 
     // 1. Дата сварки
-    if (!j.weldingDate || String(j.weldingDate).trim() === '') {
+    if (!hasNonEmptyText(j.weldingDate)) {
       missingFields.push({ field: 'weldingDate', label: 'Дата сварки' });
       missingSummary.missingDates++;
     }
@@ -1432,61 +1450,300 @@ export function validateJournalCompleteness(
     // 2. Клеймо сварщика
     const hasWelder =
       (j.welderStampsList && j.welderStampsList.length > 0) ||
-      (j.welderStamp && String(j.welderStamp).trim() !== '');
+      hasNonEmptyText(j.welderStamp);
     if (!hasWelder) {
       missingFields.push({ field: 'welderStamp', label: 'Клеймо сварщика' });
       missingSummary.missingWelders++;
     }
 
     // 3. Номер техкарты (ТК)
-    if (!j.techCardNumber || String(j.techCardNumber).trim() === '') {
+    if (!hasNonEmptyText(j.techCardNumber)) {
       missingFields.push({ field: 'techCardNumber', label: 'Техкарта (ТК)' });
       missingSummary.missingTechCards++;
     }
 
-    // 4. Заключение ВИК
+    // 4. Первичный ВИК (графы 21–23 СТО Газпром / графа 15 ГОСТ 32569)
     const vikConducted =
-      j.vikResult === 'Годен' ||
-      j.vikResult === 'Ремонт' ||
-      (j.vikDate && String(j.vikDate).trim() !== '');
-    if (vikConducted && (!j.vikReportNumber || String(j.vikReportNumber).trim() === '')) {
-      missingFields.push({ field: 'vikReportNumber', label: 'Номер заключения/акта ВИК' });
-      missingSummary.missingVikReports++;
-    }
-
-    // 5. Заключение физического НК (РК, УЗК и др.)
-    const ndtConducted =
-      j.ndtType &&
-      j.ndtType !== 'Не требуется' &&
-      (j.ndtResult === 'Годен' ||
-        j.ndtResult === 'Ремонт' ||
-        (j.ndtDate && String(j.ndtDate).trim() !== ''));
-    if (ndtConducted && (!j.ndtReportNumber || String(j.ndtReportNumber).trim() === '')) {
-      missingFields.push({ field: 'ndtReportNumber', label: `Номер заключения ${j.ndtType || 'НК'}` });
-      missingSummary.missingNdtReports++;
-    }
-
-    // 6. Реквизиты ремонта
-    const isRep =
-      j.vikResult === 'Ремонт' ||
-      j.ndtResult === 'Ремонт' ||
-      Boolean(j.repairAction);
-    if (isRep) {
-      const missingRep: string[] = [];
-      if (!j.repairDate) missingRep.push('дата ремонта');
-      if (!j.repairWelderStamp) missingRep.push('клеймо сварщика ремонта');
-      if (!j.repairVikNumber && !j.repairNdtNumber) missingRep.push('заключение контроля после ремонта');
-      if (missingRep.length > 0) {
+      isConductedOutcome(j.vikResult) ||
+      hasNonEmptyText(j.vikDate) ||
+      hasNonEmptyText(j.vikReportNumber);
+    if (vikConducted) {
+      let hasVikMissing = false;
+      if (!hasNonEmptyText(j.vikReportNumber)) {
         missingFields.push({
-          field: 'repairDetails',
-          label: `Реквизиты ремонта (${missingRep.join(', ')})`,
+          field: 'vikReportNumber',
+          label: 'Первичный ВИК: не указан номер заключения/акта',
         });
-        missingSummary.missingRepairDetails++;
+        hasVikMissing = true;
+      }
+      if (!hasNonEmptyText(j.vikDate)) {
+        missingFields.push({
+          field: 'vikDate',
+          label: 'Первичный ВИК: не указана дата контроля',
+        });
+        hasVikMissing = true;
+      }
+      if (!j.vikResult || j.vikResult === 'Не проводился') {
+        missingFields.push({
+          field: 'vikResult',
+          label: 'Первичный ВИК: не указан результат контроля',
+        });
+        hasVikMissing = true;
+      }
+      if (hasVikMissing) {
+        missingSummary.missingVikReports++;
+      }
+    }
+
+    // 5. Первичный физический НК (графы 24–27 СТО Газпром / графа 16 ГОСТ 32569)
+    const ndtSelected = Boolean(j.ndtType && j.ndtType !== 'Не требуется');
+    const ndtConducted =
+      ndtSelected &&
+      (isConductedOutcome(j.ndtResult) ||
+        hasNonEmptyText(j.ndtDate) ||
+        hasNonEmptyText(j.ndtReportNumber));
+    if (ndtConducted) {
+      let hasNdtMissing = false;
+      if (!hasNonEmptyText(j.ndtReportNumber)) {
+        missingFields.push({
+          field: 'ndtReportNumber',
+          label: `Первичный НК (${j.ndtType}): не указан номер заключения`,
+        });
+        hasNdtMissing = true;
+      }
+      if (!hasNonEmptyText(j.ndtDate)) {
+        missingFields.push({
+          field: 'ndtDate',
+          label: `Первичный НК (${j.ndtType}): не указана дата контроля`,
+        });
+        hasNdtMissing = true;
+      }
+      if (!j.ndtResult || j.ndtResult === 'Не проводился') {
+        missingFields.push({
+          field: 'ndtResult',
+          label: `Первичный НК (${j.ndtType}): не указан результат контроля`,
+        });
+        hasNdtMissing = true;
+      }
+      if (hasNdtMissing) {
+        missingSummary.missingNdtReports++;
+      }
+    }
+
+    // 6. Дополнительный / повторный НК и послеремонтные реквизиты (графы 28–48 формы СТО Газпром)
+    if (isStoGazprom) {
+      const isPrimaryRepair =
+        j.vikResult === 'Ремонт' ||
+        j.vikResult === 'Вырезать' ||
+        j.ndtResult === 'Ремонт' ||
+        j.ndtResult === 'Вырезать';
+
+      const dupNdtSelected =
+        Boolean(j.dupNdtType) && j.dupNdtType !== 'Не требуется';
+      const dupNdtConducted =
+        !isPrimaryRepair &&
+        dupNdtSelected &&
+        (isConductedOutcome(j.dupNdtResult) ||
+          hasNonEmptyText(j.dupNdtDate) ||
+          hasNonEmptyText(j.dupNdtReportNumber));
+
+      if (dupNdtConducted) {
+        let hasDupMissing = false;
+        if (!hasNonEmptyText(j.dupNdtReportNumber)) {
+          missingFields.push({
+            field: 'dupNdtReportNumber',
+            label: `Повторный/дублирующий НК (${j.dupNdtType}): не указан номер заключения`,
+          });
+          hasDupMissing = true;
+        }
+        if (!hasNonEmptyText(j.dupNdtDate)) {
+          missingFields.push({
+            field: 'dupNdtDate',
+            label: `Повторный/дублирующий НК (${j.dupNdtType}): не указана дата контроля`,
+          });
+          hasDupMissing = true;
+        }
+        if (!isConductedOutcome(j.dupNdtResult)) {
+          missingFields.push({
+            field: 'dupNdtResult',
+            label: `Повторный/дублирующий НК (${j.dupNdtType}): не указан результат контроля`,
+          });
+          hasDupMissing = true;
+        }
+        if (hasDupMissing) {
+          missingSummary.missingDupNdtReports++;
+        }
+      }
+
+      // 6а. Сведения о проведении ремонта (графы 32–36 СТО Газпром)
+      const isDefect = isJointDefective(j);
+      const isRepairTriggered =
+        isDefect ||
+        hasNonEmptyText(j.repairAction) ||
+        hasNonEmptyText(j.repairDate) ||
+        hasNonEmptyText(j.repairTechCard) ||
+        hasNonEmptyText(j.repairWelderStamp);
+
+      if (isRepairTriggered) {
+        let hasRepairGap = false;
+        const isCutOut =
+          j.repairAction === 'Вырезано' ||
+          j.vikResult === 'Вырезать' ||
+          j.ndtResult === 'Вырезать' ||
+          j.dupNdtResult === 'Вырезать';
+
+        if (!hasNonEmptyText(j.repairDate)) {
+          missingFields.push({
+            field: 'repairDate',
+            label: 'Ремонт: не указана дата ремонта',
+          });
+          hasRepairGap = true;
+        }
+        if (!hasNonEmptyText(j.repairWelderStamp)) {
+          missingFields.push({
+            field: 'repairWelderStamp',
+            label: 'Ремонт: не указано клеймо сварщика ремонта',
+          });
+          hasRepairGap = true;
+        }
+        if (!isCutOut && !hasNonEmptyText(j.repairTechCard)) {
+          missingFields.push({
+            field: 'repairTechCard',
+            label: 'Ремонт: не указана техкарта (ТК) на ремонт',
+          });
+          hasRepairGap = true;
+        }
+
+        // 6б. ВИК после ремонта (графы 38–40)
+        const repairVikConducted =
+          isConductedOutcome(j.repairVikResult) ||
+          hasNonEmptyText(j.repairVikDate) ||
+          hasNonEmptyText(j.repairVikNumber);
+        if (repairVikConducted) {
+          let hasRepairVikGap = false;
+          if (!hasNonEmptyText(j.repairVikNumber)) {
+            missingFields.push({
+              field: 'repairVikNumber',
+              label: 'ВИК после ремонта: не указан номер заключения/акта',
+            });
+            hasRepairVikGap = true;
+          }
+          if (!hasNonEmptyText(j.repairVikDate)) {
+            missingFields.push({
+              field: 'repairVikDate',
+              label: 'ВИК после ремонта: не указана дата контроля',
+            });
+            hasRepairVikGap = true;
+          }
+          if (!isConductedOutcome(j.repairVikResult)) {
+            missingFields.push({
+              field: 'repairVikResult',
+              label: 'ВИК после ремонта: не указан результат контроля',
+            });
+            hasRepairVikGap = true;
+          }
+          if (hasRepairVikGap) {
+            missingSummary.missingRepairVikReports++;
+            hasRepairGap = true;
+          }
+        }
+
+        // 6в. НК после ремонта (графы 41–44)
+        const repairNdtSelected =
+          Boolean(j.repairNdtType) && j.repairNdtType !== 'Не требуется';
+        const repairNdtConducted =
+          repairNdtSelected &&
+          (isConductedOutcome(j.repairNdtResult) ||
+            hasNonEmptyText(j.repairNdtDate) ||
+            hasNonEmptyText(j.repairNdtNumber));
+        if (repairNdtConducted) {
+          let hasRepairNdtGap = false;
+          if (!hasNonEmptyText(j.repairNdtNumber)) {
+            missingFields.push({
+              field: 'repairNdtNumber',
+              label: `НК после ремонта (${j.repairNdtType}): не указан номер заключения`,
+            });
+            hasRepairNdtGap = true;
+          }
+          if (!hasNonEmptyText(j.repairNdtDate)) {
+            missingFields.push({
+              field: 'repairNdtDate',
+              label: `НК после ремонта (${j.repairNdtType}): не указана дата контроля`,
+            });
+            hasRepairNdtGap = true;
+          }
+          if (!isConductedOutcome(j.repairNdtResult)) {
+            missingFields.push({
+              field: 'repairNdtResult',
+              label: `НК после ремонта (${j.repairNdtType}): не указан результат контроля`,
+            });
+            hasRepairNdtGap = true;
+          }
+          if (hasRepairNdtGap) {
+            missingSummary.missingRepairNdtReports++;
+            hasRepairGap = true;
+          }
+        }
+
+        // 6г. Дублирующий / повторный НК после ремонта (графы 45–48)
+        const repairDupNdtSelected =
+          Boolean(j.repairDupNdtType) && j.repairDupNdtType !== 'Не требуется';
+        const repairDupNdtConducted =
+          repairDupNdtSelected &&
+          (isConductedOutcome(j.repairDupNdtResult) ||
+            hasNonEmptyText(j.repairDupNdtDate) ||
+            hasNonEmptyText(j.repairDupNdtNumber));
+        if (repairDupNdtConducted) {
+          let hasRepairDupGap = false;
+          if (!hasNonEmptyText(j.repairDupNdtNumber)) {
+            missingFields.push({
+              field: 'repairDupNdtNumber',
+              label: `Повторный/дублирующий НК после ремонта (${j.repairDupNdtType}): не указан номер заключения`,
+            });
+            hasRepairDupGap = true;
+          }
+          if (!hasNonEmptyText(j.repairDupNdtDate)) {
+            missingFields.push({
+              field: 'repairDupNdtDate',
+              label: `Повторный/дублирующий НК после ремонта (${j.repairDupNdtType}): не указана дата контроля`,
+            });
+            hasRepairDupGap = true;
+          }
+          if (!isConductedOutcome(j.repairDupNdtResult)) {
+            missingFields.push({
+              field: 'repairDupNdtResult',
+              label: `Повторный/дублирующий НК после ремонта (${j.repairDupNdtType}): не указан результат контроля`,
+            });
+            hasRepairDupGap = true;
+          }
+          if (hasRepairDupGap) {
+            missingSummary.missingRepairDupNdtReports++;
+            hasRepairGap = true;
+          }
+        }
+
+        // Если ремонт назначен/проведён (не вырезка), но ни один послеремонтный контроль ещё не оформлен
+        if (
+          !isCutOut &&
+          !repairVikConducted &&
+          !repairNdtConducted &&
+          !repairDupNdtConducted
+        ) {
+          missingFields.push({
+            field: 'repairControlMissing',
+            label: 'Контроль после ремонта: не внесены сведения о контроле после ремонта',
+          });
+          hasRepairGap = true;
+        }
+
+        if (hasRepairGap) {
+          missingSummary.missingRepairDetails++;
+        }
       }
     }
 
     // 7. Ответственное лицо (мастер / прораб)
-    if (!j.responsiblePerson || String(j.responsiblePerson).trim() === '') {
+    if (!hasNonEmptyText(j.responsiblePerson)) {
       missingFields.push({ field: 'responsiblePerson', label: 'Ответственное лицо (мастер)' });
       missingSummary.missingResponsiblePerson++;
     }

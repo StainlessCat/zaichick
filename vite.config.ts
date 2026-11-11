@@ -23,9 +23,6 @@ export default defineConfig(() => {
             if (id.includes('node_modules/pdfmake')) {
               return 'pdf-vendor';
             }
-            if (id.includes('node_modules/xlsx')) {
-              return 'xlsx-vendor';
-            }
             if (id.includes('node_modules/lucide-react')) {
               return 'lucide-vendor';
             }
@@ -40,6 +37,13 @@ export default defineConfig(() => {
       },
     },
     server: {
+      // Proxy API & SSE requests to FastAPI (Python 3.12 + PostgreSQL) backend
+      proxy: {
+        '/api': {
+          target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8000',
+          changeOrigin: true,
+        },
+      },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

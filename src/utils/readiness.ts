@@ -358,23 +358,38 @@ export function computeLineListItemStatus(
     if (!isWelded) continue;
 
     const stamps = new Set<string>();
-    if (j.welderStamp?.trim()) {
-      j.welderStamp.split(/[/,-]+/).forEach((s) => {
+    if (j.welderStampsList && j.welderStampsList.length > 0) {
+      j.welderStampsList.forEach((s) => {
+        const clean = s.trim();
+        if (clean) stamps.add(clean);
+      });
+    } else if (j.welderStamp?.trim()) {
+      j.welderStamp.split(/[,;/+]+/).forEach((s) => {
         const clean = s.trim();
         if (clean) stamps.add(clean);
       });
     }
 
+    const hasPrimaryPassedNdt =
+      Boolean(j.ndtType) &&
+      j.ndtType !== 'Не требуется' &&
+      j.ndtResult === 'Годен';
+    const hasDupPassedNdt =
+      Boolean(j.dupNdtType) &&
+      j.dupNdtType !== 'Не требуется' &&
+      j.dupNdtResult === 'Годен';
+    const hasRepairPassedNdt =
+      (j.repairNdtResult === 'Годен' && j.repairNdtType !== 'Не требуется') ||
+      (j.repairDupNdtResult === 'Годен' && j.repairDupNdtType !== 'Не требуется');
+    const hasOpenNdtDefect =
+      j.ndtResult === 'Ремонт' ||
+      j.ndtResult === 'Вырезать' ||
+      j.dupNdtResult === 'Ремонт' ||
+      j.dupNdtResult === 'Вырезать';
+
     const hasAnyNdt =
-      (Boolean(j.ndtType) &&
-        j.ndtType !== 'Не требуется' &&
-        j.ndtResult === 'Годен') ||
-      (Boolean(j.dupNdtType) &&
-        j.dupNdtType !== 'Не требуется' &&
-        j.dupNdtResult === 'Годен') ||
-      j.repairNdtResult === 'Годен' ||
-      j.repairDupNdtResult === 'Годен' ||
-      isJointFullyAccepted(j);
+      hasRepairPassedNdt ||
+      (!hasOpenNdtDefect && (hasPrimaryPassedNdt || hasDupPassedNdt));
 
     stamps.forEach((s) => {
       const cur = welderStats.get(s) || { welded: 0, controlled: 0 };
@@ -422,7 +437,9 @@ export function computeLineListItemStatus(
     ? ` [Дефицит НК по сварщикам: ${welderNdtDeficits.join(', ')}]`
     : '';
   const statusLabel = isCompleted
-    ? `Все стыки сварены и проконтролированы (${controlledJoints}/${totalJoints})`
+    ? ndtStatus === 'insufficient'
+      ? `Все стыки сварены и проконтролированы (${controlledJoints}/${totalJoints}) — ${ndtStatusBadge} ${detailInfo}${welderDeficitNote}`
+      : `Все стыки сварены и проконтролированы (${controlledJoints}/${totalJoints})`
     : weldedJoints === 0
     ? 'Нет сварки'
     : `${ndtStatusBadge} ${detailInfo}${welderDeficitNote}`;

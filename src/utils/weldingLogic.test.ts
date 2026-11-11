@@ -4952,6 +4952,10 @@ test('Аудит copilotAnalysis: validateJournalCompleteness выявляет �
     ndtType: 'РК',
     ndtResult: 'Годен',
     ndtReportNumber: 'ЗАКЛ-РК-202',
+    dupNdtType: 'УЗК',
+    dupNdtResult: 'Годен',
+    dupNdtDate: '2026-06-18',
+    dupNdtReportNumber: 'ЗАКЛ-ДУП-303',
     responsiblePerson: 'Иванов И.И.',
   };
 
@@ -4971,6 +4975,7 @@ test('Аудит copilotAnalysis: критические несоответст�
     admissionSheetNumber: 'ДЛ-1',
     admissionSheetDate: '2022-01-10',
     allowedMethods: ['РАД'],
+    crewForeman: 'Мастер Петров П.П.',
     minDiameterMm: 50,
     maxDiameterMm: 1000,
     minWallThicknessMm: 3,
@@ -5055,4 +5060,756 @@ test('Аудит copilotAnalysis: критические несоответст�
   const ndtError = ndtValidation.errors.find((e) => e.id === 'ndt-valid-without-vik');
   assert.ok(ndtError, 'Обнаружена ошибка ndt-valid-without-vik');
   assert.equal(ndtError.severity, 'error');
+});
+
+test('Повторный аудит п. 1: Безопасная миграция дубликатов (бэкап до миграции, карантин, идемпотентность, уникальный индекс)', async () => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
+  const nodeSqlite = await import('node:sqlite');
+  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
+
+  const tmpDir = path.join(
+    os.tmpdir(),
+    `zaychick-test-mig-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  );
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const sqliteDbPath = path.join(tmpDir, 'legacy.sqlite');
+  const backupsDir = path.join(tmpDir, 'backups');
+
+  let db: InstanceType<typeof UnifiedServerDatabase> | null = null;
+  let db2: InstanceType<typeof UnifiedServerDatabase> | null = null;
+
+  try {
+    // 1. Создаём историческую неиндексированную БД с дублями стыка на одной линии
+    const raw = new (nodeSqlite as any).DatabaseSync(sqliteDbPath);
+    raw.exec(`
+      CREATE TABLE db_meta (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        global_revision INTEGER NOT NULL DEFAULT 1,
+        last_updated_at TEXT NOT NULL,
+        last_updated_by TEXT NOT NULL,
+        last_action TEXT NOT NULL,
+        engine TEXT NOT NULL,
+        journal_mode TEXT NOT NULL,
+        active_template_id TEXT NOT NULL
+      );
+      CREATE TABLE weld_joints (
+        id TEXT PRIMARY KEY,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        joint_number TEXT NOT NULL,
+        unique_line_id TEXT NOT NULL,
+        rd_code TEXT NOT NULL,
+        object_name TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL,
+        updated_by TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+    `);
+
+    raw
+      .prepare(
+        `INSERT INTO db_meta (id, global_revision, last_updated_at, last_updated_by, last_action, engine, journal_mode, active_template_id)
+         VALUES (1, 5, '2026-10-05T12:00:00Z', 'ПТО', 'Legacy seed', 'SQLite 3', 'WAL', 'tpl-full-30')`
+      )
+      .run();
+
+    const olderDup: WeldJoint = {
+      ...INITIAL_JOINTS[0],
+      id: 'dup-older-1',
+      uniqueLineId: '  001-TX3-L1  ',
+      lineNumber: 'L1',
+      jointNumber: ' 010 ',
+      elem1FactoryNumber: 'LEGACY-PIPE-001',
+      elem2FactoryNumber: 'LEGACY-FIT-002',
+      welderStamp: 'СТ-OLD',
+      version: 1,
+      updatedAt: '2026-10-01T10:00:00Z',
+      updatedBy: 'Инженер-1',
+    };
+    const newerWinner: WeldJoint = {
+      ...INITIAL_JOINTS[0],
+      id: 'dup-newer-1',
+      uniqueLineId: '001-tx3-l1',
+      lineNumber: 'L1',
+      jointNumber: '010',
+      elem1FactoryNumber: 'ACTUAL-PIPE-001',
+      welderStamp: 'СТ-NEW',
+      version: 2,
+      updatedAt: '2026-10-05T10:00:00Z',
+      updatedBy: 'Инженер-2',
+    };
+    const normalJoint: WeldJoint = {
+      ...INITIAL_JOINTS[0],
+      id: 'unique-joint-020',
+      uniqueLineId: '001-TX3-L1',
+      lineNumber: 'L1',
+      jointNumber: '020',
+      version: 1,
+      updatedAt: '2026-10-02T10:00:00Z',
+      updatedBy: 'Инженер-1',
+    };
+
+    const insJoint = raw.prepare(
+      `INSERT INTO weld_joints (id, sort_order, joint_number, unique_line_id, rd_code, object_name, version, updated_at, updated_by, payload_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    [olderDup, newerWinner, normalJoint].forEach((j, idx) => {
+      insJoint.run(
+        j.id,
+        idx,
+        j.jointNumber,
+        j.uniqueLineId,
+        j.rdCode,
+        j.objectName,
+        j.version ?? 1,
+        j.updatedAt,
+        j.updatedBy,
+        JSON.stringify(j)
+      );
+    });
+    raw.close();
+
+    // 2. Запускаем UnifiedServerDatabase: бэкап ДОЛЖЕН быть создан ДО миграции
+    db = new UnifiedServerDatabase({
+      dataDir: tmpDir,
+      sqliteDbPath,
+      backupsDir,
+      disableStartupBackup: false,
+    });
+
+    const preMigPath = db.getLastPreMigrationBackupPath();
+    assert.ok(
+      preMigPath && fs.existsSync(preMigPath),
+      'Перед изменением таблицы weld_joints должен создаться согласованный pre-migration бэкап'
+    );
+    assert.ok(
+      path.basename(preMigPath!).includes('pre-migration'),
+      'Файл бэкапа должен быть помечен как pre-migration'
+    );
+
+    // Открываем pre-migration бэкап: внутри ОБЯЗАНЫ оставаться все 3 исходные записи и не быть индекса
+    const backupConn = new (nodeSqlite as any).DatabaseSync(preMigPath!);
+    try {
+      const preCount = backupConn
+        .prepare('SELECT COUNT(*) AS cnt FROM weld_joints')
+        .get() as { cnt: number };
+      assert.equal(
+        preCount.cnt,
+        3,
+        'Состояние в pre-migration бэкапе обязано отражать БД ДО удаления дублей'
+      );
+      const preIdx = backupConn
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_weld_joints_line_number'"
+        )
+        .get();
+      assert.equal(
+        preIdx,
+        undefined,
+        'В pre-migration бэкапе уникальный индекс ещё не должен существовать'
+      );
+    } finally {
+      backupConn.close();
+    }
+
+    // 3. Проверяем карантин и сохранённые данные дубликата в основной БД
+    const liveJoints = db.readFullState().data.joints;
+    assert.equal(liveJoints.length, 2, 'В рабочей таблице должны остаться актуальная запись и уникальный стык');
+    assert.ok(liveJoints.some((j) => j.id === 'dup-newer-1'));
+    assert.ok(liveJoints.some((j) => j.id === 'unique-joint-020'));
+
+    const quarantined = db.getQuarantinedDuplicateJoints();
+    assert.equal(quarantined.length, 1, 'Удалённый дубликат обязан сохраниться в карантине');
+    assert.equal(quarantined[0].originalJointId, 'dup-older-1');
+    assert.equal(quarantined[0].keptJointId, 'dup-newer-1');
+    assert.equal(quarantined[0].normalizedUniqueLineId, '001-tx3-l1');
+    assert.equal(quarantined[0].normalizedJointNumber, '010');
+    assert.ok(quarantined[0].reason.includes('dup-newer-1'));
+    assert.equal(quarantined[0].payload.elem1FactoryNumber, 'LEGACY-PIPE-001');
+    assert.equal(quarantined[0].payload.elem2FactoryNumber, 'LEGACY-FIT-002');
+    assert.equal(quarantined[0].payload.welderStamp, 'СТ-OLD');
+
+    db.close();
+    db = null;
+
+    // 4. Повторный запуск: идемпотентность и работа уникального индекса
+    db2 = new UnifiedServerDatabase({
+      dataDir: tmpDir,
+      sqliteDbPath,
+      backupsDir,
+      disableStartupBackup: false,
+    });
+
+    assert.equal(
+      db2.getLastPreMigrationBackupPath(),
+      null,
+      'Повторный запуск уже мигрированной БД не должен повторно запускать предмиграционный бэкап'
+    );
+    assert.equal(
+      db2.getQuarantinedDuplicateJoints().length,
+      1,
+      'Повторный запуск не должен дублировать записи в карантине'
+    );
+    assert.equal(db2.readFullState().data.joints.length, 2);
+
+    // Прямая попытка вставки дубля в SQLite должна блокироваться уникальным индексом
+    db2.close();
+    db2 = null;
+    const rawVerify = new (nodeSqlite as any).DatabaseSync(sqliteDbPath);
+    try {
+      assert.throws(() => {
+        rawVerify
+          .prepare(
+            `INSERT INTO weld_joints (id, sort_order, joint_number, unique_line_id, rd_code, object_name, version, updated_at, updated_by, payload_json)
+             VALUES ('dup-blocked-sql', 9, ' 010 ', '001-TX3-L1', 'R1', 'O1', 1, '2026-10-06T00:00:00Z', 'SQL', '{}')`
+          )
+          .run();
+      }, /UNIQUE constraint failed/i);
+    } finally {
+      rawVerify.close();
+    }
+  } finally {
+    db?.close();
+    db2?.close();
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test('Повторный аудит п. 2: Пакетная синхронизация syncStateWithOptimisticLock — валидация, дубликаты, RBAC и исторические записи', async () => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
+  const nodeSqlite = await import('node:sqlite');
+  const { UnifiedServerDatabase, mapDbMutationResultToHttpError } = await import(
+    '../server/sqliteDb'
+  );
+
+  const tmpDir = path.join(
+    os.tmpdir(),
+    `zaychick-test-batch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+  );
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const sqliteDbPath = path.join(tmpDir, 'batch.sqlite');
+  let db: InstanceType<typeof UnifiedServerDatabase> | null = null;
+
+  try {
+    db = new UnifiedServerDatabase({
+      dataDir: tmpDir,
+      sqliteDbPath,
+      backupsDir: path.join(tmpDir, 'backups'),
+      disableStartupBackup: true,
+    });
+
+    const ptoUser = {
+      login: 'pto_test',
+      fullName: 'Инженер ПТО Тест',
+      role: 'Инженер ПТО',
+    };
+    const ndtUser = {
+      login: 'lnk_test',
+      fullName: 'Специалист ЛНК Тест',
+      role: 'Специалист ЛНК',
+    };
+    const viewerUser = {
+      login: 'cust_test',
+      fullName: 'Стройконтроль Заказчика',
+      role: 'Представитель Заказчика',
+    };
+
+    const initial = db.readFullState();
+
+    // Симулируем историческую некорректную запись, попавшую в БД до введения нового барьера
+    // (например, положительный НК при непроведённом ВИК)
+    const legacyInvalidJoint: WeldJoint = {
+      ...INITIAL_JOINTS[0],
+      id: 'legacy-invalid-joint',
+      uniqueLineId: initial.data.projectLineList[0].uniqueLineId,
+      rdCode: initial.data.projectLineList[0].rdCode,
+      lineNumber: initial.data.projectLineList[0].lineNumber,
+      jointNumber: '880',
+      vikResult: 'Не проводился',
+      ndtType: 'РК',
+      ndtResult: 'Годен',
+      ndtReportNumber: 'OLD-NDT-880',
+      updatedAt: '2025-01-01T10:00:00Z',
+    };
+
+    db.close();
+    db = null;
+    const rawConn = new (nodeSqlite as any).DatabaseSync(sqliteDbPath);
+    try {
+      rawConn
+        .prepare(
+          `INSERT INTO weld_joints (id, sort_order, joint_number, unique_line_id, rd_code, object_name, version, updated_at, updated_by, payload_json)
+           VALUES (?, 999, ?, ?, ?, ?, 1, ?, 'Legacy', ?)`
+        )
+        .run(
+          legacyInvalidJoint.id,
+          legacyInvalidJoint.jointNumber,
+          legacyInvalidJoint.uniqueLineId,
+          legacyInvalidJoint.rdCode,
+          legacyInvalidJoint.objectName,
+          legacyInvalidJoint.updatedAt,
+          JSON.stringify(legacyInvalidJoint)
+        );
+    } finally {
+      rawConn.close();
+    }
+
+    db = new UnifiedServerDatabase({
+      dataDir: tmpDir,
+      sqliteDbPath,
+      backupsDir: path.join(tmpDir, 'backups'),
+      disableStartupBackup: true,
+    });
+
+    const baseState = db.readFullState();
+    const baseValidTemplate = baseState.data.joints[0];
+
+    // 1. Валидный пакет + неизменённая историческая невалидная запись НЕ должна блокировать синхронизацию
+    const validNewJoint: WeldJoint = {
+      ...baseValidTemplate,
+      id: 'batch-valid-joint-890',
+      jointNumber: '890',
+      vikResult: 'Годен',
+      vikDate: baseValidTemplate.weldingDate,
+      vikReportNumber: 'ВИК-890',
+      ndtType: 'РК',
+      ndtResult: 'Годен',
+      ndtDate: baseValidTemplate.weldingDate,
+      ndtReportNumber: 'РК-890',
+      dupNdtType: 'Не требуется',
+      dupNdtResult: 'Не проводился',
+      updatedAt: new Date().toISOString(),
+      updatedBy: ptoUser.fullName,
+    };
+
+    const okBatchRes = db.syncStateWithOptimisticLock({
+      data: { joints: [...baseState.data.joints, validNewJoint] },
+      expectedGlobalRevision: baseState.meta.globalRevision,
+      actionLabel: 'Валидный пакет с исторической записью',
+      user: ptoUser,
+    });
+
+    assert.equal(
+      okBatchRes.status,
+      'ok',
+      'Неизменённая историческая запись не должна мешать валидному пакетному сохранению'
+    );
+    const afterOkState = db.readFullState();
+    assert.ok(afterOkState.data.joints.some((j) => j.id === 'batch-valid-joint-890'));
+    assert.ok(afterOkState.data.joints.some((j) => j.id === 'legacy-invalid-joint'));
+
+    // 2a. Доменная ошибка в затронутом новом стыке от ПТО (физически невозможная стенка >= D/2) -> validation_error (HTTP 422)
+    const domainInvalidJoint: WeldJoint = {
+      ...validNewJoint,
+      id: 'batch-invalid-domain-900',
+      jointNumber: '900',
+      diameterMm: 100,
+      wallThickness: 60,
+    };
+
+    const domainErrRes = db.syncStateWithOptimisticLock({
+      data: { joints: [...afterOkState.data.joints, domainInvalidJoint] },
+      expectedGlobalRevision: afterOkState.meta.globalRevision,
+      actionLabel: 'Невалидный доменный пакет (ПТО)',
+      user: ptoUser,
+    });
+
+    assert.equal(domainErrRes.status, 'validation_error');
+    const domainHttp = mapDbMutationResultToHttpError(domainErrRes);
+    assert.equal(domainHttp?.httpStatus, 422);
+    assert.equal(domainHttp?.body.code, 'DOMAIN_VALIDATION_FAILED');
+    assert.equal(
+      db.readFullState().meta.globalRevision,
+      afterOkState.meta.globalRevision,
+      'При ошибке доменной валидации ревизия БД не должна увеличиваться'
+    );
+
+    // 2b. Доменная ошибка от имени ЛНК (положительный НК при непроведённом ВИК на существующем стыке) -> validation_error (HTTP 422)
+    const lnkInvalidJoints = afterOkState.data.joints.map((j) =>
+      j.id === 'batch-valid-joint-890'
+        ? { ...j, ndtType: 'РК' as const, ndtResult: 'Годен' as const, ndtReportNumber: 'РК-ERR' }
+        : j
+    );
+    const lnkDomainErrRes = db.syncStateWithOptimisticLock({
+      data: { joints: lnkInvalidJoints },
+      expectedGlobalRevision: afterOkState.meta.globalRevision,
+      actionLabel: 'Невалидный доменный пакет (ЛНК без ВИК)',
+      user: ndtUser,
+    });
+    assert.equal(lnkDomainErrRes.status, 'validation_error');
+    assert.equal(mapDbMutationResultToHttpError(lnkDomainErrRes)?.httpStatus, 422);
+
+    // 3. Дубликат в пакете (как с существующим стыком, так и два новых дубля внутри одного пакета) -> duplicate (HTTP 409)
+    const dupJointFromExisting: WeldJoint = {
+      ...validNewJoint,
+      id: 'batch-dup-existing',
+      jointNumber: '  890 ',
+    };
+    const dupRes1 = db.syncStateWithOptimisticLock({
+      data: { joints: [...afterOkState.data.joints, dupJointFromExisting] },
+      expectedGlobalRevision: afterOkState.meta.globalRevision,
+      actionLabel: 'Дубликат существующего в пакете',
+      user: ptoUser,
+    });
+    assert.equal(dupRes1.status, 'duplicate');
+    const dupHttp = mapDbMutationResultToHttpError(dupRes1);
+    assert.equal(dupHttp?.httpStatus, 409);
+    assert.equal(dupHttp?.body.code, 'DUPLICATE_JOINT_NUMBER');
+
+    const intraDup1: WeldJoint = { ...validNewJoint, id: 'intra-dup-1', jointNumber: '910' };
+    const intraDup2: WeldJoint = { ...validNewJoint, id: 'intra-dup-2', jointNumber: ' 910 ' };
+    const dupRes2 = db.syncStateWithOptimisticLock({
+      data: { joints: [...afterOkState.data.joints, intraDup1, intraDup2] },
+      expectedGlobalRevision: afterOkState.meta.globalRevision,
+      actionLabel: 'Дубликат внутри одного пакета',
+      user: ptoUser,
+    });
+    assert.equal(dupRes2.status, 'duplicate');
+
+    // 4. RBAC:
+    // 4a) ЛНК не может создавать новые стыки -> forbidden (HTTP 403)
+    const lnkCreateAttempt: WeldJoint = {
+      ...validNewJoint,
+      id: 'lnk-forbidden-new',
+      jointNumber: '920',
+    };
+    const lnkCreateRes = db.syncStateWithOptimisticLock({
+      data: { joints: [...afterOkState.data.joints, lnkCreateAttempt] },
+      expectedGlobalRevision: afterOkState.meta.globalRevision,
+      actionLabel: 'Попытка создания стыка ЛНК через пакет',
+      user: ndtUser,
+    });
+    assert.equal(lnkCreateRes.status, 'forbidden');
+    assert.equal(mapDbMutationResultToHttpError(lnkCreateRes)?.httpStatus, 403);
+
+    // 4b) Наблюдатель не может изменять существующие стыки -> forbidden (HTTP 403)
+    const viewerTamperJoints = afterOkState.data.joints.map((j) =>
+      j.id === 'batch-valid-joint-890' ? { ...j, ndtReportNumber: 'HACK-999' } : j
+    );
+    const viewerRes = db.syncStateWithOptimisticLock({
+      data: { joints: viewerTamperJoints },
+      expectedGlobalRevision: afterOkState.meta.globalRevision,
+      actionLabel: 'Попытка правки Наблюдателем',
+      user: viewerUser,
+    });
+    assert.equal(viewerRes.status, 'forbidden');
+
+    // 4c) ЛНК сначала закрывает ВИК («Годен»), затем меняет разрешённое поле НК, одновременно пытаясь подменить welderStamp (RBAC сохраняет старое клеймо)
+    const lnkStep1Vik = afterOkState.data.joints.map((j) =>
+      j.id === 'batch-valid-joint-890'
+        ? {
+            ...j,
+            vikResult: 'Годен' as const,
+            vikDate: validNewJoint.weldingDate,
+            vikReportNumber: 'ВИК-890-OK',
+          }
+        : j
+    );
+    const step1Res = db.syncStateWithOptimisticLock({
+      data: { joints: lnkStep1Vik },
+      expectedGlobalRevision: afterOkState.meta.globalRevision,
+      actionLabel: 'ЛНК закрывает ВИК',
+      user: ndtUser,
+    });
+    assert.equal(step1Res.status, 'ok');
+    const afterStep1 = db.readFullState();
+
+    const lnkMixedEdit = afterStep1.data.joints.map((j) =>
+      j.id === 'batch-valid-joint-890'
+        ? {
+            ...j,
+            ndtType: 'РК' as const,
+            ndtResult: 'Годен' as const,
+            ndtDate: validNewJoint.weldingDate,
+            ndtReportNumber: 'РК-890-UPD',
+            welderStamp: 'FAKE-STAMP',
+          }
+        : j
+    );
+    const lnkMixedRes = db.syncStateWithOptimisticLock({
+      data: { joints: lnkMixedEdit },
+      expectedGlobalRevision: afterStep1.meta.globalRevision,
+      actionLabel: 'Смешанная правка ЛНК с RBAC-слиянием',
+      user: ndtUser,
+    });
+    assert.equal(lnkMixedRes.status, 'ok');
+    if (lnkMixedRes.status === 'ok') {
+      const saved890 = lnkMixedRes.data.joints.find((j) => j.id === 'batch-valid-joint-890');
+      assert.equal(saved890?.ndtReportNumber, 'РК-890-UPD', 'Разрешённое поле НК должно обновиться');
+      assert.equal(
+        saved890?.welderStamp,
+        validNewJoint.welderStamp,
+        'Запрещённое для ЛНК поле клейма должно сохраниться из серверной записи'
+      );
+    }
+  } finally {
+    db?.close();
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test('Повторный аудит п. 3: validateJournalCompleteness проверяет повторный НК и послеремонтные контроли (ВИК/НК/дубль после ремонта)', async () => {
+  const { validateJournalCompleteness } = await import('./journals');
+
+  const baseComplete: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-comp-base',
+    weldingDate: '2026-06-15',
+    welderStamp: 'А142',
+    welderStampsList: ['А142'],
+    techCardNumber: 'ТК-01',
+    responsiblePerson: 'Мастер Иванов И.И.',
+    vikResult: 'Годен',
+    vikDate: '2026-06-15',
+    vikReportNumber: 'ВИК-001',
+    ndtType: 'РК',
+    ndtResult: 'Годен',
+    ndtDate: '2026-06-16',
+    ndtReportNumber: 'РК-001',
+    dupNdtType: 'Не требуется',
+    dupNdtResult: 'Не проводился',
+    dupNdtDate: '',
+    dupNdtReportNumber: '',
+  };
+
+  // 1. Полная запись без дублирующего НК (не проводился) -> полная
+  const baseCheck = validateJournalCompleteness([baseComplete], 'СТО Газпром 15-1.1-002-2023');
+  assert.equal(baseCheck.isFullyComplete, true);
+
+  // 2. Выбран и проведён повторный/дублирующий НК, но отсутствует номер заключения и дата
+  const missingDupNdt: WeldJoint = {
+    ...baseComplete,
+    id: 'j-dup-inc',
+    dupNdtType: 'УЗК',
+    dupNdtResult: 'Годен',
+    dupNdtDate: '',
+    dupNdtReportNumber: '',
+  };
+  const dupIncCheck = validateJournalCompleteness([missingDupNdt], 'СТО Газпром 15-1.1-002-2023');
+  assert.equal(dupIncCheck.isFullyComplete, false);
+  assert.equal(dupIncCheck.missingSummary.missingDupNdtReports, 1);
+  assert.ok(
+    dupIncCheck.missingItems[0].missingFields.some(
+      (f) => f.field === 'dupNdtReportNumber' && f.label.includes('Повторный/дублирующий НК')
+    )
+  );
+  assert.ok(
+    dupIncCheck.missingItems[0].missingFields.some(
+      (f) => f.field === 'dupNdtDate' && f.label.includes('Повторный/дублирующий НК')
+    )
+  );
+
+  // 3. Ремонт: заполнены ремонтный ВИК, но НЕ заполнен номер заключения НК после ремонта и дубл. НК после ремонта
+  const missingPostRepairNdt: WeldJoint = {
+    ...baseComplete,
+    id: 'j-rep-inc',
+    ndtResult: 'Ремонт',
+    repairAction: 'Ремонт',
+    repairDate: '2026-06-18',
+    repairWelderStamp: 'А142',
+    repairTechCard: 'ТК-РЕМ-01',
+    repairVikResult: 'Годен',
+    repairVikDate: '2026-06-18',
+    repairVikNumber: 'ВИК-РЕМ-01',
+    repairNdtType: 'РК',
+    repairNdtResult: 'Годен',
+    repairNdtDate: '2026-06-19',
+    repairNdtNumber: '', // пропуск!
+    repairDupNdtType: 'УЗК',
+    repairDupNdtResult: 'Годен',
+    repairDupNdtDate: '',
+    repairDupNdtNumber: '', // пропуск!
+  };
+  const repIncCheck = validateJournalCompleteness([missingPostRepairNdt], 'СТО Газпром 15-1.1-002-2023');
+  assert.equal(repIncCheck.isFullyComplete, false);
+  assert.equal(repIncCheck.missingSummary.missingRepairNdtReports, 1);
+  assert.equal(repIncCheck.missingSummary.missingRepairDupNdtReports, 1);
+  assert.ok(
+    repIncCheck.missingItems[0].missingFields.some(
+      (f) => f.field === 'repairNdtNumber' && f.label.includes('НК после ремонта (РК)')
+    )
+  );
+  assert.ok(
+    repIncCheck.missingItems[0].missingFields.some(
+      (f) =>
+        f.field === 'repairDupNdtNumber' &&
+        f.label.includes('Повторный/дублирующий НК после ремонта (УЗК)')
+    )
+  );
+
+  // 4. Полный ремонтный цикл со всеми реквизитами -> полностью заполнен
+  const fullRepaired: WeldJoint = {
+    ...missingPostRepairNdt,
+    repairNdtNumber: 'РК-РЕМ-02',
+    repairDupNdtDate: '2026-06-20',
+    repairDupNdtNumber: 'УЗК-РЕМ-03',
+  };
+  const fullRepCheck = validateJournalCompleteness([fullRepaired], 'СТО Газпром 15-1.1-002-2023');
+  assert.equal(fullRepCheck.isFullyComplete, true);
+  assert.equal(fullRepCheck.jointsWithMissingDataCount, 0);
+
+  // 5. ГОСТ 32569-2013 проверяет базовые и первичные графы (15, 16) и не требует неэкспортируемые графы СТО
+  const gostComplete = validateJournalCompleteness([missingDupNdt], 'ГОСТ 32569-2013');
+  assert.equal(gostComplete.isFullyComplete, true);
+  const gostMissingPrimary = validateJournalCompleteness(
+    [{ ...baseComplete, ndtReportNumber: '' }],
+    'ГОСТ 32569-2013'
+  );
+  assert.equal(gostMissingPrimary.isFullyComplete, false);
+  assert.equal(gostMissingPrimary.missingSummary.missingNdtReports, 1);
+});
+
+test('Повторный аудит п. 4: Закрепление правил квоты НК (разные % РК/УЗК, несколько сварщиков, повторный контроль, В работе/Ремонт и разделение квоты от 100% приёмки)', async () => {
+  const { calculateWelderNdtQuotas, calculateLineNdtProgress } = await import('./weldingLogic');
+  const { computeLineListItemStatus, isJointFullyAccepted } = await import('./readiness');
+
+  const mixedLine: ProjectLineItem = {
+    id: 'line-mixed-1',
+    uniqueLineId: 'LINE-MIXED-01',
+    rdCode: 'RD-MIX',
+    lineNumber: '105',
+    objectName: 'УКПГ-2В',
+    lineName: 'Линия III категории',
+    product: 'Конденсат',
+    testContour: 'К-1',
+    weldingNtd: 'СТО Газпром 15-1.1-002-2023',
+    controlNtd: 'СТО Газпром 15-1.3-004-2023',
+    qualityLevel: 'С',
+    pipelineCategory: 'III',
+    workingPressure: '2.5',
+    workingTemperature: '+20',
+    rkPercent: 50,
+    uzkPercent: 20,
+    pvkPercent: 0,
+    testDate: '2026-10-20',
+  };
+
+  const makeJoint = (id: string, num: string, overrides: Partial<WeldJoint>): WeldJoint => ({
+    ...INITIAL_JOINTS[0],
+    id,
+    uniqueLineId: mixedLine.uniqueLineId,
+    rdCode: mixedLine.rdCode,
+    lineNumber: mixedLine.lineNumber,
+    jointNumber: num,
+    weldingDate: '2026-10-10',
+    welderStamp: 'W-A, W-B',
+    welderStampsList: ['W-A', 'W-B'],
+    vikResult: 'Годен',
+    ndtType: 'РК',
+    ndtResult: 'Не проводился',
+    dupNdtType: 'Не требуется',
+    dupNdtResult: 'Не проводился',
+    repairAction: undefined,
+    repairVikResult: 'Не проводился',
+    repairNdtType: 'Не требуется',
+    repairNdtResult: 'Не проводился',
+    repairDupNdtType: 'Не требуется',
+    repairDupNdtResult: 'Не проводился',
+    ...overrides,
+  });
+
+  // 4 стыка с разными сварщиками (бригада W-A, W-B):
+  // - j1: РК Годен + повторный УЗК Годен
+  // - j2: РК Годен
+  // - j3: повторный РК В работе (НЕ должен засчитываться!)
+  // - j4: РК Ремонт, после ремонта переконтроль РК Годен (учёт в объёме линии и у сварщиков)
+  const jointsMixed: WeldJoint[] = [
+    makeJoint('jm-1', '010', {
+      ndtType: 'РК',
+      ndtResult: 'Годен',
+      dupNdtType: 'УЗК',
+      dupNdtResult: 'Годен',
+    }),
+    makeJoint('jm-2', '020', {
+      ndtType: 'РК',
+      ndtResult: 'Годен',
+    }),
+    makeJoint('jm-3', '030', {
+      ndtType: 'РК',
+      ndtResult: 'В работе',
+    }),
+    makeJoint('jm-4', '040', {
+      ndtType: 'РК',
+      ndtResult: 'Ремонт',
+      repairAction: 'Ремонт',
+      repairVikResult: 'Годен',
+      repairNdtType: 'РК',
+      repairNdtResult: 'Годен',
+      welderStampsList: ['W-A'],
+      welderStamp: 'W-A',
+    }),
+  ];
+
+  // 1. По линии РК и УЗК проверяются раздельно: 50% РК = 2/4 (есть 3/4), 20% УЗК = 1/4 (есть 1/4)
+  const lineProg = calculateLineNdtProgress(jointsMixed, mixedLine);
+  assert.equal(lineProg.inspectedRkCount, 3, 'РК: j1, j2 и закрытый ремонт j4 = 3; j3 В работе исключён');
+  assert.equal(lineProg.inspectedUzkCount, 1, 'УЗК учтён через дублирующий контроль j1');
+  assert.equal(lineProg.isRkFulfilled, true);
+  assert.equal(lineProg.isUzkFulfilled, true);
+
+  // 2. По сварщикам на линии используется подтверждённый максимум процентов (50% от rkPercent/uzkPercent)
+  const lineStatus = computeLineListItemStatus(mixedLine, jointsMixed);
+  assert.equal(lineStatus.rkRequired, 2);
+  assert.equal(lineStatus.rkControlled, 3);
+  assert.equal(lineStatus.uzkRequired, 1);
+  assert.equal(lineStatus.uzkControlled, 1);
+  assert.equal(lineStatus.ndtStatus, 'sufficient', 'Квота линии и обоих сварщиков выполнена');
+  assert.equal(
+    isJointFullyAccepted(jointsMixed[2]),
+    false,
+    'Стык 030 в статусе «В работе» НЕ является принятым'
+  );
+  assert.equal(
+    lineStatus.isCompleted,
+    false,
+    'Статус выполнения выборочной квоты НЕ смешивается с 100% приёмкой всех стыков (controlledJoints < totalJoints)'
+  );
+  assert.match(lineStatus.statusLabel, /^Достаточно НК/);
+
+  // 3. Дефицит по сварщику и правило расчёта Math.max(rkPercent, uzkPercent, 20) для категории III / С
+  const welderQuotas = calculateWelderNdtQuotas(jointsMixed, [mixedLine]);
+  const quotaWB = welderQuotas.find((q) => q.stamp === 'W-B');
+  assert.ok(quotaWB);
+  assert.equal(quotaWB.requiredNdtPct, 50, 'Для квоты сварщика на категории III применяется max(50, 20, 20) = 50%');
+  assert.equal(quotaWB.totalWelded, 3);
+  assert.equal(quotaWB.inspectedCount, 2, 'В работе (jm-3) не засчитан в проверенные W-B');
+  assert.equal(quotaWB.isCompliant, true);
+
+  // 4. Явный дефицит на линии при 2 сварщиках, если один сварщик не добрал квоту
+  const deficitJoints: WeldJoint[] = [
+    makeJoint('jd-1', '010', {
+      welderStampsList: ['W-OK'],
+      welderStamp: 'W-OK',
+      ndtType: 'РК',
+      ndtResult: 'Годен',
+    }),
+    makeJoint('jd-2', '020', {
+      welderStampsList: ['W-OK'],
+      welderStamp: 'W-OK',
+      ndtType: 'УЗК',
+      ndtResult: 'Годен',
+    }),
+    makeJoint('jd-3', '030', {
+      welderStampsList: ['W-DEF'],
+      welderStamp: 'W-DEF',
+      ndtType: 'РК',
+      ndtResult: 'В работе',
+    }),
+  ];
+  const deficitStatus = computeLineListItemStatus(mixedLine, deficitJoints);
+  assert.equal(deficitStatus.ndtStatus, 'insufficient');
+  assert.equal(deficitStatus.ndtStatusBadge, 'Недостаточно НК');
+  assert.ok(
+    deficitStatus.welderNdtDeficits?.some((d) => d.includes('W-DEF')),
+    'Статус линии обязан явно показывать дефицит по конкретному сварщику W-DEF'
+  );
+  assert.match(deficitStatus.statusLabel, /Дефицит НК по сварщикам: W-DEF/);
 });

@@ -10,9 +10,9 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { ApiError, zaychickApi } from '../api';
 import { UserAccount } from '../types/welding';
 import { getUserRolePermissions } from '../utils/rbac';
-import { hashPasswordWithSalt, verifyPassword } from '../utils/authSecurity';
 import { ZaychickLogo } from './ZaychickLogo';
 
 export type LoginModalMode = 'login' | 'register' | 'admin_password';
@@ -123,14 +123,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
   if (!isOpen) return null;
 
-  const getNextSessionNumber = () => {
-    const maxSession = accounts.reduce(
-      (max, acc) => Math.max(max, acc.sessionNumber || 0),
-      30
-    );
-    return maxSession + 1;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -200,103 +192,54 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       }
 
       const assignedRole = registerIsAdmin
-        ? (role.trim() || 'Администратор системы (Полный доступ)')
-        : (role.trim() || 'Инженер ПТО / СМР');
+        ? role.trim() || 'Администратор системы (Полный доступ)'
+        : role.trim() || 'Инженер ПТО / СМР';
 
-      const hashed = hashPasswordWithSalt(cleanPassword);
-      const newAcc: UserAccount = {
-        login: cleanLogin,
-        password: cleanPassword,
-        passwordHash: hashed.hash,
-        passwordSalt: hashed.salt,
-        fullName: fullName.trim(),
-        role: assignedRole,
-        department:
-          department.trim() ||
-          (registerIsAdmin
-            ? 'Администрация / Управление проектом'
-            : 'Производственно-технический отдел'),
-        sessionNumber: getNextSessionNumber(),
-        isAdmin: registerIsAdmin,
-      };
-
-      setErrorMsg('');
-      onRegisterAccount?.(newAcc);
-      onAuthenticate(newAcc, cleanPassword);
-      onClose();
-      return;
-    }
-
-    // 1. Попытка аутентификации через серверный API /api/auth/login (авторитетная проверка)
-    try {
-      const authRes = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ login: cleanLogin, password: cleanPassword }),
-      });
-      if (authRes.ok) {
-        const authData = await authRes.json();
-        if (authData?.user) {
-          setErrorMsg('');
-          onAuthenticate(authData.user, cleanPassword);
-          onClose();
+      try {
+        const created = await zaychickApi.createUser({
+          login: cleanLogin,
+          password: cleanPassword,
+          fullName: fullName.trim(),
+          role: assignedRole,
+          department:
+            department.trim() ||
+            (registerIsAdmin
+              ? 'Администрация / Управление проектом'
+              : 'Производственно-технический отдел'),
+          mustChangePassword: false,
+        });
+        setErrorMsg('');
+        onRegisterAccount?.(created);
+        onClose();
+        return;
+      } catch (err) {
+        if (err instanceof ApiError) {
+          setErrorMsg(err.message);
           return;
         }
-      } else if (authRes.status === 401 || authRes.status === 404) {
-        const errJson = await authRes.json().catch(() => null);
-        setErrorMsg(errJson?.message || `Неверный логин или пароль для учётной записи «${cleanLogin}»`);
+        setErrorMsg(
+          'Сервер авторизации FastAPI недоступен. Регистрация не выполнена.'
+        );
         return;
       }
-    } catch {
-      // Сервер офлайн / автономный локальный режим — продолжаем проверку по локальным данным
     }
 
-    const existingAcc = accounts.find(
-      (a) => a.login.toLowerCase() === cleanLogin.toLowerCase()
-    );
-
-    if (existingAcc) {
-      const isPasswordCorrect = verifyPassword(
-        cleanPassword,
-        existingAcc.passwordHash || existingAcc.password || '',
-        existingAcc.passwordSalt
-      );
-      if (isPasswordCorrect) {
-        setErrorMsg('');
-        onAuthenticate(existingAcc, cleanPassword);
-        onClose();
-      } else {
-        setErrorMsg(
-          `Неверный пароль для учётной записи «${existingAcc.login}»`
-        );
-      }
-      return;
-    }
-
-    // Если пользователь не найден в системе — запрещаем авторегистрацию для обычных ролей
-    if (!isCurrentUserAdmin) {
-      setErrorMsg(
-        `Пользователь «${cleanLogin}» не найден. Регистрация новых пользователей доступна исключительно администратору системы.`
-      );
-      return;
-    }
-
-    // Если действующий администратор ввёл новый корпоративный логин с паролем >= 3 символов — регистрируем в пуле
-    if (cleanPassword.length >= 3) {
-      const autoAcc: UserAccount = {
-        login: cleanLogin,
-        password: cleanPassword,
-        fullName: fullName.trim() || `Инженер (${cleanLogin})`,
-        role: role.trim() || 'Инженер ПТО / СМР',
-        department: department.trim() || 'Производственно-технический отдел',
-        sessionNumber: getNextSessionNumber(),
-      };
+    // 1. Авторизация строго через FastAPI /api/auth/login (устанавливает HttpOnly SameSite=Lax JWT Cookie)
+    try {
+      const session = await zaychickApi.login(cleanLogin, cleanPassword);
       setErrorMsg('');
-      onRegisterAccount?.(autoAcc);
-      onAuthenticate(autoAcc);
+      onAuthenticate(session.user, cleanPassword);
       onClose();
-    } else {
-      setErrorMsg('Неверный логин или пароль');
+      return;
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setErrorMsg(err.message);
+        return;
+      }
+      setErrorMsg(
+        'Сервер авторизации FastAPI недоступен. Проверьте, запущен ли backend на порту 8000.'
+      );
+      return;
     }
   };
 

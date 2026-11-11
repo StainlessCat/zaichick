@@ -3,7 +3,7 @@ import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { serverDb, sanitizeUserAccountForClient } from './src/server/sqliteDb';
+import { serverDb, sanitizeUserAccountForClient, mapDbMutationResultToHttpError } from './src/server/sqliteDb';
 import { getUserRolePermissions } from './src/utils/rbac';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -332,6 +332,17 @@ async function startServer() {
     });
   });
 
+  /** Общий обработчик структурированных ошибок RBAC / дубликата / доменной валидации для /joints/save и /sync */
+  function handleDbMutationError(
+    res: Response,
+    result: Parameters<typeof mapDbMutationResultToHttpError>[0]
+  ): boolean {
+    const mapped = mapDbMutationResultToHttpError(result);
+    if (!mapped) return false;
+    res.status(mapped.httpStatus).json(mapped.body);
+    return true;
+  }
+
   // 3. Сохранение паспорта сварного стыка с проверкой ОПТИМИСТИЧЕСКОЙ БЛОКИРОВКИ (OCC HTTP 409 Conflict)
   app.post('/api/db/joints/save', requireWriteAuth, (req: Request, res: Response) => {
     try {
@@ -391,34 +402,8 @@ async function startServer() {
         return;
       }
 
-      if (result.status === 'forbidden') {
-        res.status(403).json({
-          status: 'error',
-          code: 'FORBIDDEN',
-          message: result.error,
-          meta: result.meta,
-        });
-        return;
-      }
-
-      if (result.status === 'duplicate') {
-        res.status(409).json({
-          status: 'error',
-          code: 'DUPLICATE_JOINT_NUMBER',
-          message: result.error,
-          meta: result.meta,
-        });
-        return;
-      }
-
-      if (result.status === 'validation_error') {
-        res.status(422).json({
-          status: 'error',
-          code: 'DOMAIN_VALIDATION_FAILED',
-          message: result.error,
-          errors: result.errors,
-          meta: result.meta,
-        });
+      if (result.status !== 'ok') {
+        handleDbMutationError(res, result);
         return;
       }
 
@@ -517,6 +502,11 @@ async function startServer() {
 
       if (result.status === 'conflict') {
         res.status(409).json(result);
+        return;
+      }
+
+      if (result.status !== 'ok') {
+        handleDbMutationError(res, result);
         return;
       }
 
