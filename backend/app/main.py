@@ -27,6 +27,7 @@ from app.core.database import (
     verify_schema_migrations_applied,
 )
 from app.core.errors import integrity_error_handler
+from app.services.event_bus import start_postgres_listener, stop_postgres_listener
 from sqlalchemy.exc import IntegrityError
 
 settings = get_settings()
@@ -37,9 +38,11 @@ async def lifespan(_app: FastAPI):
     """Fail-fast PostgreSQL probe and Alembic schema readiness check on startup."""
     await verify_postgres_connection()
     await verify_schema_migrations_applied()
+    await start_postgres_listener(settings.database_url)
     try:
         yield
     finally:
+        await stop_postgres_listener()
         await engine.dispose()
 
 

@@ -324,13 +324,15 @@ async def list_joints(
                 WeldJoint.elem2_factory_number.ilike(pat),
             )
         )
-    all_rows = list(
-        (await session.execute(stmt.order_by(WeldJoint.sort_order.asc(), WeldJoint.joint_number.asc())))
-        .scalars()
-        .all()
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await session.execute(count_stmt)).scalar_one()
+
+    paged_stmt = (
+        stmt.order_by(WeldJoint.sort_order.asc(), WeldJoint.joint_number.asc())
+        .limit(limit)
+        .offset(offset)
     )
-    total = len(all_rows)
-    page = all_rows[offset : offset + limit]
+    page = list((await session.execute(paged_stmt)).scalars().all())
     return PaginatedResponse(
         items=[WeldJointOut.model_validate(j) for j in page],
         total=total,
