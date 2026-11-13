@@ -69,12 +69,17 @@ class MigrationReport:
     audit_inserted: int = 0
     quarantined_duplicates: list[dict[str, Any]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    migrated_users_info: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "sqlite_path": self.sqlite_path,
             "dry_run": self.dry_run,
-            "users": {"inserted": self.users_inserted, "skipped": self.users_skipped},
+            "users": {
+                "inserted": self.users_inserted,
+                "skipped": self.users_skipped,
+                "accounts": self.migrated_users_info,
+            },
             "facilities": {"inserted": self.facilities_inserted, "skipped": self.facilities_skipped},
             "lines": {"inserted": self.lines_inserted, "skipped": self.lines_skipped},
             "lrv": {"inserted": self.lrv_inserted, "skipped": self.lrv_skipped},
@@ -86,6 +91,7 @@ class MigrationReport:
             "audit_inserted": self.audit_inserted,
             "quarantined_duplicates_count": len(self.quarantined_duplicates),
             "quarantined_duplicates": self.quarantined_duplicates,
+            "warnings_count": len(self.warnings),
             "warnings": self.warnings,
         }
 
@@ -119,15 +125,19 @@ def _safe_json(raw: Any) -> dict[str, Any]:
         return {}
 
 
-def _parse_date(val: Any) -> date | None:
+def _parse_date(
+    val: Any,
+    report: MigrationReport | None = None,
+    context: str = "",
+) -> date | None:
     if val is None or val == "":
         return None
     if isinstance(val, date) and not isinstance(val, datetime):
         return val
     s = str(val).strip()
-    if not s or s.lower() in ("н/п", "-", "—"):
+    if not s or s.lower() in ("н/п", "-", "—", "null", "none"):
         return None
-    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y"):
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y", "%Y/%m/%d"):
         try:
             return datetime.strptime(s[:10], fmt).date()
         except ValueError:
@@ -135,7 +145,12 @@ def _parse_date(val: Any) -> date | None:
     try:
         return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
     except ValueError:
-        return None
+        pass
+    if report is not None:
+        report.warnings.append(
+            f"Некорректный формат даты '{s}'{f' ({context})' if context else ''} — значение сброшено в None."
+        )
+    return None
 
 
 def _parse_datetime(val: Any) -> datetime:
@@ -221,6 +236,7 @@ def _migrate_users(
     report: MigrationReport,
     *,
     default_password: str | None,
+    credentials_export: list[dict[str, Any]] | None = None,
 ) -> None:
     if not _table_exists(conn, "user_accounts"):
         return
@@ -230,6 +246,7 @@ def _migrate_users(
         data = _safe_json(row["payload_json"])
         login = str(row["login"] or data.get("login") or "").strip()
         if not login:
+            report.warnings.append("Пропущена строка учётной записи без логина.")
             continue
         norm_login = login.lower()
         if norm_login in existing_logins:
@@ -239,17 +256,37 @@ def _migrate_users(
         role = _map_legacy_role(data.get("role"), bool(data.get("isAdmin")))
         raw_pw = data.get("password") or ""
         raw_hash = data.get("passwordHash") or ""
+
         must_change = False
         if isinstance(raw_hash, str) and raw_hash.startswith("$argon2"):
             pw_hash = raw_hash
+            must_change = bool(data.get("mustChangePassword", False))
         elif isinstance(raw_pw, str) and raw_pw.startswith("$argon2"):
             pw_hash = raw_pw
-        elif isinstance(raw_pw, str) and raw_pw and not raw_pw.startswith("$"):
-            pw_hash = hash_password(raw_pw)
+            must_change = bool(data.get("mustChangePassword", False))
         else:
-            fallback_pw = default_password or secrets.token_urlsafe(12)
-            pw_hash = hash_password(fallback_pw)
+            # Для старых паролей (открытый вид или scrypt/sha256 с солью):
+            # Перенос с временным случайным паролем и флагом обязательной смены (must_change_password=True).
+            temp_pw = default_password or secrets.token_urlsafe(16)
+            pw_hash = hash_password(temp_pw)
             must_change = True
+            report.warnings.append(
+                f"Учётная запись '{login}': старый формат пароля заменён на временный пароль с флагом обязательной смены (must_change_password=True)."
+            )
+            if credentials_export is not None:
+                credentials_export.append({
+                    "login": login,
+                    "full_name": str(data.get("fullName") or login).strip(),
+                    "role": role.value,
+                    "temporary_password": temp_pw,
+                    "must_change_password": True,
+                })
+
+        report.migrated_users_info.append({
+            "login": login,
+            "role": role.value,
+            "must_change_password": must_change,
+        })
 
         user = User(
             id=_deterministic_uuid(f"user:{norm_login}"),
@@ -352,7 +389,7 @@ def _migrate_facilities(
 ) -> None:
     if not _table_exists(conn, "facility_geo"):
         return
-    rows = conn.execute("SELECT object_name, version, payload_json FROM facility_geo").fetchall()
+    rows = conn.execute("SELECT * FROM facility_geo").fetchall()
     for row in rows:
         name = str(row["object_name"] or "").strip()
         if not name:
@@ -360,13 +397,14 @@ def _migrate_facilities(
         if name in fac_by_name:
             report.facilities_skipped += 1
             continue
+        ver = int(row["version"] or 1) if "version" in row.keys() else 1
         _ensure_facility(
             name,
             session=session,
             fac_by_name=fac_by_name,
             report=report,
             payload=_safe_json(row["payload_json"]),
-            version=int(row["version"] or 1),
+            version=ver,
         )
 
 
@@ -389,6 +427,9 @@ def _migrate_lines(
         line_number = str(p.get("lineNumber") or "").strip()
         uid_str = str(row["unique_line_id"] or p.get("uniqueLineId") or build_unique_line_id(rd_code, line_number)).strip()
         if not uid_str:
+            report.warnings.append(
+                f"Пропущена строка лайнлиста (id='{row['id']}') без номера линии и unique_line_id."
+            )
             continue
         if uid_str in lines_by_uid:
             report.lines_skipped += 1
@@ -446,6 +487,9 @@ def _migrate_lrv(
         rd_code = str(row["rd_code"] or p.get("rdCode") or "").strip()
         lrv_code = str(row["lrv_code"] or p.get("lrvCode") or "").strip()
         if not rd_code or not lrv_code:
+            report.warnings.append(
+                f"Пропущена позиция ЛРВ (id='{row['id']}') с незаполненным rdCode или lrvCode."
+            )
             continue
         key = (rd_code, lrv_code)
         if key in lrv_by_key:
@@ -502,6 +546,7 @@ def _migrate_welding_tech(
             p = _safe_json(row["payload_json"])
             stamp = str(row["stamp"] or p.get("stamp") or "").strip()
             if not stamp:
+                report.warnings.append("Пропущен профиль сварщика без личного клейма.")
                 continue
             if stamp in welders_by_stamp:
                 report.welders_skipped += 1
@@ -561,6 +606,7 @@ def _migrate_welding_tech(
             p = _safe_json(row["payload_json"])
             number = str(row["number"] or p.get("number") or "").strip()
             if not number:
+                report.warnings.append("Пропущена технологическая карта (ТК) без шифра.")
                 continue
             if number in tc_by_num:
                 report.tech_cards_skipped += 1
@@ -610,6 +656,7 @@ def _migrate_welding_tech(
             p = _safe_json(row["payload_json"])
             leg_id = str(row["id"] or p.get("id") or "").strip()
             if not leg_id:
+                report.warnings.append("Пропущен сварочный материал без идентификатора.")
                 continue
             if leg_id in materials_by_legacy:
                 report.materials_skipped += 1
@@ -684,6 +731,9 @@ def _migrate_joints_with_quarantine(
         uid = str(row["unique_line_id"] or p.get("uniqueLineId") or "").strip()
         jnum = str(row["joint_number"] or p.get("jointNumber") or "").strip()
         if not uid or not jnum:
+            report.warnings.append(
+                f"Пропущен стык без обязательных реквизитов (id='{row['id']}', line='{uid}', joint='{jnum}')."
+            )
             continue
         grouped.setdefault((uid.lower(), jnum.lower()), []).append(row)
 
@@ -906,12 +956,18 @@ def _migrate_templates_and_audit(
 ) -> None:
     now = datetime.now(timezone.utc)
     if _table_exists(conn, "db_meta"):
-        meta = conn.execute("SELECT templates_json, active_template_id FROM db_meta WHERE id = 1").fetchone()
+        meta = conn.execute("SELECT * FROM db_meta WHERE id = 1").fetchone()
         if meta:
+            tpl_raw = None
+            if "templates_json" in meta.keys():
+                tpl_raw = meta["templates_json"]
+            elif "column_templates" in meta.keys():
+                tpl_raw = meta["column_templates"]
             try:
-                tpls = json.loads(meta["templates_json"] or "[]")
+                tpls = json.loads(tpl_raw or "[]")
             except Exception:
                 tpls = []
+            active_id = meta["active_template_id"] if "active_template_id" in meta.keys() else None
             for tpl in tpls:
                 if not isinstance(tpl, dict):
                     continue
@@ -927,7 +983,7 @@ def _migrate_templates_and_audit(
                         column_order=list(tpl.get("columnOrder") or []),
                         visible_columns=list(tpl.get("visibleColumns") or []),
                         custom_widths=tpl.get("customWidths"),
-                        is_active_default=(tpl_id == meta["active_template_id"]),
+                        is_active_default=(tpl_id == active_id),
                         created_at=now,
                         updated_at=now,
                     )
@@ -980,6 +1036,7 @@ async def migrate_sqlite_to_postgres(
     session: AsyncSession,
     *,
     quarantine_report_path: Path | None = None,
+    credentials_export_path: Path | None = None,
     dry_run: bool = False,
     default_password: str | None = None,
 ) -> MigrationReport:
@@ -988,6 +1045,7 @@ async def migrate_sqlite_to_postgres(
     Never modifies the source SQLite file; quarantines duplicate joints with full payload preservation.
     """
     report = MigrationReport(sqlite_path=str(sqlite_path.resolve()), dry_run=dry_run)
+    credentials_export: list[dict[str, Any]] = []
     conn = _open_sqlite_readonly(sqlite_path)
     try:
         existing_users = {
@@ -1031,7 +1089,14 @@ async def migrate_sqlite_to_postgres(
             a.id for a in (await session.execute(select(AuditLog))).scalars().all()
         }
 
-        _migrate_users(conn, session, existing_users, report, default_password=default_password)
+        _migrate_users(
+            conn,
+            session,
+            existing_users,
+            report,
+            default_password=default_password,
+            credentials_export=credentials_export,
+        )
         _migrate_facilities(conn, session, fac_by_name, report)
         _migrate_lines(conn, session, fac_by_name, lines_by_uid, report)
         _migrate_lrv(conn, session, fac_by_name, lrv_by_key, report)
@@ -1088,6 +1153,19 @@ async def migrate_sqlite_to_postgres(
             quarantine_report_path.parent.mkdir(parents=True, exist_ok=True)
             quarantine_report_path.write_text(
                 json.dumps(report.to_dict(), ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8",
+            )
+
+        if credentials_export_path is not None and credentials_export:
+            credentials_export_path.parent.mkdir(parents=True, exist_ok=True)
+            export_payload = {
+                "warning": "КОНФИДЕНЦИАЛЬНО: Временные пароли мигрированных пользователей. Передайте сотрудникам и удалите файл после раздачи.",
+                "dry_run": dry_run,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "users": credentials_export,
+            }
+            credentials_export_path.write_text(
+                json.dumps(export_payload, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
 

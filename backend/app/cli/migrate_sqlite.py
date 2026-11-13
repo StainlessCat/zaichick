@@ -32,6 +32,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run migration logic against DB and roll back transaction without committing.",
     )
     parser.add_argument(
+        "--credentials-export",
+        type=Path,
+        default=None,
+        help="Optional path to export confidential temporary passwords for migrated users.",
+    )
+    parser.add_argument(
         "--default-password",
         type=str,
         default=None,
@@ -47,6 +53,7 @@ async def _run(args: argparse.Namespace) -> int:
             args.sqlite_path,
             session,
             quarantine_report_path=args.quarantine_report,
+            credentials_export_path=args.credentials_export,
             dry_run=args.dry_run,
             default_password=args.default_password,
         )
