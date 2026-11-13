@@ -169,7 +169,10 @@ def _coerce_record_types(model_cls: Any, raw: dict[str, Any]) -> dict[str, Any]:
             coerced[k] = v
             continue
         col_type = col.columns[0].type if getattr(col, "columns", None) else None
-        py_type = getattr(col_type, "python_type", None)
+        try:
+            py_type = getattr(col_type, "python_type", None)
+        except (NotImplementedError, AttributeError, Exception):
+            py_type = None
         if py_type is None:
             coerced[k] = v
             continue
@@ -182,6 +185,12 @@ def _coerce_record_types(model_cls: Any, raw: dict[str, Any]) -> dict[str, Any]:
                 coerced[k] = uuid.UUID(v)
             elif issubclass(py_type, enum.Enum) and isinstance(v, str):
                 coerced[k] = py_type(v)
+            elif issubclass(py_type, float) and not isinstance(v, float):
+                coerced[k] = float(v)
+            elif issubclass(py_type, int) and not isinstance(v, int):
+                coerced[k] = int(v)
+            elif issubclass(py_type, bool) and not isinstance(v, bool):
+                coerced[k] = bool(v)
             else:
                 coerced[k] = v
         except Exception:
