@@ -52,10 +52,52 @@ async def verify_postgres_connection() -> None:
         await conn.execute(text("SELECT 1"))
 
 
+async def verify_schema_migrations_applied() -> str:
+    """
+    Verify that Alembic schema migrations have been applied to PostgreSQL.
+    Raises RuntimeError with clear actionable instruction if unmigrated.
+    Returns the current Alembic revision string.
+    """
+    async with engine.connect() as conn:
+        try:
+            res = await conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
+            version_num = res.scalar_one_or_none()
+        except Exception as exc:
+            raise RuntimeError(
+                "База данных не инициализирована: таблица миграций 'alembic_version' отсутствует. "
+                "Перед запуском приложения примените миграции: 'alembic upgrade head' "
+                "или 'python -m app.cli.bootstrap_admin --apply-migrations'."
+            ) from exc
+
+        if not version_num:
+            raise RuntimeError(
+                "База данных не содержит применённых версий миграций Alembic. "
+                "Выполните команду развёртывания: 'alembic upgrade head'."
+            )
+        return str(version_num)
+
+
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency providing a scoped AsyncSession."""
+    """
+    FastAPI dependency providing a scoped AsyncSession with automatic transaction management.
+    - If the handler completes without exception, automatically commits any active transaction.
+    - Dispatches post-commit SSE events only after successful commit.
+    - If an exception occurs, rolls back the transaction and discards buffered events.
+    """
+    from app.services.event_bus import event_bus
+
     async with async_session_factory() as session:
-        yield session
+        session.info["pending_sse_events"] = []
+        try:
+            yield session
+            if session.is_active and session.in_transaction():
+                await session.commit()
+            await event_bus.dispatch_pending_session_events(session)
+        except Exception:
+            event_bus.clear_pending_session_events(session)
+            if session.is_active and session.in_transaction():
+                await session.rollback()
+            raise
 
 
 @event.listens_for(Session, "before_flush")

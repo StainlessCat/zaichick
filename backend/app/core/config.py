@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,6 +56,36 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_origins_raw.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def validate_production_and_dsn(self) -> Settings:
+        if not self.database_url.startswith("postgresql+asyncpg://"):
+            raise ValueError(
+                f"Некорректный DATABASE_URL ('{self.database_url}'). "
+                "ZAYCHICK 2.0 требует асинхронный драйвер PostgreSQL: 'postgresql+asyncpg://user:pass@host:port/dbname'."
+            )
+
+        if self.environment == "production":
+            if (
+                len(self.jwt_secret_key) < 32
+                or "dev-" in self.jwt_secret_key.lower()
+                or "change" in self.jwt_secret_key.lower()
+            ):
+                raise ValueError(
+                    "В production-окружении запрещён стандартный или короткий JWT_SECRET_KEY "
+                    "(требуется криптографически стойкий секрет длиной не менее 32 символов)."
+                )
+            if not self.cookie_secure:
+                raise ValueError(
+                    "В production-окружении флаг COOKIE_SECURE обязан быть True "
+                    "для обеспечения передачи авторизационных cookie только через защищённый канал HTTPS."
+                )
+            for origin in self.cors_origins:
+                if origin == "*":
+                    raise ValueError(
+                        "В production-окружении CORS_ORIGINS не может содержать '*' при авторизации через cookies."
+                    )
+        return self
 
 
 @lru_cache

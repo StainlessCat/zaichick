@@ -58,6 +58,24 @@ class SseEventBus:
             except asyncio.QueueFull:
                 pass
 
+    async def dispatch_pending_session_events(
+        self, session: AsyncSession
+    ) -> list[dict[str, Any]]:
+        """Dispatch buffered delta events after transaction commit."""
+        info = getattr(session, "info", None)
+        if not info or not isinstance(info, dict):
+            return []
+        events: list[dict[str, Any]] = info.pop("pending_sse_events", [])
+        for payload in events:
+            await self.publish_local(payload)
+        return events
+
+    def clear_pending_session_events(self, session: AsyncSession) -> None:
+        """Clear buffered events without publishing (e.g. on transaction rollback)."""
+        info = getattr(session, "info", None)
+        if info and isinstance(info, dict):
+            info.pop("pending_sse_events", None)
+
     async def emit_delta(
         self,
         session: AsyncSession | None = None,
@@ -70,7 +88,12 @@ class SseEventBus:
         data: dict[str, Any] | None = None,
         notify_pg: bool = False,
     ) -> dict[str, Any]:
-        """Publish a compact delta event locally and optionally via PostgreSQL NOTIFY."""
+        """
+        Publish a compact delta event.
+        If a session is provided, the local event is buffered in the session
+        and only dispatched after the transaction commits (preventing phantom
+        events if the transaction is rolled back).
+        """
         envelope: dict[str, Any] = {
             "event": event,
             "entity_type": entity_type,
@@ -80,18 +103,22 @@ class SseEventBus:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "data": data or {},
         }
-        if notify_pg and session is not None:
-            try:
-                serialized = json.dumps(envelope, ensure_ascii=False, default=str)
-                await session.execute(
-                    text("SELECT pg_notify(:channel, :payload)"),
-                    {"channel": self.CHANNEL, "payload": serialized},
-                )
-            except Exception:
-                # Non-PostgreSQL test sessions safely skip pg_notify
-                pass
+        info = getattr(session, "info", None) if session is not None else None
+        if info is not None and isinstance(info, dict):
+            info.setdefault("pending_sse_events", []).append(envelope)
+            if notify_pg:
+                try:
+                    serialized = json.dumps(envelope, ensure_ascii=False, default=str)
+                    await session.execute(
+                        text("SELECT pg_notify(:channel, :payload)"),
+                        {"channel": self.CHANNEL, "payload": serialized},
+                    )
+                except Exception:
+                    # Non-PostgreSQL test sessions safely skip pg_notify
+                    pass
+        else:
+            await self.publish_local(envelope)
 
-        await self.publish_local(envelope)
         return envelope
 
 

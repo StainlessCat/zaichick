@@ -4,14 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "start": "tsx server.ts",
-    "start:local": "node server-local.cjs",
-    "dev": "tsx server.ts",
+    "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --host 127.0.0.1 --port 5173",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test src/utils/weldingLogic.test.ts"
+    "test": "node --import tsx --test src/utils/weldingLogic.test.ts",
+    "start:legacy": "node server-local.cjs",
+    "dev:legacy": "tsx server.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

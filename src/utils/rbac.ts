@@ -162,7 +162,7 @@ export function filterBulkPatchByRole(
 export function detectRbacRoleCategory(
   user: RbacUserPayload | null | undefined
 ): RbacRoleCategory {
-  if (!user) return 'pto';
+  if (!user || !user.login || user.login === 'anonymous') return 'customer';
   if (user.isAdmin === true || user.backendRole === 'ADMIN') {
     return 'admin';
   }
@@ -172,6 +172,14 @@ export function detectRbacRoleCategory(
   if (user.backendRole === 'PTO') return 'pto';
 
   const combined = `${user.role || ''} ${user.department || ''} ${user.login || ''}`.toLowerCase();
+
+  if (
+    combined.includes('гость') ||
+    combined.includes('неавторизован') ||
+    combined.includes('только чтение')
+  ) {
+    return 'customer';
+  }
 
   if (
     combined.includes('администратор') ||
@@ -319,6 +327,7 @@ export function canUserEditJointField(
   user: RbacUserPayload | null | undefined,
   fieldKey: keyof WeldJoint | WeldJointFieldKey
 ): boolean {
+  if (!user || !user.login || user.login === 'anonymous') return false;
   if (fieldKey === 'jointNumber') return false; // Номер существующего стыка никогда не переименовывается
   const perms = getUserRolePermissions(user);
   if (perms.category === 'admin') {

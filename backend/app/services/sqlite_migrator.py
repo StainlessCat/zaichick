@@ -179,20 +179,35 @@ def _map_legacy_role(raw_role: Any, is_admin: bool = False) -> RoleEnum:
     mapping = {
         "ADMIN": RoleEnum.ADMIN,
         "АДМИНИСТРАТОР": RoleEnum.ADMIN,
+        "АДМИНИСТРАТОР СИСТЕМЫ": RoleEnum.ADMIN,
+        "СИСТЕМНЫЙ АДМИНИСТРАТОР (ПОЛНЫЙ ДОСТУП)": RoleEnum.ADMIN,
         "PTO": RoleEnum.PTO,
         "ПТО": RoleEnum.PTO,
         "ИНЖЕНЕР ПТО": RoleEnum.PTO,
         "OGS": RoleEnum.OGS,
         "ОГС": RoleEnum.OGS,
         "ТЕХНОЛОГ ПО СВАРКЕ (ОГС)": RoleEnum.OGS,
+        "ТЕХНОЛОГ ПО СВАРКЕ (СЛУЖБА ГС)": RoleEnum.OGS,
         "PIL": RoleEnum.PIL,
         "ПИЛ": RoleEnum.PIL,
         "ЛНК": RoleEnum.PIL,
+        "СПЕЦИАЛИСТ ЛНК": RoleEnum.PIL,
         "СПЕЦИАЛИСТ ЛНК / ПИЛ": RoleEnum.PIL,
         "VIEWER": RoleEnum.VIEWER,
         "НАБЛЮДАТЕЛЬ": RoleEnum.VIEWER,
+        "ПРЕДСТАВИТЕЛЬ ЗАКАЗЧИКА": RoleEnum.VIEWER,
     }
-    return mapping.get(s, RoleEnum.VIEWER)
+    if s in mapping:
+        return mapping[s]
+    if "АДМИНИСТРАТОР" in s or "ADMIN" in s:
+        return RoleEnum.ADMIN
+    if "ТЕХНОЛОГ" in s or "ОГС" in s or "СЛУЖБА ГС" in s:
+        return RoleEnum.OGS
+    if "ЛНК" in s or "ПИЛ" in s:
+        return RoleEnum.PIL
+    if "ПТО" in s:
+        return RoleEnum.PTO
+    return RoleEnum.VIEWER
 
 
 def _deterministic_uuid(namespace_key: str) -> uuid.UUID:
@@ -222,9 +237,12 @@ def _migrate_users(
             continue
 
         role = _map_legacy_role(data.get("role"), bool(data.get("isAdmin")))
-        raw_pw = data.get("password") or data.get("passwordHash") or ""
+        raw_pw = data.get("password") or ""
+        raw_hash = data.get("passwordHash") or ""
         must_change = False
-        if isinstance(raw_pw, str) and raw_pw.startswith("$argon2"):
+        if isinstance(raw_hash, str) and raw_hash.startswith("$argon2"):
+            pw_hash = raw_hash
+        elif isinstance(raw_pw, str) and raw_pw.startswith("$argon2"):
             pw_hash = raw_pw
         elif isinstance(raw_pw, str) and raw_pw and not raw_pw.startswith("$"):
             pw_hash = hash_password(raw_pw)
@@ -935,15 +953,19 @@ def _migrate_templates_and_audit(
                 AuditLog(
                     id=audit_uuid,
                     timestamp=_parse_datetime(row["timestamp"]),
-                    user_login=str(row["user_login"] or "legacy"),
-                    user_full_name=str(p.get("userFullName") or row["user_login"] or ""),
-                    user_role=str(p.get("userRole") or "LEGACY"),
-                    action=str(row["operation_type"] or p.get("operationType") or "LEGACY")[:32],
+                    user_login=str(row["user_login"] or "legacy")[:64],
+                    user_full_name=str(p.get("userFullName") or row["user_login"] or "")[:255],
+                    user_role=str(p.get("userRole") or "LEGACY")[:32],
+                    action=str(row["operation_type"] or p.get("operationType") or "LEGACY")[:64],
                     entity_type="legacy_audit",
                     entity_id=str(p.get("entityId") or leg_id)[:128],
-                    joint_number=p.get("jointNumber"),
-                    unique_line_id=p.get("uniqueLineId"),
-                    rd_code=p.get("rdCode"),
+                    joint_number=(
+                        str(p["jointNumber"])[:64] if p.get("jointNumber") is not None else None
+                    ),
+                    unique_line_id=(
+                        str(p["uniqueLineId"])[:255] if p.get("uniqueLineId") is not None else None
+                    ),
+                    rd_code=str(p["rdCode"])[:255] if p.get("rdCode") is not None else None,
                     summary=str(p.get("summary") or "")[:500] or None,
                     old_data=p.get("oldData") if isinstance(p.get("oldData"), dict) else None,
                     new_data=p.get("newData") if isinstance(p.get("newData"), dict) else None,

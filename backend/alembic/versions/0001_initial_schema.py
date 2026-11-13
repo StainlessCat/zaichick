@@ -821,7 +821,10 @@ def upgrade() -> None:
             RAISE EXCEPTION 'audit_logs table is append-only: % is forbidden', TG_OP;
         END;
         $$ LANGUAGE plpgsql;
-
+        """
+    )
+    op.execute(
+        """
         CREATE TRIGGER trg_audit_logs_immutable
         BEFORE UPDATE OR DELETE ON audit_logs
         FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_mutation();
@@ -893,12 +896,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        """
-        DROP TRIGGER IF EXISTS trg_audit_logs_immutable ON audit_logs;
-        DROP FUNCTION IF EXISTS prevent_audit_log_mutation();
-        """
-    )
+    op.execute("DROP TRIGGER IF EXISTS trg_audit_logs_immutable ON audit_logs;")
+    op.execute("DROP FUNCTION IF EXISTS prevent_audit_log_mutation();")
     op.drop_table("app_settings")
     op.drop_table("column_templates")
     op.drop_table("audit_logs")

@@ -12,9 +12,11 @@ import {
   FolderKanban,
   HardDriveDownload,
   History,
+  ShieldAlert,
   Wrench,
 } from 'lucide-react';
 import {
+  ANONYMOUS_USER,
   AppSection,
   AuditLogEntry,
   ColumnTemplate,
@@ -443,6 +445,7 @@ export default function App() {
     siteWeatherTempC: siteWeather.tempC,
     activeConflict,
     setActiveConflict,
+    isAuthenticated,
     setIsDbConnected,
     setIsDbSyncing,
     setIsAuthenticated,
@@ -494,6 +497,7 @@ export default function App() {
     initialColumnTemplates: INITIAL_COLUMN_TEMPLATES,
     handleSaveFacilityLocationLocal,
     handleCreateStandaloneObjectLocal,
+    isAuthenticated,
     setIsDbSyncing,
     setIsAuthenticated,
     setIsLoginModalOpen,
@@ -753,6 +757,7 @@ export default function App() {
         onLogout={async () => {
           await zaychickApi.logout().catch(() => {});
           setIsAuthenticated(false);
+          setCurrentUser(ANONYMOUS_USER);
           setIsDbConnected(false);
           setIsLoginModalOpen(true);
         }}
@@ -764,6 +769,29 @@ export default function App() {
         onRedo={handleRedo}
         onOpenDrawer={() => setIsDrawerOpen(true)}
       />
+
+      {!isAuthenticated && (
+        <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-semibold flex items-center justify-between shadow-xs no-print">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 shrink-0 text-slate-950" />
+            <span>
+              {isDbConnected
+                ? 'Режим инспекционного просмотра (гость, только чтение). Для внесения изменений и сохранения в СУБД выполните вход.'
+                : 'Сервер FastAPI недоступен (порт 8000). Проверьте запуск приложения и подключение к PostgreSQL.'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setLoginModalInitialMode('login');
+              setIsLoginModalOpen(true);
+            }}
+            className="px-3 py-1 rounded bg-slate-950 text-white hover:bg-slate-800 text-xs font-bold transition-colors cursor-pointer shrink-0 ml-4"
+          >
+            Войти в систему
+          </button>
+        </div>
+      )}
 
       <HamburgerDrawer
         isOpen={isDrawerOpen}
@@ -1144,6 +1172,7 @@ export default function App() {
         currentUser={currentUser}
         accounts={userAccounts}
         initialMode={loginModalInitialMode}
+        isAuthenticated={isAuthenticated}
         onChangeAdminPassword={dirActions.handleChangeAdminPassword}
         onToggleAdminRights={dirActions.handleToggleAdminRights}
         onRegisterAccount={(newAcc) => {

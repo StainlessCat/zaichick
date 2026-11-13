@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, zaychickApi } from '../api';
-import type {
+import {
+  ANONYMOUS_USER,
   AuditLogEntry,
   ColumnTemplate,
   CustomWeatherStation,
@@ -247,16 +248,19 @@ export function useServerSync({
         }, 50);
         return true;
       } catch (err) {
+        setIsAuthenticated(false);
+        setCurrentUser(ANONYMOUS_USER);
         if (err instanceof ApiError && err.status === 401) {
-          setIsAuthenticated(false);
           setIsDbConnected(true);
-          setLastSyncError('Требуется авторизация на сервере');
+          setLastSyncError('Сессия не активна: требуется вход в систему');
           setIsLoginModalOpen(true);
           return false;
         }
         setIsDbConnected(false);
         setLastSyncError(
-          err instanceof Error ? err.message : 'Сервер FastAPI / PostgreSQL недоступен'
+          err instanceof Error
+            ? (err.message.includes('fetch') ? 'Сервер FastAPI недоступен (порт 8000)' : err.message)
+            : 'Сервер FastAPI / PostgreSQL недоступен'
         );
         return false;
       } finally {

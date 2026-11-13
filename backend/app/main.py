@@ -21,15 +21,22 @@ from app.api.routes.users import router as users_router
 from app.api.routes.welding_journals import router as welding_journals_router
 from app.api.routes.wps import router as wps_router
 from app.core.config import get_settings
-from app.core.database import engine, verify_postgres_connection
+from app.core.database import (
+    engine,
+    verify_postgres_connection,
+    verify_schema_migrations_applied,
+)
+from app.core.errors import integrity_error_handler
+from sqlalchemy.exc import IntegrityError
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Fail-fast PostgreSQL check on startup; no JSON/SQLite fallback allowed."""
+    """Fail-fast PostgreSQL probe and Alembic schema readiness check on startup."""
     await verify_postgres_connection()
+    await verify_schema_migrations_applied()
     try:
         yield
     finally:
@@ -49,6 +56,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_exception_handler(IntegrityError, integrity_error_handler)
 
 app.include_router(auth_router)
 app.include_router(users_router)
@@ -70,4 +79,5 @@ app.include_router(imports_router)
 @app.get("/api/health", tags=["system"])
 async def healthcheck() -> dict[str, str]:
     await verify_postgres_connection()
-    return {"status": "ok", "database": "postgresql"}
+    schema_ver = await verify_schema_migrations_applied()
+    return {"status": "ok", "database": "postgresql", "schema_version": schema_ver}

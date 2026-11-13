@@ -521,6 +521,15 @@ export interface UserAccount {
   mustChangePassword?: boolean;
 }
 
+export const ANONYMOUS_USER: UserAccount = {
+  login: '',
+  fullName: 'Неавторизованный пользователь',
+  role: 'Гость (Только чтение)',
+  backendRole: 'VIEWER',
+  department: 'Авторизация не выполнена',
+  sessionNumber: 0,
+};
+
 /**
  * Строка раздела «Проект (лайнлист)» (17 полей по ТЗ, включая «Уровень качества»).
  * Поля «Уровень качества» (qualityLevel) и «Категория трубопровода» (pipelineCategory) могут быть пустыми.

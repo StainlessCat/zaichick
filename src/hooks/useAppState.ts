@@ -14,6 +14,7 @@ import type {
   WeldJoint,
   WeldJointFieldKey,
 } from '../types/welding';
+import { ANONYMOUS_USER } from '../types/welding';
 import {
   ALL_COLUMNS,
   DEFAULT_COLUMN_KEYS,
@@ -93,8 +94,8 @@ export function useAppState() {
   }, []);
 
   // Авторизованный пользователь и пул учётных записей (загружается с сервера /api/auth/session)
-  const [userAccounts, setUserAccounts] = useState<UserAccount[]>(USER_ACCOUNTS);
-  const [currentUser, setCurrentUser] = useState<UserAccount>(USER_ACCOUNTS[0]);
+  const [userAccounts, setUserAccounts] = useState<UserAccount[]>([]);
+  const [currentUser, setCurrentUser] = useState<UserAccount>(ANONYMOUS_USER);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [loginModalInitialMode, setLoginModalInitialMode] =
     useState<LoginModalMode>('login');

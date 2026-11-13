@@ -1,56 +1,61 @@
 # =========================================================================
-# Multi-stage Dockerfile для промышленного развёртывания системы ZAYCHICK
+# Multi-stage Dockerfile для промышленного развёртывания ZAYCHICK 2.0
+# Стек: FastAPI + PostgreSQL + React/Vite
 # =========================================================================
 
-# --- ЭТАП 1: Сборка фронтенда и ассетов ---
-FROM node:22-alpine AS builder
+# --- ЭТАП 1: Сборка фронтенда (React + Vite) ---
+FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Копируем манифесты зависимостей для эффективного кеширования слоёв
 COPY package.json package-lock.json ./
 RUN npm ci --legacy-peer-deps
 
-# Копируем исходный код
 COPY . .
-
-# Сборка оптимизированного production-бандла
 RUN npm run build
 
-# --- ЭТАП 2: Легковесный Production-образ ---
-FROM node:22-alpine AS runner
+# --- ЭТАП 2: Production Backend (FastAPI + Python 3.12) ---
+FROM python:3.12-slim AS backend
 
-WORKDIR /app
+WORKDIR /app/backend
 
-ENV NODE_ENV=production
-ENV PORT=3000
+# Установка системных зависимостей для сборки и healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Установка зависимостей (включая tsx для запуска TypeScript бэкенда)
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --legacy-peer-deps && npm install tsx --legacy-peer-deps
+# Установка Python-зависимостей
+COPY backend/pyproject.toml ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+    "fastapi>=0.115.0" \
+    "uvicorn[standard]>=0.32.0" \
+    "sqlalchemy[asyncio]>=2.0.36" \
+    "asyncpg>=0.30.0" \
+    "alembic>=1.14.0" \
+    "pydantic>=2.10.0" \
+    "pydantic-settings>=2.6.0" \
+    "pyjwt>=2.10.0" \
+    "pwdlib[argon2]>=0.2.1" \
+    "openpyxl>=3.1.5" \
+    "python-multipart>=0.0.17" \
+    greenlet
 
-# Копируем скомпилированный фронтенд из этапа сборки
-COPY --from=builder /app/dist ./dist
+# Копируем исходный код бэкенда и миграции Alembic
+COPY backend/ ./
 
-# Копируем серверный код и вспомогательные модули
-COPY server.ts ./
-COPY src/server ./src/server
-COPY src/utils ./src/utils
-COPY src/types ./src/types
-COPY src/data ./src/data
-COPY public ./public
+# Копируем собранный фронтенд (на случай прямой раздачи статики)
+COPY --from=frontend-builder /app/dist /app/dist
 
-# Создаем каталог для хранения базы данных SQLite и резервных копий
-RUN mkdir -p /app/data/backups
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/backend
 
-# Том для персистентного хранения базы SQLite
-VOLUME ["/app/data"]
+EXPOSE 8000
 
-EXPOSE 3000
+# Healthcheck API и БД
+HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://127.0.0.1:8000/api/health || exit 1
 
-# Проверка здоровья контейнера
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1
-
-# Запуск единого сервера ZAYCHICK (Express + SQLite WAL + OCC)
-CMD ["npx", "tsx", "server.ts"]
+# Запуск миграций и сервера FastAPI
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

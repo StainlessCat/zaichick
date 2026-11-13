@@ -23,6 +23,7 @@ interface LoginModalProps {
   currentUser: UserAccount;
   accounts: UserAccount[];
   initialMode?: LoginModalMode;
+  isAuthenticated?: boolean;
   onAuthenticate: (account: UserAccount, inputPassword?: string) => void;
   onRegisterAccount?: (account: UserAccount) => void;
   onDeleteAccount?: (login: string) => void;
@@ -61,6 +62,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   currentUser,
   accounts,
   initialMode = 'login',
+  isAuthenticated = false,
   onAuthenticate,
   onRegisterAccount,
   onDeleteAccount,
@@ -68,14 +70,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   onChangeAdminPassword,
 }) => {
   const isCurrentUserAdmin = useMemo(
-    () => getUserRolePermissions(currentUser).category === 'admin',
-    [currentUser]
+    () => Boolean(isAuthenticated) && getUserRolePermissions(currentUser).category === 'admin',
+    [currentUser, isAuthenticated]
   );
   const [mode, setMode] = useState<LoginModalMode>(
     !isCurrentUserAdmin && initialMode === 'register' ? 'login' : initialMode
   );
-  const [login, setLogin] = useState(currentUser.login);
-  const [password, setPassword] = useState(currentUser.password || '123');
+  const [login, setLogin] = useState(currentUser.login || '');
+  const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState(ROLE_PRESETS[5]);
   const [department, setDepartment] = useState('Производственно-технический отдел');
@@ -94,7 +96,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   );
 
   const [targetAdminLogin, setTargetAdminLogin] = useState<string>(
-    currentUser.login
+    currentUser.login || ''
   );
   const [oldAdminPassword, setOldAdminPassword] = useState<string>('');
   const [newAdminPassword, setNewAdminPassword] = useState<string>('');
@@ -105,15 +107,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       const allowedInitialMode =
         !isCurrentUserAdmin && initialMode === 'register' ? 'login' : initialMode;
       setMode(allowedInitialMode);
-      setLogin(currentUser.login);
-      setPassword(currentUser.password || '123');
+      setLogin(currentUser.login || '');
+      setPassword('');
       setErrorMsg('');
       setSuccessMsg('');
       setRegisterIsAdmin(false);
       const defaultAdmin =
         adminAccounts.find((a) => a.login === currentUser.login)?.login ||
         adminAccounts[0]?.login ||
-        currentUser.login;
+        currentUser.login ||
+        '';
       setTargetAdminLogin(defaultAdmin);
       setOldAdminPassword('');
       setNewAdminPassword('');
@@ -175,8 +178,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         setErrorMsg('Право регистрации новых пользователей предоставлено исключительно администратору системы');
         return;
       }
-      if (cleanPassword.length < 3) {
-        setErrorMsg('Пароль должен содержать не менее 3 символов');
+      if (cleanPassword.length < 8) {
+        setErrorMsg('Пароль учётной записи должен содержать не менее 8 символов');
         return;
       }
       if (!fullName.trim()) {
@@ -208,17 +211,28 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               : 'Производственно-технический отдел'),
           mustChangePassword: false,
         });
+        setSuccessMsg(`Пользователь «${cleanLogin}» успешно зарегистрирован. Войдите с назначенным паролем.`);
         setErrorMsg('');
         onRegisterAccount?.(created);
-        onClose();
+        setLogin(cleanLogin);
+        setPassword('');
+        setMode('login');
         return;
       } catch (err) {
         if (err instanceof ApiError) {
+          if (err.status === 409) {
+            setErrorMsg(`Пользователь с логином «${cleanLogin}» уже зарегистрирован`);
+            return;
+          }
+          if (err.status === 403) {
+            setErrorMsg('Недостаточно прав: регистрация разрешена только администратору');
+            return;
+          }
           setErrorMsg(err.message);
           return;
         }
         setErrorMsg(
-          'Сервер авторизации FastAPI недоступен. Регистрация не выполнена.'
+          'Сервер авторизации FastAPI недоступен. Проверьте порт 8000.'
         );
         return;
       }
@@ -233,11 +247,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       return;
     } catch (err) {
       if (err instanceof ApiError) {
-        setErrorMsg(err.message);
+        if (err.status === 401) {
+          setErrorMsg('Неверный логин или пароль. Проверьте правильность введённых данных.');
+          return;
+        }
+        if (err.status === 403) {
+          setErrorMsg('Доступ запрещён: учётная запись деактивирована или заблокирована.');
+          return;
+        }
+        setErrorMsg(err.message || 'Ошибка авторизации на сервере.');
         return;
       }
       setErrorMsg(
-        'Сервер авторизации FastAPI недоступен. Проверьте, запущен ли backend на порту 8000.'
+        'Сервер авторизации FastAPI недоступен. Проверьте, запущен ли backend на http://127.0.0.1:8000.'
       );
       return;
     }
@@ -302,7 +324,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 onClick={() => {
                   setMode('register');
                   setLogin('');
-                  setPassword('123');
+                  setPassword('');
                   setFullName('');
                   setRegisterIsAdmin(false);
                   setErrorMsg('');
@@ -533,7 +555,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             ) : mode === 'register' ? (
               <>
                 <UserPlus className="w-4 h-4" />
-                <span>Зарегистрировать и войти в сессию</span>
+                <span>Зарегистрировать специалиста</span>
               </>
             ) : (
               <>
@@ -543,69 +565,66 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             )}
           </button>
 
-          {/* Быстрый выбор и управление учётными записями */}
-          <div className="pt-3 border-t border-slate-200 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
-              <span>Зарегистрированные специалисты ({accounts.length} чел.):</span>
-              <span className="font-mono">Базовый пароль: 123</span>
-            </div>
-            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-              {accounts.map((acc) => {
-                const isCurrent = acc.login === currentUser.login;
-                const isConfirming = confirmDeleteLogin === acc.login;
-                const isAccAdmin =
-                  getUserRolePermissions(acc).category === 'admin';
-                const hasCustomPassword = acc.password !== '123';
+          {/* Управление учётными записями для администратора (без авто-входа и без паролей) */}
+          {isCurrentUserAdmin && accounts.length > 0 && (
+            <div className="pt-3 border-t border-slate-200 space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                <span>Управление пользователями в СУБД ({accounts.length} чел.):</span>
+                <span className="text-[10px] text-slate-400">Роли и доступы</span>
+              </div>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {accounts.map((acc) => {
+                  const isCurrent = acc.login === currentUser.login;
+                  const isConfirming = confirmDeleteLogin === acc.login;
+                  const isAccAdmin =
+                    getUserRolePermissions(acc).category === 'admin';
 
-                return (
-                  <div
-                    key={acc.login}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left text-xs transition-colors ${
-                      isCurrent
-                        ? 'bg-[#e8f1fc] border-[#1e3799] text-[#1e3799]'
-                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isAccAdmin && hasCustomPassword && !isCurrent) {
-                          setMode('login');
-                          setLogin(acc.login);
-                          setPassword('');
-                          setSuccessMsg('');
-                          setErrorMsg(
-                            `Учётная запись администратора «${acc.login}» защищена индивидуальным паролем. Введите пароль в поле выше.`
-                          );
-                          return;
-                        }
-                        setLogin(acc.login);
-                        const pwdToUse = acc.password || '123';
-                        setPassword(pwdToUse);
-                        onAuthenticate(acc, pwdToUse);
-                        onClose();
-                      }}
-                      className="flex-1 text-left min-w-0 pr-2 cursor-pointer"
+                  return (
+                    <div
+                      key={acc.login}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left text-xs transition-colors ${
+                        isCurrent
+                          ? 'bg-[#e8f1fc] border-[#1e3799] text-[#1e3799]'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
                     >
-                      <div className="font-semibold truncate flex items-center gap-1.5">
-                        <span className="truncate">{acc.fullName}</span>
-                        {isAccAdmin && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-indigo-100 text-[#1e3799] text-[10px] font-bold shrink-0">
-                            <ShieldCheck className="w-3 h-3" />
-                            <span>Админ</span>
+                      <div className="flex-1 text-left min-w-0 pr-2">
+                        <div className="font-semibold truncate flex items-center gap-1.5">
+                          <span className="truncate">{acc.fullName}</span>
+                          {isAccAdmin && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-indigo-100 text-[#1e3799] text-[10px] font-bold shrink-0">
+                              <ShieldCheck className="w-3 h-3" />
+                              <span>Админ</span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate flex items-center gap-2">
+                          <span>
+                            Логин: <span className="font-mono">{acc.login}</span>
                           </span>
-                        )}
+                          <span>·</span>
+                          <span className="truncate">{acc.role}</span>
+                        </div>
                       </div>
-                      <div className="text-[11px] text-slate-500 truncate">
-                        Логин: <span className="font-mono">{acc.login}</span> · {acc.role}
-                      </div>
-                    </button>
 
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {!isConfirming ? (
-                        <>
-                          {isCurrentUserAdmin && onToggleAdminRights && (
-                            acc.login !== 'admin' ? (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {!isConfirming ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLogin(acc.login);
+                                setPassword('');
+                                setMode('login');
+                                setErrorMsg('');
+                                setSuccessMsg('');
+                              }}
+                              title="Выбрать данный логин для формы входа"
+                              className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-[10px] font-semibold transition-colors cursor-pointer"
+                            >
+                              Выбрать
+                            </button>
+                            {onToggleAdminRights && acc.login !== 'admin' && (
                               isAccAdmin ? (
                                 <button
                                   type="button"
@@ -637,87 +656,84 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                                   <span>Сделать админом</span>
                                 </button>
                               )
-                            ) : null
-                          )}
-                          {isAccAdmin && isCurrentUserAdmin && (
+                            )}
+                            {isAccAdmin && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTargetAdminLogin(acc.login);
+                                  setMode('admin_password');
+                                  setErrorMsg('');
+                                  setSuccessMsg('');
+                                }}
+                                title="Изменить пароль администратора"
+                                className="px-2 py-1 rounded bg-white border border-sky-200 text-[#1e3799] hover:bg-sky-50 text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <KeyRound className="w-3 h-3" />
+                                <span>Пароль</span>
+                              </button>
+                            )}
+                            {onDeleteAccount && acc.login !== 'admin' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (accounts.length <= 1) {
+                                    setErrorMsg(
+                                      'Нельзя удалить единственную оставшуюся учётную запись в системе.'
+                                    );
+                                    return;
+                                  }
+                                  setConfirmDeleteLogin(acc.login);
+                                }}
+                                title={`Удалить пользователя ${acc.fullName}`}
+                                aria-label={`Удалить пользователя ${acc.fullName}`}
+                                className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex items-center gap-1">
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setTargetAdminLogin(acc.login);
-                                setMode('admin_password');
-                                setErrorMsg('');
-                                setSuccessMsg('');
+                                onDeleteAccount?.(acc.login);
+                                setConfirmDeleteLogin(null);
                               }}
-                              title="Изменить пароль администратора"
-                              className="px-2 py-1 rounded bg-white border border-sky-200 text-[#1e3799] hover:bg-sky-50 text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                              className="px-2 py-1 rounded bg-red-600 text-white text-[11px] font-bold hover:bg-red-700 cursor-pointer"
                             >
-                              <KeyRound className="w-3 h-3" />
-                              <span>Пароль</span>
+                              Удалить
                             </button>
-                          )}
-                          <span className="font-mono text-[10px] text-slate-500">
-                            #{acc.sessionNumber}
-                          </span>
-                          {isCurrentUserAdmin && onDeleteAccount && acc.login !== 'admin' && (
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (accounts.length <= 1) {
-                                  setErrorMsg(
-                                    'Нельзя удалить единственную оставшуюся учётную запись в системе.'
-                                  );
-                                  return;
-                                }
-                                setConfirmDeleteLogin(acc.login);
+                                setConfirmDeleteLogin(null);
                               }}
-                              title={`Удалить пользователя ${acc.fullName}`}
-                              aria-label={`Удалить пользователя ${acc.fullName}`}
-                              className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-700 text-[11px] font-semibold cursor-pointer"
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              Отмена
                             </button>
-                          )}
-                        </>
-                      ) : (
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteAccount?.(acc.login);
-                              setConfirmDeleteLogin(null);
-                            }}
-                            className="px-2 py-1 rounded bg-red-600 text-white text-[11px] font-bold hover:bg-red-700 cursor-pointer"
-                          >
-                            Удалить
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setConfirmDeleteLogin(null);
-                            }}
-                            className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-700 text-[11px] font-semibold cursor-pointer"
-                          >
-                            Отмена
-                          </button>
-                        </div>
-                      )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600 flex items-center justify-between">
             <span className="inline-flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5 text-[#1e3799]" />
-              <span>Активных сессий в пуле: {Math.max(32, accounts.length + 28)}</span>
+              <span>Авторизация: FastAPI REST (JWT HttpOnly Cookie)</span>
             </span>
-            <span className="font-mono">СУБД: до 100 000 строк</span>
+            <span className="font-mono">СУБД: PostgreSQL 16</span>
           </div>
         </form>
       </div>
