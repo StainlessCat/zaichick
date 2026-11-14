@@ -66,21 +66,25 @@ class Settings(BaseSettings):
             )
 
         if self.environment == "production":
+            lower_dsn = self.database_url.lower()
             if (
                 ":@" in self.database_url
-                or "zaychick_dev_password" in self.database_url
-                or "zaychick_secure_dev_password" in self.database_url
+                or "zaychick_dev_password" in lower_dsn
+                or "zaychick_secure_dev_password" in lower_dsn
+                or "replace-with-" in lower_dsn
             ):
                 raise ValueError(
-                    "В production-окружении запрещён пустой или демонстрационный пароль БД в DATABASE_URL."
+                    "В production-окружении запрещён пустой, шаблонный или демонстрационный пароль БД в DATABASE_URL."
                 )
+            lower_jwt = self.jwt_secret_key.lower()
             if (
                 len(self.jwt_secret_key) < 32
-                or "dev-" in self.jwt_secret_key.lower()
-                or "change" in self.jwt_secret_key.lower()
+                or "dev-" in lower_jwt
+                or "change" in lower_jwt
+                or "replace-with-" in lower_jwt
             ):
                 raise ValueError(
-                    "В production-окружении запрещён стандартный или короткий JWT_SECRET_KEY "
+                    "В production-окружении запрещён стандартный, шаблонный или короткий JWT_SECRET_KEY "
                     "(требуется криптографически стойкий секрет длиной не менее 32 символов)."
                 )
             if not self.cookie_secure:

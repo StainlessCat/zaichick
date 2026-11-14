@@ -588,6 +588,9 @@ export default function App() {
     if (Array.isArray(data.techCards)) setTechCards(data.techCards);
     if (Array.isArray(data.weldingMaterials))
       setWeldingMaterials(data.weldingMaterials);
+    if (Array.isArray(data.labRequests)) {
+      setLabRequests(data.labRequests);
+    }
     if (Array.isArray(data.userAccounts) && data.userAccounts.length > 0) {
       setUserAccounts(data.userAccounts);
       setCurrentUser(data.userAccounts[0]);
@@ -1473,6 +1476,7 @@ export default function App() {
           projectLineList,
           lrvCatalog,
           auditLogs,
+          labRequests,
           welders,
           techCards,
           weldingMaterials,

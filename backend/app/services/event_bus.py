@@ -29,7 +29,7 @@ class SseEventBus:
         self._lock = asyncio.Lock()
         self._recent_event_ids: set[str] = set()
         self._recent_event_queue: deque[str] = deque()
-        self._max_recent_ids = max_recent_ids
+        self._max_recent_ids = max(1, max_recent_ids)
 
     def _track_event_id_locked(self, event_id: str) -> bool:
         """
@@ -318,14 +318,14 @@ async def stop_postgres_listener() -> None:
 
 
 async def publish_domain_event(
-    session: AsyncSession,
+    session: AsyncSession | None = None,
     *,
     event: str,
     entity_type: str,
-    entity_id: str,
+    entity_id: str | uuid.UUID,
     data: dict[str, Any] | None = None,
-    version: int = 1,
-    updated_by: str = "",
+    version: int | None = 1,
+    updated_by: str | None = "",
     notify_pg: bool = True,
 ) -> dict[str, Any]:
     """Helper wrapper around event_bus.emit_delta for high-level domain event publication."""

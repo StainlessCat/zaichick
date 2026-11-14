@@ -42,6 +42,24 @@ def test_production_config_rejects_weak_or_dev_jwt_secret():
         )
     assert "JWT_SECRET_KEY" in str(exc2.value)
 
+    with pytest.raises(ValidationError) as exc3:
+        Settings(
+            environment="production",
+            jwt_secret_key="replace-with-secure-32-byte-secret-key-in-production",
+            cookie_secure=True,
+            database_url="postgresql+asyncpg://zaychick:pass@127.0.0.1:5432/zaychick",
+        )
+    assert "JWT_SECRET_KEY" in str(exc3.value)
+
+    with pytest.raises(ValidationError) as exc4:
+        Settings(
+            environment="production",
+            jwt_secret_key="SuperSecretProdKeyWithHighEntropy1234567890!",
+            cookie_secure=True,
+            database_url="postgresql+asyncpg://zaychick:replace-with-strong-db-password-in-production@127.0.0.1:5432/zaychick",
+        )
+    assert "DATABASE_URL" in str(exc4.value)
+
 
 def test_production_config_requires_cookie_secure_https():
     """Verify production environment requires COOKIE_SECURE=True."""

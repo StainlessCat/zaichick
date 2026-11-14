@@ -22,6 +22,7 @@ import {
   AuditLogEntry,
   ColumnTemplate,
   LRVItem,
+  NdtLabRequest,
   ProjectLineItem,
   TechCardItem,
   UserAccount,
@@ -49,6 +50,7 @@ export interface FullSystemBackupPayload {
     weldingMaterials: WeldingMaterialCertificate[];
     userAccounts: UserAccount[];
     auditLogs: AuditLogEntry[];
+    labRequests?: NdtLabRequest[];
     facilityGeoOverrides: Record<
       string,
       {
@@ -161,6 +163,7 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
       weldingMaterials: currentPayload.weldingMaterials,
       userAccounts: currentPayload.userAccounts,
       auditLogs: currentPayload.auditLogs,
+      labRequests: currentPayload.labRequests || [],
       facilityGeoOverrides: currentPayload.facilityGeoOverrides,
       templates: currentPayload.templates,
       activeTemplateId: currentPayload.activeTemplateId,

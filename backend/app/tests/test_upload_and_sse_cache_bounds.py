@@ -92,6 +92,13 @@ async def test_sse_cache_bounded_growth_and_eviction() -> None:
     assert "event_0" in bus._recent_event_ids
     assert len(bus._recent_event_ids) == 15
 
+    # Zero or negative max_recent_ids is clamped to at least 1 (never raises IndexError)
+    min_bus = SseEventBus(max_recent_ids=0)
+    assert min_bus._max_recent_ids == 1
+    assert await min_bus.publish_local({"event_id": "e1", "event": "joint.created"}, deduplicate=True) is True
+    assert await min_bus.publish_local({"event_id": "e2", "event": "joint.created"}, deduplicate=True) is True
+    assert len(min_bus._recent_event_ids) == 1
+
 
 def test_docker_compose_and_env_templates() -> None:
     """Verifies that docker-compose.yml enforces secure production defaults and fails fast on missing secrets."""
@@ -104,6 +111,10 @@ def test_docker_compose_and_env_templates() -> None:
 
     compose_text = compose_path.read_text(encoding="utf-8")
     env_text = env_example_path.read_text(encoding="utf-8")
+
+    # Production environment mode enabled by default
+    assert "ENVIRONMENT: ${ENVIRONMENT:-production}" in compose_text
+    assert "ENVIRONMENT=production" in env_text
 
     # Fail-safe parameter expansions for secrets
     assert "${POSTGRES_PASSWORD:?" in compose_text
@@ -120,3 +131,4 @@ def test_docker_compose_and_env_templates() -> None:
     assert "POSTGRES_PASSWORD=" in env_text
     assert "JWT_SECRET_KEY=" in env_text
     assert "COOKIE_SECURE=true" in env_text
+

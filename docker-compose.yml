@@ -39,6 +39,7 @@ services:
       db:
         condition: service_healthy
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-zaychick}:${POSTGRES_PASSWORD:?ОШИБКА: Переменная POSTGRES_PASSWORD не задана в .env файле!}@db:5432/${POSTGRES_DB:-zaychick}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?ОШИБКА: Переменная JWT_SECRET_KEY не задана в .env файле (минимум 32 байта)!}
       JWT_ALGORITHM: HS256
