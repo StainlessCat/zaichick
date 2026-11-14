@@ -305,3 +305,28 @@ async def stop_postgres_listener() -> None:
     if _pg_listener is not None:
         await _pg_listener.stop()
         _pg_listener = None
+
+
+
+async def publish_domain_event(
+    session: AsyncSession,
+    *,
+    event: str,
+    entity_type: str,
+    entity_id: str,
+    data: dict[str, Any] | None = None,
+    version: int = 1,
+    updated_by: str = "",
+    notify_pg: bool = True,
+) -> dict[str, Any]:
+    """Helper wrapper around event_bus.emit_delta for high-level domain event publication."""
+    return await event_bus.emit_delta(
+        session,
+        event=event,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        data=data or {},
+        version=version,
+        updated_by=updated_by,
+        notify_pg=notify_pg,
+    )
