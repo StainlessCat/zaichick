@@ -929,6 +929,7 @@ export function useJointActions(params: UseJointActionsParams) {
             }, 60);
           } catch (err) {
             handleApiFailure(err);
+            throw err;
           } finally {
             setIsDbSyncing(false);
           }

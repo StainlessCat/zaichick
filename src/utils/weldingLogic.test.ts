@@ -5937,6 +5937,22 @@ test('LABORATORY MODULE: deficit statement grouped by RD codes & lines, PTO requ
   assert.equal(completedJoint.ndtResult, 'Годен');
   assert.equal(completedJoint.vikReportNumber, 'ВИК-2026/777');
 
+  // 4.1. Проверка запрета синтетического номера ВИК (номер акта ВИК не должен подставляться автоматически)
+  const conclusionWithoutVikNo = buildLabConclusionPatch(jointInWork, {
+    stage: 'Первичный ВИК и НК',
+    includeVik: true,
+    vikReportNumber: '',
+    vikDate: '2026-10-21',
+    vikResult: 'Годен',
+    ndtMethod: 'РК',
+    ndtReportNumber: 'РК-2026/888',
+    ndtDate: '2026-10-21',
+    ndtResult: 'Годен',
+    ndtInspector: 'Воронов А.С.',
+  });
+  assert.equal(conclusionWithoutVikNo.ok, true);
+  assert.equal(conclusionWithoutVikNo.patch.vikReportNumber, '', 'Номер ВИК не должен синтезироваться автоматически');
+
   // 5. Проверка автоматического перевода заявки в статус 'Выполнена' после выдачи заключений на все стыки заявки
   const sampleReq = {
     id: 'req-test-1',

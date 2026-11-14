@@ -655,7 +655,7 @@ export function buildLabConclusionPatch(
 
   if (input.stage === 'Повторный НК после ремонта') {
     if (input.includeVik) {
-      patch.repairVikNumber = input.vikReportNumber?.trim() || reportNum;
+      patch.repairVikNumber = input.vikReportNumber?.trim() || '';
       patch.repairVikDate = input.vikDate?.trim() || reportDate;
       patch.repairVikResult = input.vikResult || input.ndtResult;
       patch.repairVikInspector = input.vikInspector?.trim() || inspector;
@@ -679,7 +679,7 @@ export function buildLabConclusionPatch(
 
   // Первичный ВИК и НК / Физический НК
   if (input.includeVik) {
-    patch.vikReportNumber = input.vikReportNumber?.trim() || `ВИК-${reportNum}`;
+    patch.vikReportNumber = input.vikReportNumber?.trim() || '';
     patch.vikDate = input.vikDate?.trim() || reportDate;
     patch.vikResult = input.vikResult || (input.ndtResult === 'Годен' ? 'Годен' : input.ndtResult);
     if (input.vikInspector?.trim() || inspector) {

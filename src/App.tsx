@@ -233,14 +233,14 @@ export default function App() {
       const raw = window.localStorage.getItem(LAB_REQUESTS_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed as NdtLabRequest[];
         }
       }
     } catch {
       // ignore storage errors
     }
-    return buildInitialSeedLabRequests(INITIAL_JOINTS, INITIAL_PROJECT_LINELIST);
+    return [];
   });
 
   useEffect(() => {
@@ -708,9 +708,7 @@ export default function App() {
     setTechCards(INITIAL_TECH_CARDS);
     setWeldingMaterials(INITIAL_WELDING_MATERIALS);
     setAuditLogs(INITIAL_AUDIT_LOGS);
-    setLabRequests(
-      buildInitialSeedLabRequests(INITIAL_JOINTS, INITIAL_PROJECT_LINELIST)
-    );
+    setLabRequests([]);
     setFacilityGeoOverrides({});
     setUserAccounts(USER_ACCOUNTS);
     setCurrentUser(USER_ACCOUNTS[0]);
@@ -767,6 +765,12 @@ export default function App() {
       setProjectLineList((prev) => {
         const existingIds = new Set(prev.map((l) => l.uniqueLineId));
         return [...prev, ...mod.KHARASAVEY_LINES.filter((l) => !existingIds.has(l.uniqueLineId))];
+      });
+      setLabRequests((prev) => {
+        if (prev.length === 0) {
+          return buildInitialSeedLabRequests(mod.KHARASAVEY_JOINTS, mod.KHARASAVEY_LINES);
+        }
+        return prev;
       });
       setSelectedObjectName('УКПГ-1С Харасавэйское ГКМ');
       setSelectedRdCode('ALL');
@@ -914,26 +918,32 @@ export default function App() {
   );
 
   const handleSaveLabConclusions = useCallback(
-    (
+    async (
       jointUpdates: Array<{ jointId: string; patch: Partial<WeldJoint> }>,
       actionSummary: string,
       relatedRequestId?: string
-    ) => {
-      if (jointUpdates.length === 0) return;
-      jointActions.handleBatchUpdateJointsFromLab(jointUpdates, actionSummary);
-      if (relatedRequestId) {
-        setLabRequests((prev) =>
-          prev.map((req) => {
-            if (req.id !== relatedRequestId) return req;
-            return {
-              ...req,
-              acceptedBy: req.acceptedBy || currentUser.fullName,
-              acceptedAt:
-                req.acceptedAt ||
-                new Date().toISOString().slice(0, 16).replace('T', ' '),
-            };
-          })
-        );
+    ): Promise<boolean> => {
+      if (jointUpdates.length === 0) return true;
+      try {
+        await jointActions.handleBatchUpdateJointsFromLab(jointUpdates, actionSummary);
+        if (relatedRequestId) {
+          setLabRequests((prev) =>
+            prev.map((req) => {
+              if (req.id !== relatedRequestId) return req;
+              return {
+                ...req,
+                acceptedBy: req.acceptedBy || currentUser.fullName,
+                acceptedAt:
+                  req.acceptedAt ||
+                  new Date().toISOString().slice(0, 16).replace('T', ' '),
+              };
+            })
+          );
+        }
+        return true;
+      } catch (err) {
+        console.error('Ошибка синхронизации заключений ЛНК с сервером:', err);
+        return false;
       }
     },
     [currentUser.fullName, jointActions]

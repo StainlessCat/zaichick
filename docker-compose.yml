@@ -13,7 +13,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-zaychick}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ОШИБКА: Переменная POSTGRES_PASSWORD не задана в .env файле!}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?ОШИБКА - Переменная POSTGRES_PASSWORD не задана в .env файле!}"
       POSTGRES_DB: ${POSTGRES_DB:-zaychick}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -40,8 +40,8 @@ services:
         condition: service_healthy
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-production}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-zaychick}:${POSTGRES_PASSWORD:?ОШИБКА: Переменная POSTGRES_PASSWORD не задана в .env файле!}@db:5432/${POSTGRES_DB:-zaychick}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?ОШИБКА: Переменная JWT_SECRET_KEY не задана в .env файле (минимум 32 байта)!}
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-zaychick}:${POSTGRES_PASSWORD:?ОШИБКА - Переменная POSTGRES_PASSWORD не задана в .env файле!}@db:5432/${POSTGRES_DB:-zaychick}"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:?ОШИБКА - Переменная JWT_SECRET_KEY не задана в .env файле (минимум 32 байта)!}"
       JWT_ALGORITHM: HS256
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
       COOKIE_NAME: zaychick_access_token

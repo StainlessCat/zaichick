@@ -84,7 +84,7 @@ interface LaboratoryViewProps {
     jointUpdates: { jointId: string; patch: Partial<WeldJoint> }[],
     actionSummary: string,
     relatedRequestId?: string
-  ) => void;
+  ) => Promise<boolean> | boolean | void;
   onOpenJointPassport: (joint: WeldJoint) => void;
 }
 
@@ -561,6 +561,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
   const [batchPreset, setBatchPreset] = useState<{
     stage: NdtLabControlStage;
     includeVik: boolean;
+    vikReportNumber: string;
     ndtMethod: NdtMethod;
     ndtResult: ControlResult;
     ndtDate: string;
@@ -570,6 +571,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
   }>({
     stage: 'Первичный ВИК и НК',
     includeVik: true,
+    vikReportNumber: '',
     ndtMethod: 'РК',
     ndtResult: 'Годен',
     ndtDate: new Date().toISOString().slice(0, 10),
@@ -629,8 +631,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
     const input: LabConclusionFormInput = {
       stage: row.stage,
       includeVik: row.includeVik,
-      vikReportNumber:
-        row.vikReportNumber.trim() || `ВИК-${reportNumToUse}`,
+      vikReportNumber: row.includeVik ? row.vikReportNumber.trim() : '',
       vikDate: row.vikDate,
       vikResult: row.vikResult,
       vikInspector: row.vikInspector || row.ndtInspector || defaultInspectorName,
@@ -647,22 +648,37 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
       return;
     }
 
-    onSaveLabConclusions(
-      [{ jointId: joint.id, patch: res.patch }],
-      `Оформлено заключение НК № ${reportNumToUse} (${input.ndtMethod}: ${input.ndtResult}) по стыку № ${joint.jointNumber}`,
-      activeRequestObj?.id
-    );
-
-    setDraftRows((prev) => {
-      const next = { ...prev };
-      delete next[joint.id];
-      return next;
-    });
-
-    showBanner(
-      'success',
-      `Заключение № ${reportNumToUse} (${input.ndtMethod} — «${input.ndtResult}») по стыку № ${joint.jointNumber} внесено в ведомость и синхронизировано во всех разделах программы.`
-    );
+    Promise.resolve(
+      onSaveLabConclusions(
+        [{ jointId: joint.id, patch: res.patch }],
+        `Оформлено заключение НК № ${reportNumToUse} (${input.ndtMethod}: ${input.ndtResult}) по стыку № ${joint.jointNumber}`,
+        activeRequestObj?.id
+      )
+    )
+      .then((ok) => {
+        if (ok !== false) {
+          setDraftRows((prev) => {
+            const next = { ...prev };
+            delete next[joint.id];
+            return next;
+          });
+          showBanner(
+            'success',
+            `Заключение № ${reportNumToUse} (${input.ndtMethod} — «${input.ndtResult}») по стыку № ${joint.jointNumber} внесено в ведомость и синхронизировано во всех разделах программы.`
+          );
+        } else {
+          showBanner(
+            'error',
+            `Сервер отклонил сохранение заключения по стыку № ${joint.jointNumber}. Проверьте подключение и ревизию стыка.`
+          );
+        }
+      })
+      .catch(() => {
+        showBanner(
+          'error',
+          `Сетевая ошибка при отправке заключения по стыку № ${joint.jointNumber} на сервер.`
+        );
+      });
   };
 
   // Пакетное применение и сохранение заключений по выбранным (или всем изменённым) стыкам ведомости
@@ -708,7 +724,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
       const input: LabConclusionFormInput = {
         stage: batchPreset.stage,
         includeVik: batchPreset.includeVik,
-        vikReportNumber: `ВИК-${reportNumber}`,
+        vikReportNumber: batchPreset.includeVik ? batchPreset.vikReportNumber.trim() : '',
         vikDate: effectiveDate,
         vikResult:
           batchPreset.ndtResult === 'Годен' ? 'Годен' : batchPreset.ndtResult,
@@ -728,18 +744,34 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
       updates.push({ jointId: joint.id, patch: built.patch });
     }
 
-    onSaveLabConclusions(
-      updates,
-      `Пакетное оформление заключений ЛНК (${updates.length} ст., метод ${batchPreset.ndtMethod}, результат «${batchPreset.ndtResult}»)`,
-      activeRequestObj?.id
-    );
-
-    setDraftRows({});
-    setSelectedConclusionJointIds([]);
-    showBanner(
-      'success',
-      `Оформлено и внесено в ведомость ${updates.length} заключений НК (${batchPreset.ndtMethod} — «${batchPreset.ndtResult}»). Данные обновлены в Реестре, Лайнлисте, Журналах и Сводке готовности.`
-    );
+    Promise.resolve(
+      onSaveLabConclusions(
+        updates,
+        `Пакетное оформление заключений ЛНК (${updates.length} ст., метод ${batchPreset.ndtMethod}, результат «${batchPreset.ndtResult}»)`,
+        activeRequestObj?.id
+      )
+    )
+      .then((ok) => {
+        if (ok !== false) {
+          setDraftRows({});
+          setSelectedConclusionJointIds([]);
+          showBanner(
+            'success',
+            `Оформлено и внесено в ведомость ${updates.length} заключений НК (${batchPreset.ndtMethod} — «${batchPreset.ndtResult}»). Данные обновлены в Реестре, Лайнлисте, Журналах и Сводке готовности.`
+          );
+        } else {
+          showBanner(
+            'error',
+            'Сервер отклонил сохранение пакета заключений. Данные на сервере не обновлены.'
+          );
+        }
+      })
+      .catch(() => {
+        showBanner(
+          'error',
+          'Сетевая ошибка при передаче пакета заключений на сервер.'
+        );
+      });
   };
 
   // Сохранение всех строк, отредактированных вручную в таблице ведомости
@@ -764,7 +796,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
       const input: LabConclusionFormInput = {
         stage: row.stage,
         includeVik: row.includeVik,
-        vikReportNumber: row.vikReportNumber.trim() || `ВИК-${reportNum}`,
+        vikReportNumber: row.includeVik ? row.vikReportNumber.trim() : '',
         vikDate: row.vikDate,
         vikResult: row.vikResult,
         vikInspector: row.vikInspector || row.ndtInspector || defaultInspectorName,
@@ -782,16 +814,33 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
       updates.push({ jointId: joint.id, patch: built.patch });
     }
 
-    onSaveLabConclusions(
-      updates,
-      `Сохранение ведомости заключений ЛНК (${updates.length} ст.)`,
-      activeRequestObj?.id
-    );
-    setDraftRows({});
-    showBanner(
-      'success',
-      `Сохранено ${updates.length} заключений в ведомости Лаборатории НК. Результаты синхронизированы со всеми разделами.`
-    );
+    Promise.resolve(
+      onSaveLabConclusions(
+        updates,
+        `Сохранение ведомости заключений ЛНК (${updates.length} ст.)`,
+        activeRequestObj?.id
+      )
+    )
+      .then((ok) => {
+        if (ok !== false) {
+          setDraftRows({});
+          showBanner(
+            'success',
+            `Сохранено ${updates.length} заключений в ведомости Лаборатории НК. Результаты синхронизированы со всеми разделами.`
+          );
+        } else {
+          showBanner(
+            'error',
+            'Сервер отклонил сохранение отредактированных строк ведомости. Проверьте соединение.'
+          );
+        }
+      })
+      .catch(() => {
+        showBanner(
+          'error',
+          'Сетевая ошибка при отправке отредактированных строк на сервер.'
+        );
+      });
   };
 
   // Экспорт дефицитной ведомости в CSV
