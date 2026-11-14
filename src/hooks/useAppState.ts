@@ -141,7 +141,27 @@ export function useAppState() {
       const saved = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((tpl: ColumnTemplate) => {
+            const order: WeldJointFieldKey[] = Array.isArray(tpl.columnOrder)
+              ? [...tpl.columnOrder]
+              : [...DEFAULT_COLUMN_KEYS];
+            const vis: WeldJointFieldKey[] = Array.isArray(tpl.visibleColumns)
+              ? [...tpl.visibleColumns]
+              : [...DEFAULT_COLUMN_KEYS];
+            if (!order.includes('labRequestStatus')) {
+              const stampIdx = order.indexOf('welderStamp');
+              if (stampIdx !== -1) order.splice(stampIdx + 1, 0, 'labRequestStatus');
+              else order.push('labRequestStatus');
+            }
+            if (!vis.includes('labRequestStatus')) {
+              const stampVisIdx = vis.indexOf('welderStamp');
+              if (stampVisIdx !== -1) vis.splice(stampVisIdx + 1, 0, 'labRequestStatus');
+              else vis.push('labRequestStatus');
+            }
+            return { ...tpl, columnOrder: order, visibleColumns: vis };
+          });
+        }
       }
     } catch {
       // ignore

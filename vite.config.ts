@@ -12,9 +12,10 @@ export default defineConfig(() => {
       },
     },
     build: {
+      chunkSizeWarningLimit: 3000,
       rollupOptions: {
         output: {
-          // Code splitting: выделяем тяжёлые вендоры в отдельные chunk'и
+          // Code splitting: выделяем тяжёлые вендоры и модули данных в отдельные chunk'и
           // Это снижает время первой загрузки и улучшает кэширование
           manualChunks(id) {
             if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
@@ -31,6 +32,15 @@ export default defineConfig(() => {
             }
             if (id.includes('kharasaveyDemoData')) {
               return 'demo-kharasavey';
+            }
+            if (id.includes('src/data/seedData')) {
+              return 'seed-data';
+            }
+            if (id.includes('WeldingJournalsView') || id.includes('src/utils/journals')) {
+              return 'journals-module';
+            }
+            if (id.includes('JointPassportModal') || id.includes('src/components/passport/')) {
+              return 'passport-module';
             }
           },
         },

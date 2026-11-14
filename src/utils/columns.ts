@@ -283,6 +283,14 @@ export const ALL_COLUMNS: ColumnDefinition[] = [
     minWidth: 130,
   },
   {
+    key: 'labRequestStatus',
+    label: 'Статус заявки НК',
+    shortLabel: 'Заявка НК',
+    group: 'ndt',
+    groupLabel: 'Неразрушающий контроль (НК)',
+    minWidth: 185,
+  },
+  {
     key: 'weldingMaterials',
     label: 'Сварочные материалы',
     group: 'welding',

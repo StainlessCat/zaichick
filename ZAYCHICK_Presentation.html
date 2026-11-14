@@ -1,0 +1,1467 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ИС «ZAYCHICK» — Профессиональная презентация системы (10 листов)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Jost:wght@500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0b1324;
+      --bg-panel: #111c33;
+      --bg-light: #f4f7fb;
+      --card-bg: #ffffff;
+      --border-subtle: #dbe4f0;
+      --border-strong: #cbd5e1;
+      --brand-blue: #005eb8;
+      --brand-blue-dark: #003d7a;
+      --brand-cyan: #0ea5e9;
+      --accent-amber: #d97706;
+      --accent-amber-bg: #fffbeb;
+      --accent-emerald: #059669;
+      --accent-emerald-bg: #ecfdf5;
+      --accent-red: #dc2626;
+      --accent-red-bg: #fef2f2;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-light: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #070d19;
+      color: var(--text-main);
+      overflow-x: hidden;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* Top Control Bar (hidden on print) */
+    .deck-toolbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 54px;
+      background: rgba(11, 19, 36, 0.94);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      z-index: 1000;
+      color: #f8fafc;
+    }
+
+    .toolbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-family: 'Jost', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.04em;
+    }
+
+    .toolbar-badge {
+      background: var(--brand-blue);
+      color: #fff;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .toolbar-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-tool {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #f1f5f9;
+      padding: 6px 13px;
+      border-radius: 6px;
+      font-family: 'Manrope', sans-serif;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-tool:hover {
+      background: rgba(255, 255, 255, 0.16);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .btn-tool.active, .btn-tool.primary {
+      background: var(--brand-blue);
+      border-color: #38bdf8;
+      color: #ffffff;
+    }
+
+    .slide-counter {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      color: #cbd5e1;
+      min-width: 74px;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    /* Slide Viewport */
+    .deck-container {
+      width: 100%;
+      max-width: 1360px;
+      padding: 78px 24px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 36px;
+    }
+
+    body.mode-single .deck-container {
+      height: 100vh;
+      padding: 68px 24px 20px;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* Individual Slide (16:9 ratio) */
+    .slide {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: var(--bg-light);
+      border-radius: 12px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 40px 48px 30px;
+      background-image:
+        radial-gradient(#cbd5e1 0.75px, transparent 0.75px);
+      background-size: 20px 20px;
+    }
+
+    body.mode-single .slide {
+      display: none;
+      max-height: calc(100vh - 96px);
+      max-width: calc((100vh - 96px) * 16 / 9);
+    }
+
+    body.mode-single .slide.current-slide {
+      display: flex;
+    }
+
+    /* Dark Cover & Final Slide Theme */
+    .slide.slide-dark {
+      background: linear-gradient(135deg, #091326 0%, #0f2347 55%, #0b1933 100%);
+      color: #f8fafc;
+    }
+
+    .slide.slide-dark::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(to right, rgba(14, 165, 233, 0.07) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(14, 165, 233, 0.07) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    /* Top Decorative Technical Bar on Each Slide */
+    .slide-top-strip {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 6px;
+      background: linear-gradient(90deg, #005eb8 0%, #0ea5e9 65%, #f59e0b 100%);
+    }
+
+    /* Slide Header */
+    .slide-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 24px;
+      border-bottom: 2px solid var(--border-subtle);
+      padding-bottom: 14px;
+      margin-bottom: 20px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .slide-dark .slide-header {
+      border-bottom-color: rgba(255, 255, 255, 0.14);
+    }
+
+    .slide-kicker {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--brand-blue);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .slide-dark .slide-kicker {
+      color: #38bdf8;
+    }
+
+    .slide-title {
+      font-family: 'Jost', sans-serif;
+      font-size: 27px;
+      font-weight: 800;
+      line-height: 1.18;
+      color: var(--text-main);
+      letter-spacing: -0.01em;
+    }
+
+    .slide-dark .slide-title {
+      color: #ffffff;
+    }
+
+    .slide-tag-box {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+      white-space: nowrap;
+    }
+
+    .slide-dark .slide-tag-box {
+      background: rgba(14, 165, 233, 0.15);
+      color: #7dd3fc;
+      border-color: rgba(56, 189, 248, 0.35);
+    }
+
+    /* Slide Main Content Area */
+    .slide-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 16px;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Slide Footer */
+    .slide-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12px;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 11.5px;
+      color: var(--text-muted);
+      font-family: 'IBM Plex Mono', monospace;
+      position: relative;
+      z-index: 2;
+    }
+
+    .slide-dark .slide-footer {
+      border-top-color: rgba(255, 255, 255, 0.12);
+      color: #94a3b8;
+    }
+
+    .page-num {
+      font-weight: 700;
+      color: var(--brand-blue);
+      background: #e0f2fe;
+      padding: 2px 9px;
+      border-radius: 4px;
+    }
+
+    .slide-dark .page-num {
+      background: rgba(56, 189, 248, 0.2);
+      color: #38bdf8;
+    }
+
+    /* Grid Systems */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+    }
+
+    .grid-asymmetric {
+      display: grid;
+      grid-template-columns: 1.25fr 0.75fr;
+      gap: 22px;
+    }
+
+    /* Cards & Panels */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 18px 20px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .slide-dark .card {
+      background: rgba(17, 28, 51, 0.85);
+      border-color: rgba(255, 255, 255, 0.12);
+      color: #f1f5f9;
+    }
+
+    .card-accent-blue {
+      border-left: 4px solid var(--brand-blue);
+    }
+
+    .card-accent-amber {
+      border-left: 4px solid var(--accent-amber);
+    }
+
+    .card-accent-emerald {
+      border-left: 4px solid var(--accent-emerald);
+    }
+
+    .card-accent-red {
+      border-left: 4px solid var(--accent-red);
+    }
+
+    .card-title {
+      font-family: 'Jost', sans-serif;
+      font-size: 16.5px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .slide-dark .card-title {
+      color: #ffffff;
+    }
+
+    .card-text {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-muted);
+    }
+
+    .slide-dark .card-text {
+      color: #cbd5e1;
+    }
+
+    /* Lists */
+    .tech-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--text-muted);
+    }
+
+    .slide-dark .tech-list {
+      color: #cbd5e1;
+    }
+
+    .tech-list li {
+      position: relative;
+      padding-left: 16px;
+    }
+
+    .tech-list li::before {
+      content: "▪";
+      position: absolute;
+      left: 0;
+      color: var(--brand-blue);
+      font-weight: bold;
+    }
+
+    .slide-dark .tech-list li::before {
+      color: #38bdf8;
+    }
+
+    /* Badges & Code Pills */
+    .mono-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: #f1f5f9;
+      color: #0f172a;
+      border: 1px solid #cbd5e1;
+    }
+
+    .badge-amber {
+      background: var(--accent-amber-bg);
+      color: #b45309;
+      border: 1px solid #fcd34d;
+    }
+
+    .badge-emerald {
+      background: var(--accent-emerald-bg);
+      color: #047857;
+      border: 1px solid #6ee7b7;
+    }
+
+    .badge-red {
+      background: var(--accent-red-bg);
+      color: #b91c1c;
+      border: 1px solid #fca5a5;
+    }
+
+    .badge-blue {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+
+    /* Tables inside slides */
+    .slide-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.2px;
+      background: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .slide-table th {
+      background: #0f172a;
+      color: #ffffff;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 9px 12px;
+      text-align: left;
+    }
+
+    .slide-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      color: #1e293b;
+      vertical-align: top;
+    }
+
+    .slide-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .slide-table tr.row-highlight-amber td {
+      background: #fffbeb;
+    }
+
+    /* Metric Boxes */
+    .metric-val {
+      font-family: 'Jost', sans-serif;
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--brand-blue);
+      line-height: 1.05;
+    }
+
+    .slide-dark .metric-val {
+      color: #38bdf8;
+    }
+
+    .metric-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .slide-dark .metric-label {
+      color: #94a3b8;
+    }
+
+    /* Process Flow Pipeline */
+    .pipeline-flow {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .pipeline-step {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-top: 4px solid var(--brand-blue);
+      border-radius: 8px;
+      padding: 12px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .pipeline-step-num {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--brand-blue);
+    }
+
+    .pipeline-step-title {
+      font-family: 'Jost', sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      color: #0f172a;
+    }
+
+    .pipeline-step-desc {
+      font-size: 11.5px;
+      color: #475569;
+      line-height: 1.38;
+    }
+
+    /* Print Styles (10 Clean Landscape Pages) */
+    @media print {
+      @page {
+        size: 297mm 167mm;
+        margin: 0;
+      }
+
+      body {
+        background: #ffffff;
+        display: block;
+      }
+
+      .deck-toolbar {
+        display: none !important;
+      }
+
+      .deck-container {
+        max-width: none;
+        width: 100%;
+        padding: 0;
+        gap: 0;
+        display: block;
+      }
+
+      .slide {
+        display: flex !important;
+        width: 297mm;
+        height: 167mm;
+        max-width: none !important;
+        max-height: none !important;
+        border-radius: 0;
+        box-shadow: none;
+        page-break-after: always;
+        break-after: page;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body class="mode-scroll">
+
+  <!-- Top Navigation & Presentation Mode Toolbar -->
+  <header class="deck-toolbar">
+    <div class="toolbar-brand">
+      <span class="toolbar-badge">ZAYCHICK v2.6</span>
+      <span>Презентация для руководителей строительства, ПТО, главных сварщиков и ЛНК</span>
+    </div>
+    <div class="toolbar-controls">
+      <button class="btn-tool" id="btnModeToggle" onclick="togglePresentationMode()">
+        Режим слайд-шоу (1 слайд)
+      </button>
+      <button class="btn-tool" id="btnPrev" onclick="changeSlide(-1)" style="display:none;">← Назад</button>
+      <span class="slide-counter" id="slideIndicator">10 листов</span>
+      <button class="btn-tool" id="btnNext" onclick="changeSlide(1)" style="display:none;">Вперёд →</button>
+      <button class="btn-tool primary" onclick="window.print()">
+        Печать / Сохранить в PDF
+      </button>
+    </div>
+  </header>
+
+  <main class="deck-container" id="deckContainer">
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 1: ТИТУЛЬНЫЙ СЛАЙД                                            -->
+    <!-- ================================================================== -->
+    <section class="slide slide-dark current-slide">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Специализированная производственная информационная система</div>
+          <div class="slide-title" style="font-size: 20px; font-weight: 600; color: #94a3b8;">
+            Автоматизация сварочно-монтажного производства, неразрушающего контроля и выпуска ИД
+          </div>
+        </div>
+        <div class="slide-tag-box">СТО ГАЗПРОМ 15-1.1-002-2023 • ГОСТ 32569-2013</div>
+      </div>
+
+      <div class="slide-body" style="justify-content: space-between; padding: 10px 0;">
+        <div class="grid-asymmetric" style="align-items: center;">
+          <div style="display: flex; flex-direction: column; gap: 18px;">
+            <div style="display: inline-flex; align-items: center; gap: 10px;">
+              <span style="background:#005eb8; color:#fff; font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12px; padding:4px 10px; border-radius:4px;">ПРОМЫШЛЕННЫЙ КОНТУР ТЭК</span>
+              <span style="color:#38bdf8; font-family:'IBM Plex Mono',monospace; font-size:12px;">Технологические и промысловые трубопроводы</span>
+            </div>
+            <h1 style="font-family:'Jost',sans-serif; font-size: 46px; font-weight: 800; line-height: 1.08; color: #ffffff;">
+              ИС «ZAYCHICK»:<br/>
+              <span style="color: #38bdf8;">Учёт сварных стыков,</span><br/>
+              каталога ЛРВ и контроля НК
+            </h1>
+            <p style="font-size: 15px; line-height: 1.55; color: #cbd5e1; max-width: 680px;">
+              Единая цифровая среда для <strong>службы ПТО, главного сварщика, мастеров СМУ, лаборатории НК и инженеров строительного контроля</strong>. Полная прослеживаемость каждого стыка — от заводского сертификата трубы и допуска НАКС до автоматического выпуска журналов сварки и сдачи контура на гидроиспытания (ГИ).
+            </p>
+          </div>
+
+          <div class="card" style="padding: 22px; border-color: rgba(56, 189, 248, 0.3); background: rgba(15, 23, 42, 0.9);">
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#38bdf8; text-transform:uppercase; letter-spacing:0.08em;">
+              Для кого создана система
+            </div>
+            <ul class="tech-list" style="font-size: 13.5px; gap: 11px; margin-top: 6px;">
+              <li><strong>Инженеры ПТО:</strong> мгновенная генерация журналов сварочных работ (Форма А.7 СТО Газпром и Прил. В ГОСТ 32569) без ручной верстки.</li>
+              <li><strong>Главный сварщик и мастера СМУ:</strong> контроль сроков удостоверений НАКС, соответствия ТК/WPS, температур подогрева и выработки в Д-дюймах.</li>
+              <li><strong>Лаборатория НК (ЛНК):</strong> ведение заключений ВИК, РК, УЗК, ПВК, МК и автоматический контроль 100% закрытия ремонтов и Дубль-НК.</li>
+              <li><strong>Строительный контроль и Заказчик:</strong> прозрачная сводка готовности контуров испытания (КИ) и неизменяемый журнал аудита правок.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="grid-4">
+          <div class="card" style="padding: 14px 16px;">
+            <div class="metric-val">23 / 11</div>
+            <div class="metric-label">Граф в авто-журналах СТО Газпром 15-1.1-002-2023 и ГОСТ 32569-2013</div>
+          </div>
+          <div class="card" style="padding: 14px 16px;">
+            <div class="metric-val">100%</div>
+            <div class="metric-label">Привязка стыков к позициям ЛРВ, клеймам НАКС и номерам ТК/WPS</div>
+          </div>
+          <div class="card" style="padding: 14px 16px;">
+            <div class="metric-val">Real-Time</div>
+            <div class="metric-label">Одновременная работа ПТО, СМУ и ЛНК без перезаписи чужих данных</div>
+          </div>
+          <div class="card" style="padding: 14px 16px;">
+            <div class="metric-val">0 ошибок</div>
+            <div class="metric-label">Автоконтроль пропущенных полей паспорта, брака, ремонтов и Дубль-НК</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>ИС «ZAYCHICK» — Цифровой стандарт учёта сварочно-монтажных работ и НК</span>
+        <span class="page-num">Лист 01 / 10</span>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 2: ПРОБЛЕМАТИКА СТРОИТЕЛЬНОЙ ПЛОЩАДКИ                         -->
+    <!-- ================================================================== -->
+    <section class="slide">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Производственная проблематика</div>
+          <h2 class="slide-title">Почему учёт в разрозненных Excel-файлах приводит к возвратам ИД и срыву сроков ГИ</h2>
+        </div>
+        <div class="slide-tag-box">АНАЛИЗ УЗКИХ МЕСТ НА ОБЪЕКТЕ</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card card-accent-red">
+            <div class="card-title">
+              <span class="mono-badge badge-red">Проблема 01</span>
+              Рассинхронизация между СМУ, ПТО и лабораторией НК
+            </div>
+            <p class="card-text">
+              У прораба своя таблица сваренных стыков, у ЛНК — свой реестр выданных заключений ВИК/РК/УЗК, у ПТО — сводная шахматка. При ручном переносе номеров стыков и дат неизбежно возникают опечатки и «потерянные» заключения.
+            </p>
+            <div style="margin-top:auto; padding-top:8px; border-top:1px dashed #e2e8f0; font-size:12px; color:#047857; font-weight:600;">
+              ✓ Решение в ZAYCHICK: Единая база данных с ролевым доступом и живой синхронизацией (SSE) между всеми отделами.
+            </div>
+          </div>
+
+          <div class="card card-accent-red">
+            <div class="card-title">
+              <span class="mono-badge badge-red">Проблема 02</span>
+              Формальные предписания технадзора из-за НАКС, ЛРВ и ТК
+            </div>
+            <p class="card-text">
+              Сварщик с истёкшим сроком удостоверения НАКС попадает в журнал на дату сварки; свариваемые элементы не бьются с сертификатами Лимитно-разделительной ведомости (ЛРВ); способ сварки не соответствует техкарте (ТК).
+            </p>
+            <div style="margin-top:auto; padding-top:8px; border-top:1px dashed #e2e8f0; font-size:12px; color:#047857; font-weight:600;">
+              ✓ Решение в ZAYCHICK: Автоматическая валидация сроков НАКС на дату сварки, фильтр ЛРВ по шифру РД и проверка ТК.
+            </div>
+          </div>
+
+          <div class="card card-accent-red">
+            <div class="card-title">
+              <span class="mono-badge badge-red">Проблема 03</span>
+              Потеря контроля над ремонтами и штрафным «Дубль-НК»
+            </div>
+            <p class="card-text">
+              При заключении «Брак» (ВИК) или «Вырезать» (НК) забывают вовремя оформить акт ремонта, повторный ВИК/НК после ремонта или обязательный удвоенный контроль (Дубль-НК) по СТО Газпром 15-1.1-002-2023.
+            </p>
+            <div style="margin-top:auto; padding-top:8px; border-top:1px dashed #e2e8f0; font-size:12px; color:#047857; font-weight:600;">
+              ✓ Решение в ZAYCHICK: Жёсткий алгоритм блокировки статуса «Годен» до полного закрытия цепочки ремонта и Дубль-НК.
+            </div>
+          </div>
+
+          <div class="card card-accent-red">
+            <div class="card-title">
+              <span class="mono-badge badge-red">Проблема 04</span>
+              Ручная верстка журналов по СТО Газпром (23 графы) и ГОСТ (11 граф)
+            </div>
+            <p class="card-text">
+              Инженеры ПТО тратят недели на форматирование многостраничных журналов, хронологическую сортировку, сбор подписей и пересчёт готовности контуров испытания (КИ) перед предъявлением комиссии.
+            </p>
+            <div style="margin-top:auto; padding-top:8px; border-top:1px dashed #e2e8f0; font-size:12px; color:#047857; font-weight:600;">
+              ✓ Решение в ZAYCHICK: Журналы формируются автоматически за 1 секунду напрямую из паспортов стыков.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>От фрагментированных таблиц — к единому цифровому контуру управления качеством сварки</span>
+        <span class="page-num">Лист 02 / 10</span>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 3: СКВОЗНАЯ АРХИТЕКТУРА И ПРОИЗВОДСТВЕННЫЙ ЦИКЛ               -->
+    <!-- ================================================================== -->
+    <section class="slide">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Логика работы системы</div>
+          <h2 class="slide-title">Сквозной производственный цикл: данные вводятся один раз и работают во всех документах</h2>
+        </div>
+        <div class="slide-tag-box">ЕДИНЫЙ ИСТОЧНИК ДАННЫХ (SINGLE SOURCE OF TRUTH)</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="pipeline-flow">
+          <div class="pipeline-step">
+            <span class="pipeline-step-num">ШАГ 01 • ПРОЕКТ И РД</span>
+            <div class="pipeline-step-title">Объекты, Шифры РД и Line List</div>
+            <p class="pipeline-step-desc">
+              Загрузка проектного перечня линий (Line List), привязка к контурам испытания (КИ), категории ГОСТ/СТО, параметрам ГИ и метеостанции объекта.
+            </p>
+          </div>
+
+          <div class="pipeline-step">
+            <span class="pipeline-step-num">ШАГ 02 • КОМПЛЕКТАЦИЯ</span>
+            <div class="pipeline-step-title">Каталог ЛРВ и Справочники</div>
+            <p class="pipeline-step-desc">
+              Импорт Лимитно-разделительной ведомости (трубы, отводы, тройники, ЗРА, сертификаты, плавки), базы сварщиков НАКС, ТК/WPS и сварочных материалов.
+            </p>
+          </div>
+
+          <div class="pipeline-step">
+            <span class="pipeline-step-num">ШАГ 03 • СВАРКА (СМУ)</span>
+            <div class="pipeline-step-title">Паспорт сварного стыка</div>
+            <p class="pipeline-step-desc">
+              Выбор свариваемых элементов 1 и 2 из ЛРВ, назначение клейма сварщика, техкарты, даты сварки, автоподстановка погоды и расчёт Д-дюймов.
+            </p>
+          </div>
+
+          <div class="pipeline-step">
+            <span class="pipeline-step-num">ШАГ 04 • КОНТРОЛЬ (ЛНК)</span>
+            <div class="pipeline-step-title">ВИК, Физический НК и Ремонт</div>
+            <p class="pipeline-step-desc">
+              Внесение номеров и дат заключений ВИК, РК/УЗК/ПВК/МК. При выявлении брака — активация контура ремонта, повторного НК и Дубль-НК.
+            </p>
+          </div>
+
+          <div class="pipeline-step">
+            <span class="pipeline-step-num">ШАГ 05 • ВЫПУСК ИД (ПТО)</span>
+            <div class="pipeline-step-title">Журналы СТО Газпром и ГОСТ</div>
+            <p class="pipeline-step-desc">
+              Автоматическая сборка журналов сварочных работ в хронологическом порядке с проверкой полноты заполнения всех обязательных граф.
+            </p>
+          </div>
+
+          <div class="pipeline-step">
+            <span class="pipeline-step-num">ШАГ 06 • СДАЧА КИ</span>
+            <div class="pipeline-step-title">Сводка готовности к ГИ</div>
+            <p class="pipeline-step-desc">
+              Контроль 100% готовности каждого контура испытания (КИ) и линии: баланс принятых стыков, расчёт объёма воды (м³) и массы для проведения ГИ.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid-3" style="margin-top: 4px;">
+          <div class="card card-accent-blue">
+            <div class="card-title">Каскадная целостность данных</div>
+            <p class="card-text">
+              При переименовании шифра РД или номера линии в проектном перечне система автоматически и синхронно обновляет привязки во всех связанных сварных стыках.
+            </p>
+          </div>
+          <div class="card card-accent-emerald">
+            <div class="card-title">Импорт из существующих таблиц</div>
+            <p class="card-text">
+              Пакетная загрузка Line List, каталога ЛРВ и реестра стыков напрямую из файлов Excel (.xlsx / .csv) с интеллектуальным распознаванием колонок и проверкой дубликатов.
+            </p>
+          </div>
+          <div class="card card-accent-amber">
+            <div class="card-title">Метеоархив строительной площадки</div>
+            <p class="card-text">
+              Привязка каждого объекта к координатам и ближайшей станции Росгидромета (Харасавэй, Бованенково, Новый Уренгой и др.) для автозаполнения температуры воздуха в день сварки.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Полная цифровая трассируемость: Сертификат материала → Элемент ЛРВ → Стык → Заключение НК → Журнал ИД</span>
+        <span class="page-num">Лист 03 / 10</span>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 4: ЭЛЕКТРОННЫЙ ПАСПОРТ СТЫКА И ИНТЕГРАЦИЯ С ЛРВ               -->
+    <!-- ================================================================== -->
+    <section class="slide">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Ядро оперативного учёта</div>
+          <h2 class="slide-title">Электронный паспорт сварного стыка и умный подбор элементов из базы ЛРВ</h2>
+        </div>
+        <div class="slide-tag-box">5 СПЕЦИАЛИЗИРОВАННЫХ ВКЛАДОК ПАСПОРТА</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-asymmetric">
+          <div style="display:flex; flex-direction:column; gap:14px;">
+            <div class="card card-accent-blue">
+              <div class="card-title">1. Интеллектуальная стыковка с каталогом ЛРВ</div>
+              <ul class="tech-list">
+                <li><strong>Автофильтрация по шифру РД и диаметру:</strong> при выборе Элемента 1 и Элемента 2 система предлагает только позиции ЛРВ текущего шифра РД с подходящим типоразмером ($D_н \times S$).</li>
+                <li><strong>Автозаполнение характеристик:</strong> наименование детали (труба, отвод, переход, тройник, арматура), марка стали, ГОСТ/ТУ, № сертификата и заводской номер подтягиваются в паспорт автоматически.</li>
+                <li><strong>Определение типа соединения:</strong> автоматическое распознавание вида стыка (<em>«Труба + Труба»</em>, <em>«Труба + Деталь»</em>, <em>«Деталь + Арматура»</em>) и контроль совпадения диаметров свариваемых кромок.</li>
+              </ul>
+            </div>
+
+            <div class="card card-accent-emerald">
+              <div class="card-title">2. Инженерные расчёты внутри паспорта стыка</div>
+              <ul class="tech-list">
+                <li><strong>Автоматический расчёт Д-дюймов (EPC):</strong> перевод наружного диаметра (мм) в дюймы с применением повышающего коэффициента толщины стенки для точного учёта выработки бригад.</li>
+                <li><strong>Контроль предварительного подогрева:</strong> автоматическая проверка соблюдения режима подогрева с учётом температуры окружающего воздуха на площадке, марки стали и толщины стенки.</li>
+                <li><strong>Нумерация и ремонтные индексы:</strong> автоматическая подсказка следующего свободного номера стыка на линии, поддержка дополнительных и ремонтных стыков (индексы <code>А</code>, <code>Б</code>, <code>Р</code>, <code>Р1</code>).</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card" style="background:#0f172a; color:#f8fafc; justify-content:space-between; padding:20px;">
+            <div>
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#38bdf8; text-transform:uppercase; margin-bottom:10px;">
+                Структура карточки паспорта стыка
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <div style="background:rgba(255,255,255,0.07); padding:9px 12px; border-radius:6px; border-left:3px solid #38bdf8; font-size:12.5px;">
+                  <strong>Вкладка 1. Сварка и подготовка</strong><br/>
+                  <span style="color:#94a3b8; font-size:11.5px;">Линия, № стыка, $D_н \times S$, способ сварки, дата, клейма НАКС, ТК/WPS, СМ, подогрев, метеоусловия.</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.07); padding:9px 12px; border-radius:6px; border-left:3px solid #10b981; font-size:12.5px;">
+                  <strong>Вкладка 2. Элементы 1 и 2 (ЛРВ)</strong><br/>
+                  <span style="color:#94a3b8; font-size:11.5px;">Каскадный поиск по базе ЛРВ, заводские номера, длины элементов, марки стали, толщины кромок.</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.07); padding:9px 12px; border-radius:6px; border-left:3px solid #a855f7; font-size:12.5px;">
+                  <strong>Вкладка 3. Контроль (ВИК и НК)</strong><br/>
+                  <span style="color:#94a3b8; font-size:11.5px;">Первичный ВИК, методы физ. НК (РК/УЗК/ПВК/МК), № и даты заключений, дефектоскописты, Дубль-НК.</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.07); padding:9px 12px; border-radius:6px; border-left:3px solid #f59e0b; font-size:12.5px;">
+                  <strong>Вкладка 4. Ремонт и закрытие брака</strong><br/>
+                  <span style="color:#94a3b8; font-size:11.5px;">Описание дефекта, дата и клеймо ремонта, повторный ВИК, НК после ремонта и штрафной Дубль-НК.</span>
+                </div>
+                <div style="background:rgba(255,255,255,0.07); padding:9px 12px; border-radius:6px; border-left:3px solid #64748b; font-size:12.5px;">
+                  <strong>Вкладка 5. История изменений</strong><br/>
+                  <span style="color:#94a3b8; font-size:11.5px;">Пошаговый аудит всех правок паспорта с указанием ФИО, роли, времени и значений «Было → Стало».</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Исключение ручного ввода сертификатных данных за счёт прямой привязки к каталогу ЛРВ</span>
+        <span class="page-num">Лист 04 / 10</span>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 5: ТЕХНОЛОГИЧЕСКАЯ ДИСЦИПЛИНА (НАКС, ТК/WPS, ПОДСВЕТКА)       -->
+    <!-- ================================================================== -->
+    <section class="slide">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Инструменты главного сварщика и инженера ПТО</div>
+          <h2 class="slide-title">Технологическая дисциплина: контроль НАКС, ТК/WPS и подсветка незаполненных стыков</h2>
+        </div>
+        <div class="slide-tag-box">ПРЕВЕНТИВНАЯ ЗАЩИТА ОТ ОШИБОК ИД</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="card card-accent-blue">
+            <div class="card-title">Контроль удостоверений НАКС</div>
+            <ul class="tech-list">
+              <li>Учёт личных клейм сварщиков (до 2 сварщиков на стык — корень/заполнение) и <strong>бригадных клейм</strong>.</li>
+              <li>Автоматическая сверка <strong>срока действия удостоверения НАКС на фактическую дату сварки стыка</strong>.</li>
+              <li>Цветовая индикация в реестре сварщиков: <span class="mono-badge badge-emerald">Действует</span>, <span class="mono-badge badge-amber">&lt; 30 дн.</span>, <span class="mono-badge badge-red">Просрочен</span>.</li>
+              <li>Автоподстановка ФИО сварщика, № удостоверения НАКС и закреплённого мастера СМУ при выборе клейма.</li>
+            </ul>
+          </div>
+
+          <div class="card card-accent-blue">
+            <div class="card-title">Справочник ТК/WPS и материалов</div>
+            <ul class="tech-list">
+              <li>Реестр технологических карт сварки (ТК / WPS) с указанием способов сварки (<code>РАД</code>, <code>РД</code>, <code>РАД+РД</code>, <code>МП</code>, <code>АФ</code>, <code>АПГ</code>), диапазонов диаметров и толщин.</li>
+              <li><strong>Валидация совместимости:</strong> предупреждение при несоответствии выбранного способа сварки требованиям ТК.</li>
+              <li>База сертификатов сварочных материалов (электроды, проволока, партии, ГОСТ/ТУ) с автоматическим формированием строки для журналов ГОСТ и СТО Газпром.</li>
+            </ul>
+          </div>
+
+          <div class="card card-accent-amber">
+            <div class="card-title">Визуальная подсветка пробелов</div>
+            <ul class="tech-list">
+              <li>Если в стыке проставлена <strong>Дата сварки</strong>, но не заполнено хотя бы одно из 8 обязательных полей паспорта, строка автоматически окрашивается в янтарный цвет.</li>
+              <li>В колонке «№ стыка» выводится бейдж <span class="mono-badge badge-amber">⚠ Не заполнен</span> с точным перечнем забытых реквизитов при наведении.</li>
+              <li>Проверяются: <em>Клеймо сварщика, Техкарта, Сварочные материалы, Ответственное лицо, Зав. № и Длины элементов 1 и 2</em>.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Наглядный пример отображения в таблице реестра -->
+        <div class="card" style="padding: 12px 16px;">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; color:#475569; margin-bottom:4px;">
+            ПРИМЕР ИНДИКАЦИИ В РЕЕСТРЕ СВАРНЫХ СТЫКОВ И ЖУРНАЛАХ:
+          </div>
+          <table class="slide-table">
+            <thead>
+              <tr>
+                <th>Линия</th>
+                <th>№ стыка</th>
+                <th>Типоразмер</th>
+                <th>Дата сварки</th>
+                <th>Клеймо НАКС</th>
+                <th>Техкарта (ТК)</th>
+                <th>Элемент 1 / Элемент 2</th>
+                <th>Статус паспорта</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>ФП1.2/1</strong></td>
+                <td><strong>014</strong></td>
+                <td>159 × 8.0 мм</td>
+                <td>14.06.26</td>
+                <td><span class="mono-badge badge-emerald">A1K2 (Иванов И.И.)</span></td>
+                <td>ТК-159-РАД-01</td>
+                <td>Труба №4412 (6.0м) + Отвод №891 (0.4м)</td>
+                <td><span class="mono-badge badge-emerald">✓ Полностью заполнен</span></td>
+              </tr>
+              <tr class="row-highlight-amber">
+                <td><strong>ФП1.2/1</strong></td>
+                <td><strong>015</strong> <span class="mono-badge badge-amber">⚠ Не заполнен</span></td>
+                <td>159 × 8.0 мм</td>
+                <td>15.06.26</td>
+                <td><span class="mono-badge badge-emerald">A1K2 (Иванов И.И.)</span></td>
+                <td style="color:#b45309; font-weight:700;">— не указана —</td>
+                <td>Труба №4415 (<span style="color:#b45309; font-weight:700;">нет длины</span>) + Труба №4416 (11.8м)</td>
+                <td><span class="mono-badge badge-amber">Не заполнено (2): Техкарта (ТК), Длина эл. 1</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Инженер ПТО видит незавершённые паспорта мгновенно, не открывая каждую карточку вручную</span>
+        <span class="page-num">Лист 05 / 10</span>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 6: КОНТУР ЛНК И РЕГЛАМЕНТ РЕМОНТА («БРАК» / «ВЫРЕЗАТЬ»)       -->
+    <!-- ================================================================== -->
+    <section class="slide">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Контур Лаборатории неразрушающего контроля (ЛНК)</div>
+          <h2 class="slide-title">Полный цикл НК и жёсткий контроль закрытия брака, ремонтов и Дубль-НК</h2>
+        </div>
+        <div class="slide-tag-box">ЗАЩИТА ОТ ПРОПУСКА ДЕФЕКТНЫХ СТЫКОВ</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card card-accent-blue">
+            <div class="card-title">Первичный ВИК и физические методы НК</div>
+            <ul class="tech-list">
+              <li><strong>Визуальный и измерительный контроль (ВИК):</strong> фиксация результата (<code>Годен</code> / <code>Ремонт</code> / <code>Брак</code>), № и даты акта, ФИО специалиста ВИК и номера удостоверения.</li>
+              <li><strong>Физические методы НК:</strong> поддержка <code>РК</code> (радиографический), <code>УЗК</code> (ультразвуковой), <code>ПВК</code> (капиллярный), <code>МК</code> (магнитопорошковый) и комбинированных методов.</li>
+              <li><strong>Нормативное правило хронологии:</strong> система контролирует, чтобы дата проведения ВИК и НК была <strong>не ранее даты сварки стыка</strong> (защита от технических опечаток в датах).</li>
+              <li><strong>Справочник дефектоскопистов ЛНК:</strong> автоподстановка сокращённых ФИО и номеров квалификационных удостоверений в графы журналов.</li>
+            </ul>
+          </div>
+
+          <div class="card card-accent-red">
+            <div class="card-title">Автоматический контур отработки брака и ремонта</div>
+            <p class="card-text">
+              При выставлении оценки <span class="mono-badge badge-red">Брак</span> по ВИК или <span class="mono-badge badge-red">Вырезать / Ремонт</span> по НК стык автоматически переходит в категорию <strong>дефектных</strong> и блокируется для зачёта в готовность контура испытания до выполнения всех нормативных процедур:
+            </p>
+            <div style="display:flex; flex-direction:column; gap:6px; margin-top:4px; font-size:12.3px;">
+              <div style="background:#fef2f2; border:1px solid #fecaca; padding:7px 10px; border-radius:6px;">
+                <strong>1. Оформление ремонта:</strong> вид ремонта (выборка / вырезка), № акта/протокола ремонта, дата ремонта ($\ge$ даты первичного НК), клеймо сварщика ремонта.
+              </div>
+              <div style="background:#fffbeb; border:1px solid #fde68a; padding:7px 10px; border-radius:6px;">
+                <strong>2. Повторный контроль после ремонта:</strong> обязательное внесение № и даты заключения <strong>ВИК после ремонта</strong> и <strong>НК после ремонта</strong> со статусом «Годен».
+              </div>
+              <div style="background:#ecfdf5; border:1px solid #a7f3d0; padding:7px 10px; border-radius:6px;">
+                <strong>3. Штрафной удвоенный контроль (Дубль-НК):</strong> фиксация заключения и результата Дубль-НК (по СТО Газпром 15-1.1-002-2023 и ГОСТ 32569-2013).
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="padding: 13px 18px; background: #f8fafc;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+            <div>
+              <strong style="font-size:13.5px; color:#0f172a;">Критерий полной приёмки стыка (`isJointFullyAccepted`):</strong>
+              <span style="font-size:12.8px; color:#475569; margin-left:6px;">
+                Стык учитывается как принятый к ГИ только тогда, когда первичный контроль закрыт со статусом «Годен», либо (если был зафиксирован брак) все повторные заключения ВИК/НК после ремонта и Дубль-НК имеют положительное заключение.
+              </span>
+            </div>
+            <span class="mono-badge badge-emerald" style="white-space:nowrap; font-size:12px; padding:6px 12px;">100% ГАРАНТИЯ КАЧЕСТВА</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Ни один дефектный или незакрытый после ремонта стык не попадёт в акт готовности к гидроиспытаниям</span>
+        <span class="page-num">Лист 06 / 10</span>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 7: АВТОМАТИЧЕСКИЕ ЖУРНАЛЫ СВАРОЧНЫХ РАБОТ                     -->
+    <!-- ================================================================== -->
+    <section class="slide">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Выпуск исполнительной документации (ИД)</div>
+          <h2 class="slide-title">Автоматическое формирование журналов по СТО Газпром 15-1.1-002-2023 и ГОСТ 32569-2013</h2>
+        </div>
+        <div class="slide-tag-box">ФОРМА А.7 (23 ГРАФЫ) • ПРИЛОЖЕНИЕ В (11 ГРАФ)</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="card card-accent-blue">
+            <div class="card-title">
+              Журнал по СТО Газпром 15-1.1-002-2023 (Форма А.7)
+            </div>
+            <p class="card-text">
+              Полное соответствие всем <strong>23 нормативным графам</strong> стандарта ПАО «Газпром»:
+            </p>
+            <ul class="tech-list">
+              <li>Графы 1–12: Дата сварки, атмосферные условия ($^\circ\text{C}$), коды, заводские номера, размеры ($D_н \times S$), длины и марки стали свариваемых элементов 1 и 2 из базы ЛРВ.</li>
+              <li>Графы 13–18: № стыка, доп. маркировка (<code>«Я»</code> для угловых швов / <code>«н/п»</code>), способ сварки, № ТК, клейма сварщиков и режим предварительного подогрева.</li>
+              <li>Графы 19–23: Заключения первичного ВИК и НК, сведения о ремонте (при браке), повторный ВИК/НК после ремонта, Дубль-НК и подпись ответственного лица.</li>
+            </ul>
+          </div>
+
+          <div class="card card-accent-emerald">
+            <div class="card-title">
+              Журнал по ГОСТ 32569-2013 (Приложение В)
+            </div>
+            <p class="card-text">
+              Формирование журнала для технологических стальных трубопроводов по <strong>11 графам ГОСТ</strong>:
+            </p>
+            <ul class="tech-list">
+              <li>Автоматическое объединение номера стыка по изометрической схеме и типа соединения по <strong>ГОСТ 16037</strong> (например, <code>010, С17</code> или <code>012, У20</code>).</li>
+              <li>Полная расшифровка ФИО сварщиков и личных клейм, свариваемых деталей (диаметр, толщина, марка стали и № сертификата из ЛРВ).</li>
+              <li>Формирование сведений о присадочных материалах (марка, партия, № сертификата СМ), режиме термообработки, результатах НК и отметках о ремонте.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card card-accent-amber" style="padding: 14px 18px;">
+          <div class="card-title" style="font-size:15px;">
+            Встроенный анализатор полноты журнала перед печатью (`JournalCompletenessBanner`)
+          </div>
+          <p class="card-text">
+            Над таблицей журнала в реальном времени работает сводный баннер предсдаточного контроля: система автоматически подсчитывает количество стыков без даты сварки, без клейма сварщика, без ТК, без первичного ВИК/НК, без закрытого ремонта или подписи производителя работ. Нажатие на любой номер стыка в журнале мгновенно открывает его электронный паспорт для дозаполнения.
+          </p>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Экспорт готовых журналов в Excel (.xlsx / .csv) с сохранением нормативной шапки и многострочного форматирования</span>
+        <span class="page-num">Лист 07 / 10</span>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 8: СВОДКА ГОТОВНОСТИ К ГИ И ИНЖЕНЕРНЫЕ РАСЧЁТЫ                -->
+    <!-- ================================================================== -->
+    <section class="slide">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Планирование и сдача контуров испытания (КИ)</div>
+          <h2 class="slide-title">Аналитика готовности к гидроиспытаниям (ГИ), калькулятор объёмов воды и Д-дюймов</h2>
+        </div>
+        <div class="slide-tag-box">ДЛЯ НАЧАЛЬНИКА УЧАСТКА И ПТО</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="card card-accent-blue">
+            <div class="card-title">Сводка готовности контуров (КИ)</div>
+            <ul class="tech-list">
+              <li>Агрегация готовности на 3 уровнях: <strong>Объект → Контур испытания (КИ) → Изометрическая линия</strong>.</li>
+              <li>Автоматический расчёт процента готовности по сварке, первичному ВИК и физическому НК.</li>
+              <li>Выделение линий с дефектными/ремонтными стыками, которые блокируют предъявление контура на гидроиспытание.</li>
+            </ul>
+          </div>
+
+          <div class="card card-accent-emerald">
+            <div class="card-title">Физические объёмы и калькулятор ГИ</div>
+            <ul class="tech-list">
+              <li><strong>Расчёт объёма воды для ГИ (м³):</strong> автоматическое вычисление внутреннего объёма трубопровода по $D_н$, толщине стенки $S$ и протяжённости линии ($V = \pi \cdot d_{\text{вн}}^2 / 4 \cdot L$).</li>
+              <li><strong>Расчёт погонной и общей массы трубы (кг/т):</strong> учёт теоретической массы металла для планирования такелажа и опор.</li>
+              <li><strong>Учёт наваренных Д-дюймов:</strong> план/факт выработки по каждой линии и объекту.</li>
+            </ul>
+          </div>
+
+          <div class="card card-accent-amber">
+            <div class="card-title">Групповые операции и шаблоны</div>
+            <ul class="tech-list">
+              <li><strong>Массовое редактирование стыков (`Bulk Edit`):</strong> одновременное назначение даты сварки, клейма, ТК, мастера или заключения ВИК/НК для группы выбранных стыков одной линии.</li>
+              <li><strong>Настраиваемые шаблоны колонок:</strong> сохранение персональных наборов видимых столбцов и фильтрации «как в Excel» по любому полю реестра.</li>
+            </ul>
+          </div>
+        </div>
+
+        <table class="slide-table">
+          <thead>
+            <tr>
+              <th>Контур испытания (КИ)</th>
+              <th>Линия</th>
+              <th>Типоразмер</th>
+              <th>Метраж / Объём ГИ</th>
+              <th>Всего стыков</th>
+              <th>Сварено</th>
+              <th>Принято НК</th>
+              <th>В ремонте</th>
+              <th>Выработка (Д-дюйм)</th>
+              <th>Статус к ГИ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>КИ-1 (ГП-1)</strong></td>
+              <td><strong>ФП1.2/1</strong></td>
+              <td>159 × 8.0 мм</td>
+              <td>145 м / <strong>2.32 м³</strong></td>
+              <td>28 шт.</td>
+              <td>28 (100%)</td>
+              <td>28 (100%)</td>
+              <td>0</td>
+              <td>193.2"</td>
+              <td><span class="mono-badge badge-emerald">ГОТОВ К ГИ (100%)</span></td>
+            </tr>
+            <tr class="row-highlight-amber">
+              <td><strong>КИ-1 (ГП-1)</strong></td>
+              <td><strong>ФП1.2/2</strong></td>
+              <td>219 × 10.0 мм</td>
+              <td>92 м / <strong>2.89 м³</strong></td>
+              <td>19 шт.</td>
+              <td>19 (100%)</td>
+              <td>17 (89.5%)</td>
+              <td><strong style="color:#b91c1c;">2 (Брак)</strong></td>
+              <td>186.9"</td>
+              <td><span class="mono-badge badge-amber">ОЖИДАЕТ РЕМОНТА И НК</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="slide-footer">
+        <span>Точный расчёт кубатуры воды для опрессовки и мгновенная картина готовности каждого контура испытания</span>
+        <span class="page-num">Лист 08 / 10</span>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 9: БЕЗОПАСНОСТЬ, РОЛИ (RBAC), МНОГОПОЛЬЗОВАТЕЛЬСКИЙ РЕЖИМ      -->
+    <!-- ================================================================== -->
+    <section class="slide">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Корпоративная надёжность и прослеживаемость</div>
+          <h2 class="slide-title">Полевое разграничение прав (RBAC), защита от коллизий и журнал аудита</h2>
+        </div>
+        <div class="slide-tag-box">МНОГОПОЛЬЗОВАТЕЛЬСКАЯ АРХИТЕКТУРА</div>
+      </div>
+
+      <div class="slide-body">
+        <table class="slide-table">
+          <thead>
+            <tr>
+              <th>Роль специалиста в системе</th>
+              <th>Подготовка, Сварка, ЛРВ, Ремонт</th>
+              <th>Заключения ВИК, НК, Дубль-НК</th>
+              <th>Создание / Удаление стыков и импорт</th>
+              <th>Журналы, Сводка ГИ, Экспорт в Excel</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Администратор системы</strong></td>
+              <td><span class="mono-badge badge-emerald">Полный доступ</span></td>
+              <td><span class="mono-badge badge-emerald">Полный доступ</span></td>
+              <td><span class="mono-badge badge-emerald">Полный доступ + Бекапы БД</span></td>
+              <td><span class="mono-badge badge-emerald">Полный доступ</span></td>
+            </tr>
+            <tr>
+              <td><strong>Инженер ПТО / Сварка (СМУ)</strong></td>
+              <td><span class="mono-badge badge-emerald">Редактирование</span></td>
+              <td><span class="mono-badge">Только просмотр (защищено)</span></td>
+              <td><span class="mono-badge badge-emerald">Создание и импорт</span></td>
+              <td><span class="mono-badge badge-emerald">Полный доступ</span></td>
+            </tr>
+            <tr>
+              <td><strong>Инженер ЛНК (Дефектоскопист)</strong></td>
+              <td><span class="mono-badge">Только просмотр (защищено)</span></td>
+              <td><span class="mono-badge badge-emerald">Ввод и правка ВИК / НК</span></td>
+              <td><span class="mono-badge">Запрещено</span></td>
+              <td><span class="mono-badge badge-emerald">Полный доступ</span></td>
+            </tr>
+            <tr>
+              <td><strong>Стройконтроль / Просмотр</strong></td>
+              <td><span class="mono-badge">Только просмотр</span></td>
+              <td><span class="mono-badge">Только просмотр</span></td>
+              <td><span class="mono-badge">Запрещено</span></td>
+              <td><span class="mono-badge badge-emerald">Просмотр и выгрузка отчётов</span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="grid-3">
+          <div class="card card-accent-blue">
+            <div class="card-title">Полевой RBAC на сервере</div>
+            <p class="card-text">
+              Права проверяются не только в интерфейсе, но и на уровне транзакций сервера (`enforceFieldLevelRbacOnJointSave`): дефектоскопист физически не может перезаписать клеймо сварщика, а мастер СМУ не может изменить номер заключения РК/УЗК.
+            </p>
+          </div>
+
+          <div class="card card-accent-emerald">
+            <div class="card-title">Защита от коллизий (Optimistic Lock)</div>
+            <p class="card-text">
+              Каждая запись стыка имеет версионный счётчик (`version`). Если два инженера одновременно открыли один стык, система предотвратит тихую потерю данных и покажет окно разрешения конфликта, а обновления транслируются всем через **Server-Sent Events (SSE)**.
+            </p>
+          </div>
+
+          <div class="card card-accent-amber">
+            <div class="card-title">Неизменяемый Журнал аудита</div>
+            <p class="card-text">
+              Каждое создание, изменение или массовая операция фиксируется в `AuditLog`: дата и время до секунды, учётная запись сотрудника, затронутый стык и детальная таблица изменённых полей в формате **«Старое значение → Новое значение»**.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>Прозрачное разделение ответственности между подрядчиком (СМУ/ПТО), лабораторией НК и службой строительного контроля</span>
+        <span class="page-num">Лист 09 / 10</span>
+      </div>
+    </section>
+
+    <!-- ================================================================== -->
+    <!-- ЛИСТ 10: ЭФФЕКТ ОТ ВНЕДРЕНИЯ И ВАРИАНТЫ РАЗВЁРТЫВАНИЯ               -->
+    <!-- ================================================================== -->
+    <section class="slide slide-dark">
+      <div class="slide-top-strip"></div>
+
+      <div class="slide-header">
+        <div>
+          <div class="slide-kicker">Итоги и эксплуатация на объектах</div>
+          <h2 class="slide-title">Производственный эффект от внедрения ИС «ZAYCHICK» и варианты развёртывания</h2>
+        </div>
+        <div class="slide-tag-box">ГОТОВО К РАБОТЕ НА ПЛОЩАДКЕ</div>
+      </div>
+
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="card" style="border-top: 3px solid #38bdf8;">
+            <div class="metric-val">в 8–10 раз</div>
+            <div class="card-title" style="margin-top:4px;">Ускорение выпуска журналов ИД</div>
+            <p class="card-text">
+              Формирование журналов сварочных работ по СТО Газпром 15-1.1-002-2023 и ГОСТ 32569-2013 занимает секунды вместо дней ручной сверки и копирования строк.
+            </p>
+          </div>
+
+          <div class="card" style="border-top: 3px solid #10b981;">
+            <div class="metric-val">100%</div>
+            <div class="card-title" style="margin-top:4px;">Прозрачность готовности к ГИ</div>
+            <p class="card-text">
+              Руководитель строительства и начальник ПТО в любой момент видят реальный процент готовности каждого контура испытания, объём воды для ГИ и список стыков, задержанных в ремонте.
+            </p>
+          </div>
+
+          <div class="card" style="border-top: 3px solid #f59e0b;">
+            <div class="metric-val">0 возвратов</div>
+            <div class="card-title" style="margin-top:4px;">По формальным несоответствиям</div>
+            <p class="card-text">
+              Исключаются предписания технадзора из-за просроченных удостоверений НАКС, несовпадения сертификатов ЛРВ, пропущенных Дубль-НК или ошибок в хронологии дат сварки и контроля.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top: 4px;">
+          <div class="card">
+            <div class="card-title" style="color:#38bdf8;">
+              Вариант 1. Многопользовательский сервер строительной площадки
+            </div>
+            <ul class="tech-list">
+              <li>Развёртывание в локальной сети штаба строительства (в том числе на удалённых промыслах без внешнего интернета) через <strong>Docker Compose</strong>.</li>
+              <li>Промышленная СУБД <strong>PostgreSQL 16</strong> + сервер <strong>FastAPI</strong> + <strong>Nginx</strong> с мгновенной синхронизацией экранов ПТО, СМУ и ЛНК по протоколу SSE.</li>
+              <li>Централизованное резервное копирование базы данных (`.json` / `pg_dump`) и встроенная миграция исторических данных.</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="color:#10b981;">
+              Вариант 2. Автономное рабочее место инженера ПТО (Offline-пакет)
+            </div>
+            <ul class="tech-list">
+              <li>Запуск на любом рабочем ноутбуке под управлением Windows в один клик (`Запустить_ZAYCHICK.bat`) без сложной настройки окружения.</li>
+              <li>Полное сохранение данных в локальной базе SQLite + браузерном хранилище с выгрузкой и восстановлением полных резервных копий в 1 клик.</li>
+              <li>Встроенный генератор иллюстрированной <strong>брошюры-руководства пользователя в PDF</strong> (формат А4 и буклет А5 для двухсторонней печати на площадке).</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="slide-footer">
+        <span>ИС «ZAYCHICK» — Профессиональный инструмент цифровизации сварочного производства и НК</span>
+        <span class="page-num">Лист 10 / 10</span>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    let isSingleMode = false;
+    let currentSlideIndex = 0;
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const btnModeToggle = document.getElementById('btnModeToggle');
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    const slideIndicator = document.getElementById('slideIndicator');
+
+    function updateSlideView() {
+      slides.forEach((s, idx) => {
+        s.classList.toggle('current-slide', idx === currentSlideIndex);
+      });
+      if (isSingleMode) {
+        slideIndicator.textContent = `Лист ${String(currentSlideIndex + 1).padStart(2, '0')} / ${slides.length}`;
+      } else {
+        slideIndicator.textContent = `${slides.length} листов`;
+      }
+    }
+
+    function togglePresentationMode() {
+      isSingleMode = !isSingleMode;
+      document.body.classList.toggle('mode-single', isSingleMode);
+      document.body.classList.toggle('mode-scroll', !isSingleMode);
+      btnModeToggle.classList.toggle('active', isSingleMode);
+      btnModeToggle.textContent = isSingleMode
+        ? 'Показать все 10 листов лентой'
+        : 'Режим слайд-шоу (1 слайд)';
+      btnPrev.style.display = isSingleMode ? 'inline-flex' : 'none';
+      btnNext.style.display = isSingleMode ? 'inline-flex' : 'none';
+      updateSlideView();
+    }
+
+    function changeSlide(delta) {
+      if (!isSingleMode) return;
+      currentSlideIndex = (currentSlideIndex + delta + slides.length) % slides.length;
+      updateSlideView();
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (!isSingleMode) return;
+      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault();
+        changeSlide(1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        changeSlide(-1);
+      } else if (e.key === 'Escape') {
+        togglePresentationMode();
+      }
+    });
+  </script>
+</body>
+</html>

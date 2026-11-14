@@ -14,30 +14,38 @@ import {
   Filter,
   Layers,
   Plus,
+  Radiation,
   RotateCcw,
+  Send,
   ShieldCheck,
   Trash2,
-  Users,
   X,
 } from 'lucide-react';
 import {
   ColumnDefinition,
   ColumnTemplate,
+  JointLabRequestStatus,
+  NdtLabControlStage,
+  NdtLabRequest,
+  NdtMethod,
   ProjectLineItem,
+  WelderProfile,
   WeldJoint,
   WeldJointFieldKey,
 } from '../types/welding';
 import {
   ALL_COLUMNS,
-  calculateLineNdtProgress,
-  calculateWelderNdtQuotas,
   FIELD_LABELS_MAP,
   formatDateDDMMYY,
   getJointEquivDiaInch,
   isDateColumnKey,
   getMissingPassportFields,
-  isPassportIncomplete,
 } from '../utils/weldingLogic';
+import {
+  getJointLabRequestStatus,
+  suggestNextLabRequestNumber,
+  validateJointForLabRequestSubmission,
+} from '../utils/laboratoryLogic';
 import { getUserRolePermissions } from '../utils/rbac';
 import { ExcelColumnFilter } from './ExcelColumnFilter';
 
@@ -47,6 +55,10 @@ export interface JointsRegistryViewProps {
   joints: WeldJoint[];
   filteredAndSortedJoints: WeldJoint[];
   lines?: ProjectLineItem[];
+  welders?: WelderProfile[];
+  labRequests?: NdtLabRequest[];
+  currentUserFullName?: string;
+  onCreateLabRequest?: (newReq: NdtLabRequest) => void;
   selectedJointIds: string[];
   onToggleSelectRow: (jointId: string) => void;
   onToggleSelectAll: () => void;
@@ -107,6 +119,10 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
   joints,
   filteredAndSortedJoints,
   lines = [],
+  welders = [],
+  labRequests = [],
+  currentUserFullName = 'Инженер ПТО',
+  onCreateLabRequest,
   selectedJointIds,
   onToggleSelectRow,
   onToggleSelectAll,
@@ -147,6 +163,45 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
   onHideColumnInline,
 }) => {
   const parentRef = useRef<HTMLDivElement>(null);
+
+  // Состояние модального окна подачи заявки на НК из Реестра стыков
+  const [isLabReqModalOpen, setIsLabReqModalOpen] = useState(false);
+  const [labReqCandidateIds, setLabReqCandidateIds] = useState<string[]>([]);
+  const [labReqNumber, setLabReqNumber] = useState('');
+  const [labReqDate, setLabReqDate] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  );
+  const [labReqMethod, setLabReqMethod] = useState<NdtMethod>('РК');
+  const [labReqStage, setLabReqStage] =
+    useState<NdtLabControlStage>('Первичный ВИК и НК');
+  const [labReqNotes, setLabReqNotes] = useState('');
+  const [labReqSuccessBanner, setLabReqSuccessBanner] = useState<string | null>(
+    null
+  );
+
+  const openSubmitLabRequestModal = (targetJointIds?: string[]) => {
+    const baseIds =
+      targetJointIds && targetJointIds.length > 0
+        ? targetJointIds
+        : selectedJointIds.length > 0
+        ? selectedJointIds
+        : filteredAndSortedJoints
+            .filter(
+              (j) =>
+                getJointLabRequestStatus(j, labRequests) ===
+                  'Заявка не подана' &&
+                validateJointForLabRequestSubmission(j, welders).canSubmit
+            )
+            .map((j) => j.id);
+
+    setLabReqCandidateIds(baseIds);
+    setLabReqNumber(suggestNextLabRequestNumber(labRequests));
+    setLabReqDate(new Date().toISOString().slice(0, 10));
+    setLabReqMethod('РК');
+    setLabReqStage('Первичный ВИК и НК');
+    setLabReqNotes('');
+    setIsLabReqModalOpen(true);
+  };
 
   // Карта дубликатов номеров стыков на технологических линиях (п. 6 аудита)
   const duplicateJointIds = useMemo(() => {
@@ -217,8 +272,172 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
     return <span className="text-slate-400 font-mono">{val || '—'}</span>;
   };
 
+  const renderLabRequestStatusCell = (joint: WeldJoint) => {
+    const status: JointLabRequestStatus = getJointLabRequestStatus(
+      joint,
+      labRequests
+    );
+    const validation = validateJointForLabRequestSubmission(joint, welders);
+
+    if (status === 'Заявка исполнена') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs">
+          <CheckCircle2 className="w-3 h-3 text-emerald-700 shrink-0" />
+          <span>Заявка исполнена</span>
+        </span>
+      );
+    }
+
+    if (status === 'Заявка в работе') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
+          <Clock className="w-3 h-3 text-amber-700 shrink-0" />
+          <span>Заявка в работе</span>
+        </span>
+      );
+    }
+
+    if (status === 'Заявка подана') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-100 text-sky-900 border border-sky-300 shadow-2xs">
+          <Send className="w-3 h-3 text-sky-700 shrink-0" />
+          <span>Заявка подана</span>
+        </span>
+      );
+    }
+
+    return (
+      <div className="inline-flex items-center gap-1.5 flex-wrap">
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs"
+          title={
+            validation.canSubmit
+              ? 'Дата сварки и клеймо заполнены без замечаний — стык готов к подаче заявки в ЛНК'
+              : `Подача заявки недоступна: ${validation.reasons.join('; ')}`
+          }
+        >
+          <span>Заявка не подана</span>
+        </span>
+        {validation.canSubmit && onCreateLabRequest ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              openSubmitLabRequestModal([joint.id]);
+            }}
+            title="Направить заявку в Лабораторию НК по данному стыку (дата и клеймо без замечаний)"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#1e3799] hover:bg-[#15276e] text-white text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
+          >
+            <Send className="w-2.5 h-2.5" />
+            <span>Подать</span>
+          </button>
+        ) : (
+          <span
+            className="text-[10px] text-amber-700 font-medium cursor-help"
+            title={`Подача заявки заблокирована: ${validation.reasons.join('; ')}`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500 inline" />
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const candidateEvaluation = useMemo(() => {
+    const targetSet = new Set(labReqCandidateIds);
+    const candidates = joints.filter((j) => targetSet.has(j.id));
+    const eligible: WeldJoint[] = [];
+    const rejected: Array<{ joint: WeldJoint; reasons: string[] }> = [];
+
+    for (const j of candidates) {
+      const status = getJointLabRequestStatus(j, labRequests);
+      const val = validateJointForLabRequestSubmission(j, welders);
+      const reasons = [...val.reasons];
+      if (status === 'Заявка подана' || status === 'Заявка в работе') {
+        reasons.push(`По стыку уже числится статус «${status}»`);
+      }
+      if (reasons.length === 0) {
+        eligible.push(j);
+      } else {
+        rejected.push({ joint: j, reasons });
+      }
+    }
+    return { eligible, rejected };
+  }, [joints, labReqCandidateIds, labRequests, welders]);
+
+  const handleConfirmSubmitLabRequest = () => {
+    if (!onCreateLabRequest || candidateEvaluation.eligible.length === 0) return;
+
+    // Группируем допущенные стыки по линиям, чтобы создать корректные заявки по каждой линии
+    const byLine = new Map<string, WeldJoint[]>();
+    for (const j of candidateEvaluation.eligible) {
+      const list = byLine.get(j.uniqueLineId) || [];
+      list.push(j);
+      byLine.set(j.uniqueLineId, list);
+    }
+
+    let indexOffset = 0;
+    const createdNumbers: string[] = [];
+    for (const [uLineId, lineJoints] of byLine.entries()) {
+      const sample = lineJoints[0];
+      const matchedLine = lines.find((l) => l.uniqueLineId === uLineId);
+      const reqNum =
+        byLine.size === 1
+          ? labReqNumber.trim() || suggestNextLabRequestNumber(labRequests)
+          : `${
+              labReqNumber.trim() || suggestNextLabRequestNumber(labRequests)
+            }/${indexOffset + 1}`;
+      indexOffset += 1;
+      createdNumbers.push(reqNum);
+
+      const newReq: NdtLabRequest = {
+        id: `lab-req-${Date.now()}-${indexOffset}`,
+        requestNumber: reqNum,
+        createdAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+        createdDate: labReqDate || new Date().toISOString().slice(0, 10),
+        createdBy: currentUserFullName,
+        objectName: sample.objectName,
+        rdCode: sample.rdCode,
+        lineNumber: sample.lineNumber,
+        uniqueLineId: uLineId,
+        contour: sample.contour || matchedLine?.testContour || '',
+        requestedMethod: labReqMethod,
+        controlStage: labReqStage,
+        jointIds: lineJoints.map((j) => j.id),
+        status: 'Подана ПТО',
+        notes:
+          labReqNotes.trim() ||
+          `Заявка направлена из реестра стыков (${lineJoints.length} ст., дата сварки и клеймо НАКС проверены без замечаний)`,
+      };
+      onCreateLabRequest(newReq);
+    }
+
+    setIsLabReqModalOpen(false);
+    setLabReqSuccessBanner(
+      `Заявка в Лабораторию НК (${createdNumbers.join(', ')}) успешно направлена для ${
+        candidateEvaluation.eligible.length
+      } ст. Статус в реестре обновлён на «Заявка подана».`
+    );
+  };
+
   return (
     <div className="space-y-3">
+      {labReqSuccessBanner && (
+        <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs font-semibold shadow-2xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{labReqSuccessBanner}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLabReqSuccessBanner(null)}
+            className="p-1 rounded hover:bg-emerald-100 text-emerald-800 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Верхняя полоса: Диапазон дат сварки, действия и выбор шаблона таблицы */}
       <div className="flex flex-wrap xl:flex-nowrap items-center gap-2.5">
         {/* Блок 1: Диапазон дат сварки и основные действия */}
@@ -262,8 +481,8 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
             </div>
           </div>
 
-          {/* Кнопки действий: Массовое удаление, Массовое редактирование, Доп. стык, Новый стык */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Кнопки действий: Массовое удаление, Подача заявки в ЛНК, Массовое редактирование, Доп. стык, Новый стык */}
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             {userPermissions.canCreateOrDeleteJoints &&
               selectedJointIds.length > 0 &&
               (confirmBulkDeleteJoints ? (
@@ -297,6 +516,23 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
                   <span>Удалить ({selectedJointIds.length})</span>
                 </button>
               ))}
+
+            {onCreateLabRequest && (
+              <button
+                type="button"
+                onClick={() => openSubmitLabRequestModal()}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500/60 bg-amber-50 text-amber-950 hover:bg-amber-100 text-xs font-bold transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
+                title="Направить заявку в Лабораторию НК по стыкам с заполненной датой сварки и клеймом сварщика без замечаний"
+              >
+                <Radiation className="w-3.5 h-3.5 text-amber-600" />
+                <span>
+                  Направить заявку в ЛНК
+                  {selectedJointIds.length > 0
+                    ? ` (${selectedJointIds.length})`
+                    : ''}
+                </span>
+              </button>
+            )}
 
             {(userPermissions.canEditPrepAndWeldingFields ||
               userPermissions.canEditNdtFields) && (
@@ -682,6 +918,8 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
                           const raw =
                             col.key === 'equivDiameterInch'
                               ? getJointEquivDiaInch(joint)
+                              : col.key === 'labRequestStatus'
+                              ? getJointLabRequestStatus(joint, labRequests)
                               : joint[col.key];
                           const strVal = String(raw ?? '');
                           const colWidth =
@@ -690,6 +928,18 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
                             width: colWidth,
                             minWidth: colWidth,
                           };
+
+                          if (col.key === 'labRequestStatus') {
+                            return (
+                              <td
+                                key={col.key}
+                                style={cellStyle}
+                                className="py-1.5 px-2.5 border-r border-slate-200 whitespace-nowrap"
+                              >
+                                {renderLabRequestStatusCell(joint)}
+                              </td>
+                            );
+                          }
 
                           if (col.key === 'jointNumber') {
                             return (
@@ -854,6 +1104,208 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* МОДАЛЬНОЕ ОКНО НАПРАВЛЕНИЯ ЗАЯВКИ В ЛАБОРАТОРИЮ НК ИЗ РЕЕСТРА СТЫКОВ */}
+      {isLabReqModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="registry-lab-req-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs"
+        >
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-[#1e3799] text-white px-5 py-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Radiation className="w-5 h-5 text-amber-300 shrink-0" />
+                <div>
+                  <h3
+                    id="registry-lab-req-title"
+                    className="text-sm font-bold tracking-tight"
+                  >
+                    Направление заявки в Лабораторию НК
+                  </h3>
+                  <p className="text-[11px] text-sky-200">
+                    Допускается подача заявки только по стыкам с заполненной датой сварки и клеймом сварщика без замечаний НАКС
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLabReqModalOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-sky-100 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Номер заявки на НК
+                  </label>
+                  <input
+                    type="text"
+                    value={labReqNumber}
+                    onChange={(e) => setLabReqNumber(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Дата подачи заявки
+                  </label>
+                  <input
+                    type="date"
+                    value={labReqDate}
+                    onChange={(e) => setLabReqDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 font-mono text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Метод неразрушающего контроля
+                  </label>
+                  <select
+                    value={labReqMethod}
+                    onChange={(e) => setLabReqMethod(e.target.value as NdtMethod)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                  >
+                    <option value="РК">РК — Радиографический контроль</option>
+                    <option value="УЗК">УЗК — Ультразвуковой контроль</option>
+                    <option value="РК+УЗК">РК+УЗК — Комбинированный контроль</option>
+                    <option value="ПВК">ПВК — Капиллярный контроль</option>
+                    <option value="МК">МК — Магнитопорошковый контроль</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Этап контроля
+                  </label>
+                  <select
+                    value={labReqStage}
+                    onChange={(e) =>
+                      setLabReqStage(e.target.value as NdtLabControlStage)
+                    }
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                  >
+                    <option value="Первичный ВИК и НК">Первичный ВИК и НК</option>
+                    <option value="Физический НК (РК/УЗК/ПВК)">
+                      Физический НК (РК/УЗК/ПВК)
+                    </option>
+                    <option value="Дублирующий контроль">
+                      Дублирующий контроль
+                    </option>
+                    <option value="Повторный НК после ремонта">
+                      Повторный НК после ремонта
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Сводка проверки даты сварки и клейм НАКС */}
+              <div className="space-y-2.5">
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-bold text-emerald-900 flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      <span>
+                        Допущены к подаче заявки (дата сварки и клеймо без замечаний):{' '}
+                        {candidateEvaluation.eligible.length} ст.
+                      </span>
+                    </span>
+                  </div>
+                  {candidateEvaluation.eligible.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                      {candidateEvaluation.eligible.map((j) => (
+                        <span
+                          key={j.id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white border border-emerald-300 font-mono text-[11px] text-emerald-950"
+                        >
+                          <strong>Ст. {j.jointNumber}</strong>
+                          <span className="text-slate-500">({j.uniqueLineId})</span>
+                          <span className="text-emerald-700">
+                            [{formatDateDDMMYY(j.weldingDate)} · кл. {j.welderStamp}]
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-emerald-800">
+                      Нет стыков, прошедших проверку заполнения даты сварки и аттестации клейма сварщика НАКС.
+                    </p>
+                  )}
+                </div>
+
+                {candidateEvaluation.rejected.length > 0 && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 space-y-1.5">
+                    <div className="font-bold text-rose-900 flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <span>
+                        Отклонены автоматическим входным контролем ({candidateEvaluation.rejected.length} ст.):
+                      </span>
+                    </div>
+                    <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+                      {candidateEvaluation.rejected.map(({ joint, reasons }) => (
+                        <div
+                          key={joint.id}
+                          className="p-2 rounded bg-white border border-rose-200 text-[11px] flex flex-col gap-0.5"
+                        >
+                          <div className="font-mono font-bold text-slate-900">
+                            Стык № {joint.jointNumber} · Линия {joint.uniqueLineId}
+                          </div>
+                          <div className="text-rose-700 font-medium">
+                            {reasons.join(' • ')}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Примечание для дефектоскопистов ЛНК
+                </label>
+                <input
+                  type="text"
+                  value={labReqNotes}
+                  onChange={(e) => setLabReqNotes(e.target.value)}
+                  placeholder="Например: Участок доступен для РК в ночную смену..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
+              <div className="text-[11px] text-slate-500">
+                Отправитель ПТО: <strong className="text-slate-800">{currentUserFullName}</strong>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsLabReqModalOpen(false)}
+                  className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  disabled={candidateEvaluation.eligible.length === 0}
+                  onClick={handleConfirmSubmitLabRequest}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-300 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>
+                    Направить заявку ({candidateEvaluation.eligible.length} ст.)
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

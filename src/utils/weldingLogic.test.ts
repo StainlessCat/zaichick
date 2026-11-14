@@ -5825,3 +5825,226 @@ test('Повторный аудит п. 4: Закрепление правил �
   );
   assert.match(deficitStatus.statusLabel, /Дефицит НК по сварщикам: W-DEF/);
 });
+
+test('LABORATORY MODULE: deficit statement grouped by RD codes & lines, PTO request creation, defectoscopist acceptance into work, conclusion issuance, and cross-section propagation', async () => {
+  const {
+    calculateLaboratoryDeficitStatement,
+    suggestNextLabRequestNumber,
+    suggestNextConclusionNumber,
+    buildAcceptIntoWorkJointPatch,
+    buildLabConclusionPatch,
+    syncLabRequestStatusWithJoints,
+  } = await import('./laboratoryLogic');
+  const { INITIAL_PROJECT_LINELIST } = await import('../data/seedData');
+
+  // 1. Формирование дефицитной ведомости с разделением по шифрам РД и линиям и учётом процента контроля
+  const statement = calculateLaboratoryDeficitStatement(
+    INITIAL_JOINTS,
+    INITIAL_PROJECT_LINELIST,
+    'ALL',
+    'ALL'
+  );
+  assert.ok(statement.rdGroups.length >= 2, 'Ведомость должна быть сгруппирована по шифрам РД');
+  for (const grp of statement.rdGroups) {
+    assert.ok(grp.rdCode.length > 0);
+    assert.ok(grp.lines.length > 0);
+    const sumWelded = grp.lines.reduce((acc, l) => acc + l.weldedCount, 0);
+    assert.equal(grp.weldedCount, sumWelded);
+  }
+
+  // Находим линию с дефицитом НК в стартовом наборе данных
+  const deficitRow = statement.allLineRows.find((l) => l.hasDeficit);
+  assert.ok(deficitRow, 'В ведомости должна определяться минимум одна линия с дефицитом НК');
+  assert.ok(
+    deficitRow.totalPhysicalDeficit > 0 ||
+      deficitRow.vikDeficit > 0 ||
+      deficitRow.inRepairCount > 0 ||
+      deficitRow.welderDeficits.length > 0
+  );
+
+  // 2. Генерация номера заявки от ПТО и принятие заявки дефектоскопистом в работу
+  const nextReqNo = suggestNextLabRequestNumber([]);
+  assert.match(nextReqNo, /^ЗНК-\d{4}-001$/);
+
+  const rawJoint: WeldJoint = {
+    ...INITIAL_JOINTS[0],
+    id: 'j-lab-test-1',
+    jointNumber: '050',
+    weldingDate: '2026-10-20',
+    vikResult: 'Годен',
+    vikDate: '2026-10-20',
+    vikReportNumber: 'ВИК-2026/050',
+    ndtType: 'Не требуется',
+    ndtResult: 'Не проводился',
+    ndtDate: '',
+    ndtReportNumber: '',
+    ndtInspector: '',
+  };
+
+  const acceptPatch = buildAcceptIntoWorkJointPatch(
+    rawJoint,
+    {
+      controlStage: 'Первичный ВИК и НК',
+      requestedMethod: 'РК',
+    },
+    'Воронов А.С.'
+  );
+  assert.equal(acceptPatch.ndtType, 'РК');
+  assert.equal(acceptPatch.ndtResult, 'В работе');
+  assert.equal(acceptPatch.ndtInspector, 'Воронов А.С.');
+
+  const jointInWork: WeldJoint = { ...rawJoint, ...acceptPatch };
+  assert.equal(jointInWork.ndtResult, 'В работе');
+
+  // 3. Проверка хронологического контроля при оформлении заключения (дата НК не раньше даты сварки)
+  const invalidChronology = buildLabConclusionPatch(jointInWork, {
+    stage: 'Первичный ВИК и НК',
+    ndtMethod: 'РК',
+    ndtReportNumber: 'РК-2026/999',
+    ndtDate: '2026-10-18', // раньше даты сварки 2026-10-20!
+    ndtResult: 'Годен',
+    ndtInspector: 'Воронов А.С.',
+  });
+  assert.equal(invalidChronology.ok, false);
+  assert.ok(invalidChronology.error, 'Должна блокироваться дата заключения раньше даты сварки');
+
+  // 4. Оформление положительного заключения с присвоением номера, даты и результата
+  const nextConcNo = suggestNextConclusionNumber([jointInWork], 'РК');
+  assert.match(nextConcNo, /^РК-26\/\d{3,}$/);
+
+  const validConclusion = buildLabConclusionPatch(jointInWork, {
+    stage: 'Первичный ВИК и НК',
+    includeVik: true,
+    vikReportNumber: 'ВИК-2026/777',
+    vikDate: '2026-10-20',
+    vikResult: 'Годен',
+    vikInspector: 'Воронов А.С.',
+    ndtMethod: 'РК',
+    ndtReportNumber: 'РК-2026/777',
+    ndtDate: '2026-10-21',
+    ndtResult: 'Годен',
+    ndtInspector: 'Воронов А.С.',
+  });
+  assert.equal(validConclusion.ok, true);
+  assert.equal(validConclusion.error, undefined);
+
+  const completedJoint: WeldJoint = {
+    ...jointInWork,
+    ...validConclusion.patch,
+  };
+  assert.equal(completedJoint.ndtReportNumber, 'РК-2026/777');
+  assert.equal(completedJoint.ndtDate, '2026-10-21');
+  assert.equal(completedJoint.ndtResult, 'Годен');
+  assert.equal(completedJoint.vikReportNumber, 'ВИК-2026/777');
+
+  // 5. Проверка автоматического перевода заявки в статус 'Выполнена' после выдачи заключений на все стыки заявки
+  const sampleReq = {
+    id: 'req-test-1',
+    requestNumber: 'ЗНК-2026-010',
+    createdAt: '2026-10-20 09:00',
+    createdDate: '2026-10-20',
+    createdBy: 'Соколов А.В.',
+    objectName: completedJoint.objectName,
+    rdCode: completedJoint.rdCode,
+    lineNumber: completedJoint.lineNumber,
+    uniqueLineId: completedJoint.uniqueLineId,
+    contour: completedJoint.contour,
+    controlStage: 'Первичный ВИК и НК' as const,
+    requestedMethod: 'РК' as const,
+    jointIds: [completedJoint.id],
+    status: 'В работе ЛНК' as const,
+  };
+
+  const stillInWorkReq = syncLabRequestStatusWithJoints(
+    sampleReq,
+    new Map([[jointInWork.id, jointInWork]])
+  );
+  assert.equal(stillInWorkReq.status, 'В работе ЛНК');
+
+  const autoCompletedReq = syncLabRequestStatusWithJoints(
+    sampleReq,
+    new Map([[completedJoint.id, completedJoint]])
+  );
+  assert.equal(autoCompletedReq.status, 'Выполнена');
+  assert.ok(autoCompletedReq.completedAt);
+
+  // 6. Проверка отображения внесённого заключения во всех разделах программы:
+  // - Журнал СТО Газпром 15-1.1-002-2023 (графа 25 — № заключения, графа 26 — дата, графа 27 — результат)
+  const stoRow = formatStoGazpromJournalRow(completedJoint, 0, INITIAL_LRV_CATALOG);
+  assert.ok(stoRow.col25.includes('РК-2026/777'), 'Номер заключения должен отображаться в графе 25 журнала СТО Газпром');
+  assert.equal(stoRow.col26, '21.10.26', 'Дата заключения должна отображаться в графе 26 журнала СТО Газпром');
+  assert.equal(stoRow.col27, 'Годен', 'Результат заключения должен отображаться в графе 27 журнала СТО Газпром');
+
+  // - Журнал ГОСТ 32569-2013 (графа 16 — физический НК, № заключения, дата)
+  const gostRow = formatGost32569JournalRow(completedJoint, 0, INITIAL_WELDING_MATERIALS);
+  assert.ok(gostRow.col16.includes('РК-2026/777'), 'Номер заключения должен отображаться в графе 16 журнала ГОСТ 32569');
+  assert.ok(gostRow.col16.includes('Годен'), 'Результат заключения должен отображаться в графе 16 журнала ГОСТ 32569');
+
+  // - Отчётность по готовности
+  const readinessRows = calculateReadinessReport([completedJoint], 'uniqueLineId');
+  assert.equal(readinessRows[0].ndtPassedCount, 1);
+  assert.equal(readinessRows[0].fullyCompletedCount, 1);
+  assert.equal(readinessRows[0].readinessPct, 100);
+
+  // 7. Проверка статусов заявки в Реестре стыков («Заявка не подана», «Заявка подана», «Заявка в работе», «Заявка исполнена»)
+  // и валидации допуска к подаче заявки (заполнена дата сварки и клеймо без замечаний НАКС)
+  const {
+    getJointLabRequestStatus,
+    validateJointForLabRequestSubmission,
+  } = await import('./laboratoryLogic');
+  const { WELDERS_DIRECTORY } = await import('../data/seedData');
+
+  assert.equal(
+    getJointLabRequestStatus(rawJoint, []),
+    'Заявка не подана',
+    'Для стыка без заявки и без заключения статус должен быть «Заявка не подана»'
+  );
+  assert.equal(
+    getJointLabRequestStatus(rawJoint, [
+      { ...sampleReq, jointIds: [rawJoint.id], status: 'Подана ПТО' },
+    ]),
+    'Заявка подана'
+  );
+  assert.equal(
+    getJointLabRequestStatus(jointInWork, [
+      { ...sampleReq, jointIds: [jointInWork.id], status: 'В работе ЛНК' },
+    ]),
+    'Заявка в работе'
+  );
+  assert.equal(
+    getJointLabRequestStatus(completedJoint, [autoCompletedReq]),
+    'Заявка исполнена'
+  );
+
+  // Валидация подачи заявки: без даты сварки или без клейма — запрещено
+  const noDateCheck = validateJointForLabRequestSubmission(
+    { ...rawJoint, weldingDate: '' },
+    WELDERS_DIRECTORY
+  );
+  assert.equal(noDateCheck.canSubmit, false);
+  assert.ok(noDateCheck.reasons.some((r) => r.includes('дата сварки')));
+
+  const noStampCheck = validateJointForLabRequestSubmission(
+    { ...rawJoint, welderStamp: '' },
+    WELDERS_DIRECTORY
+  );
+  assert.equal(noStampCheck.canSubmit, false);
+  assert.ok(noStampCheck.reasons.some((r) => r.includes('клеймо')));
+
+  // С корректной датой сварки и действующим клеймом НАКС без замечаний — разрешено
+  const validCheck = validateJointForLabRequestSubmission(
+    {
+      ...rawJoint,
+      weldingDate: '2025-11-10',
+      welderStamp: WELDERS_DIRECTORY[0].stamp,
+      diameterMm: 325,
+      wallThickness: 10,
+      weldingType: 'РАД+РД',
+    },
+    WELDERS_DIRECTORY
+  );
+  assert.equal(validCheck.canSubmit, true);
+  assert.equal(validCheck.reasons.length, 0);
+});
+
+

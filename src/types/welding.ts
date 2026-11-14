@@ -20,6 +20,7 @@ export type NdtMethod = 'РК' | 'УЗК' | 'ПВК' | 'МК' | 'РК+УЗК' | 
 
 export type AppSection =
   | 'registry'
+  | 'laboratory'
   | 'project_linelist'
   | 'welding_tech'
   | 'journals'
@@ -27,6 +28,41 @@ export type AppSection =
   | 'lrv_catalog'
   | 'audit_log'
   | 'user_guide';
+
+export type NdtLabRequestStatus = 'Подана ПТО' | 'В работе ЛНК' | 'Выполнена';
+
+export type JointLabRequestStatus =
+  | 'Заявка не подана'
+  | 'Заявка подана'
+  | 'Заявка в работе'
+  | 'Заявка исполнена';
+
+export type NdtLabControlStage =
+  | 'Первичный ВИК и НК'
+  | 'Физический НК (РК/УЗК/ПВК)'
+  | 'Повторный НК после ремонта'
+  | 'Дублирующий контроль';
+
+export interface NdtLabRequest {
+  id: string;
+  requestNumber: string; // напр. ЗНК-2026-001
+  createdAt: string; // YYYY-MM-DD HH:mm или ISO
+  createdDate: string; // YYYY-MM-DD
+  createdBy: string; // ФИО инженера ПТО
+  objectName: string;
+  rdCode: string;
+  lineNumber: string;
+  uniqueLineId: string;
+  contour: string;
+  controlStage: NdtLabControlStage;
+  requestedMethod: NdtMethod;
+  jointIds: string[];
+  status: NdtLabRequestStatus;
+  acceptedAt?: string;
+  acceptedBy?: string; // ФИО дефектоскописта
+  completedAt?: string;
+  notes?: string;
+}
 
 export type JournalStandard = 'СТО Газпром 15-1.1-002-2023' | 'ГОСТ 32569-2013';
 
@@ -323,7 +359,8 @@ export interface WeldJoint {
   vikInspector: string; // ФИО дефектоскописта ВИК
   vikReportNumber?: string; // Графа 21: № заключения (акта) контроля ВИК
 
-  // 4. Неразрушающий контроль НК (5 полей)
+  // 4. Неразрушающий контроль НК (5 полей + статус заявки)
+  labRequestStatus?: JointLabRequestStatus; // Статус заявки на НК в реестре стыков
   ndtType: NdtMethod; // Тип неразрушающего контроля
   ndtDate: string; // Дата контроля НК
   ndtResult: ControlResult; // Результат НК

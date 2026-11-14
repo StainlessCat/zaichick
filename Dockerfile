@@ -25,25 +25,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Установка Python-зависимостей
-COPY backend/pyproject.toml ./
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-    "fastapi>=0.115.0" \
-    "uvicorn[standard]>=0.32.0" \
-    "sqlalchemy[asyncio]>=2.0.36" \
-    "asyncpg>=0.30.0" \
-    "alembic>=1.14.0" \
-    "pydantic>=2.10.0" \
-    "pydantic-settings>=2.6.0" \
-    "pyjwt>=2.10.0" \
-    "pwdlib[argon2]>=0.2.1" \
-    "openpyxl>=3.1.5" \
-    "python-multipart>=0.0.17" \
-    greenlet
-
-# Копируем исходный код бэкенда и миграции Alembic
+# Копируем исходный код бэкенда и миграции Alembic и устанавливаем пакет
 COPY backend/ ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -e . greenlet
 
 # Копируем собранный фронтенд (на случай прямой раздачи статики)
 COPY --from=frontend-builder /app/dist /app/dist

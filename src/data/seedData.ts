@@ -1445,6 +1445,7 @@ export const INITIAL_COLUMN_TEMPLATES: ColumnTemplate[] = [
       'weldingPosition',
       'weldingDate',
       'welderStamp',
+      'labRequestStatus',
       'welderFullName',
       'ambientTemp',
       'techCardNumber',
@@ -1484,6 +1485,7 @@ export const INITIAL_COLUMN_TEMPLATES: ColumnTemplate[] = [
       'weldingType',
       'gostJointType',
       'weldingPosition',
+      'labRequestStatus',
     ],
   },
   {
@@ -1503,6 +1505,7 @@ export const INITIAL_COLUMN_TEMPLATES: ColumnTemplate[] = [
       'weldingPosition',
       'weldingDate',
       'welderStamp',
+      'labRequestStatus',
       'vikResult',
       'vikDate',
       'vikInspector',

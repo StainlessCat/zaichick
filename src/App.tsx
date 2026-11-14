@@ -13,6 +13,7 @@ import {
   FolderKanban,
   HardDriveDownload,
   History,
+  Radiation,
   ShieldAlert,
   Wrench,
   X,
@@ -22,6 +23,7 @@ import {
   AppSection,
   AuditLogEntry,
   ColumnTemplate,
+  NdtLabRequest,
   ReadinessGroupCondition,
   UserAccount,
   WeldJoint,
@@ -66,6 +68,12 @@ import { WeldingTechView } from './components/WeldingTechView';
 import { FacilityLocationModal } from './components/FacilityLocationModal';
 import { ImportJointsExcelModal } from './components/ImportJointsExcelModal';
 import { UserGuideBookletView } from './components/UserGuideBookletView';
+import { LaboratoryView } from './components/LaboratoryView';
+import {
+  buildInitialSeedLabRequests,
+  getJointLabRequestStatus,
+  syncLabRequestStatusWithJoints,
+} from './utils/laboratoryLogic';
 import {
   BackupAndResetModal,
   FullSystemBackupPayload,
@@ -219,6 +227,48 @@ export default function App() {
 
   const [confirmBulkDeleteJoints, setConfirmBulkDeleteJoints] = useState(false);
 
+  const LAB_REQUESTS_STORAGE_KEY = 'zaychick_lab_requests_v1';
+  const [labRequests, setLabRequests] = useState<NdtLabRequest[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(LAB_REQUESTS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed as NdtLabRequest[];
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return buildInitialSeedLabRequests(INITIAL_JOINTS, INITIAL_PROJECT_LINELIST);
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        LAB_REQUESTS_STORAGE_KEY,
+        JSON.stringify(labRequests)
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [labRequests]);
+
+  useEffect(() => {
+    const jointsById = new Map<string, WeldJoint>(
+      joints.map((j) => [j.id, j])
+    );
+    setLabRequests((prev) => {
+      let changed = false;
+      const next = prev.map((req) => {
+        const synced = syncLabRequestStatusWithJoints(req, jointsById);
+        if (synced !== req) changed = true;
+        return synced;
+      });
+      return changed ? next : prev;
+    });
+  }, [joints]);
+
   // Горячие клавиши Ctrl+Z (Undo), Ctrl+Y / Ctrl+Shift+Z (Redo) и секретная консоль автора
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -306,7 +356,10 @@ export default function App() {
     const filtered = scopedJoints.filter((joint) => {
       for (const [colKey, allowedValues] of Object.entries(columnFilters)) {
         if (!allowedValues) continue;
-        const rawVal = String(joint[colKey as WeldJointFieldKey] ?? '');
+        const rawVal =
+          colKey === 'labRequestStatus'
+            ? getJointLabRequestStatus(joint, labRequests)
+            : String(joint[colKey as WeldJointFieldKey] ?? '');
         if (!allowedValues.includes(rawVal)) {
           return false;
         }
@@ -318,7 +371,10 @@ export default function App() {
 
       if (q) {
         return ALL_COLUMNS.some((col) => {
-          const rawStr = String(joint[col.key] ?? '');
+          const rawStr =
+            col.key === 'labRequestStatus'
+              ? getJointLabRequestStatus(joint, labRequests)
+              : String(joint[col.key] ?? '');
           const formattedStr = isDateColumnKey(col.key)
             ? formatDateDDMMYY(rawStr)
             : rawStr;
@@ -336,9 +392,17 @@ export default function App() {
     const { key, direction } = sortConfig;
     return [...filtered].sort((a, b) => {
       const valA =
-        key === 'equivDiameterInch' ? getJointEquivDiaInch(a) : a[key] ?? '';
+        key === 'equivDiameterInch'
+          ? getJointEquivDiaInch(a)
+          : key === 'labRequestStatus'
+          ? getJointLabRequestStatus(a, labRequests)
+          : a[key] ?? '';
       const valB =
-        key === 'equivDiameterInch' ? getJointEquivDiaInch(b) : b[key] ?? '';
+        key === 'equivDiameterInch'
+          ? getJointEquivDiaInch(b)
+          : key === 'labRequestStatus'
+          ? getJointLabRequestStatus(b, labRequests)
+          : b[key] ?? '';
       const cmp = String(valA).localeCompare(String(valB), 'ru', {
         numeric: true,
       });
@@ -351,6 +415,7 @@ export default function App() {
     weldingDateFrom,
     weldingDateTo,
     sortConfig,
+    labRequests,
   ]);
 
   const getUniqueValuesForColumn = useCallback(
@@ -358,7 +423,11 @@ export default function App() {
       const counts = new Map<string, number>();
       for (const j of scopedJoints) {
         const raw =
-          colKey === 'equivDiameterInch' ? getJointEquivDiaInch(j) : j[colKey];
+          colKey === 'equivDiameterInch'
+            ? getJointEquivDiaInch(j)
+            : colKey === 'labRequestStatus'
+            ? getJointLabRequestStatus(j, labRequests)
+            : j[colKey];
         const val = String(raw ?? '');
         counts.set(val, (counts.get(val) || 0) + 1);
       }
@@ -366,7 +435,7 @@ export default function App() {
         .map(([value, count]) => ({ value, count }))
         .sort((a, b) => a.value.localeCompare(b.value, 'ru', { numeric: true }));
     },
-    [scopedJoints]
+    [scopedJoints, labRequests]
   );
 
   const handleApplyTemplate = useCallback(
@@ -598,6 +667,7 @@ export default function App() {
     setTechCards([]);
     setWeldingMaterials([]);
     setAuditLogs([]);
+    setLabRequests([]);
     setFacilityGeoOverrides({});
     setUserAccounts(nextUsers);
     setCurrentUser(nextUsers[0]);
@@ -635,6 +705,9 @@ export default function App() {
     setTechCards(INITIAL_TECH_CARDS);
     setWeldingMaterials(INITIAL_WELDING_MATERIALS);
     setAuditLogs(INITIAL_AUDIT_LOGS);
+    setLabRequests(
+      buildInitialSeedLabRequests(INITIAL_JOINTS, INITIAL_PROJECT_LINELIST)
+    );
     setFacilityGeoOverrides({});
     setUserAccounts(USER_ACCOUNTS);
     setCurrentUser(USER_ACCOUNTS[0]);
@@ -773,8 +846,99 @@ export default function App() {
     [columnFilters]
   );
 
+  const handleCreateLabRequest = useCallback(
+    (newReq: NdtLabRequest) => {
+      setLabRequests((prev) => [newReq, ...prev]);
+      appendSystemAuditEntry(
+        'Подача заявки на НК от ПТО в Лабораторию',
+        newReq.uniqueLineId,
+        `${newReq.jointIds.length} ст.`,
+        'Заявка на НК',
+        '—',
+        `${newReq.requestNumber} (${newReq.requestedMethod}, ${newReq.controlStage}) — ${newReq.createdBy}`,
+        newReq.jointIds[0] || 'lab-req',
+        'bulk_edit'
+      );
+      bumpRevisionMeta(
+        `Создана заявка на НК ${newReq.requestNumber}`,
+        currentUser.fullName
+      );
+    },
+    [appendSystemAuditEntry, bumpRevisionMeta, currentUser.fullName]
+  );
+
+  const handleAcceptLabRequest = useCallback(
+    (
+      requestId: string,
+      defectoscopistName: string,
+      jointUpdates: Array<{ jointId: string; patch: Partial<WeldJoint> }>
+    ) => {
+      const targetReq = labRequests.find((r) => r.id === requestId);
+      setLabRequests((prev) =>
+        prev.map((r) =>
+          r.id === requestId
+            ? {
+                ...r,
+                status: 'В работе ЛНК',
+                acceptedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+                acceptedBy: defectoscopistName,
+              }
+            : r
+        )
+      );
+      if (jointUpdates.length > 0) {
+        jointActions.handleBatchUpdateJointsFromLab(
+          jointUpdates,
+          `ЛНК: Приём заявки ${targetReq?.requestNumber || ''} в работу (${defectoscopistName})`
+        );
+      }
+      appendSystemAuditEntry(
+        'Приём заявки на НК в работу дефектоскопистом ЛНК',
+        targetReq?.uniqueLineId || 'ЛНК',
+        `${targetReq?.jointIds.length ?? jointUpdates.length} ст.`,
+        'Статус заявки НК',
+        'Подана ПТО',
+        `В работе ЛНК (${defectoscopistName})`,
+        targetReq?.jointIds[0] || 'lab-accept',
+        'bulk_edit'
+      );
+    },
+    [
+      appendSystemAuditEntry,
+      jointActions,
+      labRequests,
+    ]
+  );
+
+  const handleSaveLabConclusions = useCallback(
+    (
+      jointUpdates: Array<{ jointId: string; patch: Partial<WeldJoint> }>,
+      actionSummary: string,
+      relatedRequestId?: string
+    ) => {
+      if (jointUpdates.length === 0) return;
+      jointActions.handleBatchUpdateJointsFromLab(jointUpdates, actionSummary);
+      if (relatedRequestId) {
+        setLabRequests((prev) =>
+          prev.map((req) => {
+            if (req.id !== relatedRequestId) return req;
+            return {
+              ...req,
+              acceptedBy: req.acceptedBy || currentUser.fullName,
+              acceptedAt:
+                req.acceptedAt ||
+                new Date().toISOString().slice(0, 16).replace('T', ' '),
+            };
+          })
+        );
+      }
+    },
+    [currentUser.fullName, jointActions]
+  );
+
   const sectionLabels: Record<AppSection, string> = {
     registry: 'Реестр стыков и ввод данных',
+    laboratory: 'Лаборатория НК',
     project_linelist: 'Проект (лайнлист)',
     welding_tech: 'Технология сварочного производства',
     journals: 'Журналы сварочных работ (СТО Газпром / ГОСТ)',
@@ -786,6 +950,7 @@ export default function App() {
 
   const sectionIcons: Record<AppSection, React.ReactNode> = {
     registry: <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
+    laboratory: <Radiation className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
     project_linelist: <FolderKanban className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
     welding_tech: <Wrench className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
     journals: <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
@@ -889,6 +1054,7 @@ export default function App() {
         auditLogsCount={auditLogs.length}
         lrvCatalogCount={lrvCatalog.length}
         weldingTechCount={`${welders.length} НАКС / ${techCards.length} ТК`}
+        labRequestsCount={`${labRequests.filter((r) => r.status !== 'Выполнена').length} в раб. / ${labRequests.length}`}
         currentUser={currentUser}
         onOpenLoginModal={() => {
           setLoginModalInitialMode('login');
@@ -970,6 +1136,10 @@ export default function App() {
             joints={joints}
             filteredAndSortedJoints={filteredAndSortedJoints}
             lines={projectLineList}
+            welders={welders}
+            labRequests={labRequests}
+            currentUserFullName={currentUser.fullName}
+            onCreateLabRequest={handleCreateLabRequest}
             selectedJointIds={selectedJointIds}
             onToggleSelectRow={toggleSelectRow}
             onToggleSelectAll={toggleSelectAllVisible}
@@ -1010,6 +1180,26 @@ export default function App() {
             onColumnAutoFit={handleColumnAutoFit}
             onMoveColumnInline={handleMoveColumnInline}
             onHideColumnInline={handleHideColumnInline}
+          />
+        )}
+
+        {activeSection === 'laboratory' && (
+          <LaboratoryView
+            joints={joints}
+            lineList={projectLineList}
+            facilities={derivedFacilities}
+            selectedObjectName={selectedObjectName}
+            selectedRdCode={selectedRdCode}
+            onSelectObjectName={setSelectedObjectName}
+            onSelectRdCode={setSelectedRdCode}
+            currentUser={currentUser}
+            userPermissions={userPermissions}
+            inspectors={dynamicInspectors}
+            labRequests={labRequests}
+            onCreateLabRequest={handleCreateLabRequest}
+            onAcceptLabRequest={handleAcceptLabRequest}
+            onSaveLabConclusions={handleSaveLabConclusions}
+            onOpenJointPassport={handleOpenEditPassport}
           />
         )}
 

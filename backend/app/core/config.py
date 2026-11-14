@@ -67,6 +67,14 @@ class Settings(BaseSettings):
 
         if self.environment == "production":
             if (
+                ":@" in self.database_url
+                or "zaychick_dev_password" in self.database_url
+                or "zaychick_secure_dev_password" in self.database_url
+            ):
+                raise ValueError(
+                    "В production-окружении запрещён пустой или демонстрационный пароль БД в DATABASE_URL."
+                )
+            if (
                 len(self.jwt_secret_key) < 32
                 or "dev-" in self.jwt_secret_key.lower()
                 or "change" in self.jwt_secret_key.lower()

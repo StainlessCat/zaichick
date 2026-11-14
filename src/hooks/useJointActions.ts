@@ -830,6 +830,127 @@ export function useJointActions(params: UseJointActionsParams) {
     setSelectedJointIds,
   ]);
 
+  const handleBatchUpdateJointsFromLab = useCallback(
+    async (
+      updates: { jointId: string; patch: Partial<WeldJoint> }[],
+      actionLabel: string
+    ) => {
+      if (updates.length === 0) return;
+
+      recordUndoSnapshot(actionLabel);
+
+      const patchById = new Map<string, Partial<WeldJoint>>();
+      for (const u of updates) {
+        patchById.set(u.jointId, u.patch);
+      }
+
+      const nowIso = new Date().toISOString();
+      const actorLogin = currentUser.login || 'lnk_inspector';
+      const actorName = currentUser.fullName || 'Специалист ЛНК';
+      const actorRole = currentUser.role || 'Специалист ЛНК';
+
+      const newAuditEntries: AuditLogEntry[] = [];
+
+      setJoints((prevJoints) =>
+        prevJoints.map((j) => {
+          const rawPatch = patchById.get(j.id);
+          if (!rawPatch) return j;
+
+          for (const [k, newVal] of Object.entries(rawPatch)) {
+            const oldVal = (j as unknown as Record<string, unknown>)[k];
+            if (String(oldVal ?? '') !== String(newVal ?? '')) {
+              newAuditEntries.push({
+                id: `aud-lab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                timestamp: nowIso,
+                userLogin: actorLogin,
+                userFullName: actorName,
+                userRole: actorRole,
+                jointId: j.id,
+                jointNumber: j.jointNumber,
+                uniqueLineId: j.uniqueLineId,
+                rdCode: j.rdCode,
+                fieldKey: k,
+                fieldLabel:
+                  FIELD_LABELS_MAP[k as keyof typeof FIELD_LABELS_MAP] || k,
+                oldValue: String(oldVal ?? '—'),
+                newValue: String(newVal ?? '—'),
+                operationType: updates.length > 1 ? 'bulk_edit' : 'single_edit',
+              });
+            }
+          }
+
+          return {
+            ...j,
+            ...rawPatch,
+            updatedAt: nowIso,
+            updatedBy: actorName,
+          };
+        })
+      );
+
+      if (newAuditEntries.length > 0) {
+        setAuditLogs((prev) => [...newAuditEntries, ...prev]);
+      }
+
+      bumpRevisionMeta(actionLabel, actorName);
+
+      // Если пользователь авторизован на сервере и стыки имеют серверные UUID — синхронизируем с СУБД
+      if (isAuthenticated && currentUser.login) {
+        const serverBatch = updates
+          .map((u) => {
+            const existing = joints.find((j) => j.id === u.jointId);
+            if (!existing || !UUID_RE.test(existing.id)) return null;
+            return {
+              id: existing.id,
+              patch: u.patch,
+              version: existing.version ?? 1,
+            };
+          })
+          .filter(
+            (
+              item
+            ): item is { id: string; patch: Partial<WeldJoint>; version: number } =>
+              Boolean(item)
+          );
+
+        if (serverBatch.length > 0) {
+          try {
+            setIsDbSyncing(true);
+            const updatedFromServer = await zaychickApi.bulkUpdateJoints(
+              serverBatch
+            );
+            const updatedMap = new Map(updatedFromServer.map((u) => [u.id, u]));
+            isApplyingServerStateRef.current = true;
+            setJoints((prev) => prev.map((j) => updatedMap.get(j.id) || j));
+            const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
+            if (logs) setAuditLogs(logs);
+            window.setTimeout(() => {
+              isApplyingServerStateRef.current = false;
+            }, 60);
+          } catch (err) {
+            handleApiFailure(err);
+          } finally {
+            setIsDbSyncing(false);
+          }
+        }
+      }
+    },
+    [
+      bumpRevisionMeta,
+      currentUser.fullName,
+      currentUser.login,
+      currentUser.role,
+      handleApiFailure,
+      isApplyingServerStateRef,
+      isAuthenticated,
+      joints,
+      recordUndoSnapshot,
+      setAuditLogs,
+      setIsDbSyncing,
+      setJoints,
+    ]
+  );
+
   // Unused imports guard for helpers available if callers inspect formatted audit fields
   void ALL_COLUMNS;
   void formatDateDDMMYY;
@@ -845,5 +966,6 @@ export function useJointActions(params: UseJointActionsParams) {
     handleQuickAddSupplementaryJoint,
     handleApplyBulkUpdate,
     handleBulkDeleteSelectedJoints,
+    handleBatchUpdateJointsFromLab,
   };
 }

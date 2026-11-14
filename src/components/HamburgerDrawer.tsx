@@ -9,6 +9,7 @@ import {
   HardDriveDownload,
   History,
   PieChart,
+  Radiation,
   Trash2,
   X,
   CheckCircle2,
@@ -36,6 +37,7 @@ interface HamburgerDrawerProps {
   selectedRdCode: string; // 'ALL' or rdCode
   onSelectRdCode: (rd: string) => void;
   totalJointsCount: number;
+  labRequestsCount?: string;
   projectLineListCount: number;
   auditLogsCount: number;
   lrvCatalogCount: number;
@@ -66,6 +68,7 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = ({
   selectedRdCode,
   onSelectRdCode,
   totalJointsCount,
+  labRequestsCount,
   projectLineListCount,
   auditLogsCount,
   lrvCatalogCount,
@@ -96,6 +99,11 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = ({
     icon: React.ReactNode;
   }[] = [
     {
+      id: 'readiness',
+      title: 'Отчётность по готовности',
+      icon: <PieChart className="w-4 h-4" />,
+    },
+    {
       id: 'registry',
       title: 'Реестр стыков и ввод данных',
       badge: `${totalJointsCount}`,
@@ -114,15 +122,16 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = ({
       icon: <Flame className="w-4 h-4" />,
     },
     {
+      id: 'laboratory',
+      title: 'Лаборатория НК',
+      badge: labRequestsCount || 'ЛНК',
+      icon: <Radiation className="w-4 h-4" />,
+    },
+    {
       id: 'journals',
       title: 'Журналы сварочных работ',
       badge: '2 формы',
       icon: <BookOpen className="w-4 h-4" />,
-    },
-    {
-      id: 'readiness',
-      title: 'Отчётность по готовности',
-      icon: <PieChart className="w-4 h-4" />,
     },
     {
       id: 'lrv_catalog',
@@ -239,7 +248,7 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = ({
               <span className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">
                 Разделы системы
               </span>
-              <span className="text-[10px] font-mono text-slate-400">8 модулей</span>
+              <span className="text-[10px] font-mono text-slate-400">9 модулей</span>
             </div>
 
             <nav className="space-y-1" aria-label="Разделы системы">

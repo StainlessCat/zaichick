@@ -38,6 +38,7 @@ export const NDT_EDITABLE_JOINT_FIELDS = new Set<keyof WeldJoint>([
   'vikResult',
   'vikDate',
   'vikInspector',
+  'vikReportNumber',
   // Первичный НК (РК / УЗК / ПВК)
   'ndtType',
   'ndtResult',
@@ -53,6 +54,7 @@ export const NDT_EDITABLE_JOINT_FIELDS = new Set<keyof WeldJoint>([
   'dupNdtResult',
   'dupNdtDate',
   'dupNdtInspector',
+  'dupNdtReportNumber',
   // Контроль после ремонта (СТО Газпром графы 38–48)
   'repairVikNumber',
   'repairVikDate',

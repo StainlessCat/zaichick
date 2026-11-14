@@ -228,6 +228,33 @@ async def test_event_bus_deduplication_and_multi_worker_pubsub():
         delivered2 = await bus.publish_local(e1, deduplicate=True)
         assert delivered2 is False
         assert q.qsize() == 1  # Queue size unchanged
+
+        # 3. Verify cache remains strictly bounded across > max_recent_ids emissions
+        class _DummySession:
+            def __init__(self) -> None:
+                self.info: dict = {}
+
+        dummy_session = _DummySession()
+        for idx in range(250):
+            await bus.emit_delta(
+                dummy_session,  # type: ignore[arg-type]
+                event="joint.updated",
+                entity_type="weld_joint",
+                entity_id=f"j-{idx}",
+                version=1,
+            )
+            await bus.publish_local(
+                {
+                    "event_id": f"local-evt-{idx}",
+                    "event": "joint.updated",
+                    "entity_type": "weld_joint",
+                    "entity_id": f"j-{idx}",
+                },
+                deduplicate=True,
+            )
+        assert len(bus._recent_event_ids) <= 100
+        assert len(bus._recent_event_queue) <= 100
+        assert len(bus._recent_event_ids) == len(bus._recent_event_queue)
     finally:
         bus._subscribers.discard(q)
 
