@@ -6,12 +6,12 @@ from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
-from app.models.enums import ControlResultEnum, NdtMethodEnum, RoleEnum
+from app.models.enums import ControlResultEnum, RoleEnum
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem

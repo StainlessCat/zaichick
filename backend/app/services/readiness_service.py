@@ -172,7 +172,7 @@ class WelderNdtQuotaReport:
 def calculate_welder_ndt_quotas(
     joints: list[Any], lines: list[Any] | None = None
 ) -> list[WelderNdtQuotaReport]:
-    line_map = {l.unique_line_id: l for l in (lines or []) if getattr(l, "unique_line_id", None)}
+    line_map = {line_item.unique_line_id: line_item for line_item in (lines or []) if getattr(line_item, "unique_line_id", None)}
     stats: dict[str, dict[str, Any]] = {}
     finished_bad_excluded = {ControlResultEnum.NOT_CONDUCTED.value, ControlResultEnum.IN_WORK.value}
     bad_results = {ControlResultEnum.REPAIR.value, ControlResultEnum.CUT_OUT.value}

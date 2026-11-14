@@ -557,23 +557,23 @@ def build_linelist_workbook_bytes(lines: list[Any], *, is_template: bool = False
     else:
         rows = [
             [
-                l.object_name,
-                l.rd_code,
-                l.line_number,
-                l.line_name,
-                l.product,
-                l.test_contour,
-                l.welding_ntd,
-                l.control_ntd,
-                l.quality_level,
-                l.pipeline_category,
-                l.working_pressure,
-                l.working_temperature,
-                l.rk_percent,
-                l.uzk_percent,
-                l.pvk_percent,
+                line_item.object_name,
+                line_item.rd_code,
+                line_item.line_number,
+                line_item.line_name,
+                line_item.product,
+                line_item.test_contour,
+                line_item.welding_ntd,
+                line_item.control_ntd,
+                line_item.quality_level,
+                line_item.pipeline_category,
+                line_item.working_pressure,
+                line_item.working_temperature,
+                line_item.rk_percent,
+                line_item.uzk_percent,
+                line_item.pvk_percent,
             ]
-            for l in lines
+            for line_item in lines
         ]
     _write_table_rows(ws, start_row=2, rows=rows, left_align_cols={1, 2, 4, 7, 8})
     return _workbook_to_bytes(wb)

@@ -10,10 +10,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.database import async_session_factory, verify_postgres_connection
 from app.core.security import hash_password
 from app.models.enums import RoleEnum
