@@ -6063,4 +6063,73 @@ test('LABORATORY MODULE: deficit statement grouped by RD codes & lines, PTO requ
   assert.equal(validCheck.reasons.length, 0);
 });
 
+test("Серверное сохранение заявок НК: маппинг DTO, ISO-даты, UUID-валидация и сквозной жизненный цикл", async () => {
+  const {
+    mapLabRequestDto,
+    mapLabRequestToCreatePayload,
+    mapLabRequestToUpdatePayload,
+  } = await import("../api/mappers");
 
+  const testUuid = "b54822bf-df29-40ce-9e88-81bfb203f05f";
+
+  // 1. DTO -> NdtLabRequest
+  const serverDto = {
+    id: testUuid,
+    request_number: "ЗАК-2026/001",
+    created_at: "2026-11-14T12:00:00Z",
+    created_date: "2026-11-14",
+    created_by: "Инженер ПТО Тестов",
+    object_name: "Объект 1",
+    rd_code: "РД-01",
+    line_number: "Линия 10",
+    unique_line_id: "РД-01:Линия 10",
+    contour: "Контур А",
+    control_stage: "Первичный ВИК и НК",
+    requested_method: "РК",
+    joint_ids: ["j1", "j2"],
+    status: "В работе ЛНК",
+    accepted_at: "2026-11-14T13:00:00Z",
+    accepted_by: "Дефектоскопист Орлова",
+    completed_at: null,
+    notes: "Срочный контроль",
+    version: 2,
+  };
+
+  const domainReq = mapLabRequestDto(serverDto);
+  assert.equal(domainReq.id, testUuid);
+  assert.equal(domainReq.requestNumber, "ЗАК-2026/001");
+  assert.equal(domainReq.status, "В работе ЛНК");
+  assert.equal(domainReq.jointIds.length, 2);
+  assert.equal(domainReq.version, 2);
+
+  // 2. NdtLabRequest -> Create Payload
+  // Случай а: временный ID (не UUID) должен быть сброшен в undefined для генерации сервером
+  const tempReq = {
+    ...domainReq,
+    id: "lab-req-1729999999",
+    createdAt: "2026-11-14 12:00",
+    acceptedAt: "2026-11-14 13:00",
+  };
+  const createPayloadA = mapLabRequestToCreatePayload(tempReq);
+  assert.equal(createPayloadA.id, undefined, "Временный не-UUID ID должен сбрасываться в undefined");
+  assert.ok(String(createPayloadA.created_at).includes("T"), "Дата created_at должна форматироваться в ISO");
+  assert.ok(String(createPayloadA.accepted_at).includes("T"), "Дата accepted_at должна форматироваться в ISO");
+  assert.equal(createPayloadA.request_number, "ЗАК-2026/001");
+
+  // Случай б: валидный UUID передаётся в бэкенд
+  const validUuidReq = { ...domainReq, id: testUuid };
+  const createPayloadB = mapLabRequestToCreatePayload(validUuidReq);
+  assert.equal(createPayloadB.id, testUuid, "Валидный UUID должен сохраняться");
+
+  // 3. Update Payload: частичный патч
+  const updatePatch = {
+    status: "Выполнена",
+    completedAt: "2026-11-14 15:30",
+    notes: "Контроль завершён, все стыки годны",
+  };
+  const updatePayload = mapLabRequestToUpdatePayload(updatePatch);
+  assert.equal(updatePayload.status, "Выполнена");
+  assert.ok(String(updatePayload.completed_at).includes("T"), "completed_at должен быть приведен к ISO строке");
+  assert.equal(updatePayload.notes, "Контроль завершён, все стыки годны");
+  assert.equal(updatePayload.request_number, undefined, "Неизменённые поля не должны попадать в патч");
+});

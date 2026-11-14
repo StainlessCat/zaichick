@@ -73,8 +73,12 @@ import { LaboratoryView } from './components/LaboratoryView';
 import {
   buildInitialSeedLabRequests,
   getJointLabRequestStatus,
+  isJointConclusionCompletedForRequest,
   syncLabRequestStatusWithJoints,
 } from './utils/laboratoryLogic';
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import {
   BackupAndResetModal,
   FullSystemBackupPayload,
@@ -858,82 +862,104 @@ export default function App() {
   );
 
   const handleCreateLabRequest = useCallback(
-    (newReq: NdtLabRequest) => {
+    async (newReq: NdtLabRequest) => {
       setLabRequests((prev) => [newReq, ...prev]);
-      void zaychickApi.createLabRequest(newReq).then((fresh) => {
-        setLabRequests((prev) => prev.map((r) => (r.id === newReq.id ? fresh : r)));
-      }).catch((err) => {
-        console.warn('Серверная регистрация заявки на НК не удалась:', err);
-      });
+      try {
+        const fresh = await zaychickApi.createLabRequest(newReq);
+        setLabRequests((prev) =>
+          prev.map((r) =>
+            r.id === newReq.id || r.requestNumber === newReq.requestNumber ? fresh : r
+          )
+        );
+        bumpRevisionMeta(
+          `Создана заявка на НК ${fresh.requestNumber}`,
+          currentUser.fullName
+        );
+      } catch (err) {
+        console.warn("Серверная регистрация заявки на НК не удалась:", err);
+        if (setLastSyncError) {
+          setLastSyncError(
+            `Ошибка регистрации заявки на НК: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
       appendSystemAuditEntry(
-        'Подача заявки на НК от ПТО в Лабораторию',
+        "Подача заявки на НК от ПТО в Лабораторию",
         newReq.uniqueLineId,
         `${newReq.jointIds.length} ст.`,
-        'Заявка на НК',
-        '—',
+        "Заявка на НК",
+        "—",
         `${newReq.requestNumber} (${newReq.requestedMethod}, ${newReq.controlStage}) — ${newReq.createdBy}`,
-        newReq.jointIds[0] || 'lab-req',
-        'bulk_edit'
-      );
-      bumpRevisionMeta(
-        `Создана заявка на НК ${newReq.requestNumber}`,
-        currentUser.fullName
+        newReq.jointIds[0] || "lab-req",
+        "bulk_edit"
       );
     },
-    [appendSystemAuditEntry, bumpRevisionMeta, currentUser.fullName]
+    [appendSystemAuditEntry, bumpRevisionMeta, currentUser.fullName, setLastSyncError]
   );
 
   const handleAcceptLabRequest = useCallback(
-    (
+    async (
       requestId: string,
       defectoscopistName: string,
       jointUpdates: Array<{ jointId: string; patch: Partial<WeldJoint> }>
     ) => {
       const targetReq = labRequests.find((r) => r.id === requestId);
+      const acceptedAtIso = new Date().toISOString();
+      const acceptedAtDisplay = acceptedAtIso.slice(0, 16).replace("T", " ");
+
       setLabRequests((prev) =>
         prev.map((r) =>
           r.id === requestId
             ? {
                 ...r,
-                status: 'В работе ЛНК',
-                acceptedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+                status: "В работе ЛНК",
+                acceptedAt: acceptedAtDisplay,
                 acceptedBy: defectoscopistName,
               }
             : r
         )
       );
-      void zaychickApi.updateLabRequest(
-        requestId,
-        {
-          status: 'В работе ЛНК',
-          acceptedBy: defectoscopistName,
-          acceptedAt: new Date().toISOString(),
-        },
-        targetReq?.version
-      ).then((fresh) => {
+
+      try {
+        const fresh = await zaychickApi.updateLabRequest(
+          requestId,
+          {
+            status: "В работе ЛНК",
+            acceptedBy: defectoscopistName,
+            acceptedAt: acceptedAtIso,
+          },
+          targetReq?.version
+        );
         setLabRequests((prev) => prev.map((r) => (r.id === requestId ? fresh : r)));
-      }).catch((err) => {
-        console.warn('Серверное обновление статуса заявки не удалось:', err);
-      });
+      } catch (err) {
+        console.warn("Серверное обновление статуса заявки не удалось:", err);
+      }
+
       if (jointUpdates.length > 0) {
-        jointActions.handleBatchUpdateJointsFromLab(
+        await jointActions.handleBatchUpdateJointsFromLab(
           jointUpdates,
-          `ЛНК: Приём заявки ${targetReq?.requestNumber || ''} в работу (${defectoscopistName})`
+          `ЛНК: Приём заявки ${targetReq?.requestNumber || ""} в работу (${defectoscopistName})`
         );
       }
       appendSystemAuditEntry(
-        'Приём заявки на НК в работу дефектоскопистом ЛНК',
-        targetReq?.uniqueLineId || 'ЛНК',
+        "Приём заявки на НК в работу дефектоскопистом ЛНК",
+        targetReq?.uniqueLineId || "ЛНК",
         `${targetReq?.jointIds.length ?? jointUpdates.length} ст.`,
-        'Статус заявки НК',
-        'Подана ПТО',
+        "Статус заявки НК",
+        "Подана ПТО",
         `В работе ЛНК (${defectoscopistName})`,
-        targetReq?.jointIds[0] || 'lab-accept',
-        'bulk_edit'
+        targetReq?.jointIds[0] || "lab-accept",
+        "bulk_edit"
+      );
+      bumpRevisionMeta(
+        `Заявка НК ${targetReq?.requestNumber || ""} принята в работу`,
+        currentUser.fullName
       );
     },
     [
       appendSystemAuditEntry,
+      bumpRevisionMeta,
+      currentUser.fullName,
       jointActions,
       labRequests,
     ]
@@ -952,27 +978,92 @@ export default function App() {
           const req = labRequests.find((r) => r.id === relatedRequestId);
           const acceptedBy = req?.acceptedBy || currentUser.fullName;
           const acceptedAt =
-            req?.acceptedAt || new Date().toISOString().slice(0, 16).replace('T', ' ');
-          setLabRequests((prev) =>
-            prev.map((r) => (r.id !== relatedRequestId ? r : { ...r, acceptedBy, acceptedAt }))
+            req?.acceptedAt || new Date().toISOString().slice(0, 16).replace("T", " ");
+
+          const updatedJointsMap = new Map<string, WeldJoint>(
+            joints.map((j) => [j.id, j])
           );
-          void zaychickApi.updateLabRequest(
-            relatedRequestId,
-            { acceptedBy, acceptedAt },
-            req?.version
-          ).then((fresh) => {
-            setLabRequests((prev) => prev.map((r) => (r.id === relatedRequestId ? fresh : r)));
-          }).catch((err) => {
-            console.warn('Серверное обновление заключения заявки не удалось:', err);
+          for (const u of jointUpdates) {
+            const current = updatedJointsMap.get(u.jointId);
+            if (current) updatedJointsMap.set(u.jointId, { ...current, ...u.patch });
+          }
+          const allJointsDone = req?.jointIds.every((jId) => {
+            const j = updatedJointsMap.get(jId);
+            return j && isJointConclusionCompletedForRequest(j, req.controlStage);
           });
+
+          const nextStatus = allJointsDone ? "Выполнена" : (req?.status || "В работе ЛНК");
+          const completedAt = allJointsDone ? new Date().toISOString() : req?.completedAt;
+
+          setLabRequests((prev) =>
+            prev.map((r) =>
+              r.id !== relatedRequestId
+                ? r
+                : { ...r, acceptedBy, acceptedAt, status: nextStatus, completedAt }
+            )
+          );
+
+          try {
+            const fresh = await zaychickApi.updateLabRequest(
+              relatedRequestId,
+              { acceptedBy, acceptedAt, status: nextStatus, completedAt },
+              req?.version
+            );
+            setLabRequests((prev) =>
+              prev.map((r) => (r.id === relatedRequestId ? fresh : r))
+            );
+          } catch (err) {
+            console.warn("Серверное обновление заключения заявки не удалось:", err);
+          }
         }
         return true;
       } catch (err) {
-        console.error('Ошибка синхронизации заключений ЛНК с сервером:', err);
+        console.error("Ошибка синхронизации заключений ЛНК с сервером:", err);
         return false;
       }
     },
-    [currentUser.fullName, jointActions]
+    [currentUser.fullName, jointActions, joints, labRequests]
+  );
+
+  const handleDeleteLabRequest = useCallback(
+    async (requestId: string): Promise<boolean> => {
+      const targetReq = labRequests.find((r) => r.id === requestId);
+      recordUndoSnapshot(`Удаление заявки на НК ${targetReq?.requestNumber || requestId}`);
+      setLabRequests((prev) => prev.filter((r) => r.id !== requestId));
+      try {
+        if (UUID_RE.test(requestId)) {
+          await zaychickApi.deleteLabRequest(requestId);
+        }
+        appendSystemAuditEntry(
+          "Удаление заявки на НК",
+          targetReq?.uniqueLineId || "ЛНК",
+          `${targetReq?.jointIds.length || 0} ст.`,
+          "Заявка на НК",
+          targetReq?.requestNumber || requestId,
+          "Удалена",
+          requestId,
+          "delete_joint"
+        );
+        bumpRevisionMeta(
+          `Удалена заявка на НК ${targetReq?.requestNumber || ""}`,
+          currentUser.fullName
+        );
+        return true;
+      } catch (err) {
+        console.error("Ошибка удаления заявки на НК на сервере:", err);
+        if (targetReq) {
+          setLabRequests((prev) => [targetReq, ...prev]);
+        }
+        return false;
+      }
+    },
+    [
+      appendSystemAuditEntry,
+      bumpRevisionMeta,
+      currentUser.fullName,
+      labRequests,
+      recordUndoSnapshot,
+    ]
   );
 
   const sectionLabels: Record<AppSection, string> = {
@@ -1238,6 +1329,7 @@ export default function App() {
             onCreateLabRequest={handleCreateLabRequest}
             onAcceptLabRequest={handleAcceptLabRequest}
             onSaveLabConclusions={handleSaveLabConclusions}
+            onDeleteLabRequest={handleDeleteLabRequest}
             onOpenJointPassport={handleOpenEditPassport}
           />
         )}

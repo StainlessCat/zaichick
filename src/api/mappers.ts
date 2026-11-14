@@ -894,6 +894,17 @@ export function mapConflictDtoToUi(
   };
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function asIsoDate(val: string | null | undefined): string | null {
+  if (!val || !val.trim()) return null;
+  const trimmed = val.trim();
+  const d = new Date(trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T'));
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 export function mapLabRequestDto(dto: Record<string, unknown>): NdtLabRequest {
   return {
     id: String(dto.id || ''),
@@ -921,10 +932,12 @@ export function mapLabRequestDto(dto: Record<string, unknown>): NdtLabRequest {
 export function mapLabRequestToCreatePayload(
   req: NdtLabRequest
 ): Record<string, unknown> {
+  const validId = req.id && UUID_RE.test(req.id) ? req.id : undefined;
+  const createdAtIso = asIsoDate(req.createdAt);
   return {
-    id: req.id || undefined,
+    id: validId,
     request_number: req.requestNumber,
-    created_at: req.createdAt || undefined,
+    created_at: createdAtIso || undefined,
     created_date: req.createdDate,
     created_by: req.createdBy,
     object_name: req.objectName,
@@ -936,9 +949,9 @@ export function mapLabRequestToCreatePayload(
     requested_method: req.requestedMethod,
     joint_ids: req.jointIds || [],
     status: req.status || 'Подана ПТО',
-    accepted_at: req.acceptedAt || null,
+    accepted_at: asIsoDate(req.acceptedAt),
     accepted_by: req.acceptedBy || null,
-    completed_at: req.completedAt || null,
+    completed_at: asIsoDate(req.completedAt),
     notes: req.notes || null,
   };
 }
@@ -959,9 +972,9 @@ export function mapLabRequestToUpdatePayload(
   if (patch.requestedMethod !== undefined) payload.requested_method = patch.requestedMethod;
   if (patch.jointIds !== undefined) payload.joint_ids = patch.jointIds;
   if (patch.status !== undefined) payload.status = patch.status;
-  if (patch.acceptedAt !== undefined) payload.accepted_at = patch.acceptedAt;
+  if (patch.acceptedAt !== undefined) payload.accepted_at = asIsoDate(patch.acceptedAt);
   if (patch.acceptedBy !== undefined) payload.accepted_by = patch.acceptedBy;
-  if (patch.completedAt !== undefined) payload.completed_at = patch.completedAt;
+  if (patch.completedAt !== undefined) payload.completed_at = asIsoDate(patch.completedAt);
   if (patch.notes !== undefined) payload.notes = patch.notes;
   return payload;
 }

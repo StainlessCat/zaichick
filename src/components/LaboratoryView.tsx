@@ -60,6 +60,7 @@ interface LaboratoryViewProps {
     actionSummary: string,
     relatedRequestId?: string
   ) => Promise<boolean> | boolean | void;
+  onDeleteLabRequest?: (requestId: string) => Promise<boolean> | boolean | void;
   onOpenJointPassport: (joint: WeldJoint) => void;
 }
 
@@ -69,6 +70,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
   facilities,
   inspectors,
   currentUser,
+  userPermissions,
   selectedObjectName,
   selectedRdCode,
   onSelectRdCode,
@@ -76,6 +78,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
   onCreateLabRequest,
   onAcceptLabRequest,
   onSaveLabConclusions,
+  onDeleteLabRequest,
   onOpenJointPassport,
 }) => {
   const [activeTab, setActiveTab] = useState<LaboratorySubTab>('deficit');
@@ -298,8 +301,13 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
     const timeStr = now.toTimeString().slice(0, 5);
     const reqNumber = suggestNextLabRequestNumber(labRequests);
 
+    const generatedId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : '';
+
     const newReq: NdtLabRequest = {
-      id: `lab-req-${Date.now()}`,
+      id: generatedId,
       requestNumber: reqNumber,
       createdAt: `${dateStr} ${timeStr}`,
       createdDate: dateStr,
@@ -823,8 +831,41 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
           setSelectedInspectorForAccept={setSelectedInspectorForAccept}
           inspectors={inspectors}
           jointsById={jointsById}
+          canDeleteRequest={userPermissions.category === 'admin' || userPermissions.canEditLineList}
           onOpenCreateRequestModal={() => handleOpenCreateRequestModal()}
           onAcceptRequestClick={handleAcceptRequestClick}
+          onDeleteRequestClick={
+            onDeleteLabRequest
+              ? (req) => {
+                  if (
+                    window.confirm(
+                      `Вы уверены, что хотите удалить заявку № ${req.requestNumber}?`
+                    )
+                  ) {
+                    Promise.resolve(onDeleteLabRequest(req.id))
+                      .then((ok) => {
+                        if (ok !== false) {
+                          showBanner(
+                            'success',
+                            `Заявка № ${req.requestNumber} успешно удалена.`
+                          );
+                        } else {
+                          showBanner(
+                            'error',
+                            `Ошибка при удалении заявки № ${req.requestNumber}.`
+                          );
+                        }
+                      })
+                      .catch(() => {
+                        showBanner(
+                          'error',
+                          `Сетевая ошибка при удалении заявки № ${req.requestNumber}.`
+                        );
+                      });
+                  }
+                }
+              : undefined
+          }
           onOpenRequestInConclusions={handleOpenRequestInConclusions}
           onOpenJointPassport={onOpenJointPassport}
         />

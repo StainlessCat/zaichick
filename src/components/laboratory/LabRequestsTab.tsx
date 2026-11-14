@@ -4,6 +4,7 @@ import {
   ExternalLink,
   FilePlus2,
   Play,
+  Trash2,
 } from 'lucide-react';
 import {
   InspectorProfile,
@@ -28,8 +29,10 @@ interface LabRequestsTabProps {
   setSelectedInspectorForAccept: (val: string) => void;
   inspectors: InspectorProfile[];
   jointsById: Map<string, WeldJoint>;
+  canDeleteRequest?: boolean;
   onOpenCreateRequestModal: () => void;
   onAcceptRequestClick: (req: NdtLabRequest) => void;
+  onDeleteRequestClick?: (req: NdtLabRequest) => void;
   onOpenRequestInConclusions: (req: NdtLabRequest) => void;
   onOpenJointPassport: (joint: WeldJoint) => void;
 }
@@ -43,8 +46,10 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
   setSelectedInspectorForAccept,
   inspectors,
   jointsById,
+  canDeleteRequest,
   onOpenCreateRequestModal,
   onAcceptRequestClick,
+  onDeleteRequestClick,
   onOpenRequestInConclusions,
   onOpenJointPassport,
 }) => {
@@ -189,6 +194,17 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                           : 'Оформить заключения по стыкам'}
                       </span>
                     </button>
+
+                    {canDeleteRequest && onDeleteRequestClick && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteRequestClick(req)}
+                        title="Удалить заявку"
+                        className="inline-flex items-center justify-center p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
