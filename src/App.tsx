@@ -49,6 +49,7 @@ import {
   INITIAL_WELDING_MATERIALS,
   USER_ACCOUNTS,
   WELDERS_DIRECTORY,
+  loadKharasaveyDemoData,
 } from './data/seedData';
 import { zaychickApi } from './api';
 import { exportAllJointsToFile } from './utils/excelUtils';
@@ -161,6 +162,22 @@ export default function App() {
     handleCreateStandaloneObject: handleCreateStandaloneObjectLocal,
   } = appState;
 
+  const LAB_REQUESTS_STORAGE_KEY = 'zaychick_lab_requests_v1';
+  const [labRequests, setLabRequests] = useState<NdtLabRequest[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(LAB_REQUESTS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return parsed as NdtLabRequest[];
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return [];
+  });
+
   const {
     serverDbMeta,
     bumpRevisionMeta,
@@ -195,6 +212,7 @@ export default function App() {
     setUserAccounts,
     setAuditLogs,
     setTemplates,
+    setLabRequests,
     setFacilityGeoOverrides,
   });
 
@@ -227,21 +245,7 @@ export default function App() {
 
   const [confirmBulkDeleteJoints, setConfirmBulkDeleteJoints] = useState(false);
 
-  const LAB_REQUESTS_STORAGE_KEY = 'zaychick_lab_requests_v1';
-  const [labRequests, setLabRequests] = useState<NdtLabRequest[]>(() => {
-    try {
-      const raw = window.localStorage.getItem(LAB_REQUESTS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          return parsed as NdtLabRequest[];
-        }
-      }
-    } catch {
-      // ignore storage errors
-    }
-    return [];
-  });
+
 
   useEffect(() => {
     try {
@@ -752,23 +756,23 @@ export default function App() {
   const handleLoadKharasaveyDemo = async () => {
     try {
       setIsLoadingDemoDataset(true);
-      const mod = await import('./data/kharasaveyDemoData');
+      const demoData = await loadKharasaveyDemoData();
       recordUndoSnapshot('Загрузка демонстрационного массива Харасавэй (1271 стык)');
       setJoints((prev) => {
         const existingIds = new Set(prev.map((j) => j.id));
-        return [...prev, ...mod.KHARASAVEY_JOINTS.filter((j) => !existingIds.has(j.id))];
+        return [...prev, ...demoData.joints.filter((j) => !existingIds.has(j.id))];
       });
       setLrvCatalog((prev) => {
         const existingCodes = new Set(prev.map((l) => l.lrvCode));
-        return [...prev, ...mod.KHARASAVEY_LRV.filter((l) => !existingCodes.has(l.lrvCode))];
+        return [...prev, ...demoData.lrvCatalog.filter((l) => !existingCodes.has(l.lrvCode))];
       });
       setProjectLineList((prev) => {
         const existingIds = new Set(prev.map((l) => l.uniqueLineId));
-        return [...prev, ...mod.KHARASAVEY_LINES.filter((l) => !existingIds.has(l.uniqueLineId))];
+        return [...prev, ...demoData.projectLineList.filter((l) => !existingIds.has(l.uniqueLineId))];
       });
       setLabRequests((prev) => {
         if (prev.length === 0) {
-          return buildInitialSeedLabRequests(mod.KHARASAVEY_JOINTS, mod.KHARASAVEY_LINES);
+          return buildInitialSeedLabRequests(demoData.joints, demoData.projectLineList);
         }
         return prev;
       });
@@ -856,6 +860,11 @@ export default function App() {
   const handleCreateLabRequest = useCallback(
     (newReq: NdtLabRequest) => {
       setLabRequests((prev) => [newReq, ...prev]);
+      void zaychickApi.createLabRequest(newReq).then((fresh) => {
+        setLabRequests((prev) => prev.map((r) => (r.id === newReq.id ? fresh : r)));
+      }).catch((err) => {
+        console.warn('Серверная регистрация заявки на НК не удалась:', err);
+      });
       appendSystemAuditEntry(
         'Подача заявки на НК от ПТО в Лабораторию',
         newReq.uniqueLineId,
@@ -893,6 +902,19 @@ export default function App() {
             : r
         )
       );
+      void zaychickApi.updateLabRequest(
+        requestId,
+        {
+          status: 'В работе ЛНК',
+          acceptedBy: defectoscopistName,
+          acceptedAt: new Date().toISOString(),
+        },
+        targetReq?.version
+      ).then((fresh) => {
+        setLabRequests((prev) => prev.map((r) => (r.id === requestId ? fresh : r)));
+      }).catch((err) => {
+        console.warn('Серверное обновление статуса заявки не удалось:', err);
+      });
       if (jointUpdates.length > 0) {
         jointActions.handleBatchUpdateJointsFromLab(
           jointUpdates,
@@ -927,18 +949,22 @@ export default function App() {
       try {
         await jointActions.handleBatchUpdateJointsFromLab(jointUpdates, actionSummary);
         if (relatedRequestId) {
+          const req = labRequests.find((r) => r.id === relatedRequestId);
+          const acceptedBy = req?.acceptedBy || currentUser.fullName;
+          const acceptedAt =
+            req?.acceptedAt || new Date().toISOString().slice(0, 16).replace('T', ' ');
           setLabRequests((prev) =>
-            prev.map((req) => {
-              if (req.id !== relatedRequestId) return req;
-              return {
-                ...req,
-                acceptedBy: req.acceptedBy || currentUser.fullName,
-                acceptedAt:
-                  req.acceptedAt ||
-                  new Date().toISOString().slice(0, 16).replace('T', ' '),
-              };
-            })
+            prev.map((r) => (r.id !== relatedRequestId ? r : { ...r, acceptedBy, acceptedAt }))
           );
+          void zaychickApi.updateLabRequest(
+            relatedRequestId,
+            { acceptedBy, acceptedAt },
+            req?.version
+          ).then((fresh) => {
+            setLabRequests((prev) => prev.map((r) => (r.id === relatedRequestId ? fresh : r)));
+          }).catch((err) => {
+            console.warn('Серверное обновление заключения заявки не удалось:', err);
+          });
         }
         return true;
       } catch (err) {

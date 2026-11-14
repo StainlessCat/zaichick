@@ -62,6 +62,7 @@ export interface NdtLabRequest {
   acceptedBy?: string; // ФИО дефектоскописта
   completedAt?: string;
   notes?: string;
+  version?: number;
 }
 
 export type JournalStandard = 'СТО Газпром 15-1.1-002-2023' | 'ГОСТ 32569-2013';

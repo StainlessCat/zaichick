@@ -94,6 +94,10 @@ const WELDING_TYPE_OPTIONS: WeldingType[] = [
 
 import {
   WelderStampCombobox,
+  PassportHeader,
+  PassportValidationBanner,
+  PassportTabBar,
+  PassportRequisitesSidebar,
   PassportWeldingTab,
   PassportElementsTab,
   PassportControlTab,
@@ -1120,663 +1124,61 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       />
 
       <div className="relative z-10 w-full max-w-6xl bg-white rounded-xl shadow-2xl border border-slate-200 flex flex-col max-h-[94vh] overflow-hidden">
-        {/* Шапка паспорта цвета #1e3799 */}
-        <div className="flex items-center justify-between px-6 py-3 bg-[#1e3799] text-white shrink-0">
-          <div className="flex items-center gap-3">
-            <FileCheck2 className="w-5 h-5 text-sky-300 shrink-0" />
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-display text-base font-bold">
-                  {mode === 'create'
-                    ? 'Добавление нового сварного стыка'
-                    : `Паспорт сварного стыка № ${form.jointNumber}`}
-                </h2>
-                {mode === 'edit' && (
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
-                      isJointDefective(form)
-                        ? 'bg-red-500/25 text-red-100 border-red-300/40'
-                        : isJointFullyAccepted(form)
-                        ? 'bg-emerald-500/25 text-emerald-100 border-emerald-300/40'
-                        : form.weldingDate
-                        ? 'bg-amber-500/25 text-amber-100 border-amber-300/40'
-                        : 'bg-white/15 text-sky-100 border-white/20'
-                    }`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        isJointDefective(form)
-                          ? 'bg-red-400'
-                          : isJointFullyAccepted(form)
-                          ? 'bg-emerald-400'
-                          : form.weldingDate
-                          ? 'bg-amber-400'
-                          : 'bg-sky-200'
-                      }`}
-                    />
-                    <span>
-                      {isJointDefective(form)
-                        ? 'Требуется ремонт'
-                        : isJointFullyAccepted(form)
-                        ? 'Годен / Принят'
-                        : form.weldingDate
-                        ? 'На контроле'
-                        : 'Не заварен'}
-                    </span>
-                  </span>
-                )}
-                {mode === 'edit' && lineJoints.length > 0 && (
-                  <span className="hidden sm:inline-flex px-2 py-0.5 rounded text-[11px] font-mono bg-white/15 text-sky-100 border border-white/20">
-                    Линия {form.lineNumber} ({currentLineIndex >= 0 ? currentLineIndex + 1 : 1}/{lineJoints.length})
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Быстрая навигация по стыкам на линии */}
-            {mode === 'edit' && lineJoints.length > 1 && (
-              <div className="flex items-center gap-1 bg-white/10 p-1 rounded-lg border border-white/20">
-                <button
-                  type="button"
-                  disabled={!prevJoint}
-                  onClick={() => prevJoint && handleNavigateToJoint(prevJoint)}
-                  title={
-                    prevJoint
-                      ? `Предыдущий стык № ${prevJoint.jointNumber} (с автосохранением текущего)`
-                      : 'Это первый стык на линии'
-                  }
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-white/15 hover:bg-white/30 disabled:opacity-35 disabled:hover:bg-white/15 disabled:cursor-not-allowed text-white transition-colors"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Стык</span> № {prevJoint ? prevJoint.jointNumber : '—'}
-                </button>
-
-                <span className="text-[11px] text-sky-200 font-mono px-1.5 hidden md:inline">
-                  {currentLineIndex >= 0 ? `${currentLineIndex + 1} из ${lineJoints.length}` : ''}
-                </span>
-
-                <button
-                  type="button"
-                  disabled={!nextJoint}
-                  onClick={() => nextJoint && handleNavigateToJoint(nextJoint)}
-                  title={
-                    nextJoint
-                      ? `Следующий стык № ${nextJoint.jointNumber} (с автосохранением текущего)`
-                      : 'Это последний стык на линии'
-                  }
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold bg-white/15 hover:bg-white/30 disabled:opacity-35 disabled:hover:bg-white/15 disabled:cursor-not-allowed text-white transition-colors"
-                >
-                  <span className="hidden sm:inline">Стык</span> № {nextJoint ? nextJoint.jointNumber : '—'}
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть паспорт стыка"
-              className="p-1.5 rounded-lg text-sky-100 hover:text-white hover:bg-white/10"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
+        <PassportHeader
+          mode={mode}
+          form={form}
+          lineJoints={lineJoints}
+          currentLineIndex={currentLineIndex}
+          prevJoint={prevJoint}
+          nextJoint={nextJoint}
+          onNavigateToJoint={handleNavigateToJoint}
+          onClose={onClose}
+        />
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Прокручиваемое содержимое формы */}
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
 
-          {validationError && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-300 text-red-800 text-xs font-semibold flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-              <span>{validationError}</span>
-            </div>
-          )}
-
-          {/* Блок автоматической комплексной проверки корректности данных паспорта (5 уровней защиты) */}
-          {comprehensiveValidation.allIssues.length > 0 && (
-            <div
-              className={`mb-4 p-3.5 rounded-xl border space-y-2 ${
-                comprehensiveValidation.errors.length > 0
-                  ? 'bg-red-50/90 border-red-300 text-red-900'
-                  : 'bg-amber-50/90 border-amber-300 text-amber-900'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-bold">
-                  <AlertTriangle
-                    className={`w-4 h-4 shrink-0 ${
-                      comprehensiveValidation.errors.length > 0
-                        ? 'text-red-600'
-                        : 'text-amber-600'
-                    }`}
-                  />
-                  <span>
-                    Автоматический контроль качества данных паспорта (
-                    {comprehensiveValidation.errors.length > 0
-                      ? `критических ошибок: ${comprehensiveValidation.errors.length}, предупреждений: ${comprehensiveValidation.warnings.length}`
-                      : `предупреждений: ${comprehensiveValidation.warnings.length}`}
-                    )
-                  </span>
-                </div>
-                <span className="text-[10px] font-medium opacity-80">
-                  {comprehensiveValidation.errors.length > 0
-                    ? 'Исправьте критические ошибки перед сохранением'
-                    : 'Рекомендации технадзора (сохранение разрешено)'}
-                </span>
-              </div>
-              <ul className="space-y-1 text-[11px] pl-5 list-disc">
-                {comprehensiveValidation.allIssues.map((iss) => (
-                  <li
-                    key={iss.id}
-                    className={
-                      iss.severity === 'error'
-                        ? 'text-red-800 font-semibold'
-                        : 'text-amber-900'
-                    }
-                  >
-                    <span className="font-bold">{iss.title}:</span> {iss.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <PassportValidationBanner
+            validationError={validationError}
+            comprehensiveValidation={comprehensiveValidation}
+          />
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-            {/* ЛЕВАЯ БОКОВАЯ КОЛОНКА: СПРАВОЧНЫЙ БЛОК БЕЗ НАЗВАНИЯ (ОБЪЕКТ, ШИФР РД, ЛИНИЯ, КОНТУР, НОМЕР СТЫКА) */}
-            <aside
-              aria-label="Справочные реквизиты стыка"
-              className="lg:col-span-3 p-4 rounded-xl bg-[#f4f8fe] border border-sky-200/90 space-y-3.5 lg:sticky lg:top-0"
-            >
-              {mode === 'edit' ? (
-                /* В РЕЖИМЕ РЕДАКТИРОВАНИЯ СТЫКА ВСЕ 5 РЕКВИЗИТОВ СТРОГО НЕРЕДАКТИРУЕМЫЕ */
-                <>
-                  <div className="p-3 rounded-lg bg-[#1e3799] text-white flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] text-sky-200 flex items-center gap-1.5">
-                        <span>Номер стыка</span>
-                        <span
-                          className="px-1.5 py-0.2 rounded bg-white/15 text-sky-100 font-mono font-bold text-[10px]"
-                          title="Версия записи для контроля оптимистической блокировки (OCC)"
-                        >
-                          v{form.version ?? 1}
-                        </span>
-                      </div>
-                      <div className="font-mono text-xl font-bold tracking-tight">
-                        № {form.jointNumber}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span
-                        title="Номер стыка не подлежит переименованию · Защищено оптимистической блокировкой"
-                        aria-label="Номер стыка защищён от переименования"
-                        className="inline-flex items-center justify-center p-1.5 rounded bg-white/15 text-sky-100"
-                      >
-                        <Lock className="w-3.5 h-3.5" />
-                      </span>
-                      {isSupplementaryMode && (
-                        <div className="text-[10px] text-amber-300 font-semibold mt-1">
-                          Доп. стык
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2.5 text-xs">
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
-                      <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400 mb-0.5">
-                        <span>Объект</span>
-                        <span
-                          className="font-medium text-[#1e3799] text-right truncate max-w-[155px]"
-                          title={`Данные о температуре берутся с: ${currentWeatherStationName}`}
-                        >
-                          {currentWeatherStationName}
-                        </span>
-                      </div>
-                      {onOpenFacilityLocation ? (
-                        <button
-                          type="button"
-                          onClick={() => onOpenFacilityLocation(form.objectName)}
-                          aria-label={`Выбрать метеопункт объекта ${form.objectName}`}
-                          title="Нажмите на объект для выбора метеопункта и расчёта авто-температуры воздуха"
-                          className="w-full text-left font-semibold text-slate-900 hover:text-[#1e3799] hover:underline flex items-center justify-between gap-1 transition-colors cursor-pointer"
-                        >
-                          <span className="break-words">{form.objectName}</span>
-                          <MapPin className="w-3.5 h-3.5 text-[#1e3799] shrink-0" />
-                        </button>
-                      ) : (
-                        <div className="font-semibold text-slate-900 break-words">
-                          {form.objectName}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
-                      <div className="text-[10px] text-slate-400 mb-0.5">Шифр РД</div>
-                      <div className="font-mono font-semibold text-slate-900 text-[11px] break-all">
-                        {form.rdCode}
-                      </div>
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
-                      <div className="text-[10px] text-slate-400 mb-0.5">Линия</div>
-                      <div className="font-mono font-bold text-[#1e3799]">
-                        {form.lineNumber}
-                      </div>
-                      <div className="font-mono text-[11px] text-slate-500 mt-0.5">
-                        ID: {form.uniqueLineId}
-                      </div>
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
-                      <div className="text-[10px] text-slate-400 mb-0.5">Контур</div>
-                      <div className="font-medium text-slate-800 break-words">
-                        {form.contour}
-                      </div>
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
-                      <div className="text-[10px] text-slate-400 mb-0.5">Диаметр и толщина стенки</div>
-                      <div className="font-mono font-bold text-slate-900">
-                        Ø{elem1Diam}×{form.elem1WallThickness ?? form.wallThickness} мм ({mmToInchDiameter(elem1Diam)})
-                      </div>
-                      <div className="text-[11px] font-mono text-[#1e3799] font-semibold mt-1 flex items-center justify-between">
-                        <span>Экв. дюймы (EDI):</span>
-                        <span title="Метод А: отраслевая шкала EPC по толщине стенки">
-                          {calculateEquivalentDiaInch(elem1Diam, form.elem1WallThickness ?? form.wallThickness)}" (K={getEpcWallThicknessFactor(form.elem1WallThickness ?? form.wallThickness)})
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Удаление стыка (разрешено только Инженеру ПТО по RBAC) */}
-                  {onDeleteJoint && rbac.canCreateOrDeleteJoints && (
-                    <div className="pt-2 border-t border-sky-200/80">
-                      {!confirmDeleteStep ? (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteStep(true)}
-                          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50 text-xs font-semibold transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Удалить стык № {form.jointNumber}</span>
-                        </button>
-                      ) : (
-                        <div className="p-2.5 rounded-lg bg-red-50 border border-red-300 space-y-2">
-                          <div className="text-[11px] font-bold text-red-800">
-                            Удалить стык № {form.jointNumber} из реестра?
-                          </div>
-                          <div className="flex gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onDeleteJoint(form);
-                                onClose();
-                              }}
-                              className="flex-1 py-1.5 px-2 rounded bg-red-600 text-white text-xs font-bold hover:bg-red-700"
-                            >
-                              Подтвердить удаление
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteStep(false)}
-                              className="py-1.5 px-2 rounded bg-white border border-slate-300 text-slate-700 text-xs font-medium"
-                            >
-                              Отмена
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              ) : (
-                /* В РЕЖИМЕ СОЗДАНИЯ НОВОГО СТЫКА: ВЫБОР ИЗ ЛАЙНЛИСТА И НАЗНАЧЕНИЕ НОМЕРА (БЕЗ ЗАГОЛОВКА БЛОКА) */
-                <div className="space-y-3 text-xs">
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] font-medium text-slate-600 mb-1">
-                      <span>Объект (из лайнлиста)</span>
-                      <span className="text-[10px] text-[#1e3799] font-semibold">
-                        {currentWeatherStationName}
-                      </span>
-                    </div>
-                    {facilities.length > 0 ? (
-                      <select
-                        value={form.objectName}
-                        onChange={(e) => {
-                          const nextFac =
-                            facilities.find((f) => f.name === e.target.value) ||
-                            facilities[0];
-                          const nextRd = nextFac.rdCodes[0]?.code || '';
-                          const firstLineForNext =
-                            projectLineList.find(
-                              (l) =>
-                                l.objectName === nextFac.name && l.rdCode === nextRd
-                            ) || projectLineList.find((l) => l.rdCode === nextRd);
-                          const nextLineNum =
-                            firstLineForNext?.lineNumber || form.lineNumber;
-                          setForm((prev) => ({
-                            ...prev,
-                            objectName: nextFac.name,
-                            rdCode: nextRd,
-                            lineNumber: nextLineNum,
-                            contour:
-                              firstLineForNext?.testContour ||
-                              nextFac.rdCodes[0]?.contours[0] ||
-                              prev.contour,
-                            uniqueLineId: buildUniqueLineId(nextRd, nextLineNum),
-                          }));
-                        }}
-                        aria-label="Объект строительства (из лайнлиста)"
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium"
-                      >
-                        {facilities.map((f) => (
-                          <option key={f.id} value={f.name}>
-                            {f.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        value={form.objectName}
-                        onChange={(e) =>
-                          setForm((prev) => ({ ...prev, objectName: e.target.value }))
-                        }
-                        aria-label="Объект строительства"
-                        placeholder="Введите название объекта..."
-                        className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799] rounded text-xs font-medium"
-                      />
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                      Шифр РД (из лайнлиста)
-                    </label>
-                    {currentFacility.rdCodes.length > 0 && facilities.length > 0 ? (
-                      <select
-                        value={form.rdCode}
-                        onChange={(e) => handleRdCodeChangeInCreate(e.target.value)}
-                        aria-label="Шифр РД (из лайнлиста)"
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-[11px] font-mono"
-                      >
-                        {currentFacility.rdCodes.map((r) => (
-                          <option key={r.code} value={r.code}>
-                            {r.code}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        value={form.rdCode}
-                        onChange={(e) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            rdCode: e.target.value,
-                            uniqueLineId: buildUniqueLineId(
-                              e.target.value,
-                              prev.lineNumber
-                            ),
-                          }))
-                        }
-                        aria-label="Шифр РД"
-                        placeholder="Введите шифр РД..."
-                        className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799] rounded text-[11px] font-mono"
-                      />
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                      Линия (из лайнлиста)
-                    </label>
-                    {availableLinesForRd.length > 0 ? (
-                      <select
-                        value={form.lineNumber}
-                        onChange={(e) => {
-                          const newLine = e.target.value;
-                          const matchedLine = availableLinesForRd.find(
-                            (l) => l.lineNumber === newLine
-                          );
-                          setForm((prev) => ({
-                            ...prev,
-                            lineNumber: newLine,
-                            contour: matchedLine?.testContour || prev.contour,
-                            uniqueLineId: buildUniqueLineId(prev.rdCode, newLine),
-                          }));
-                        }}
-                        aria-label="Номер и наименование линии (из лайнлиста)"
-                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-[#1e3799]"
-                      >
-                        {availableLinesForRd.map((line) => (
-                          <option key={line.id} value={line.lineNumber}>
-                            {line.lineNumber} — {line.lineName}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        value={form.lineNumber}
-                        onChange={(e) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            lineNumber: e.target.value,
-                            uniqueLineId: buildUniqueLineId(
-                              prev.rdCode,
-                              e.target.value
-                            ),
-                          }))
-                        }
-                        aria-label="Номер линии"
-                        placeholder="Напр.: ТХ-101/1"
-                        className="w-full px-2.5 py-1.5 bg-white border border-[#1e3799] rounded text-xs font-mono font-bold text-[#1e3799]"
-                      />
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                      Контур (из лайнлиста)
-                    </label>
-                    <input
-                      type="text"
-                      value={form.contour}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, contour: e.target.value }))
-                      }
-                      aria-label="Контур испытания (из лайнлиста)"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs"
-                    />
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
-                    <div className="text-[10px] text-slate-400 mb-0.5">Диаметр и толщина стенки</div>
-                    <div className="font-mono font-bold text-slate-900">
-                      Ø{elem1Diam}×{form.elem1WallThickness ?? form.wallThickness} мм ({mmToInchDiameter(elem1Diam)})
-                    </div>
-                    <div className="text-[11px] font-mono text-[#1e3799] font-semibold mt-1 flex items-center justify-between">
-                      <span>Экв. дюймы (EDI):</span>
-                      <span title="Метод А: отраслевая шкала EPC по толщине стенки">
-                        {calculateEquivalentDiaInch(elem1Diam, form.elem1WallThickness ?? form.wallThickness)}" (K={getEpcWallThicknessFactor(form.elem1WallThickness ?? form.wallThickness)})
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-sky-200 space-y-2">
-                    <div className="flex gap-1 p-1 bg-white border border-slate-300 rounded">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsSupplementaryMode(false);
-                          setForm((prev) => ({
-                            ...prev,
-                            jointNumber: suggestNextJointNumber(existingNumbersInLine),
-                            isSupplementary: false,
-                          }));
-                        }}
-                        className={`flex-1 py-1 rounded text-[11px] font-semibold ${
-                          !isSupplementaryMode
-                            ? 'bg-[#1e3799] text-white'
-                            : 'text-slate-600'
-                        }`}
-                      >
-                        Основной (010...)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsSupplementaryMode(true);
-                          setForm((prev) => ({
-                            ...prev,
-                            jointNumber: suggestNextJointNumber(
-                              existingNumbersInLine,
-                              baseJointForSupp
-                            ),
-                            isSupplementary: true,
-                          }));
-                        }}
-                        className={`flex-1 py-1 rounded text-[11px] font-semibold ${
-                          isSupplementaryMode
-                            ? 'bg-[#1e3799] text-white'
-                            : 'text-slate-600'
-                        }`}
-                      >
-                        Доп. (011...)
-                      </button>
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-[#1e3799] mb-1">
-                        Номер создаваемого стыка *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={form.jointNumber}
-                        onChange={(e) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            jointNumber: e.target.value,
-                          }))
-                        }
-                        aria-label="Номер стыка"
-                        className={`w-full px-3 py-1.5 rounded font-mono font-bold text-sm transition-colors ${
-                          duplicateJointOnLine
-                            ? 'bg-red-50 border-2 border-red-500 text-red-900 focus:outline-none focus:ring-2 focus:ring-red-400'
-                            : 'bg-white border border-[#1e3799] text-[#1e3799]'
-                        }`}
-                      />
-                      {duplicateJointOnLine ? (
-                        <div className="mt-1.5 p-2 rounded-lg bg-red-50 border border-red-300 text-red-900 text-[11px] flex items-start gap-1.5 font-medium shadow-xs">
-                          <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
-                          <span>
-                            Стык с номером «{form.jointNumber}» уже существует на этой линии (ID: {duplicateJointOnLine.id}). Дублирование номеров стыков запрещено.
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-slate-500 mt-1">
-                          После добавления стыка его номер не подлежит переименованию
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </aside>
+            <PassportRequisitesSidebar
+              mode={mode}
+              form={form}
+              setForm={setForm}
+              rbac={rbac}
+              facilities={facilities}
+              currentFacility={currentFacility}
+              projectLineList={projectLineList}
+              availableLinesForRd={availableLinesForRd}
+              currentWeatherStationName={currentWeatherStationName}
+              elem1Diam={elem1Diam}
+              isSupplementaryMode={isSupplementaryMode}
+              setIsSupplementaryMode={setIsSupplementaryMode}
+              confirmDeleteStep={confirmDeleteStep}
+              setConfirmDeleteStep={setConfirmDeleteStep}
+              duplicateJointOnLine={duplicateJointOnLine}
+              existingNumbersInLine={existingNumbersInLine}
+              baseJointForSupp={baseJointForSupp}
+              onOpenFacilityLocation={onOpenFacilityLocation}
+              onDeleteJoint={onDeleteJoint}
+              onClose={onClose}
+              handleRdCodeChangeInCreate={handleRdCodeChangeInCreate}
+            />
 
             {/* ПРАВАЯ ОСНОВНАЯ КОЛОНКА (9 колонок) */}
             <div className="lg:col-span-9 space-y-4">
-              {/* НАВИГАЦИОННЫЕ ВКЛАДКИ ПАСПОРТА СТЫКА (СОВРЕМЕННЫЙ ТАБ-БАР) */}
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 shadow-2xs overflow-x-auto">
-                {/* Таб 1: Сварка */}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('welding')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                    activeTab === 'welding'
-                      ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
-                >
-                  <Flame className="w-3.5 h-3.5 text-[#1e3799]" />
-                  <span>Сварка</span>
-                </button>
-
-                {/* Таб 2: Элементы */}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('elements')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                    activeTab === 'elements'
-                      ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5 text-[#1e3799]" />
-                  <span>Элементы</span>
-                </button>
-
-                {/* Таб 3: Контроль ВИК / НК */}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('control')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                    activeTab === 'control'
-                      ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-[#1e3799]" />
-                  <span>Контроль ВИК / НК</span>
-                </button>
-
-                {/* Таб 4: Ремонт */}
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('repair')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                    activeTab === 'repair'
-                      ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
-                      : isJointDefective(form)
-                      ? 'bg-red-50 text-red-800 border border-red-200/80 hover:bg-red-100'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                  }`}
-                >
-                  <Wrench className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Ремонт</span>
-                  {isJointDefective(form) && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-red-600 text-white shadow-2xs">
-                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                      Дефект
-                    </span>
-                  )}
-                </button>
-
-                {/* Таб 5: История (только для Администратора) */}
-                {mode === 'edit' && rbac.category === 'admin' && (
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('history')}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                      activeTab === 'history'
-                        ? 'bg-white text-[#1e3799] shadow-xs border border-slate-200 font-bold'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                    }`}
-                  >
-                    <History className="w-3.5 h-3.5 text-slate-500" />
-                    <span>История</span>
-                    <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-200 text-slate-700">
-                      {auditLogsForJoint.length}
-                    </span>
-                  </button>
-                )}
-              </div>
+              <PassportTabBar
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                form={form}
+                mode={mode}
+                rbac={rbac}
+                auditLogsCount={auditLogsForJoint.length}
+              />
 
               {/* ВКЛАДКА 1: СВАРОЧНЫЕ РАБОТЫ */}
               {activeTab === 'welding' && (

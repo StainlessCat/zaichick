@@ -16,6 +16,7 @@ from app.models.enums import (
 )
 from app.models.facility import CustomWeatherStation, Facility, FacilityRdCode
 from app.models.joint import WeldJoint
+from app.models.lab_request import NdtLabRequestModel
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
 from app.models.settings import AppSetting, ColumnTemplate
@@ -46,6 +47,7 @@ __all__ = [
     "LrvItem",
     "LrvStatusEnum",
     "LrvUnitEnum",
+    "NdtLabRequestModel",
     "NdtMethodEnum",
     "ProjectLine",
     "RoleEnum",

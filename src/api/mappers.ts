@@ -10,6 +10,9 @@ import type {
   JointType,
   LRVItem,
   LrvElementCategory,
+  NdtLabControlStage,
+  NdtLabRequest,
+  NdtLabRequestStatus,
   NdtMethod,
   OptimisticLockConflictPayload,
   ProjectLineItem,
@@ -889,6 +892,78 @@ export function mapConflictDtoToUi(
     autoMergedRecord,
     fieldDiffs,
   };
+}
+
+export function mapLabRequestDto(dto: Record<string, unknown>): NdtLabRequest {
+  return {
+    id: String(dto.id || ''),
+    requestNumber: String(dto.request_number || ''),
+    createdAt: String(dto.created_at || ''),
+    createdDate: String(dto.created_date || ''),
+    createdBy: String(dto.created_by || ''),
+    objectName: String(dto.object_name || ''),
+    rdCode: String(dto.rd_code || ''),
+    lineNumber: String(dto.line_number || ''),
+    uniqueLineId: String(dto.unique_line_id || ''),
+    contour: String(dto.contour || ''),
+    controlStage: (dto.control_stage || 'Первичный ВИК и НК') as NdtLabControlStage,
+    requestedMethod: (dto.requested_method || 'РК') as NdtMethod,
+    jointIds: Array.isArray(dto.joint_ids) ? (dto.joint_ids as string[]) : [],
+    status: (dto.status || 'Подана ПТО') as NdtLabRequestStatus,
+    acceptedAt: dto.accepted_at ? String(dto.accepted_at) : undefined,
+    acceptedBy: dto.accepted_by ? String(dto.accepted_by) : undefined,
+    completedAt: dto.completed_at ? String(dto.completed_at) : undefined,
+    notes: dto.notes ? String(dto.notes) : undefined,
+    version: typeof dto.version === 'number' ? dto.version : 1,
+  };
+}
+
+export function mapLabRequestToCreatePayload(
+  req: NdtLabRequest
+): Record<string, unknown> {
+  return {
+    id: req.id || undefined,
+    request_number: req.requestNumber,
+    created_at: req.createdAt || undefined,
+    created_date: req.createdDate,
+    created_by: req.createdBy,
+    object_name: req.objectName,
+    rd_code: req.rdCode,
+    line_number: req.lineNumber || '',
+    unique_line_id: req.uniqueLineId,
+    contour: req.contour || '',
+    control_stage: req.controlStage,
+    requested_method: req.requestedMethod,
+    joint_ids: req.jointIds || [],
+    status: req.status || 'Подана ПТО',
+    accepted_at: req.acceptedAt || null,
+    accepted_by: req.acceptedBy || null,
+    completed_at: req.completedAt || null,
+    notes: req.notes || null,
+  };
+}
+
+export function mapLabRequestToUpdatePayload(
+  patch: Partial<NdtLabRequest>
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (patch.requestNumber !== undefined) payload.request_number = patch.requestNumber;
+  if (patch.createdDate !== undefined) payload.created_date = patch.createdDate;
+  if (patch.createdBy !== undefined) payload.created_by = patch.createdBy;
+  if (patch.objectName !== undefined) payload.object_name = patch.objectName;
+  if (patch.rdCode !== undefined) payload.rd_code = patch.rdCode;
+  if (patch.lineNumber !== undefined) payload.line_number = patch.lineNumber;
+  if (patch.uniqueLineId !== undefined) payload.unique_line_id = patch.uniqueLineId;
+  if (patch.contour !== undefined) payload.contour = patch.contour;
+  if (patch.controlStage !== undefined) payload.control_stage = patch.controlStage;
+  if (patch.requestedMethod !== undefined) payload.requested_method = patch.requestedMethod;
+  if (patch.jointIds !== undefined) payload.joint_ids = patch.jointIds;
+  if (patch.status !== undefined) payload.status = patch.status;
+  if (patch.acceptedAt !== undefined) payload.accepted_at = patch.acceptedAt;
+  if (patch.acceptedBy !== undefined) payload.accepted_by = patch.acceptedBy;
+  if (patch.completedAt !== undefined) payload.completed_at = patch.completedAt;
+  if (patch.notes !== undefined) payload.notes = patch.notes;
+  return payload;
 }
 
 export function mapAuditLogDto(dto: Record<string, unknown>): AuditLogEntry {

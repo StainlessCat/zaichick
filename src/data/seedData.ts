@@ -71,11 +71,15 @@ export async function loadKharasaveyDemoData(): Promise<{
   projectLineList: ProjectLineItem[];
   lrvCatalog: LRVItem[];
 }> {
-  const mod = await import('./kharasaveyDemoData');
+  const res = await fetch('/data/kharasaveyDemoData.json');
+  if (!res.ok) {
+    throw new Error('Не удалось загрузить демонстрационные данные: ' + res.statusText);
+  }
+  const data = await res.json();
   return {
-    joints: mod.KHARASAVEY_JOINTS,
-    projectLineList: mod.KHARASAVEY_LINES,
-    lrvCatalog: mod.KHARASAVEY_LRV,
+    joints: data.joints || [],
+    projectLineList: data.lines || [],
+    lrvCatalog: data.lrv || [],
   };
 }
 

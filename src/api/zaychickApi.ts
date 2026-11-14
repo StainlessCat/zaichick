@@ -5,6 +5,7 @@ import type {
   InspectorProfile,
   JournalStandard,
   LRVItem,
+  NdtLabRequest,
   ProjectLineItem,
   ReadinessGroupCondition,
   TechCardItem,
@@ -26,6 +27,9 @@ import {
   mapJointDto,
   mapJointPatchToUpdatePayload,
   mapJointToCreatePayload,
+  mapLabRequestDto,
+  mapLabRequestToCreatePayload,
+  mapLabRequestToUpdatePayload,
   mapLineDto,
   mapLineToCreatePayload,
   mapLineToUpdatePayload,
@@ -508,6 +512,54 @@ export const zaychickApi = {
       total: number;
     }>(`/api/audit-logs?page=${page}&page_size=${pageSize}`);
     return (res.items || []).map(mapAuditLogDto);
+  },
+
+  // ---------------------------------------------------------------------------
+  // NDT Laboratory Requests (REST + OCC + SSE)
+  // ---------------------------------------------------------------------------
+  async listLabRequests(filters?: {
+    status?: string;
+    objectName?: string;
+    rdCode?: string;
+    uniqueLineId?: string;
+  }): Promise<NdtLabRequest[]> {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.objectName) params.set('object_name', filters.objectName);
+    if (filters?.rdCode) params.set('rd_code', filters.rdCode);
+    if (filters?.uniqueLineId) params.set('unique_line_id', filters.uniqueLineId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return fetchAllPaginated(`/api/lab-requests${qs}`, mapLabRequestDto, 500);
+  },
+
+  async getLabRequest(requestId: string): Promise<NdtLabRequest> {
+    const dto = await apiRequest<Record<string, unknown>>(`/api/lab-requests/${requestId}`);
+    return mapLabRequestDto(dto);
+  },
+
+  async createLabRequest(req: NdtLabRequest): Promise<NdtLabRequest> {
+    const dto = await apiRequest<Record<string, unknown>>('/api/lab-requests', {
+      method: 'POST',
+      body: JSON.stringify(mapLabRequestToCreatePayload(req)),
+    });
+    return mapLabRequestDto(dto);
+  },
+
+  async updateLabRequest(
+    requestId: string,
+    patch: Partial<NdtLabRequest>,
+    expectedVersion?: number
+  ): Promise<NdtLabRequest> {
+    const qs = expectedVersion !== undefined ? `?version=${expectedVersion}` : '';
+    const dto = await apiRequest<Record<string, unknown>>(`/api/lab-requests/${requestId}${qs}`, {
+      method: 'PATCH',
+      body: JSON.stringify(mapLabRequestToUpdatePayload(patch)),
+    });
+    return mapLabRequestDto(dto);
+  },
+
+  async deleteLabRequest(requestId: string): Promise<void> {
+    await apiRequest(`/api/lab-requests/${requestId}`, { method: 'DELETE' });
   },
 
   // ---------------------------------------------------------------------------

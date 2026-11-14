@@ -7,6 +7,7 @@ import {
   CustomWeatherStation,
   FacilityObject,
   LRVItem,
+  NdtLabRequest,
   OptimisticLockConflictPayload,
   ProjectLineItem,
   ServerDbMetadata,
@@ -48,6 +49,7 @@ export interface UseServerSyncParams {
   setUserAccounts: React.Dispatch<React.SetStateAction<UserAccount[]>>;
   setAuditLogs: React.Dispatch<React.SetStateAction<AuditLogEntry[]>>;
   setTemplates?: React.Dispatch<React.SetStateAction<ColumnTemplate[]>>;
+  setLabRequests?: React.Dispatch<React.SetStateAction<NdtLabRequest[]>>;
   setFacilityGeoOverrides: React.Dispatch<
     React.SetStateAction<Record<string, FacilityGeoOverride>>
   >;
@@ -74,6 +76,9 @@ const DELTA_EVENTS = [
   'lrv.updated',
   'lrv.superseded',
   'lrv.deleted',
+  'lab_request.created',
+  'lab_request.updated',
+  'lab_request.deleted',
   'welder.created',
   'welder.updated',
   'welder.deleted',
@@ -109,6 +114,7 @@ export function useServerSync({
   setUserAccounts,
   setAuditLogs,
   setTemplates,
+  setLabRequests,
   setFacilityGeoOverrides,
 }: UseServerSyncParams) {
   const [serverDbMeta, setServerDbMeta] = useState<ServerDbMetadata | null>(null);
@@ -182,6 +188,7 @@ export function useServerSync({
           templates,
           auditLogs,
           users,
+          labRequests,
         ] = await Promise.all([
           zaychickApi.listFacilities(),
           zaychickApi.listLines(),
@@ -195,6 +202,7 @@ export function useServerSync({
           perms.category === 'admin'
             ? zaychickApi.listUsers().catch(() => [] as UserAccount[])
             : Promise.resolve([session.user]),
+          zaychickApi.listLabRequests().catch(() => [] as NdtLabRequest[]),
         ]);
 
         isApplyingServerStateRef.current = true;
@@ -207,6 +215,9 @@ export function useServerSync({
         setWeldingMaterials(materials);
         if (setTemplates && templates.length > 0) {
           setTemplates(templates);
+        }
+        if (setLabRequests && labRequests) {
+          setLabRequests(labRequests);
         }
         setAuditLogs(auditLogs);
         if (users.length > 0) {
@@ -279,6 +290,7 @@ export function useServerSync({
       setProjectLineList,
       setTechCards,
       setTemplates,
+      setLabRequests,
       setUserAccounts,
       setWeldingMaterials,
       setWelders,
@@ -347,6 +359,20 @@ export function useServerSync({
             const users = await zaychickApi.listUsers();
             setUserAccounts(users);
           }
+        } else if (entityType === 'lab_request' && setLabRequests) {
+          if (eventName.endsWith('.deleted') && entityId) {
+            setLabRequests((prev) => prev.filter((r) => r.id !== entityId));
+          } else if (entityId) {
+            const fresh = await zaychickApi.getLabRequest(entityId);
+            setLabRequests((prev) =>
+              prev.some((r) => r.id === fresh.id)
+                ? prev.map((r) => (r.id === fresh.id ? fresh : r))
+                : [fresh, ...prev]
+            );
+          } else {
+            const reqs = await zaychickApi.listLabRequests();
+            setLabRequests(reqs);
+          }
         } else if (entityType === 'system') {
           await fetchServerDbState(true);
           return;
@@ -367,6 +393,7 @@ export function useServerSync({
       setProjectLineList,
       setTechCards,
       setTemplates,
+      setLabRequests,
       setUserAccounts,
       setWeldingMaterials,
       setWelders,

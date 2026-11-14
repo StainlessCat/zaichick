@@ -1055,3 +1055,68 @@ class ColumnTemplateOut(BaseModel):
     owner_id: uuid.UUID | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class NdtLabRequestCreate(BaseModel):
+    id: uuid.UUID | None = None
+    request_number: str = Field(min_length=1, max_length=64)
+    created_at: datetime | None = None
+    created_date: str = Field(min_length=1, max_length=10)
+    created_by: str = Field(min_length=1, max_length=255)
+    object_name: str = Field(min_length=1, max_length=255)
+    rd_code: str = Field(min_length=1, max_length=255)
+    line_number: str = Field(default="", max_length=128)
+    unique_line_id: str = Field(min_length=1, max_length=255)
+    contour: str = Field(default="", max_length=255)
+    control_stage: str = Field(default="Первичный ВИК и НК", max_length=128)
+    requested_method: str = Field(default="РК", max_length=64)
+    joint_ids: list[str] = Field(default_factory=list)
+    status: str = Field(default="Подана ПТО", max_length=64)
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+    completed_at: datetime | None = None
+    notes: str | None = None
+
+
+class NdtLabRequestUpdate(BaseModel):
+    request_number: str | None = None
+    created_date: str | None = None
+    created_by: str | None = None
+    object_name: str | None = None
+    rd_code: str | None = None
+    line_number: str | None = None
+    unique_line_id: str | None = None
+    contour: str | None = None
+    control_stage: str | None = None
+    requested_method: str | None = None
+    joint_ids: list[str] | None = None
+    status: str | None = None
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+    completed_at: datetime | None = None
+    notes: str | None = None
+
+
+class NdtLabRequestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    request_number: str
+    created_at: datetime
+    created_date: str
+    created_by: str
+    object_name: str
+    rd_code: str
+    line_number: str
+    unique_line_id: str
+    contour: str
+    control_stage: str
+    requested_method: str
+    joint_ids: list[str]
+    status: str
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+    completed_at: datetime | None = None
+    notes: str | None = None
+    version: int
+    updated_at: datetime
+

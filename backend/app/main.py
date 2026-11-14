@@ -12,6 +12,7 @@ from app.api.routes.exports import router as exports_router
 from app.api.routes.facilities import router as facilities_router
 from app.api.routes.imports import router as imports_router
 from app.api.routes.joints import router as joints_router
+from app.api.routes.lab_requests import router as lab_requests_router
 from app.api.routes.lines import router as lines_router
 from app.api.routes.lrv import router as lrv_router
 from app.api.routes.naks import router as naks_router
@@ -71,6 +72,7 @@ app.include_router(lrv_router)
 app.include_router(wps_router)
 app.include_router(naks_router)
 app.include_router(joints_router)
+app.include_router(lab_requests_router)
 app.include_router(welding_journals_router)
 app.include_router(reports_router)
 app.include_router(templates_router)

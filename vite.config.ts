@@ -12,7 +12,7 @@ export default defineConfig(() => {
       },
     },
     build: {
-      chunkSizeWarningLimit: 3000,
+      chunkSizeWarningLimit: 1500,
       rollupOptions: {
         output: {
           // Code splitting: выделяем тяжёлые вендоры и модули данных в отдельные chunk'и
@@ -29,9 +29,6 @@ export default defineConfig(() => {
             }
             if (id.includes('node_modules/@tanstack')) {
               return 'tanstack-vendor';
-            }
-            if (id.includes('kharasaveyDemoData')) {
-              return 'demo-kharasavey';
             }
             if (id.includes('src/data/seedData')) {
               return 'seed-data';
