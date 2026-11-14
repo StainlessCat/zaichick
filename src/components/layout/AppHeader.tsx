@@ -11,56 +11,66 @@ import {
 } from 'lucide-react';
 import { AppSection, ServerDbMetadata, UserAccount } from '../../types/welding';
 import { ZaychickLogo } from '../ZaychickLogo';
+import { useAuth, useAppContext } from '../../context';
 
-interface AppHeaderProps {
-  activeSection: AppSection;
+export interface AppHeaderProps {
+  activeSection?: AppSection;
   sectionIcons: Record<AppSection, React.ReactNode>;
   sectionLabels: Record<AppSection, string>;
   onLogoClick: () => void;
-  isDbConnected: boolean;
-  isDbSyncing: boolean;
-  isAuthenticated: boolean;
-  pendingSyncCount: number;
-  lastSyncError: string | null;
-  serverDbMeta: ServerDbMetadata | null;
-  currentUser: UserAccount;
+  isDbConnected?: boolean;
+  isDbSyncing?: boolean;
+  isAuthenticated?: boolean;
+  pendingSyncCount?: number;
+  lastSyncError?: string | null;
+  serverDbMeta?: ServerDbMetadata | null;
+  currentUser?: UserAccount;
   onOpenServerDbModal: () => void;
-  onTriggerSync: () => Promise<boolean>;
-  onOpenLoginModal: () => void;
-  onLogout: () => Promise<void>;
-  undoCount: number;
-  redoCount: number;
+  onTriggerSync?: () => Promise<boolean>;
+  onOpenLoginModal?: () => void;
+  onLogout?: () => Promise<void>;
+  undoCount?: number;
+  redoCount?: number;
   lastUndoLabel?: string;
   lastRedoLabel?: string;
-  onUndo: () => void;
-  onRedo: () => void;
-  onOpenDrawer: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onOpenDrawer?: () => void;
 }
 
-export const AppHeader: React.FC<AppHeaderProps> = ({
-  activeSection,
-  sectionIcons,
-  sectionLabels,
-  onLogoClick,
-  isDbConnected,
-  isDbSyncing,
-  isAuthenticated,
-  pendingSyncCount,
-  lastSyncError,
-  serverDbMeta,
-  currentUser,
-  onOpenServerDbModal,
-  onTriggerSync,
-  onOpenLoginModal,
-  onLogout,
-  undoCount,
-  redoCount,
-  lastUndoLabel,
-  lastRedoLabel,
-  onUndo,
-  onRedo,
-  onOpenDrawer,
-}) => {
+export const AppHeader: React.FC<AppHeaderProps> = (props) => {
+  const auth = useAuth();
+  const app = useAppContext();
+
+  const activeSection = props.activeSection ?? app.activeSection;
+  const sectionIcons = props.sectionIcons;
+  const sectionLabels = props.sectionLabels;
+  const onLogoClick = props.onLogoClick;
+  const isDbConnected = props.isDbConnected ?? app.isDbConnected;
+  const isDbSyncing = props.isDbSyncing ?? app.isDbSyncing;
+  const isAuthenticated = props.isAuthenticated ?? (auth.currentUser.login !== '');
+  const pendingSyncCount = props.pendingSyncCount ?? app.pendingSyncCount;
+  const lastSyncError = props.lastSyncError ?? app.lastSyncError;
+  const serverDbMeta = props.serverDbMeta ?? app.serverDbMeta;
+  const currentUser = props.currentUser ?? auth.currentUser;
+  const onOpenServerDbModal = props.onOpenServerDbModal;
+  const onTriggerSync = props.onTriggerSync ?? app.onTriggerSync;
+  const onOpenLoginModal =
+    props.onOpenLoginModal ??
+    (() => {
+      auth.setLoginModalInitialMode('login');
+      auth.setIsLoginModalOpen(true);
+    });
+  const onLogout = props.onLogout ?? auth.onLogout;
+  const undoCount = props.undoCount ?? app.undoStack.length;
+  const redoCount = props.redoCount ?? app.redoStack.length;
+  const lastUndoLabel =
+    props.lastUndoLabel ?? app.undoStack[app.undoStack.length - 1]?.actionLabel;
+  const lastRedoLabel =
+    props.lastRedoLabel ?? app.redoStack[app.redoStack.length - 1]?.actionLabel;
+  const onUndo = props.onUndo ?? app.handleUndo;
+  const onRedo = props.onRedo ?? app.handleRedo;
+  const onOpenDrawer = props.onOpenDrawer ?? (() => app.setIsDrawerOpen(true));
   return (
     <header className="sticky top-0 z-30 bg-[#1e3799] text-white border-b border-sky-400/20 shadow-md no-print">
       <div className="max-w-[1920px] mx-auto px-4 py-2 flex items-center justify-between gap-4">
@@ -92,24 +102,24 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <button
               type="button"
               onClick={onOpenServerDbModal}
-              title="Серверная СУБД PostgreSQL 16 онлайн (REST API + SSE). Все изменения зафиксированы."
+              title="РЎРµСЂРІРµСЂРЅР°СЏ РЎРЈР‘Р” PostgreSQL 16 РѕРЅР»Р°Р№РЅ (REST API + SSE). Р’СЃРµ РёР·РјРµРЅРµРЅРёСЏ Р·Р°С„РёРєСЃРёСЂРѕРІР°РЅС‹."
               className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-100 text-xs font-mono transition-colors cursor-pointer"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <span>PostgreSQL · rev #{serverDbMeta?.globalRevision ?? 1}</span>
+              <span>PostgreSQL В· rev #{serverDbMeta?.globalRevision ?? 1}</span>
             </button>
           ) : isDbSyncing ? (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/20 border border-sky-400/40 text-sky-100 text-xs font-mono">
               <RotateCw className="w-3.5 h-3.5 animate-spin text-sky-300 shrink-0" />
-              <span>Синхронизация...</span>
+              <span>РЎРёРЅС…СЂРѕРЅРёР·Р°С†РёСЏ...</span>
             </div>
           ) : (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/25 border border-amber-400/50 text-amber-100 text-xs font-semibold">
               <AlertTriangle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
               <span>
                 {!isAuthenticated
-                  ? 'Требуется вход'
-                  : `Нет синхронизации (${pendingSyncCount})`}
+                  ? 'РўСЂРµР±СѓРµС‚СЃСЏ РІС…РѕРґ'
+                  : `РќРµС‚ СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёРё (${pendingSyncCount})`}
               </span>
               <button
                 type="button"
@@ -119,7 +129,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                     onOpenServerDbModal();
                   }
                 }}
-                title="Обновить данные с сервера PostgreSQL"
+                title="РћР±РЅРѕРІРёС‚СЊ РґР°РЅРЅС‹Рµ СЃ СЃРµСЂРІРµСЂР° PostgreSQL"
                 className="ml-1 p-0.5 rounded hover:bg-amber-400/20 text-amber-200 transition-colors cursor-pointer"
               >
                 <RotateCw className="w-3 h-3 text-amber-300" />
@@ -132,7 +142,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               <button
                 type="button"
                 onClick={onOpenLoginModal}
-                title={`Текущий пользователь: ${currentUser.fullName} (${currentUser.role})`}
+                title={`РўРµРєСѓС‰РёР№ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ: ${currentUser.fullName} (${currentUser.role})`}
                 className="inline-flex items-center gap-1.5 text-white hover:text-sky-200 transition-colors cursor-pointer"
               >
                 <UserCheck className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
@@ -143,7 +153,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               <button
                 type="button"
                 onClick={() => void onLogout()}
-                title="Завершить текущую сессию (HttpOnly Cookie)"
+                title="Р—Р°РІРµСЂС€РёС‚СЊ С‚РµРєСѓС‰СѓСЋ СЃРµСЃСЃРёСЋ (HttpOnly Cookie)"
                 className="p-1 rounded hover:bg-white/20 text-sky-200 hover:text-white transition-colors cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -156,24 +166,24 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold transition-colors cursor-pointer"
             >
               <LogIn className="w-3.5 h-3.5" />
-              <span>Войти</span>
+              <span>Р’РѕР№С‚Рё</span>
             </button>
           )}
 
           <div
             className="flex items-center gap-1 bg-white/10 border border-sky-300/30 rounded-lg p-1"
             role="group"
-            aria-label="Отмена и повтор действий (до 10 шагов)"
+            aria-label="РћС‚РјРµРЅР° Рё РїРѕРІС‚РѕСЂ РґРµР№СЃС‚РІРёР№ (РґРѕ 10 С€Р°РіРѕРІ)"
           >
             <button
               type="button"
               onClick={onUndo}
               disabled={undoCount === 0}
-              aria-label="Отменить действие (Undo)"
+              aria-label="РћС‚РјРµРЅРёС‚СЊ РґРµР№СЃС‚РІРёРµ (Undo)"
               title={
                 undoCount > 0
-                  ? `Отменить: ${lastUndoLabel || ''} (Ctrl+Z)`
-                  : 'Нет действий для отмены (Ctrl+Z)'
+                  ? `РћС‚РјРµРЅРёС‚СЊ: ${lastUndoLabel || ''} (Ctrl+Z)`
+                  : 'РќРµС‚ РґРµР№СЃС‚РІРёР№ РґР»СЏ РѕС‚РјРµРЅС‹ (Ctrl+Z)'
               }
               className="p-1.5 rounded text-white hover:bg-white/20 disabled:opacity-35 disabled:hover:bg-transparent transition-colors cursor-pointer"
             >
@@ -184,11 +194,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               type="button"
               onClick={onRedo}
               disabled={redoCount === 0}
-              aria-label="Повторить действие (Redo)"
+              aria-label="РџРѕРІС‚РѕСЂРёС‚СЊ РґРµР№СЃС‚РІРёРµ (Redo)"
               title={
                 redoCount > 0
-                  ? `Повторить: ${lastRedoLabel || ''} (Ctrl+Y)`
-                  : 'Нет действий для повтора (Ctrl+Y)'
+                  ? `РџРѕРІС‚РѕСЂРёС‚СЊ: ${lastRedoLabel || ''} (Ctrl+Y)`
+                  : 'РќРµС‚ РґРµР№СЃС‚РІРёР№ РґР»СЏ РїРѕРІС‚РѕСЂР° (Ctrl+Y)'
               }
               className="p-1.5 rounded text-white hover:bg-white/20 disabled:opacity-35 disabled:hover:bg-transparent transition-colors cursor-pointer"
             >
@@ -199,11 +209,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <button
             type="button"
             onClick={onOpenDrawer}
-            aria-label="Открыть меню выбора объекта и раздела программы"
+            aria-label="РћС‚РєСЂС‹С‚СЊ РјРµРЅСЋ РІС‹Р±РѕСЂР° РѕР±СЉРµРєС‚Р° Рё СЂР°Р·РґРµР»Р° РїСЂРѕРіСЂР°РјРјС‹"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-sky-300/30 text-white text-xs font-semibold transition-colors shrink-0 cursor-pointer"
           >
             <Menu className="w-5 h-5 text-sky-300" />
-            <span className="hidden sm:inline">Меню</span>
+            <span className="hidden sm:inline">РњРµРЅСЋ</span>
           </button>
         </div>
       </div>

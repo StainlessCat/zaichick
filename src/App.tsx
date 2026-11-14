@@ -41,6 +41,7 @@ import {
   AppModalsContainer,
 } from './components/layout';
 import { zaychickApi } from './api';
+import { AppProvider, AuthProvider } from './context';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -808,40 +809,85 @@ export const App: React.FC = () => {
     []
   );
 
+  const handleLogout = useCallback(async () => {
+    await zaychickApi.logout().catch(() => {});
+    setIsAuthenticated(false);
+    setCurrentUser(ANONYMOUS_USER);
+    setIsDbConnected(false);
+    setIsLoginModalOpen(true);
+  }, [setCurrentUser, setIsAuthenticated, setIsDbConnected, setIsLoginModalOpen]);
+
+  const handleSwitchUser = useCallback(async (login: string) => {
+    const found = userAccounts.find((u) => u.login === login);
+    if (found) {
+      setCurrentUser(found);
+      bumpRevisionMeta(`Переключение на пользователя ${found.login}`, found.fullName);
+    }
+  }, [userAccounts, setCurrentUser, bumpRevisionMeta]);
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#f4f7fb] text-slate-900">
-      <AppHeader
+    <AuthProvider
+      currentUser={currentUser}
+      setCurrentUser={setCurrentUser}
+      userAccounts={userAccounts}
+      setUserAccounts={setUserAccounts}
+      isLoginModalOpen={isLoginModalOpen}
+      setIsLoginModalOpen={setIsLoginModalOpen}
+      loginModalInitialMode={loginModalInitialMode}
+      setLoginModalInitialMode={setLoginModalInitialMode}
+      onLogout={handleLogout}
+      onSwitchUser={handleSwitchUser}
+    >
+      <AppProvider
         activeSection={activeSection}
-        sectionIcons={sectionIcons}
-        sectionLabels={sectionLabels}
-        onLogoClick={handleHeaderLogoSecretClick}
+        setActiveSection={setActiveSection}
+        selectedObjectName={selectedObjectName}
+        setSelectedObjectName={setSelectedObjectName}
+        selectedRdCode={selectedRdCode}
+        setSelectedRdCode={setSelectedRdCode}
+        isDrawerOpen={isDrawerOpen}
+        setIsDrawerOpen={setIsDrawerOpen}
+        joints={joints}
+        setJoints={setJoints}
+        projectLineList={projectLineList}
+        setProjectLineList={setProjectLineList}
+        lrvCatalog={lrvCatalog}
+        setLrvCatalog={setLrvCatalog}
+        welders={welders}
+        setWelders={setWelders}
+        techCards={techCards}
+        setTechCards={setTechCards}
+        weldingMaterials={weldingMaterials}
+        setWeldingMaterials={setWeldingMaterials}
+        facilityGeoOverrides={facilityGeoOverrides}
+        setFacilityGeoOverrides={setFacilityGeoOverrides}
+        auditLogs={auditLogs}
+        setAuditLogs={setAuditLogs}
+        labRequests={labRequests}
+        setLabRequests={setLabRequests}
+        derivedFacilities={derivedFacilities}
         isDbConnected={isDbConnected}
         isDbSyncing={isDbSyncing}
-        isAuthenticated={isAuthenticated}
         pendingSyncCount={pendingSyncCount}
         lastSyncError={lastSyncError}
         serverDbMeta={serverDbMeta}
-        currentUser={currentUser}
-        onOpenServerDbModal={() => setIsServerDbModalOpen(true)}
         onTriggerSync={triggerImmediateSync}
-        onOpenLoginModal={() => {
-          setLoginModalInitialMode('login');
-          setIsLoginModalOpen(true);
-        }}
-        onLogout={async () => {
-          await zaychickApi.logout().catch(() => {});
-          setIsAuthenticated(false);
-          setCurrentUser(ANONYMOUS_USER);
-          setIsDbConnected(false);
-          setIsLoginModalOpen(true);
-        }}
-        undoCount={undoStack.length}
-        redoCount={redoStack.length}
-        lastUndoLabel={undoStack[undoStack.length - 1]?.actionLabel}
-        lastRedoLabel={redoStack[redoStack.length - 1]?.actionLabel}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        onOpenDrawer={() => setIsDrawerOpen(true)}
+        undoStack={undoStack}
+        redoStack={redoStack}
+        canUndo={undoStack.length > 0}
+        canRedo={redoStack.length > 0}
+        handleUndo={handleUndo}
+        handleRedo={handleRedo}
+        recordUndoSnapshot={recordUndoSnapshot}
+        appendSystemAuditEntry={appendSystemAuditEntry}
+      >
+        <div className="min-h-screen flex flex-col bg-[#f4f7fb] text-slate-900">
+      <AppHeader
+        sectionIcons={sectionIcons}
+        sectionLabels={sectionLabels}
+        onLogoClick={handleHeaderLogoSecretClick}
+        isAuthenticated={isAuthenticated}
+        onOpenServerDbModal={() => setIsServerDbModalOpen(true)}
       />
 
       {!isAuthenticated && (
@@ -888,30 +934,6 @@ export const App: React.FC = () => {
       )}
 
       <HamburgerDrawer
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
-        activeSection={activeSection}
-        onSelectSection={setActiveSection}
-        facilities={derivedFacilities}
-        selectedObjectName={selectedObjectName}
-        onSelectObjectName={setSelectedObjectName}
-        selectedRdCode={selectedRdCode}
-        onSelectRdCode={setSelectedRdCode}
-        totalJointsCount={joints.length}
-        projectLineListCount={projectLineList.length}
-        auditLogsCount={auditLogs.length}
-        lrvCatalogCount={lrvCatalog.length}
-        weldingTechCount={`${welders.length} НАКС / ${techCards.length} ТК`}
-        labRequestsCount={`${labRequests.filter((r) => r.status !== 'Выполнена').length} в раб. / ${labRequests.length}`}
-        currentUser={currentUser}
-        onOpenLoginModal={() => {
-          setLoginModalInitialMode('login');
-          setIsLoginModalOpen(true);
-        }}
-        onOpenAdminPasswordModal={() => {
-          setLoginModalInitialMode('admin_password');
-          setIsLoginModalOpen(true);
-        }}
         onExportAllJoints={(fmt) => {
           if (!isDbConnected || pendingSyncCount > 0) {
             const proceed = window.confirm(
@@ -1122,7 +1144,9 @@ export const App: React.FC = () => {
         onApplyAutoMerge={jointActions.handleApplyAutoMergeConflict}
         onForceClientOverwrite={jointActions.handleForceClientConflictOverwrite}
       />
-    </div>
+        </div>
+      </AppProvider>
+    </AuthProvider>
   );
 };
 
