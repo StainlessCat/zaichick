@@ -13,12 +13,13 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-zaychick}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zaychick_secure_dev_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ОШИБКА: Переменная POSTGRES_PASSWORD не задана в .env файле!}
       POSTGRES_DB: ${POSTGRES_DB:-zaychick}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Ограничиваем доступ только локальным интерфейсом (безопасность production)
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-zaychick} -d $${POSTGRES_DB:-zaychick}"]
       interval: 10s
@@ -38,17 +39,18 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-zaychick}:${POSTGRES_PASSWORD:-zaychick_secure_dev_password}@db:5432/${POSTGRES_DB:-zaychick}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-secret-key-in-production-min-32-bytes}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-zaychick}:${POSTGRES_PASSWORD:?ОШИБКА: Переменная POSTGRES_PASSWORD не задана в .env файле!}@db:5432/${POSTGRES_DB:-zaychick}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?ОШИБКА: Переменная JWT_SECRET_KEY не задана в .env файле (минимум 32 байта)!}
       JWT_ALGORITHM: HS256
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 1440
       COOKIE_NAME: zaychick_access_token
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       COOKIE_SAMESITE: lax
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost,http://127.0.0.1}
     ports:
-      - "8000:8000"
+      # Внешний доступ только через Nginx; порт бэкенда доступен только на 127.0.0.1 хоста
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
       interval: 15s

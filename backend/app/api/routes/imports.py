@@ -85,18 +85,43 @@ def parse_spreadsheet_bytes(raw: bytes, filename: str) -> list[dict[str, Any]]:
         wb.close()
 
 
+async def _read_file_with_size_limit(file: UploadFile, max_bytes: int = _MAX_UPLOAD_BYTES) -> bytes:
+    """
+    Safely read an uploaded file in 64 KB chunks, aborting early if max_bytes is exceeded.
+    Prevents memory exhaustion (OOM DoS) from reading unbounded file payloads into RAM.
+    """
+    if file.size is not None and file.size > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Размер файла превышает допустимый лимит {max_bytes // (1024 * 1024)} МБ.",
+        )
+
+    chunks: list[bytes] = []
+    total_bytes = 0
+    chunk_size = 64 * 1024  # 64 KB chunks
+
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"Размер файла превышает допустимый лимит {max_bytes // (1024 * 1024)} МБ.",
+            )
+        chunks.append(chunk)
+
+    return b"".join(chunks)
+
+
 @router.post("/parse-spreadsheet")
 async def parse_uploaded_spreadsheet(
     file: UploadFile = File(...),
     _current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Server-side Excel/CSV parser replacing vulnerable client-side SheetJS (xlsx@0.18.5)."""
-    raw = await file.read()
-    if len(raw) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail="Размер файла превышает допустимый лимит 20 МБ.",
-        )
+    raw = await _read_file_with_size_limit(file, _MAX_UPLOAD_BYTES)
     rows = parse_spreadsheet_bytes(raw, file.filename or "upload.xlsx")
     return {
         "filename": file.filename or "upload.xlsx",

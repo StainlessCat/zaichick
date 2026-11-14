@@ -28,8 +28,23 @@ class SseEventBus:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._lock = asyncio.Lock()
         self._recent_event_ids: set[str] = set()
-        self._recent_event_queue: deque[str] = deque(maxlen=max_recent_ids)
+        self._recent_event_queue: deque[str] = deque()
         self._max_recent_ids = max_recent_ids
+
+    def _track_event_id_locked(self, event_id: str) -> bool:
+        """
+        Record event_id with strict synchronized FIFO eviction to prevent unbounded memory growth.
+        Returns False if the event_id is already known (duplicate), True if newly recorded.
+        MUST be called while holding self._lock.
+        """
+        if event_id in self._recent_event_ids:
+            return False
+        while len(self._recent_event_queue) >= self._max_recent_ids:
+            old_id = self._recent_event_queue.popleft()
+            self._recent_event_ids.discard(old_id)
+        self._recent_event_ids.add(event_id)
+        self._recent_event_queue.append(event_id)
+        return True
 
     async def subscribe(self) -> AsyncGenerator[dict[str, Any], None]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=256)
@@ -61,13 +76,8 @@ class SseEventBus:
         event_id = payload.get("event_id")
         if deduplicate and event_id:
             async with self._lock:
-                if event_id in self._recent_event_ids:
+                if not self._track_event_id_locked(str(event_id)):
                     return False
-                self._recent_event_ids.add(event_id)
-                self._recent_event_queue.append(event_id)
-                while len(self._recent_event_ids) > self._max_recent_ids:
-                    old_id = self._recent_event_queue.popleft()
-                    self._recent_event_ids.discard(old_id)
 
         async with self._lock:
             subscribers = list(self._subscribers)
@@ -215,8 +225,7 @@ class SseEventBus:
                 info.setdefault("skip_pg_notify_event_ids", set()).add(event_id)
             # Mark event_id as seen locally so the reflection from PG NOTIFY is ignored
             async with self._lock:
-                self._recent_event_ids.add(event_id)
-                self._recent_event_queue.append(event_id)
+                self._track_event_id_locked(event_id)
         else:
             await self.publish_local(envelope)
 
