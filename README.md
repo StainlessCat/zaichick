@@ -21,7 +21,7 @@
 | **Локальная разработка (Dev)** | • FastAPI: `127.0.0.1:8000`<br>• Vite Dev: `127.0.0.1:5173` | PostgreSQL 12+ (`127.0.0.1:5432`, БД `zaychick`) | `backend/.env` | 1. `cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8000`<br>2. `npx vite --host 127.0.0.1 --port 5173` | `Ctrl + C` или `Остановить_ZAYCHICK.bat` |
 | **Автономный Windows-стенд** | • PostgreSQL: `5432`<br>• FastAPI: `8000`<br>• Vite: `5173` | Локальный кластер PostgreSQL | `backend/.env` (автосоздание из `.env.example`) | Запуск файла **`Запустить_ZAYCHICK.bat`** двойным кликом | Запуск файла **`Остановить_ZAYCHICK.bat`** |
 | **Корпоративный Docker (Production)** | • `db`: PostgreSQL 16 (`5432`)<br>• `backend`: FastAPI (`8000`)<br>• `frontend`: Nginx (`80`, `3000`) | Постоянный Docker Volume `postgres_data` | `.env` в корне проекта или Docker secrets | `docker compose up -d --build` | `docker compose down` |
-| **Legacy / Архив (v1.0)** | Express: `127.0.0.1:3000` | SQLite `data/zaychick.sqlite` (только для исторической сверки) | `NODE_ENV=production` | `Запустить_ZAYCHICK_Legacy.bat` или `npm run start:legacy` | `Ctrl + C` |
+| **Архив v1.0 (Legacy)** | Скрипты сохранены в `archive/legacy_v1/` | SQLite (только для исторической сверки и миграции) | — | См. `archive/legacy_v1/README.md` | — |
 
 ---
 
