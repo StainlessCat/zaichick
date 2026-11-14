@@ -80,7 +80,8 @@ async def verify_schema_migrations_applied() -> str:
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     """
     FastAPI dependency providing a scoped AsyncSession with automatic transaction management.
-    - If the handler completes without exception, automatically commits any active transaction.
+    - If the handler completes without exception, flushes pending PG NOTIFY messages inside
+      the active transaction and automatically commits.
     - Dispatches post-commit SSE events only after successful commit.
     - If an exception occurs, rolls back the transaction and discards buffered events.
     """
@@ -91,6 +92,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             if session.is_active and session.in_transaction():
+                await event_bus.flush_pg_notifications(session)
                 await session.commit()
             await event_bus.dispatch_pending_session_events(session)
         except Exception:

@@ -30,12 +30,12 @@ interface LoginModalProps {
   onToggleAdminRights?: (
     targetLogin: string,
     grantAdmin: boolean
-  ) => { ok: boolean; message: string };
+  ) => Promise<{ ok: boolean; message: string }> | { ok: boolean; message: string };
   onChangeAdminPassword?: (
     adminLogin: string,
     currentPassword: string,
     newPassword: string
-  ) => { ok: boolean; message: string };
+  ) => Promise<{ ok: boolean; message: string }> | { ok: boolean; message: string };
 }
 
 const ROLE_PRESETS = [
@@ -141,8 +141,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         setErrorMsg('Введите действующий пароль администратора');
         return;
       }
-      if (cleanNew.length < 3) {
-        setErrorMsg('Новый пароль администратора должен содержать не менее 3 символов');
+      if (cleanNew.length < 8) {
+        setErrorMsg('Новый пароль администратора должен содержать не менее 8 символов');
         return;
       }
       if (cleanNew !== cleanConfirm) {
@@ -150,7 +150,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         return;
       }
 
-      const res = onChangeAdminPassword(targetAdminLogin, cleanOld, cleanNew);
+      const res = await onChangeAdminPassword(targetAdminLogin, cleanOld, cleanNew);
       if (!res.ok) {
         setErrorMsg(res.message);
         return;
@@ -418,7 +418,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                     required
                     value={newAdminPassword}
                     onChange={(e) => setNewAdminPassword(e.target.value)}
-                    placeholder="Мин. 3 символа"
+                    placeholder="Мин. 8 символов"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
                   />
                 </div>
@@ -628,9 +628,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                               isAccAdmin ? (
                                 <button
                                   type="button"
-                                  onClick={(e) => {
+                                  onClick={async (e) => {
                                     e.stopPropagation();
-                                    const res = onToggleAdminRights(acc.login, false);
+                                    setErrorMsg('');
+                                    setSuccessMsg('');
+                                    const res = await onToggleAdminRights(acc.login, false);
                                     if (res.ok) setSuccessMsg(res.message);
                                     else setErrorMsg(res.message);
                                   }}
@@ -643,9 +645,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={(e) => {
+                                  onClick={async (e) => {
                                     e.stopPropagation();
-                                    const res = onToggleAdminRights(acc.login, true);
+                                    setErrorMsg('');
+                                    setSuccessMsg('');
+                                    const res = await onToggleAdminRights(acc.login, true);
                                     if (res.ok) setSuccessMsg(res.message);
                                     else setErrorMsg(res.message);
                                   }}

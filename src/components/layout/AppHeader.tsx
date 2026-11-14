@@ -116,11 +116,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
                 onClick={async () => {
                   const ok = await onTriggerSync();
                   if (!ok && isAuthenticated) {
-                    alert(
-                      `Не удалось подключиться к серверу FastAPI: ${
-                        lastSyncError || 'Сетевая ошибка'
-                      }`
-                    );
+                    onOpenServerDbModal();
                   }
                 }}
                 title="Обновить данные с сервера PostgreSQL"

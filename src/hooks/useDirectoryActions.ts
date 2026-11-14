@@ -81,6 +81,7 @@ export interface UseDirectoryActionsParams {
   setIsDbSyncing: React.Dispatch<React.SetStateAction<boolean>>;
   setIsAuthenticated: React.Dispatch<React.SetStateAction<boolean>>;
   setIsLoginModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setLastSyncError?: React.Dispatch<React.SetStateAction<string | null>>;
   bumpRevisionMeta: (actionLabel: string, byUser?: string) => void;
 }
 
@@ -128,10 +129,22 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     setIsDbSyncing,
     setIsAuthenticated,
     setIsLoginModalOpen,
+    setLastSyncError,
     bumpRevisionMeta,
   } = params;
 
   const userPermissions = getUserRolePermissions(currentUser);
+
+  const notifyError = useCallback(
+    (msg: string) => {
+      if (setLastSyncError) {
+        setLastSyncError(msg);
+      } else {
+        console.warn(msg);
+      }
+    },
+    [setLastSyncError]
+  );
 
   const reportError = useCallback(
     (err: unknown, contextLabel: string) => {
@@ -139,20 +152,26 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
         if (err.status === 401) {
           setIsAuthenticated(false);
           setIsLoginModalOpen(true);
-          alert(`[Срок действия сессии истёк]\n${err.message || 'Требуется повторный вход в систему.'}`);
+          notifyError(
+            `Срок действия сессии истёк: ${err.message || 'Требуется повторный вход в систему.'}`
+          );
           return;
         }
         if (err.status === 403) {
-          alert(`[Недостаточно прав (RBAC)]\n${err.message || 'Действие запрещено вашей ролью.'}`);
+          notifyError(
+            `Недостаточно прав (RBAC): ${err.message || 'Действие запрещено вашей ролью.'}`
+          );
           return;
         }
-        alert(`[${contextLabel}]\n${err.message}`);
+        notifyError(`${contextLabel}: ${err.message}`);
         return;
       }
       const msg = err instanceof Error ? err.message : 'Сетевая ошибка';
-      alert(`[Сервер FastAPI недоступен]\n${contextLabel}: ${msg}\nПроверьте запуск backend на порту 8000.`);
+      notifyError(
+        `Сервер FastAPI недоступен (${contextLabel}: ${msg}). Проверьте запуск backend на порту 8000.`
+      );
     },
-    [setIsAuthenticated, setIsLoginModalOpen]
+    [notifyError, setIsAuthenticated, setIsLoginModalOpen]
   );
 
   const ensureFacilityId = useCallback(
@@ -182,7 +201,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (newItems: ProjectLineItem[]) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nДействие запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('Действие запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Добавление линий в лайнлист (${newItems.length} шт.)`);
@@ -205,10 +224,14 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+       currentUser.login,
       ensureFacilityId,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setProjectLineList,
     ]
   );
@@ -221,7 +244,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     ) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nРедактирование запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('Редактирование запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Редактирование линии ${updated.lineNumber}`);
@@ -237,7 +260,8 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
         const contourChanged =
           previousItem && previousItem.testContour !== saved.testContour;
 
-        const nextLineList = projectLineList.map((it) => {
+        const cascadedLinesToSave: ProjectLineItem[] = [];
+        const draftLineList = projectLineList.map((it) => {
           if (it.id === saved.id) return saved;
           if (!cascadeRename || !previousItem) return it;
           const nextObj =
@@ -261,15 +285,28 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
           ) {
             return it;
           }
-          return {
+          const cascadedItem: ProjectLineItem = {
             ...it,
             objectName: nextObj,
             rdCode: nextRd,
             testContour: nextContour,
             uniqueLineId: buildUniqueLineId(nextRd, it.lineNumber),
           };
+          if (UUID_RE.test(cascadedItem.id)) {
+            cascadedLinesToSave.push(cascadedItem);
+          }
+          return cascadedItem;
         });
 
+        const savedCascadedMap = new Map<string, ProjectLineItem>();
+        for (const cLine of cascadedLinesToSave) {
+          const persistedLine = await zaychickApi.updateLine(cLine);
+          savedCascadedMap.set(persistedLine.id, persistedLine);
+        }
+
+        const nextLineList = draftLineList.map(
+          (it) => savedCascadedMap.get(it.id) || it
+        );
         setProjectLineList(nextLineList);
 
         if (previousItem) {
@@ -277,36 +314,87 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
             projectLineList.map((l) => [l.uniqueLineId, l])
           );
           const nextLinesById = new Map(nextLineList.map((l) => [l.id, l]));
-          setJoints((prevJoints) =>
-            prevJoints.map((j) => {
-              const matchedOldLine =
-                prevLinesByUniqueId.get(j.uniqueLineId) ||
-                projectLineList.find(
-                  (l) => l.rdCode === j.rdCode && l.lineNumber === j.lineNumber
-                );
-              if (matchedOldLine) {
-                const nextLine = nextLinesById.get(matchedOldLine.id);
-                if (nextLine) {
-                  return {
-                    ...j,
-                    objectName: nextLine.objectName,
-                    rdCode: nextLine.rdCode,
-                    lineNumber: nextLine.lineNumber,
-                    uniqueLineId: nextLine.uniqueLineId,
-                    contour: nextLine.testContour,
-                  };
+
+          const jointBulkPatches: Array<{
+            id: string;
+            patch: Partial<WeldJoint>;
+            version: number;
+          }> = [];
+
+          const nextJoints = joints.map((j) => {
+            const matchedOldLine =
+              prevLinesByUniqueId.get(j.uniqueLineId) ||
+              projectLineList.find(
+                (l) => l.rdCode === j.rdCode && l.lineNumber === j.lineNumber
+              );
+            if (matchedOldLine) {
+              const nextLine = nextLinesById.get(matchedOldLine.id);
+              if (
+                nextLine &&
+                (j.objectName !== nextLine.objectName ||
+                  j.rdCode !== nextLine.rdCode ||
+                  j.lineNumber !== nextLine.lineNumber ||
+                  j.uniqueLineId !== nextLine.uniqueLineId ||
+                  j.contour !== nextLine.testContour)
+              ) {
+                const patch: Partial<WeldJoint> = {
+                  objectName: nextLine.objectName,
+                  rdCode: nextLine.rdCode,
+                  lineNumber: nextLine.lineNumber,
+                  uniqueLineId: nextLine.uniqueLineId,
+                  contour: nextLine.testContour,
+                };
+                if (UUID_RE.test(j.id)) {
+                  jointBulkPatches.push({
+                    id: j.id,
+                    patch,
+                    version: j.version ?? 1,
+                  });
                 }
+                return { ...j, ...patch };
               }
-              return j;
-            })
-          );
+            }
+            return j;
+          });
+
+          if (jointBulkPatches.length > 0) {
+            const updatedServerJoints = await zaychickApi.bulkUpdateJoints(
+              jointBulkPatches
+            );
+            const serverJointMap = new Map(
+              updatedServerJoints.map((uj) => [uj.id, uj])
+            );
+            setJoints(nextJoints.map((j) => serverJointMap.get(j.id) || j));
+          } else {
+            setJoints(nextJoints);
+          }
+
           if (cascadeRename && rdChanged) {
+            const lrvItemsToUpdate = lrvCatalog.filter(
+              (item) => item.rdCode === previousItem.rdCode
+            );
+            const savedLrvMap = new Map<string, LRVItem>();
+            for (const item of lrvItemsToUpdate) {
+              if (UUID_RE.test(item.id)) {
+                const persistedLrv = await zaychickApi.updateLrv({
+                  ...item,
+                  rdCode: saved.rdCode,
+                  objectName:
+                    objChanged && item.objectName === previousItem.objectName
+                      ? saved.objectName
+                      : item.objectName,
+                });
+                savedLrvMap.set(persistedLrv.id, persistedLrv);
+              }
+            }
             setLrvCatalog((prevCatalog) =>
-              prevCatalog.map((item) =>
-                item.rdCode === previousItem.rdCode
+              prevCatalog.map((item) => {
+                const fromServer = savedLrvMap.get(item.id);
+                if (fromServer) return fromServer;
+                return item.rdCode === previousItem.rdCode
                   ? { ...item, rdCode: saved.rdCode }
-                  : item
-              )
+                  : item;
+              })
             );
             if (selectedRdCode === previousItem.rdCode) {
               setSelectedRdCode(saved.rdCode);
@@ -326,12 +414,18 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      joints,
+      lrvCatalog,
+      notifyError,
       projectLineList,
       recordUndoSnapshot,
       reportError,
       selectedObjectName,
       selectedRdCode,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setJoints,
       setLrvCatalog,
       setProjectLineList,
@@ -344,7 +438,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (selectedIds: string[], patch: Partial<ProjectLineItem>) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nГрупповое редактирование запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('Групповое редактирование запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Групповое ред. лайнлиста (${selectedIds.length} стр.)`);
@@ -375,10 +469,14 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
       projectLineList,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setProjectLineList,
     ]
   );
@@ -387,7 +485,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (lineIds: string[]) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nУдаление запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('Удаление запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       if (lineIds.length === 0) return;
@@ -421,10 +519,14 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
       projectLineList,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setJoints,
       setProjectLineList,
       setSelectedJointIds,
@@ -438,7 +540,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (objectName: string) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nУдаление объекта запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('Удаление объекта запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Удаление объекта «${objectName}»`);
@@ -504,7 +606,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (rdCode: string, objectName?: string) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nУдаление шифра РД запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Удаление шифра РД запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Удаление шифра РД «${rdCode}»`);
@@ -534,12 +636,16 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
       lrvCatalog,
+      notifyError,
       projectLineList,
       recordUndoSnapshot,
       reportError,
       selectedRdCode,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setJoints,
       setLrvCatalog,
       setProjectLineList,
@@ -552,7 +658,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (facilityName: string, loc: FacilityGeoOverride) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nСохранение геолокации запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Сохранение геолокации запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       handleSaveFacilityLocationLocal(facilityName, loc);
@@ -578,9 +684,13 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
       }
     },
     [
+      currentUser.login,
       handleSaveFacilityLocationLocal,
+      isAuthenticated,
+      notifyError,
       reportError,
       serverFacilities,
+      setIsLoginModalOpen,
       setServerFacilities,
     ]
   );
@@ -589,7 +699,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (objectName: string) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nСоздание объекта запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Создание объекта запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       handleCreateStandaloneObjectLocal(objectName);
@@ -601,7 +711,15 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
         reportError(err, 'Ошибка создания объекта');
       }
     },
-    [ensureFacilityId, handleCreateStandaloneObjectLocal, reportError]
+    [
+      currentUser.login,
+      ensureFacilityId,
+      handleCreateStandaloneObjectLocal,
+      isAuthenticated,
+      notifyError,
+      reportError,
+      setIsLoginModalOpen,
+    ]
   );
 
   // ---------------------------------------------------------------------------
@@ -611,7 +729,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (w: WelderProfile) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nСохранение сварщика запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Сохранение сварщика запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Сохранение сварщика / клейма ${w.stamp}`);
@@ -638,9 +756,13 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setWelders,
     ]
   );
@@ -649,7 +771,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (stamp: string) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nУдаление сварщика запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Удаление сварщика запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       const target = welders.find((w) => w.stamp === stamp);
@@ -671,9 +793,13 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setWelders,
       welders,
     ]
@@ -683,7 +809,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (tc: TechCardItem) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nСохранение техкарты запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Сохранение техкарты запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Сохранение техкарты ${tc.number}`);
@@ -707,9 +833,13 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setTechCards,
     ]
   );
@@ -718,7 +848,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (id: string) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nУдаление техкарты запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Удаление техкарты запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       const target = techCards.find((tc) => tc.id === id);
@@ -740,9 +870,13 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setTechCards,
       techCards,
     ]
@@ -752,7 +886,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (mat: WeldingMaterialCertificate) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nСохранение СМ запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Сохранение СМ запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Сохранение СМ ${mat.brandAndDiameter}`);
@@ -776,9 +910,13 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setWeldingMaterials,
     ]
   );
@@ -787,7 +925,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (id: string) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nУдаление СМ запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Удаление СМ запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       const target = weldingMaterials.find((m) => m.id === id);
@@ -809,9 +947,13 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setWeldingMaterials,
       weldingMaterials,
     ]
@@ -824,7 +966,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (newItems: LRVItem[]) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nДобавление в ЛРВ запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Добавление в ЛРВ запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Добавление в каталог ЛРВ (${newItems.length} поз.)`);
@@ -851,12 +993,16 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
       derivedFacilities,
       ensureFacilityId,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       selectedObjectName,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setLrvCatalog,
     ]
   );
@@ -865,7 +1011,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (updatedItem: LRVItem) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nРедактирование ЛРВ запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Редактирование ЛРВ запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Редактирование позиции ЛРВ ${updatedItem.lrvCode}`);
@@ -902,10 +1048,14 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
       lrvCatalog,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setLrvCatalog,
     ]
   );
@@ -914,7 +1064,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (ids: string[]) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nУдаление из ЛРВ запрещено: требуется авторизация на сервере FastAPI.');
+        notifyError('[Ошибка доступа] Удаление из ЛРВ запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
       if (ids.length === 0) return;
@@ -941,10 +1091,14 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
       lrvCatalog,
+      notifyError,
       recordUndoSnapshot,
       reportError,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setLrvCatalog,
     ]
   );
@@ -996,7 +1150,7 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     async (loginToDelete: string) => {
       if (!isAuthenticated || !currentUser.login || userPermissions.category !== 'admin') {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nДействие запрещено: требуется авторизация с правами администратора.');
+        notifyError('[Ошибка доступа] Действие запрещено: требуется авторизация с правами администратора.');
         return;
       }
       if (userAccounts.length <= 1) return;
@@ -1019,11 +1173,24 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
         reportError(err, 'Ошибка отключения пользователя');
       }
     },
-    [currentUser.login, reportError, setCurrentUser, setUserAccounts, userAccounts]
+    [
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
+      reportError,
+      setCurrentUser,
+      setIsLoginModalOpen,
+      setUserAccounts,
+      userAccounts,
+      userPermissions.category,
+    ]
   );
 
   const handleToggleAdminRights = useCallback(
-    (targetLogin: string, grantAdmin: boolean): { ok: boolean; message: string } => {
+    async (
+      targetLogin: string,
+      grantAdmin: boolean
+    ): Promise<{ ok: boolean; message: string }> => {
       if (!isAuthenticated || !currentUser.login || userPermissions.category !== 'admin') {
         setIsLoginModalOpen(true);
         return {
@@ -1053,18 +1220,36 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
 
       const nextBackendRole = grantAdmin ? 'ADMIN' : 'PTO';
       if (targetAcc.id && UUID_RE.test(targetAcc.id)) {
-        void zaychickApi
-          .updateUser(targetAcc.id, {
+        try {
+          const saved = await zaychickApi.updateUser(targetAcc.id, {
             version: targetAcc.version ?? 1,
             role: nextBackendRole,
-          })
-          .then((saved) => {
-            setUserAccounts((prev) =>
-              prev.map((a) => (a.id === saved.id ? saved : a))
-            );
-            if (currentUser.login === saved.login) setCurrentUser(saved);
-          })
-          .catch((err) => reportError(err, 'Ошибка смены прав доступа'));
+          });
+          setUserAccounts((prev) =>
+            prev.map((a) => (a.id === saved.id ? saved : a))
+          );
+          if (currentUser.login === saved.login) setCurrentUser(saved);
+        } catch (err) {
+          reportError(err, 'Ошибка смены прав доступа');
+          const msg =
+            err instanceof ApiError
+              ? err.message
+              : err instanceof Error
+              ? err.message
+              : 'Ошибка смены прав доступа на сервере FastAPI';
+          return { ok: false, message: msg };
+        }
+      } else {
+        const nextRoleLabel = grantAdmin
+          ? 'Администратор системы (Полный доступ)'
+          : 'Инженер ПТО / СМР';
+        setUserAccounts((prev) =>
+          prev.map((a) =>
+            a.login.toLowerCase() === targetLogin.trim().toLowerCase()
+              ? { ...a, backendRole: nextBackendRole, role: nextRoleLabel }
+              : a
+          )
+        );
       }
 
       return {
@@ -1076,8 +1261,10 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
     },
     [
       currentUser.login,
+      isAuthenticated,
       reportError,
       setCurrentUser,
+      setIsLoginModalOpen,
       setUserAccounts,
       userAccounts,
       userPermissions.category,
@@ -1085,11 +1272,11 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
   );
 
   const handleChangeAdminPassword = useCallback(
-    (
+    async (
       adminLogin: string,
       currentPassword: string,
       newPassword: string
-    ): { ok: boolean; message: string } => {
+    ): Promise<{ ok: boolean; message: string }> => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
         return { ok: false, message: 'Требуется авторизация в системе' };
@@ -1107,30 +1294,41 @@ export function useDirectoryActions(params: UseDirectoryActionsParams) {
         return { ok: false, message: 'Новый пароль должен содержать не менее 8 символов' };
       }
 
-      if (adminLogin.toLowerCase() === currentUser.login.toLowerCase()) {
-        void zaychickApi
-          .changeOwnPassword(currentPassword, newPassword.trim())
-          .catch((err) => reportError(err, 'Ошибка смены пароля'));
-      } else if (targetAcc.id && UUID_RE.test(targetAcc.id)) {
-        void zaychickApi
-          .updateUser(targetAcc.id, {
+      try {
+        if (adminLogin.toLowerCase() === currentUser.login.toLowerCase()) {
+          await zaychickApi.changeOwnPassword(currentPassword, newPassword.trim());
+        } else if (targetAcc.id && UUID_RE.test(targetAcc.id)) {
+          const saved = await zaychickApi.updateUser(targetAcc.id, {
             version: targetAcc.version ?? 1,
             newPassword: newPassword.trim(),
-          })
-          .then((saved) => {
-            setUserAccounts((prev) =>
-              prev.map((a) => (a.id === saved.id ? saved : a))
-            );
-          })
-          .catch((err) => reportError(err, 'Ошибка смены пароля администратора'));
+          });
+          setUserAccounts((prev) =>
+            prev.map((a) => (a.id === saved.id ? saved : a))
+          );
+        }
+        return {
+          ok: true,
+          message: `Пароль учётной записи «${targetAcc.login}» успешно обновлён на сервере`,
+        };
+      } catch (err) {
+        reportError(err, 'Ошибка смены пароля администратора');
+        const msg =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+            ? err.message
+            : 'Ошибка смены пароля на сервере FastAPI';
+        return { ok: false, message: msg };
       }
-
-      return {
-        ok: true,
-        message: `Запрос на смену пароля «${targetAcc.login}» отправлен в FastAPI`,
-      };
     },
-    [currentUser.login, reportError, setUserAccounts, userAccounts]
+    [
+      currentUser.login,
+      isAuthenticated,
+      reportError,
+      setIsLoginModalOpen,
+      setUserAccounts,
+      userAccounts,
+    ]
   );
 
   const handleClearAuditLogs = useCallback(() => {

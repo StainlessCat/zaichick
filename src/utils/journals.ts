@@ -248,7 +248,7 @@ export function formatGost32569ConsumablesCell(
         rawCertParts[idx] ||
         rawBatchParts[idx] ||
         rawCertParts[0] ||
-        '10492-26';
+        '';
       return [part, ntd, cert].filter(Boolean).join(', ');
     })
     .join('\n');

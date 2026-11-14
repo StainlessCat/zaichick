@@ -91,6 +91,8 @@ const DELTA_EVENTS = [
   'template.deleted',
   'user.created',
   'user.updated',
+  'system.restored',
+  'system.zero_reset',
 ];
 
 export function useServerSync({
@@ -345,6 +347,9 @@ export function useServerSync({
             const users = await zaychickApi.listUsers();
             setUserAccounts(users);
           }
+        } else if (entityType === 'system') {
+          await fetchServerDbState(true);
+          return;
         }
         const logs = await zaychickApi.listAuditLogs(1, 200).catch(() => null);
         if (logs) setAuditLogs(logs);
@@ -355,6 +360,7 @@ export function useServerSync({
     [
       applyGeoFromFacilities,
       currentUser,
+      fetchServerDbState,
       setAuditLogs,
       setJoints,
       setLrvCatalog,

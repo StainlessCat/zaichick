@@ -83,32 +83,92 @@ class SseEventBus:
                 pass
         return True
 
-    async def dispatch_pending_session_events(
-        self, session: AsyncSession
-    ) -> list[dict[str, Any]]:
-        """Dispatch buffered delta events after transaction commit and broadcast via PG NOTIFY."""
+    @staticmethod
+    def _serialize_for_pg_notify(payload: dict[str, Any]) -> str:
+        serialized = json.dumps(payload, ensure_ascii=False, default=str)
+        # PostgreSQL NOTIFY payload limit is 8000 bytes; truncate large details if needed
+        if len(serialized.encode("utf-8")) > 7500:
+            compact_payload = dict(payload)
+            compact_payload["data"] = {"_truncated": True}
+            serialized = json.dumps(compact_payload, ensure_ascii=False, default=str)
+        return serialized
+
+    async def flush_pg_notifications(self, session: AsyncSession) -> None:
+        """
+        Execute SELECT pg_notify(...) for all buffered session events inside the
+        currently active database transaction BEFORE session.commit().
+        PostgreSQL holds transactional NOTIFY messages and delivers them atomically
+        upon COMMIT (or discards them automatically upon ROLLBACK).
+        """
         info = getattr(session, "info", None)
         if not info or not isinstance(info, dict):
-            return []
-        events: list[dict[str, Any]] = info.pop("pending_sse_events", [])
-        for payload in events:
-            # Deliver to local subscribers connected to this worker
-            await self.publish_local(payload, deduplicate=False)
+            return
+        events: list[dict[str, Any]] = info.get("pending_sse_events", [])
+        if not events:
+            return
+        notified_ids: set[str] = info.setdefault("pg_notified_event_ids", set())
+        skipped_pg_ids: set[str] = info.get("skip_pg_notify_event_ids", set())
 
-            # Broadcast to other workers across processes via PostgreSQL NOTIFY
+        for payload in events:
+            event_id = str(payload.get("event_id") or "")
+            if event_id and (event_id in notified_ids or event_id in skipped_pg_ids):
+                continue
             try:
-                serialized = json.dumps(payload, ensure_ascii=False, default=str)
-                # PostgreSQL NOTIFY payload limit is 8000 bytes; truncate large details if needed
-                if len(serialized.encode("utf-8")) > 7500:
-                    compact_payload = dict(payload)
-                    compact_payload["data"] = {"_truncated": True}
-                    serialized = json.dumps(compact_payload, ensure_ascii=False, default=str)
+                serialized = self._serialize_for_pg_notify(payload)
                 await session.execute(
                     text("SELECT pg_notify(:channel, :payload)"),
                     {"channel": self.CHANNEL, "payload": serialized},
                 )
+                if event_id:
+                    notified_ids.add(event_id)
+            except Exception as ex:
+                logger.debug("pg_notify flush skipped: %s", ex)
+
+    async def dispatch_pending_session_events(
+        self, session: AsyncSession
+    ) -> list[dict[str, Any]]:
+        """
+        Dispatch buffered delta events after transaction commit to local SSE queues,
+        and broadcast any remaining un-flushed events via PG NOTIFY with an explicit commit.
+        """
+        info = getattr(session, "info", None)
+        if not info or not isinstance(info, dict):
+            return []
+        events: list[dict[str, Any]] = info.pop("pending_sse_events", [])
+        notified_ids: set[str] = info.pop("pg_notified_event_ids", set())
+        skipped_pg_ids: set[str] = info.pop("skip_pg_notify_event_ids", set())
+        if not events:
+            return []
+
+        executed_post_commit_notify = False
+        for payload in events:
+            # Deliver to local subscribers connected to this worker
+            await self.publish_local(payload, deduplicate=False)
+
+            event_id = str(payload.get("event_id") or "")
+            if event_id and (event_id in notified_ids or event_id in skipped_pg_ids):
+                continue
+
+            # Fallback broadcast to other workers via PostgreSQL NOTIFY if not flushed pre-commit
+            try:
+                serialized = self._serialize_for_pg_notify(payload)
+                await session.execute(
+                    text("SELECT pg_notify(:channel, :payload)"),
+                    {"channel": self.CHANNEL, "payload": serialized},
+                )
+                executed_post_commit_notify = True
             except Exception as ex:
                 logger.debug("pg_notify skipped: %s", ex)
+
+        if executed_post_commit_notify:
+            try:
+                if session.is_active and session.in_transaction():
+                    await session.commit()
+            except Exception as ex:
+                logger.debug("pg_notify commit skipped: %s", ex)
+                if session.is_active and session.in_transaction():
+                    await session.rollback()
+
         return events
 
     def clear_pending_session_events(self, session: AsyncSession) -> None:
@@ -116,6 +176,8 @@ class SseEventBus:
         info = getattr(session, "info", None)
         if info and isinstance(info, dict):
             info.pop("pending_sse_events", None)
+            info.pop("pg_notified_event_ids", None)
+            info.pop("skip_pg_notify_event_ids", None)
 
     async def emit_delta(
         self,
@@ -149,6 +211,8 @@ class SseEventBus:
         info = getattr(session, "info", None) if session is not None else None
         if info is not None and isinstance(info, dict):
             info.setdefault("pending_sse_events", []).append(envelope)
+            if not notify_pg:
+                info.setdefault("skip_pg_notify_event_ids", set()).add(event_id)
             # Mark event_id as seen locally so the reflection from PG NOTIFY is ignored
             async with self._lock:
                 self._recent_event_ids.add(event_id)

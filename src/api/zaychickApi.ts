@@ -599,4 +599,23 @@ export const zaychickApi = {
   async parseSpreadsheet(file: File): Promise<Record<string, unknown>[]> {
     return apiUploadSpreadsheet(file);
   },
+
+  async restoreFullBackup(
+    payload: Record<string, unknown>
+  ): Promise<{ status: string; report?: Record<string, unknown> }> {
+    return apiRequest('/api/imports/restore-backup', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async zeroResetDatabase(
+    keepOnlyAdmin = true
+  ): Promise<{ status: string; deactivated_users?: number }> {
+    return apiRequest('/api/imports/zero-reset', {
+      method: 'POST',
+      body: JSON.stringify({ keep_only_admin: keepOnlyAdmin }),
+    });
+  },
 };
+

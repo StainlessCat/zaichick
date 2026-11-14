@@ -50,21 +50,174 @@ router = APIRouter(prefix="/api/joints", tags=["joints"])
 JOINT_EDIT_ROLES = {RoleEnum.ADMIN, RoleEnum.PTO, RoleEnum.PIL}
 
 
-async def _load_validation_context(session: AsyncSession) -> dict[str, Any]:
-    all_joints = list((await session.execute(select(WeldJoint))).scalars().all())
-    lines = list((await session.execute(select(ProjectLine))).scalars().all())
-    lrv_catalog = list((await session.execute(select(LrvItem))).scalars().all())
-    welders = list(
-        (await session.execute(select(Welder).options(selectinload(Welder.naks_certs))))
-        .scalars()
-        .all()
-    )
-    tech_cards = list(
-        (await session.execute(select(TechCard).options(selectinload(TechCard.preheat_rules))))
-        .scalars()
-        .all()
-    )
-    welding_materials = list((await session.execute(select(WeldingMaterial))).scalars().all())
+async def _load_validation_context(
+    session: AsyncSession,
+    target_joints: list[Any] | None = None,
+    extra_joint_ids: list[uuid.UUID] | None = None,
+) -> dict[str, Any]:
+    if not target_joints:
+        all_joints = list((await session.execute(select(WeldJoint))).scalars().all())
+        lines = list((await session.execute(select(ProjectLine))).scalars().all())
+        lrv_catalog = list((await session.execute(select(LrvItem))).scalars().all())
+        welders = list(
+            (await session.execute(select(Welder).options(selectinload(Welder.naks_certs))))
+            .scalars()
+            .all()
+        )
+        tech_cards = list(
+            (await session.execute(select(TechCard).options(selectinload(TechCard.preheat_rules))))
+            .scalars()
+            .all()
+        )
+        welding_materials = list((await session.execute(select(WeldingMaterial))).scalars().all())
+        return {
+            "all_joints": all_joints,
+            "lines": lines,
+            "lrv_catalog": lrv_catalog,
+            "welders": welders,
+            "tech_cards": tech_cards,
+            "welding_materials": welding_materials,
+        }
+
+    line_ids: set[uuid.UUID] = set()
+    unique_line_ids: set[str] = set()
+    lrv_codes: set[str] = set()
+    factory_nums_lower: set[str] = set()
+    tc_numbers: set[str] = set()
+    tc_ids: set[uuid.UUID] = set()
+    wm_names: set[str] = set()
+    has_welder_stamps = False
+    joint_ids: set[uuid.UUID] = set(extra_joint_ids or [])
+
+    for j in target_joints:
+        jid = getattr(j, "id", None)
+        if isinstance(jid, uuid.UUID):
+            joint_ids.add(jid)
+        lid = getattr(j, "line_id", None)
+        if isinstance(lid, uuid.UUID):
+            line_ids.add(lid)
+        uid = (getattr(j, "unique_line_id", None) or "").strip()
+        if uid:
+            unique_line_ids.add(uid)
+        for attr in ("lrv1_code", "lrv2_code"):
+            code = (getattr(j, attr, None) or "").strip()
+            if code:
+                lrv_codes.add(code)
+        for attr in ("elem1_factory_number", "elem2_factory_number"):
+            fnum = (getattr(j, attr, None) or "").strip()
+            if fnum and fnum != "—" and fnum.lower() != "б/н":
+                factory_nums_lower.add(fnum.lower())
+        tcn = (getattr(j, "tech_card_number", None) or "").strip()
+        if tcn:
+            tc_numbers.add(tcn)
+        tcid = getattr(j, "tech_card_id", None)
+        if isinstance(tcid, uuid.UUID):
+            tc_ids.add(tcid)
+        wm = (getattr(j, "welding_materials", None) or "").strip()
+        if wm:
+            wm_names.add(wm)
+        if (getattr(j, "welder_stamp", None) or "").strip() or getattr(j, "welder_stamps_list", None):
+            has_welder_stamps = True
+
+    # 1. Load only matching ProjectLine rows
+    line_filters = []
+    if line_ids:
+        line_filters.append(ProjectLine.id.in_(line_ids))
+    if unique_line_ids:
+        line_filters.append(ProjectLine.unique_line_id.in_(unique_line_ids))
+    if line_filters:
+        lines = list(
+            (await session.execute(select(ProjectLine).where(or_(*line_filters)))).scalars().all()
+        )
+    else:
+        lines = []
+
+    for line in lines:
+        line_ids.add(line.id)
+        if line.unique_line_id:
+            unique_line_ids.add(line.unique_line_id)
+
+    # 2. Load only referenced LRV catalog items
+    if lrv_codes:
+        lrv_catalog = list(
+            (await session.execute(select(LrvItem).where(LrvItem.lrv_code.in_(lrv_codes))))
+            .scalars()
+            .all()
+        )
+    else:
+        lrv_catalog = []
+
+    # 3. Load only WeldJoint rows that can affect validation (same line, same LRV code, or same factory number)
+    joint_filters = []
+    if joint_ids:
+        joint_filters.append(WeldJoint.id.in_(joint_ids))
+    if line_ids:
+        joint_filters.append(WeldJoint.line_id.in_(line_ids))
+    if unique_line_ids:
+        joint_filters.append(WeldJoint.unique_line_id.in_(unique_line_ids))
+    if lrv_codes:
+        joint_filters.append(WeldJoint.lrv1_code.in_(lrv_codes))
+        joint_filters.append(WeldJoint.lrv2_code.in_(lrv_codes))
+    if factory_nums_lower:
+        joint_filters.append(
+            func.lower(func.btrim(WeldJoint.elem1_factory_number)).in_(factory_nums_lower)
+        )
+        joint_filters.append(
+            func.lower(func.btrim(WeldJoint.elem2_factory_number)).in_(factory_nums_lower)
+        )
+
+    if joint_filters:
+        all_joints = list(
+            (await session.execute(select(WeldJoint).where(or_(*joint_filters)))).scalars().all()
+        )
+    else:
+        all_joints = []
+
+    # 4. Load welders (only when stamps are present on the joint(s))
+    if has_welder_stamps:
+        welders = list(
+            (await session.execute(select(Welder).options(selectinload(Welder.naks_certs))))
+            .scalars()
+            .all()
+        )
+    else:
+        welders = []
+
+    # 5. Load only referenced TechCard rows
+    tc_filters = []
+    if tc_numbers:
+        tc_filters.append(TechCard.number.in_(tc_numbers))
+    if tc_ids:
+        tc_filters.append(TechCard.id.in_(tc_ids))
+    if tc_filters:
+        tech_cards = list(
+            (
+                await session.execute(
+                    select(TechCard)
+                    .where(or_(*tc_filters))
+                    .options(selectinload(TechCard.preheat_rules))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    else:
+        tech_cards = []
+
+    # 6. Load only referenced WeldingMaterial rows
+    if wm_names:
+        welding_materials = list(
+            (
+                await session.execute(
+                    select(WeldingMaterial).where(WeldingMaterial.brand_and_diameter.in_(wm_names))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    else:
+        welding_materials = []
+
     return {
         "all_joints": all_joints,
         "lines": lines,
@@ -359,7 +512,12 @@ async def validate_joint_payload(
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> JointValidationResultOut:
-    ctx = await _load_validation_context(session)
+    extra_ids = [payload.joint_id] if payload.joint_id is not None else None
+    ctx = await _load_validation_context(
+        session,
+        target_joints=[payload.joint],
+        extra_joint_ids=extra_ids,
+    )
     matched_line = _find_matching_line(payload.joint, ctx["lines"])
     if matched_line is None:
         raise HTTPException(
@@ -393,7 +551,7 @@ async def create_joint(
     current_user: User = Depends(require_permission("can_create_or_delete_joints")),
     session: AsyncSession = Depends(get_db_session),
 ) -> WeldJointOut:
-    ctx = await _load_validation_context(session)
+    ctx = await _load_validation_context(session, target_joints=[payload])
     matched_line = _find_matching_line(payload, ctx["lines"])
     if matched_line is None:
         raise HTTPException(
@@ -539,8 +697,9 @@ async def update_joint(
     if joint is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стык не найден.")
 
-    ctx = await _load_validation_context(session)
     patch_data = payload.model_dump(exclude_unset=True)
+    candidate_preview = _make_candidate_namespace(joint, patch_data)
+    ctx = await _load_validation_context(session, target_joints=[joint, candidate_preview])
     old_snap, summary = _apply_joint_patch_and_validate(
         joint=joint,
         patch_data=patch_data,
@@ -591,8 +750,36 @@ async def bulk_update_joints(
             detail=f"Роль {current_user.role.value} не имеет права массово редактировать стыки.",
         )
 
-    ctx = await _load_validation_context(session)
+    req_ids = [item.id for item in payload.items]
+    existing_targets = (
+        list(
+            (await session.execute(select(WeldJoint).where(WeldJoint.id.in_(req_ids))))
+            .scalars()
+            .all()
+        )
+        if req_ids
+        else []
+    )
+    target_map: dict[uuid.UUID, WeldJoint] = {j.id: j for j in existing_targets}
+    target_and_candidates: list[Any] = list(existing_targets)
+    for item in payload.items:
+        joint = target_map.get(item.id)
+        if joint is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Стык {item.id} не найден.",
+            )
+        p_data = item.model_dump(exclude_unset=True)
+        p_data.pop("id", None)
+        target_and_candidates.append(_make_candidate_namespace(joint, p_data))
+
+    ctx = await _load_validation_context(
+        session,
+        target_joints=target_and_candidates,
+        extra_joint_ids=req_ids,
+    )
     joints_by_id: dict[uuid.UUID, WeldJoint] = {j.id: j for j in ctx["all_joints"]}
+    joints_by_id.update(target_map)
     updated_results: list[tuple[WeldJoint, dict[str, Any], JointValidationSummary]] = []
 
     for item in payload.items:

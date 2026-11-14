@@ -4,11 +4,19 @@ import csv
 import io
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile, status
 from openpyxl import load_workbook
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_client_ip, get_current_user, get_db_session, require_roles
+from app.models.enums import RoleEnum
 from app.models.user import User
+from app.services.audit_service import record_audit_log
+from app.services.event_bus import publish_domain_event
+from app.services.sqlite_migrator import (
+    restore_backup_payload_to_postgres,
+    zero_reset_postgres,
+)
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 
@@ -95,3 +103,84 @@ async def parse_uploaded_spreadsheet(
         "rows": rows,
         "count": len(rows),
     }
+
+
+@router.post("/restore-backup")
+async def restore_full_backup_endpoint(
+    request: Request,
+    payload: dict[str, Any] = Body(...),
+    current_user: User = Depends(require_roles(RoleEnum.ADMIN)),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Full database restoration from a ZAYCHICK_FULL_BACKUP_V1 JSON archive (ADMIN only)."""
+    try:
+        report = await restore_backup_payload_to_postgres(payload, session)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    await record_audit_log(
+        session,
+        action="RESTORE_BACKUP",
+        entity_type="system",
+        entity_id="full_backup",
+        user=current_user,
+        new_data={
+            "joints_inserted": report.get("joints", {}).get("inserted", 0),
+            "lines_inserted": report.get("lines", {}).get("inserted", 0),
+            "lrv_inserted": report.get("lrv", {}).get("inserted", 0),
+        },
+        ip_address=get_client_ip(request),
+        summary=(
+            f"Полное восстановление СУБД из JSON-бэкапа "
+            f"(стыков: {report.get('joints', {}).get('inserted', 0)}, "
+            f"линий: {report.get('lines', {}).get('inserted', 0)})"
+        ),
+    )
+    await publish_domain_event(
+        session,
+        event="system.restored",
+        entity_type="system",
+        entity_id="full_backup",
+        version=1,
+        updated_by=current_user.login,
+    )
+    return {"status": "ok", "report": report}
+
+
+@router.post("/zero-reset")
+async def zero_reset_database_endpoint(
+    request: Request,
+    payload: dict[str, Any] = Body(default_factory=dict),
+    current_user: User = Depends(require_roles(RoleEnum.ADMIN)),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Full database wipe («Чистый лист») preserving administrator access (ADMIN only)."""
+    keep_only_admin = bool(payload.get("keep_only_admin", True))
+    result = await zero_reset_postgres(
+        session,
+        keep_only_admin=keep_only_admin,
+        current_user=current_user,
+    )
+    await record_audit_log(
+        session,
+        action="ZERO_RESET",
+        entity_type="system",
+        entity_id="zero_reset",
+        user=current_user,
+        new_data=result,
+        ip_address=get_client_ip(request),
+        summary="Полное обнуление таблиц СУБД («Чистый лист»)",
+    )
+    await publish_domain_event(
+        session,
+        event="system.zero_reset",
+        entity_type="system",
+        entity_id="zero_reset",
+        version=1,
+        updated_by=current_user.login,
+    )
+    return result
+

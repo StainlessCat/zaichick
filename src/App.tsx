@@ -5,6 +5,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   BarChart3,
   BookOpen,
   ClipboardList,
@@ -14,6 +15,7 @@ import {
   History,
   ShieldAlert,
   Wrench,
+  X,
 } from 'lucide-react';
 import {
   ANONYMOUS_USER,
@@ -501,6 +503,7 @@ export default function App() {
     setIsDbSyncing,
     setIsAuthenticated,
     setIsLoginModalOpen,
+    setLastSyncError,
     bumpRevisionMeta,
   });
 
@@ -558,12 +561,27 @@ export default function App() {
     };
     const baseLogs = Array.isArray(data.auditLogs) ? data.auditLogs : [];
     setAuditLogs([restoreAuditEntry, ...baseLogs]);
+
+    if (isAuthenticated && userPermissions.category === 'admin') {
+      setIsDbSyncing(true);
+      void zaychickApi
+        .restoreFullBackup(payload as unknown as Record<string, unknown>)
+        .then(() => fetchServerDbState(true))
+        .catch((err) => {
+          setLastSyncError(
+            err instanceof Error
+              ? `Ошибка сохранения бэкапа на сервере: ${err.message}`
+              : 'Ошибка сохранения бэкапа на сервере'
+          );
+        })
+        .finally(() => setIsDbSyncing(false));
+    }
   };
 
   const handleAuthorZeroReset = (keepAdminUser: boolean) => {
     const cleanAdminAccount: UserAccount = {
-      login: 'admin_pto',
-      fullName: 'Администратор системы',
+      login: currentUser.login || 'admin_pto',
+      fullName: currentUser.fullName || 'Администратор системы',
       role: 'Системный администратор (Полный доступ)',
       backendRole: 'ADMIN',
       department: 'Администрация ИТ / ПТО',
@@ -592,6 +610,21 @@ export default function App() {
     setWeldingDateTo('');
     setSelectedObjectName('ALL');
     setSelectedRdCode('ALL');
+
+    if (isAuthenticated && userPermissions.category === 'admin') {
+      setIsDbSyncing(true);
+      void zaychickApi
+        .zeroResetDatabase(keepAdminUser)
+        .then(() => fetchServerDbState(true))
+        .catch((err) => {
+          setLastSyncError(
+            err instanceof Error
+              ? `Ошибка обнуления СУБД на сервере: ${err.message}`
+              : 'Ошибка обнуления СУБД на сервере'
+          );
+        })
+        .finally(() => setIsDbSyncing(false));
+    }
   };
 
   const handleAuthorRestoreDemoSeed = () => {
@@ -611,6 +644,34 @@ export default function App() {
     setColumnFilters({});
     setSelectedObjectName(FACILITY_OBJECTS[0].name);
     setSelectedRdCode('ALL');
+
+    if (isAuthenticated && userPermissions.category === 'admin') {
+      setIsDbSyncing(true);
+      void zaychickApi
+        .restoreFullBackup({
+          backupFormat: 'ZAYCHICK_FULL_BACKUP_V1',
+          data: {
+            joints: INITIAL_JOINTS,
+            projectLineList: INITIAL_PROJECT_LINELIST,
+            lrvCatalog: INITIAL_LRV_CATALOG,
+            welders: WELDERS_DIRECTORY,
+            techCards: INITIAL_TECH_CARDS,
+            weldingMaterials: INITIAL_WELDING_MATERIALS,
+            facilityGeoOverrides: {},
+            templates: INITIAL_COLUMN_TEMPLATES,
+            activeTemplateId: activeTemplateId,
+          },
+        })
+        .then(() => fetchServerDbState(true))
+        .catch((err) => {
+          setLastSyncError(
+            err instanceof Error
+              ? `Ошибка загрузки демо-базы на сервер: ${err.message}`
+              : 'Ошибка загрузки демо-базы на сервер'
+          );
+        })
+        .finally(() => setIsDbSyncing(false));
+    }
   };
 
   const [isLoadingDemoDataset, setIsLoadingDemoDataset] = useState(false);
@@ -789,6 +850,26 @@ export default function App() {
             className="px-3 py-1 rounded bg-slate-950 text-white hover:bg-slate-800 text-xs font-bold transition-colors cursor-pointer shrink-0 ml-4"
           >
             Войти в систему
+          </button>
+        </div>
+      )}
+
+      {lastSyncError && (
+        <div
+          role="alert"
+          className="bg-rose-50 border-b border-rose-200 text-rose-900 px-4 py-2 text-xs font-semibold flex items-center justify-between gap-3 shadow-2xs no-print"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span className="truncate">{lastSyncError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLastSyncError(null)}
+            aria-label="Скрыть уведомление об ошибке"
+            className="p-1 rounded hover:bg-rose-100 text-rose-700 hover:text-rose-950 transition-colors cursor-pointer shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}

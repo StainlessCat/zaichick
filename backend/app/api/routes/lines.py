@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
@@ -38,8 +38,8 @@ from app.services.readiness_service import (
 router = APIRouter(prefix="/api/lines", tags=["lines"])
 
 
-def _line_to_out(line: ProjectLine, all_joints: list[WeldJoint]) -> ProjectLineOut:
-    status_dc = compute_line_list_item_status(line, all_joints)
+def _line_to_out(line: ProjectLine, line_joints: list[WeldJoint]) -> ProjectLineOut:
+    status_dc = compute_line_list_item_status(line, line_joints)
     out = ProjectLineOut.model_validate(line)
     out.computed_status = LineCompletionStatusOut(
         is_completed=status_dc.is_completed,
@@ -83,16 +83,30 @@ async def list_lines(
                 ProjectLine.rd_code.ilike(pat),
             )
         )
-    lines = list(
-        (await session.execute(stmt.order_by(ProjectLine.sort_order.asc(), ProjectLine.line_number.asc())))
-        .scalars()
-        .all()
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await session.execute(count_stmt)).scalar_one()
+
+    paged_stmt = (
+        stmt.order_by(ProjectLine.sort_order.asc(), ProjectLine.line_number.asc())
+        .limit(limit)
+        .offset(offset)
     )
-    all_joints = list((await session.execute(select(WeldJoint))).scalars().all())
-    total = len(lines)
-    page = lines[offset : offset + limit]
+    page = list((await session.execute(paged_stmt)).scalars().all())
+
+    if page:
+        page_line_ids = [line.id for line in page]
+        page_uids = [line.unique_line_id for line in page if line.unique_line_id]
+        joint_filters = [WeldJoint.line_id.in_(page_line_ids)]
+        if page_uids:
+            joint_filters.append(WeldJoint.unique_line_id.in_(page_uids))
+        page_joints = list(
+            (await session.execute(select(WeldJoint).where(or_(*joint_filters)))).scalars().all()
+        )
+    else:
+        page_joints = []
+
     return PaginatedResponse(
-        items=[_line_to_out(line, all_joints) for line in page],
+        items=[_line_to_out(line, page_joints) for line in page],
         total=total,
         limit=limit,
         offset=offset,
@@ -138,8 +152,21 @@ async def get_line_ndt_progress(
     ).scalar_one_or_none()
     if line is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Линия не найдена.")
-    all_joints = list((await session.execute(select(WeldJoint))).scalars().all())
-    prog = calculate_line_ndt_progress(all_joints, line)
+    line_joints = list(
+        (
+            await session.execute(
+                select(WeldJoint).where(
+                    or_(
+                        WeldJoint.line_id == line.id,
+                        WeldJoint.unique_line_id == line.unique_line_id,
+                    )
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    prog = calculate_line_ndt_progress(line_joints, line)
     return LineNdtProgressOut(**dataclasses.asdict(prog))
 
 
@@ -310,28 +337,27 @@ async def delete_line(
     if line is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Линия не найдена.")
 
-    linked_joints = list(
+    linked_count = int(
         (
             await session.execute(
-                select(WeldJoint).where(
+                select(func.count(WeldJoint.id)).where(
                     or_(
                         WeldJoint.line_id == line.id,
                         WeldJoint.unique_line_id == line.unique_line_id,
                     )
                 )
             )
-        )
-        .scalars()
-        .all()
+        ).scalar_one()
+        or 0
     )
-    if linked_joints:
+    if linked_count > 0:
         raise_referential_integrity_error(
             "project_line",
             (
                 f"Невозможно удалить линию «{line.unique_line_id}»: "
-                f"к ней привязаны сварные стыки ({len(linked_joints)} шт.)."
+                f"к ней привязаны сварные стыки ({linked_count} шт.)."
             ),
-            references_count=len(linked_joints),
+            references_count=linked_count,
         )
 
     old_snap = orm_snapshot(line, ProjectLineOut)

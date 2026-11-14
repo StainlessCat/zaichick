@@ -4514,6 +4514,18 @@ test('Аудит copilotAnalysis п. 1: Запрет синтетических 
   assert.equal(gostRowWithout.col14, 'н/п', 'Твердость без явной записи не должна выдумывать ТВ-010');
   assert.equal(gostRowWithout.col17, 'н/п', 'Ферритная фаза без явной записи не должна выдумывать ФФ-010');
 
+  // Графа 8 ГОСТ: при отсутствии материала в справочнике СМ не должен подставляться фиктивный сертификат '10492-26'
+  const gostRowNoMatCatalog = formatGost32569JournalRow(jointWithoutReports, 0, []);
+  assert.equal(
+    gostRowNoMatCatalog.col8.includes('10492-26'),
+    false,
+    'При отсутствии сертификата в справочнике СМ не должен подставляться синтетический номер 10492-26'
+  );
+  assert.equal(
+    gostRowNoMatCatalog.col8,
+    'Св-08Г2С Ø2.0, ГОСТ 2246-70\nУОНИ-13/55 Ø3.0, ГОСТ 9466-75'
+  );
+
   // Стык с РЕАЛЬНЫМИ номерами заключений лаборатории
   const jointWithReports: WeldJoint = {
     ...jointWithoutReports,

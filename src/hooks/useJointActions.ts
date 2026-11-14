@@ -191,6 +191,13 @@ export function useJointActions(params: UseJointActionsParams) {
     ]
   );
 
+  const notifyError = useCallback(
+    (msg: string) => {
+      setLastSyncError(msg);
+    },
+    [setLastSyncError]
+  );
+
   const handleApiFailure = useCallback(
     (
       err: unknown,
@@ -201,7 +208,9 @@ export function useJointActions(params: UseJointActionsParams) {
         if (err.status === 401) {
           setIsAuthenticated(false);
           setIsLoginModalOpen(true);
-          alert('[Срок действия сессии истёк]\nСессия не активна или завершена. Выполните повторный вход в систему.');
+          notifyError(
+            'Срок действия сессии истёк: сессия не активна или завершена. Выполните повторный вход в систему.'
+          );
           return;
         }
         if (err.status === 409 && err.conflict && fallbackJoint) {
@@ -211,18 +220,20 @@ export function useJointActions(params: UseJointActionsParams) {
           return;
         }
         if (err.status === 409) {
-          alert(`[Ошибка уникальности / конфликта версий]\n${err.message}`);
+          notifyError(`Ошибка уникальности / конфликта версий: ${err.message}`);
           return;
         }
         if (err.status === 403) {
-          alert(`[Недостаточно прав (RBAC)]\nУ вашей учётной записи нет прав для выполнения этой операции: ${err.message}`);
+          notifyError(
+            `Недостаточно прав (RBAC): у вашей учётной записи нет прав для выполнения этой операции (${err.message})`
+          );
           return;
         }
         if (err.status === 422) {
-          alert(`[Отказ сервера: нарушение доменных правил]\n\n${err.message}`);
+          notifyError(`Отказ сервера (нарушение доменных правил): ${err.message}`);
           return;
         }
-        alert(`[Ошибка сервера PostgreSQL HTTP ${err.status}]\n${err.message}`);
+        notifyError(`Ошибка сервера PostgreSQL HTTP ${err.status}: ${err.message}`);
         return;
       }
 
@@ -230,12 +241,12 @@ export function useJointActions(params: UseJointActionsParams) {
         err instanceof Error ? err.message : 'Сетевой сбой при обращении к серверу';
       setIsDbConnected(false);
       setPendingSyncCount((c) => c + 1);
-      setLastSyncError('Сервер FastAPI недоступен (порт 8000)');
-      alert(
-        `[Сервер FastAPI недоступен]\n${msg}\n\nПроверьте, что backend запущен на порту 8000 и СУБД PostgreSQL доступна. Изменение не сохранено.`
+      setLastSyncError(
+        `Сервер FastAPI недоступен (${msg}). Проверьте запуск backend на порту 8000.`
       );
     },
     [
+      notifyError,
       setActiveConflict,
       setIsAuthenticated,
       setIsDbConnected,
@@ -280,7 +291,7 @@ export function useJointActions(params: UseJointActionsParams) {
     ) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nСохранение невозможно: требуется авторизация на сервере FastAPI.');
+        notifyError('Сохранение невозможно: требуется авторизация на сервере FastAPI.');
         return;
       }
       const existing = joints.find((j) => j.id === rawSavedJoint.id);
@@ -357,12 +368,15 @@ export function useJointActions(params: UseJointActionsParams) {
       currentUser,
       ensureLineIdForJoint,
       handleApiFailure,
+      isAuthenticated,
       joints,
+      notifyError,
       passportBaseJointRef,
       passportModalMode,
       recordUndoSnapshot,
       setAuditLogs,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       userPermissions.canCreateOrDeleteJoints,
     ]
   );
@@ -481,7 +495,7 @@ export function useJointActions(params: UseJointActionsParams) {
       const staleVersion = baseSnapshot.version ?? 1;
 
       if (!UUID_RE.test(baseSnapshot.id)) {
-        alert(
+        notifyError(
           'Стенд OCC 409 работает с записями, сохранёнными в PostgreSQL. Войдите в систему и выберите серверный стык.'
         );
         return;
@@ -538,6 +552,7 @@ export function useJointActions(params: UseJointActionsParams) {
       currentUser.fullName,
       handleApiFailure,
       joints,
+      notifyError,
       setActiveConflict,
       setIsDbSyncing,
       setIsServerDbModalOpen,
@@ -548,7 +563,7 @@ export function useJointActions(params: UseJointActionsParams) {
     async (jointToDelete: WeldJoint) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nУдаление невозможно: требуется авторизация на сервере FastAPI.');
+        notifyError('Удаление невозможно: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Удаление стыка № ${jointToDelete.jointNumber}`);
@@ -570,9 +585,13 @@ export function useJointActions(params: UseJointActionsParams) {
     },
     [
       bumpRevisionMeta,
+      currentUser.login,
       handleApiFailure,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setJoints,
       setSelectedJointIds,
     ]
@@ -582,7 +601,7 @@ export function useJointActions(params: UseJointActionsParams) {
     async (newJoints: WeldJoint[], sourceFileName: string) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nИмпорт невозможен: требуется авторизация на сервере FastAPI.');
+        notifyError('Импорт невозможен: требуется авторизация на сервере FastAPI.');
         return;
       }
       recordUndoSnapshot(`Импорт стыков из Excel (${newJoints.length} шт.)`);
@@ -614,10 +633,10 @@ export function useJointActions(params: UseJointActionsParams) {
           }, 60);
         }
         if (errors.length > 0) {
-          alert(
-            `Импортировано ${createdJoints.length} из ${newJoints.length} стыков.\nОшибки валидации сервера:\n• ${errors
-              .slice(0, 8)
-              .join('\n• ')}`
+          notifyError(
+            `Импортировано ${createdJoints.length} из ${newJoints.length} стыков. Ошибки валидации: ${errors
+              .slice(0, 4)
+              .join(' | ')}`
           );
         }
       } finally {
@@ -627,11 +646,15 @@ export function useJointActions(params: UseJointActionsParams) {
     [
       bumpRevisionMeta,
       currentUser.fullName,
+      currentUser.login,
       ensureLineIdForJoint,
       isApplyingServerStateRef,
+      isAuthenticated,
+      notifyError,
       recordUndoSnapshot,
       setAuditLogs,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setJoints,
     ]
   );
@@ -640,7 +663,7 @@ export function useJointActions(params: UseJointActionsParams) {
     (baseJoint?: WeldJoint) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nСоздание стыков невозможно: требуется авторизация на сервере FastAPI.');
+        notifyError('Создание стыков невозможно: требуется авторизация на сервере FastAPI.');
         return;
       }
       const refJoint = baseJoint || filteredAndSortedJoints[0] || joints[0];
@@ -673,14 +696,23 @@ export function useJointActions(params: UseJointActionsParams) {
         joint: draftSupp,
       });
     },
-    [filteredAndSortedJoints, joints, setPassportModal, siteWeatherTempC]
+    [
+      currentUser.login,
+      filteredAndSortedJoints,
+      isAuthenticated,
+      joints,
+      notifyError,
+      setIsLoginModalOpen,
+      setPassportModal,
+      siteWeatherTempC,
+    ]
   );
 
   const handleApplyBulkUpdate = useCallback(
     async (rawPatch: Partial<WeldJoint>) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        alert('[Ошибка доступа]\nМассовое редактирование невозможно: требуется авторизация на сервере FastAPI.');
+        notifyError('Массовое редактирование невозможно: требуется авторизация на сервере FastAPI.');
         return;
       }
       const patch = filterBulkPatchByRole(rawPatch, currentUser);
@@ -738,11 +770,14 @@ export function useJointActions(params: UseJointActionsParams) {
       currentUser,
       handleApiFailure,
       isApplyingServerStateRef,
+      isAuthenticated,
       joints,
+      notifyError,
       recordUndoSnapshot,
       selectedJointIds,
       setAuditLogs,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setJoints,
       setSelectedJointIds,
     ]
@@ -751,7 +786,7 @@ export function useJointActions(params: UseJointActionsParams) {
   const handleBulkDeleteSelectedJoints = useCallback(async () => {
     if (!isAuthenticated || !currentUser.login) {
       setIsLoginModalOpen(true);
-      alert('[Ошибка доступа]\nМассовое удаление невозможно: требуется авторизация на сервере FastAPI.');
+      notifyError('Массовое удаление невозможно: требуется авторизация на сервере FastAPI.');
       return;
     }
     if (selectedJointIds.length === 0) return;
@@ -780,13 +815,17 @@ export function useJointActions(params: UseJointActionsParams) {
     }
   }, [
     bumpRevisionMeta,
+    currentUser.login,
     handleApiFailure,
+    isAuthenticated,
     joints,
+    notifyError,
     recordUndoSnapshot,
     selectedJointIds,
     setAuditLogs,
     setConfirmBulkDeleteJoints,
     setIsDbSyncing,
+    setIsLoginModalOpen,
     setJoints,
     setSelectedJointIds,
   ]);

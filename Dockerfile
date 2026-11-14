@@ -57,5 +57,14 @@ EXPOSE 8000
 HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://127.0.0.1:8000/api/health || exit 1
 
-# Запуск миграций и сервера FastAPI
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Запуск миграций, идемпотентный bootstrap первого администратора и запуск сервера FastAPI
+CMD ["sh", "-c", "alembic upgrade head && python -m app.cli.bootstrap_admin && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+# --- ЭТАП 3: Production Frontend & Reverse Proxy (Nginx + собранный SPA) ---
+FROM nginx:alpine AS frontend
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=frontend-builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

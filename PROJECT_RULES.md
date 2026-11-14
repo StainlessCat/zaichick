@@ -9,10 +9,10 @@
 
 | Уровень | Технологии | Назначение / Особенности |
 |---|---|---|
-| **Frontend** | React 18 / 19, TypeScript (Strict Mode), Vite, Tailwind CSS, Lucide React | SPA-архитектура, высокая скорость отклика, строгая типизация интерфейсов `WeldJoint`, `LRVItem`, `ProjectLineItem` и др. |
-| **Backend & СУБД** | Node.js (v22–v26), SQLite 3 (Native WAL via `node:sqlite`), Express/Vite Dev Middleware | Локальная транзакционная СУБД `data/zaychick.sqlite` в режиме WAL (`journal_mode = WAL`, `synchronous = NORMAL`, `busy_timeout = 5000`). Fallback: транзакционный JSON WAL. |
-| **Параллелизм & Синхронизация** | Оптимистическая блокировка (OCC), 3-way Auto-Merge, HTTP 409 | Версионирование каждой записи через `version`, `updatedAt`, `updatedBy`. Автоматическое бесконфликтное слияние независимых полей разных ролей при коллизии. |
-| **Безопасность** | Соленое крипто-хеширование паролей (SHA-256 + salt), сессионные токены, Field-Level RBAC | Никаких паролей в открытом виде; разделение доступа на уровне конкретных полей каждого объекта. |
+| **Frontend** | React 19, TypeScript (Strict Mode), Vite, Tailwind CSS 4, Lucide React | SPA-архитектура, виртуализация реестра (`@tanstack/react-virtual`), строгая типизация интерфейсов `WeldJoint`, `LRVItem`, `ProjectLineItem` и др. |
+| **Backend & СУБД** | Python 3.10+, FastAPI, SQLAlchemy 2.0 (asyncpg / aiosqlite), Alembic, PostgreSQL 16 | Асинхронный REST API (`/api/*`), реляционная СУБД PostgreSQL 16, пул соединений SQLAlchemy, инкрементальные миграции Alembic и утилита переноса из legacy SQLite (`sqlite_migrator.py`). |
+| **Параллелизм & Синхронизация** | Оптимистическая блокировка (OCC), 3-way Auto-Merge, HTTP 409, PostgreSQL `LISTEN/NOTIFY` + SSE | Версионирование каждой записи через `version`, `updatedAt`, `updatedBy`. Push-уведомления в реальном времени через `/api/events/stream` и `pg_notify('zaychick_events')`. |
+| **Безопасность** | Хеширование паролей Argon2id (`pwdlib`), JWT в `HttpOnly` Cookie (`SameSite=Lax`), Field-Level RBAC | Защита от brute-force (`InMemoryLoginRateLimiter`), неизменяемый журнал аудита (`audit_logs`), разделение доступа на уровне ролей и конкретных полей стыка. |
 
 ---
 
@@ -128,7 +128,7 @@ $$\text{EDI} = D_{\text{inch}} \times K_{\text{толщ}}(S)$$
 # 1. Проверка типов TypeScript (Strict)
 npx tsc --noEmit
 
-# 2. Модульные и интеграционные тесты отраслевой логики (36 тестов)
+# 2. Модульные и интеграционные тесты отраслевой логики (50 тестов)
 npm test
 
 # 3. Production-сборка клиентского бандла

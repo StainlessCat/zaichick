@@ -43,15 +43,29 @@ function broadcastDbChange(payload: {
   }
 }
 
+function extractCookieToken(cookieHeader: string | undefined): string | undefined {
+  if (!cookieHeader) return undefined;
+  const parts = cookieHeader.split(';');
+  for (const part of parts) {
+    const [rawKey, ...rawVal] = part.trim().split('=');
+    if (rawKey === 'zaychick_access_token' && rawVal.length > 0) {
+      return decodeURIComponent(rawVal.join('=')).trim();
+    }
+  }
+  return undefined;
+}
+
 /**
- * Извлекает session token из заголовков или тела запроса.
- * Порядок приоритета: x-session-token header > Authorization: Bearer > body.sessionToken
+ * Извлекает session token из заголовков, HttpOnly cookie или тела запроса.
+ * Порядок приоритета: x-session-token header > Authorization: Bearer > Cookie > body.sessionToken
  */
 function extractSessionToken(req: Request): string | undefined {
   const fromHeader = req.headers['x-session-token'] as string | undefined;
   if (fromHeader && fromHeader.trim()) return fromHeader.trim();
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7).trim();
+  const cookieToken = extractCookieToken(req.headers.cookie);
+  if (cookieToken) return cookieToken;
   const queryToken = req.query?.token || req.query?.sessionToken;
   if (typeof queryToken === 'string' && queryToken.trim()) return queryToken.trim();
   return req.body?.sessionToken as string | undefined;
@@ -138,14 +152,57 @@ function requireWriteAuth(req: Request, res: Response, next: NextFunction): void
 
 async function startServer() {
   const app = express();
+  const fastApiTarget = new URL(
+    process.env.FASTAPI_URL || process.env.VITE_API_TARGET || 'http://127.0.0.1:8000'
+  );
 
-  // Глобальный лимит тела запроса: 5 МБ для большинства роутов
-  app.use(express.json({ limit: '5mb' }));
+  // Прозрачное проксирование /api/* на промышленный контур FastAPI (PostgreSQL 16), если он запущен на 127.0.0.1:8000.
+  // Если FastAPI не запущен (например, автономный превью-режим на порту 3000), запросы бесшовно обрабатываются локальным контуром.
+  app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+    if (process.env.DISABLE_FASTAPI_PROXY === 'true') {
+      next();
+      return;
+    }
+    const proxyReq = http.request(
+      {
+        hostname: fastApiTarget.hostname,
+        port: Number(fastApiTarget.port) || 8000,
+        path: req.originalUrl,
+        method: req.method,
+        headers: {
+          ...req.headers,
+          host: fastApiTarget.host,
+        },
+      },
+      (proxyRes) => {
+        res.status(proxyRes.statusCode || 200);
+        for (const [k, v] of Object.entries(proxyRes.headers)) {
+          if (v !== undefined) res.setHeader(k, v);
+        }
+        proxyRes.pipe(res);
+      }
+    );
+
+    proxyReq.on('error', () => {
+      // FastAPI на 8000 недоступен — используем встроенный локальный контур
+      next();
+    });
+
+    if (req.readable && !req.readableEnded) {
+      req.pipe(proxyReq);
+    } else {
+      proxyReq.end();
+    }
+  });
+
+  // Глобальный лимит тела запроса: 20 МБ (поддержка восстановления полных JSON-бэкапов)
+  app.use(express.json({ limit: '20mb' }));
 
   // Эндпоинт проверки работоспособности (Health Check для Docker / Kubernetes / мониторинга)
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({
       status: 'ok',
+      database: 'sqlite_fallback',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
       engine: serverDb.getEngineMetadata().engineName,
@@ -168,7 +225,7 @@ async function startServer() {
     return true;
   };
 
-  // --- АУТЕНТИФИКАЦИЯ И СЕССИОННАЯ БЕЗОПАСНОСТЬ (Proposal 2) ---
+  // --- АУТЕНТИФИКАЦИЯ И СЕССИОННАЯ БЕЗОПАСНОСТЬ (Proposal 2 + FastAPI Cookie Compat) ---
   app.post('/api/auth/login', (req: Request, res: Response) => {
     try {
       const clientIp = (req.ip || req.socket.remoteAddress || 'unknown') as string;
@@ -199,11 +256,20 @@ async function startServer() {
         return;
       }
 
+      const sanitizedUser = result.user
+        ? sanitizeUserAccountForClient(result.user)
+        : undefined;
+      res.setHeader(
+        'Set-Cookie',
+        `zaychick_access_token=${encodeURIComponent(result.session.token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=43200`
+      );
       res.json({
         status: 'ok',
         token: result.session.token,
         session: result.session,
-        user: result.user ? sanitizeUserAccountForClient(result.user) : undefined,
+        user: sanitizedUser,
+        permissions: sanitizedUser ? getUserRolePermissions(sanitizedUser) : {},
+        expires_at: result.session.expiresAt,
       });
     } catch (err: any) {
       res.status(500).json({
@@ -215,10 +281,7 @@ async function startServer() {
 
   app.get('/api/auth/session', (req: Request, res: Response) => {
     try {
-      const authHeader = req.headers.authorization;
-      const token =
-        (req.headers['x-session-token'] as string) ||
-        (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined);
+      const token = extractSessionToken(req);
 
       if (!token) {
         res.status(401).json({
@@ -237,9 +300,26 @@ async function startServer() {
         return;
       }
 
+      const state = serverDb.readFullState();
+      const matchedUser = state.data.userAccounts.find(
+        (u) => u.login.toLowerCase() === session.login.toLowerCase()
+      );
+      const userObj = matchedUser
+        ? sanitizeUserAccountForClient(matchedUser)
+        : {
+            login: session.login,
+            fullName: session.fullName,
+            role: session.role,
+            department: '',
+            sessionNumber: 1,
+          };
+
       res.json({
         status: 'ok',
         session,
+        user: userObj,
+        permissions: getUserRolePermissions(userObj),
+        expires_at: session.expiresAt,
       });
     } catch (err: any) {
       res.status(500).json({
@@ -251,14 +331,15 @@ async function startServer() {
 
   app.post('/api/auth/logout', (req: Request, res: Response) => {
     try {
-      const authHeader = req.headers.authorization;
-      const token =
-        (req.headers['x-session-token'] as string) ||
-        (authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : req.body?.token);
+      const token = extractSessionToken(req) || req.body?.token;
 
       if (token) {
         serverDb.logoutUser(token);
       }
+      res.setHeader(
+        'Set-Cookie',
+        'zaychick_access_token=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0'
+      );
       res.json({ status: 'ok', message: 'Сессия завершена' });
     } catch (err: any) {
       res.status(500).json({
@@ -622,6 +703,160 @@ async function startServer() {
         message: err?.message || 'Внутренняя ошибка при создании бэкапа',
       });
     }
+  });
+
+  // 6b. REST-совместимые маршруты FastAPI для автономного режима (когда порт 8000 не запущен)
+  const paginateArray = <T>(arr: T[], req: Request) => {
+    const limit = Math.max(1, Number(req.query.limit) || 500);
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    return {
+      items: arr.slice(offset, offset + limit),
+      total: arr.length,
+      limit,
+      offset,
+    };
+  };
+
+  app.get('/api/events/stream', requireReadAuth, (req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    const state = serverDb.readFullState();
+    res.write(
+      `event: connected\ndata: ${JSON.stringify({
+        type: 'connected',
+        globalRevision: state.meta.globalRevision,
+      })}\n\n`
+    );
+    sseClients.add(res);
+    req.on('close', () => sseClients.delete(res));
+  });
+
+  app.get('/api/facilities', requireReadAuth, (req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    const names = Array.from(
+      new Set([
+        ...Object.keys(state.data.facilityGeoOverrides || {}),
+        ...state.data.projectLineList.map((l) => l.objectName).filter(Boolean),
+      ])
+    );
+    const items = names.map((name, idx) => {
+      const geo = state.data.facilityGeoOverrides?.[name] || ({} as any);
+      return {
+        id: `fac-${idx + 1}`,
+        name,
+        short_name: name,
+        region: geo.region || '',
+        latitude: geo.latitude ?? 66.53,
+        longitude: geo.longitude ?? 66.6,
+        weather_station: geo.weatherStation || '',
+        rd_codes: [],
+        version: 1,
+      };
+    });
+    res.json(paginateArray(items, req));
+  });
+
+  app.get('/api/lines', requireReadAuth, (req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    res.json(paginateArray(state.data.projectLineList, req));
+  });
+
+  app.get('/api/joints', requireReadAuth, (req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    res.json(paginateArray(state.data.joints, req));
+  });
+
+  app.get('/api/lrv', requireReadAuth, (req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    res.json(paginateArray(state.data.lrvCatalog, req));
+  });
+
+  app.get('/api/naks/welders', requireReadAuth, (req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    res.json(paginateArray(state.data.welders, req));
+  });
+
+  app.get('/api/naks/materials', requireReadAuth, (req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    res.json(paginateArray(state.data.weldingMaterials, req));
+  });
+
+  app.get('/api/naks/inspectors', requireReadAuth, (_req: Request, res: Response) => {
+    res.json([]);
+  });
+
+  app.get('/api/wps', requireReadAuth, (req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    res.json(paginateArray(state.data.techCards, req));
+  });
+
+  app.get('/api/templates', requireReadAuth, (_req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    res.json(state.data.templates || []);
+  });
+
+  app.get('/api/audit-logs', requireReadAuth, (req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.max(1, Number(req.query.page_size) || 150);
+    const start = (page - 1) * pageSize;
+    res.json({
+      items: state.data.auditLogs.slice(start, start + pageSize),
+      total: state.data.auditLogs.length,
+    });
+  });
+
+  app.get('/api/users', requireReadAuth, (_req: Request, res: Response) => {
+    const state = serverDb.readFullState();
+    res.json(state.data.userAccounts.map(sanitizeUserAccountForClient));
+  });
+
+  app.post('/api/imports/restore-backup', requireWriteAuth, (req: Request, res: Response) => {
+    const incomingData = req.body?.data || req.body;
+    const authenticatedSession = (req as any).authenticatedSession;
+    const result = serverDb.syncStateWithOptimisticLock({
+      data: incomingData,
+      forceOverwrite: true,
+      actionLabel: 'Восстановление из JSON-бэкапа',
+      sessionToken: extractSessionToken(req),
+      user: authenticatedSession,
+    });
+    if (result.status !== 'ok') {
+      handleDbMutationError(res, result);
+      return;
+    }
+    res.json({ status: 'ok' });
+  });
+
+  app.post('/api/imports/zero-reset', requireWriteAuth, (req: Request, res: Response) => {
+    const authenticatedSession = (req as any).authenticatedSession;
+    const state = serverDb.readFullState();
+    const result = serverDb.syncStateWithOptimisticLock({
+      data: {
+        joints: [],
+        projectLineList: [],
+        lrvCatalog: [],
+        welders: [],
+        techCards: [],
+        weldingMaterials: [],
+        auditLogs: [],
+        facilityGeoOverrides: {},
+        userAccounts: state.data.userAccounts.slice(0, 1),
+        templates: state.data.templates,
+        activeTemplateId: state.data.activeTemplateId,
+      },
+      forceOverwrite: true,
+      actionLabel: 'Полное обнуление («Чистый лист»)',
+      sessionToken: extractSessionToken(req),
+      user: authenticatedSession,
+    });
+    if (result.status !== 'ok') {
+      handleDbMutationError(res, result);
+      return;
+    }
+    res.json({ status: 'ok' });
   });
 
   // 7. Подключение Vite в режиме разработки или раздача статики в production

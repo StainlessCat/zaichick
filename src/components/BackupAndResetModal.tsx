@@ -29,6 +29,8 @@ import {
   WeldingMaterialCertificate,
   WeldJoint,
 } from '../types/welding';
+import { zaychickApi } from '../api';
+import { getUserRolePermissions } from '../utils/rbac';
 import { formatTimestampDDMMYY } from '../utils/weldingLogic';
 
 export interface FullSystemBackupPayload {
@@ -82,12 +84,6 @@ interface BackupAndResetModalProps {
 }
 
 const LOCAL_SNAPSHOTS_KEY = 'zaychick_local_snapshots_v1';
-const VALID_AUTHOR_KEYS = new Set([
-  'zaychick-zero',
-  'author-reset',
-  'ilchenko.vlad@gmail.com',
-  'zaychick2026',
-]);
 
 export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
   isOpen,
@@ -274,14 +270,24 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
     );
   };
 
-  const handleUnlockAuthorConsole = (e: React.FormEvent) => {
+  const handleUnlockAuthorConsole = async (e: React.FormEvent) => {
     e.preventDefault();
-    const clean = authorKeyInput.trim().toLowerCase();
-    if (VALID_AUTHOR_KEYS.has(clean)) {
+    const isAdmin = getUserRolePermissions(currentUser).category === 'admin';
+    if (!isAdmin || !currentUser.login) {
+      setAuthorError('Доступ разрешён только авторизованному администратору системы.');
+      return;
+    }
+    const clean = authorKeyInput.trim();
+    if (!clean) {
+      setAuthorError('Введите действующий пароль администратора для подтверждения.');
+      return;
+    }
+    try {
+      await zaychickApi.login(currentUser.login, clean);
       setIsAuthorUnlocked(true);
       setAuthorError('');
-    } else {
-      setAuthorError('Неверный мастер-ключ автора. Доступ запрещён.');
+    } catch {
+      setAuthorError('Неверный пароль администратора или сервер авторизации недоступен.');
     }
   };
 
@@ -678,10 +684,10 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
                 >
                   <div className="flex items-center gap-2 font-bold text-slate-900">
                     <Lock className="w-4 h-4 text-[#1e3799]" />
-                    <span>Подтверждение прав Автора</span>
+                    <span>Подтверждение прав Администратора</span>
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Введите мастер-ключ автора или email владельца разработки для разблокировки функции полного обнуления базы данных:
+                    Введите действующий пароль администратора ({currentUser.login || 'admin'}) для разблокировки функции полного обнуления рабочей сессии:
                   </p>
                   {authorError && (
                     <div className="p-2.5 rounded bg-red-50 border border-red-200 text-red-700 font-semibold">
@@ -693,7 +699,7 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
                       type="password"
                       value={authorKeyInput}
                       onChange={(e) => setAuthorKeyInput(e.target.value)}
-                      placeholder="Мастер-ключ автора..."
+                      placeholder="Пароль администратора..."
                       autoFocus
                       className="flex-1 px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
                     />

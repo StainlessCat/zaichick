@@ -2,7 +2,7 @@
 name = "zaychick-backend"
 version = "2.0.0"
 description = "ZAYCHICK 2.0 — Welding & NDT Quality Control Backend (FastAPI + PostgreSQL)"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -36,5 +36,5 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["app/tests"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py310"
 line-length = 100

@@ -40,6 +40,7 @@ async def _override_get_db_session():
         try:
             yield session
             if session.is_active and session.in_transaction():
+                await event_bus.flush_pg_notifications(session)
                 await session.commit()
             await event_bus.dispatch_pending_session_events(session)
         except Exception:
@@ -227,6 +228,48 @@ async def test_event_bus_deduplication_and_multi_worker_pubsub():
         delivered2 = await bus.publish_local(e1, deduplicate=True)
         assert delivered2 is False
         assert q.qsize() == 1  # Queue size unchanged
+    finally:
+        bus._subscribers.discard(q)
+
+
+@pytest.mark.asyncio
+async def test_pg_notify_committed_and_not_left_uncommitted():
+    """Verify that pg_notify is flushed inside the transaction or explicitly committed post-commit."""
+    bus = SseEventBus(max_recent_ids=100)
+    q = asyncio.Queue()
+    bus._subscribers.add(q)
+    try:
+        # Case A: Pre-commit flush + commit leaves session clean (not in dangling transaction)
+        async with _session_factory() as session:
+            session.info["pending_sse_events"] = []
+            await bus.emit_delta(
+                session,
+                event="joint_created",
+                entity_type="joint",
+                entity_id="j-tx-1",
+                version=1,
+            )
+            await bus.flush_pg_notifications(session)
+            await session.commit()
+            dispatched = await bus.dispatch_pending_session_events(session)
+            assert len(dispatched) == 1
+            assert session.in_transaction() is False
+            assert q.qsize() == 1
+
+        # Case B: Post-commit dispatch without prior flush commits the pg_notify statement
+        async with _session_factory() as session:
+            session.info["pending_sse_events"] = []
+            await bus.emit_delta(
+                session,
+                event="joint_updated",
+                entity_type="joint",
+                entity_id="j-tx-2",
+                version=2,
+            )
+            dispatched2 = await bus.dispatch_pending_session_events(session)
+            assert len(dispatched2) == 1
+            assert session.in_transaction() is False
+            assert q.qsize() == 2
     finally:
         bus._subscribers.discard(q)
 

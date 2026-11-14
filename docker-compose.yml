@@ -56,9 +56,12 @@ services:
       retries: 3
       start_period: 10s
 
-  # 3. Web-сервер и Reverse Proxy (Nginx + собранный SPA)
+  # 3. Web-сервер и Reverse Proxy (Nginx + собранный SPA в /usr/share/nginx/html)
   frontend:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: frontend
     container_name: zaychick_web
     restart: unless-stopped
     depends_on:
@@ -69,9 +72,6 @@ services:
       - "3000:80"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    # Копирование собранного UI из бэкенд-образа
-    volumes_from:
-      - backend:ro
 
 volumes:
   postgres_data:

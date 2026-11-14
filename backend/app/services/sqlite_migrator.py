@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
@@ -1177,3 +1177,312 @@ async def migrate_sqlite_to_postgres(
         return report
     finally:
         conn.close()
+
+
+def _populate_in_memory_sqlite_from_backup(
+    conn: sqlite3.Connection,
+    data: dict[str, Any],
+) -> None:
+    """Populate an in-memory SQLite database from a ZAYCHICK_FULL_BACKUP_V1 data dictionary."""
+    conn.executescript(
+        """
+        CREATE TABLE facility_geo (
+            object_name TEXT PRIMARY KEY,
+            version INTEGER DEFAULT 1,
+            payload_json TEXT
+        );
+        CREATE TABLE project_linelist (
+            id TEXT PRIMARY KEY,
+            sort_order INTEGER DEFAULT 0,
+            unique_line_id TEXT,
+            rd_code TEXT,
+            object_name TEXT,
+            version INTEGER DEFAULT 1,
+            payload_json TEXT
+        );
+        CREATE TABLE lrv_catalog (
+            id TEXT PRIMARY KEY,
+            sort_order INTEGER DEFAULT 0,
+            lrv_code TEXT,
+            rd_code TEXT,
+            object_name TEXT,
+            version INTEGER DEFAULT 1,
+            payload_json TEXT
+        );
+        CREATE TABLE welders (
+            stamp TEXT PRIMARY KEY,
+            sort_order INTEGER DEFAULT 0,
+            version INTEGER DEFAULT 1,
+            payload_json TEXT
+        );
+        CREATE TABLE tech_cards (
+            id TEXT PRIMARY KEY,
+            sort_order INTEGER DEFAULT 0,
+            number TEXT,
+            version INTEGER DEFAULT 1,
+            payload_json TEXT
+        );
+        CREATE TABLE welding_materials (
+            id TEXT PRIMARY KEY,
+            sort_order INTEGER DEFAULT 0,
+            version INTEGER DEFAULT 1,
+            payload_json TEXT
+        );
+        CREATE TABLE weld_joints (
+            id TEXT PRIMARY KEY,
+            sort_order INTEGER DEFAULT 0,
+            joint_number TEXT,
+            unique_line_id TEXT,
+            rd_code TEXT,
+            object_name TEXT,
+            version INTEGER DEFAULT 1,
+            updated_at TEXT,
+            updated_by TEXT,
+            payload_json TEXT
+        );
+        CREATE TABLE db_meta (
+            id INTEGER PRIMARY KEY,
+            templates_json TEXT,
+            active_template_id TEXT
+        );
+        """
+    )
+
+    geo_overrides = data.get("facilityGeoOverrides")
+    if isinstance(geo_overrides, dict):
+        for obj_name, geo_payload in geo_overrides.items():
+            if not str(obj_name).strip() or not isinstance(geo_payload, dict):
+                continue
+            normalized_geo = {
+                **geo_payload,
+                "lat": geo_payload.get("latitude", geo_payload.get("lat")),
+                "lon": geo_payload.get("longitude", geo_payload.get("lon")),
+            }
+            conn.execute(
+                "INSERT OR REPLACE INTO facility_geo (object_name, version, payload_json) VALUES (?, ?, ?)",
+                (
+                    str(obj_name).strip(),
+                    int(geo_payload.get("version") or 1),
+                    json.dumps(normalized_geo, ensure_ascii=False),
+                ),
+            )
+
+    for idx, line in enumerate(data.get("projectLineList") or []):
+        if not isinstance(line, dict):
+            continue
+        lid = str(line.get("id") or f"line-{idx + 1}")
+        conn.execute(
+            "INSERT OR REPLACE INTO project_linelist (id, sort_order, unique_line_id, rd_code, object_name, version, payload_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                lid,
+                idx,
+                str(line.get("uniqueLineId") or ""),
+                str(line.get("rdCode") or ""),
+                str(line.get("objectName") or ""),
+                int(line.get("version") or 1),
+                json.dumps(line, ensure_ascii=False),
+            ),
+        )
+
+    for idx, item in enumerate(data.get("lrvCatalog") or []):
+        if not isinstance(item, dict):
+            continue
+        iid = str(item.get("id") or f"lrv-{idx + 1}")
+        conn.execute(
+            "INSERT OR REPLACE INTO lrv_catalog (id, sort_order, lrv_code, rd_code, object_name, version, payload_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                iid,
+                idx,
+                str(item.get("lrvCode") or ""),
+                str(item.get("rdCode") or ""),
+                str(item.get("objectName") or ""),
+                int(item.get("version") or 1),
+                json.dumps(item, ensure_ascii=False),
+            ),
+        )
+
+    for idx, welder in enumerate(data.get("welders") or []):
+        if not isinstance(welder, dict):
+            continue
+        stamp = str(welder.get("stamp") or "").strip()
+        if not stamp:
+            continue
+        conn.execute(
+            "INSERT OR REPLACE INTO welders (stamp, sort_order, version, payload_json) VALUES (?, ?, ?, ?)",
+            (
+                stamp,
+                idx,
+                int(welder.get("version") or 1),
+                json.dumps(welder, ensure_ascii=False),
+            ),
+        )
+
+    for idx, tc in enumerate(data.get("techCards") or []):
+        if not isinstance(tc, dict):
+            continue
+        tc_id = str(tc.get("id") or f"tc-{idx + 1}")
+        conn.execute(
+            "INSERT OR REPLACE INTO tech_cards (id, sort_order, number, version, payload_json) VALUES (?, ?, ?, ?, ?)",
+            (
+                tc_id,
+                idx,
+                str(tc.get("number") or ""),
+                int(tc.get("version") or 1),
+                json.dumps(tc, ensure_ascii=False),
+            ),
+        )
+
+    for idx, mat in enumerate(data.get("weldingMaterials") or []):
+        if not isinstance(mat, dict):
+            continue
+        mat_id = str(mat.get("id") or f"mat-{idx + 1}")
+        conn.execute(
+            "INSERT OR REPLACE INTO welding_materials (id, sort_order, version, payload_json) VALUES (?, ?, ?, ?)",
+            (
+                mat_id,
+                idx,
+                int(mat.get("version") or 1),
+                json.dumps(mat, ensure_ascii=False),
+            ),
+        )
+
+    for idx, joint in enumerate(data.get("joints") or []):
+        if not isinstance(joint, dict):
+            continue
+        jid = str(joint.get("id") or f"joint-{idx + 1}")
+        conn.execute(
+            "INSERT OR REPLACE INTO weld_joints "
+            "(id, sort_order, joint_number, unique_line_id, rd_code, object_name, version, updated_at, updated_by, payload_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                jid,
+                idx,
+                str(joint.get("jointNumber") or ""),
+                str(joint.get("uniqueLineId") or ""),
+                str(joint.get("rdCode") or ""),
+                str(joint.get("objectName") or ""),
+                int(joint.get("version") or 1),
+                str(joint.get("updatedAt") or ""),
+                str(joint.get("updatedBy") or "backup_restore"),
+                json.dumps(joint, ensure_ascii=False),
+            ),
+        )
+
+    templates = data.get("templates")
+    active_tpl_id = str(data.get("activeTemplateId") or "")
+    if isinstance(templates, list) or active_tpl_id:
+        conn.execute(
+            "INSERT OR REPLACE INTO db_meta (id, templates_json, active_template_id) VALUES (1, ?, ?)",
+            (
+                json.dumps(templates if isinstance(templates, list) else [], ensure_ascii=False),
+                active_tpl_id,
+            ),
+        )
+    conn.commit()
+
+
+async def _clear_domain_tables(session: AsyncSession) -> None:
+    """Clear domain entities in FK-safe order prior to full restore or zero-reset."""
+    await session.execute(delete(WeldJoint))
+    await session.execute(delete(LrvItem))
+    await session.execute(delete(ProjectLine))
+    await session.execute(delete(WelderNaksCert))
+    await session.execute(delete(Welder))
+    await session.execute(delete(TechCardPreheatRule))
+    await session.execute(delete(TechCard))
+    await session.execute(delete(WeldingMaterial))
+    await session.execute(delete(CustomWeatherStation))
+    await session.execute(delete(FacilityRdCode))
+    await session.execute(delete(Facility))
+    await session.execute(delete(ColumnTemplate))
+    await session.execute(
+        delete(AppSetting).where(AppSetting.key == "active_template_id")
+    )
+    await session.flush()
+
+
+async def restore_backup_payload_to_postgres(
+    payload: dict[str, Any],
+    session: AsyncSession,
+) -> dict[str, Any]:
+    """
+    Replace domain tables in PostgreSQL with the contents of a ZAYCHICK_FULL_BACKUP_V1 JSON backup.
+    """
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    if not isinstance(data, dict):
+        raise ValueError("Некорректная структура JSON-бэкапа (отсутствует объект data).")
+
+    await _clear_domain_tables(session)
+
+    report = MigrationReport(sqlite_path="json_backup_restore", dry_run=False)
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    try:
+        _populate_in_memory_sqlite_from_backup(conn, data)
+
+        fac_by_name: dict[str, Facility] = {}
+        lines_by_uid: dict[str, ProjectLine] = {}
+        lrv_by_key: dict[tuple[str, str], LrvItem] = {}
+        welders_by_stamp: dict[str, Welder] = {}
+        tc_by_num: dict[str, TechCard] = {}
+        materials_by_legacy: dict[str, WeldingMaterial] = {}
+        existing_joint_keys: set[tuple[uuid.UUID, str]] = set()
+        existing_legacy_ids: set[str] = set()
+        existing_tpl_ids: set[str] = set()
+        existing_audit_ids: set[uuid.UUID] = set()
+
+        _migrate_facilities(conn, session, fac_by_name, report)
+        _migrate_lines(conn, session, fac_by_name, lines_by_uid, report)
+        _migrate_lrv(conn, session, fac_by_name, lrv_by_key, report)
+        _migrate_welding_tech(
+            conn, session, welders_by_stamp, tc_by_num, materials_by_legacy, report
+        )
+        _migrate_joints_with_quarantine(
+            conn,
+            session,
+            fac_by_name,
+            lines_by_uid,
+            lrv_by_key,
+            tc_by_num,
+            existing_joint_keys,
+            existing_legacy_ids,
+            report,
+        )
+        _migrate_templates_and_audit(
+            conn, session, existing_tpl_ids, existing_audit_ids, report
+        )
+        await session.flush()
+        return report.to_dict()
+    finally:
+        conn.close()
+
+
+async def zero_reset_postgres(
+    session: AsyncSession,
+    *,
+    keep_only_admin: bool,
+    current_user: User,
+) -> dict[str, Any]:
+    """
+    Clear all domain tables («Чистый лист») in PostgreSQL and optionally deactivate demo users.
+    """
+    await _clear_domain_tables(session)
+
+    deactivated_users = 0
+    if keep_only_admin:
+        all_users = (await session.execute(select(User))).scalars().all()
+        for u in all_users:
+            if u.id != current_user.id and u.role != RoleEnum.ADMIN and u.is_active:
+                u.is_active = False
+                u.version += 1
+                deactivated_users += 1
+
+    await session.flush()
+    return {
+        "status": "ok",
+        "keep_only_admin": keep_only_admin,
+        "deactivated_users": deactivated_users,
+    }
+
