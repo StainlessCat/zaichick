@@ -20,6 +20,7 @@ import {
   TechCardItem,
   WeldingType,
 } from '../../types/welding';
+import { Button, FormField, Input, Select } from '../ui';
 
 export interface TechCardsDirectoryViewProps {
   techCards: TechCardItem[];
@@ -259,114 +260,103 @@ export const TechCardsDirectoryView: React.FC<TechCardsDirectoryViewProps> = ({
 
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
-        <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
-          <div>
-            <h3 className="text-xs font-bold text-slate-900">
-              Технологические карты на сварку (ТК) — Параметры свариваемых элементов, сварочные материалы и режимы подогрева
-            </h3>
-            <p className="text-[11px] text-slate-500">
-              В Паспорте стыка выбор ТК выполняется с автоматической фильтрацией по геометрии, типу соединения и типам элементов
-            </p>
-          </div>
-          {canEdit && (
-            <button
-              type="button"
-              onClick={() => openTcModal(null)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e3799] text-white hover:bg-[#15276e] text-xs font-semibold transition-colors cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Добавить технологическую карту (ТК)</span>
-            </button>
-          )}
-        </div>
+    <div className="space-y-3">
+      <div className="bg-white rounded-xl border border-slate-200 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
+        <h3 className="text-xs font-bold text-slate-900">
+          Технологические карты на сварку (ТК)
+        </h3>
+        {canEdit && (
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => openTcModal(null)}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Добавить ТК</span>
+          </Button>
+        )}
+      </div>
 
-        {/* Панель поиска и фильтрации ТК */}
-        <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-              <Filter className="w-4 h-4 text-[#1e3799]" />
-              <span>Поиск и подбор технологических карт (ТК)</span>
-            </div>
-            <div className="text-[11px] text-slate-500 font-medium">
-              Найдено:{' '}
-              <span className="font-bold text-[#1e3799]">
-                {filteredTechCards.length}
-              </span>{' '}
-              из {techCards.length} ТК
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {/* Поиск по тексту */}
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input
+      {/* Панель поиска и фильтрации ТК (strict-industrial-ui) */}
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5">
+        <div className="flex flex-wrap items-end gap-2">
+          {/* Поиск по тексту */}
+          <FormField label="Поиск">
+            <div className="relative w-48 sm:w-56">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск по шифру, названию, стали..."
-                className="w-full pl-8 pr-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1e3799] focus:bg-white"
+                placeholder="Шифр, сталь, марка..."
+                className="pl-8 w-full"
               />
             </div>
+          </FormField>
 
-            {/* Фильтр по типу соединения */}
-            <div>
-              <select
-                value={filterJointKind}
-                onChange={(e) => setFilterJointKind(e.target.value as 'ALL' | JointKind)}
-                className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#1e3799] focus:bg-white font-medium cursor-pointer"
-              >
-                <option value="ALL">Все типы соединений (стыковое / угловое)</option>
-                <option value="Стыковое">Стыковое соединение</option>
-                <option value="Угловое">Угловое соединение</option>
-              </select>
-            </div>
+          {/* Фильтр по типу соединения */}
+          <FormField label="Тип соединения">
+            <Select
+              value={filterJointKind}
+              onChange={(e) => setFilterJointKind(e.target.value as 'ALL' | JointKind)}
+              className="w-36 sm:w-44"
+            >
+              <option value="ALL">Все типы</option>
+              <option value="Стыковое">Стыковое</option>
+              <option value="Угловое">Угловое</option>
+            </Select>
+          </FormField>
 
-            {/* Фильтр по типу свариваемых элементов */}
-            <div>
-              <select
-                value={filterElementCombination}
-                onChange={(e) =>
-                  setFilterElementCombination(e.target.value as 'ALL' | ElementCombination)
-                }
-                className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#1e3799] focus:bg-white font-medium cursor-pointer"
-              >
-                <option value="ALL">Все типы элементов</option>
-                <option value="Труба+Труба">Труба + Труба</option>
-                <option value="Труба+СДТ">Труба + СДТ (отвод, переход, тройник)</option>
-                <option value="СДТ+СДТ">СДТ + СДТ (фасонные детали)</option>
-                <option value="Труба+ЗРА">Труба + ЗРА (кран, задвижка)</option>
-                <option value="СДТ+ЗРА">СДТ + ЗРА</option>
-              </select>
-            </div>
+          {/* Фильтр по типу свариваемых элементов */}
+          <FormField label="Тип элементов">
+            <Select
+              value={filterElementCombination}
+              onChange={(e) =>
+                setFilterElementCombination(e.target.value as 'ALL' | ElementCombination)
+              }
+              className="w-40 sm:w-48"
+            >
+              <option value="ALL">Все элементы</option>
+              <option value="Труба+Труба">Труба + Труба</option>
+              <option value="Труба+СДТ">Труба + СДТ</option>
+              <option value="СДТ+СДТ">СДТ + СДТ</option>
+              <option value="Труба+ЗРА">Труба + ЗРА</option>
+              <option value="СДТ+ЗРА">СДТ + ЗРА</option>
+            </Select>
+          </FormField>
 
-            {/* Поиск по диаметру Ø, мм */}
-            <div className="flex items-center gap-1.5">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={filterDiameterMm}
-                  onChange={(e) => setFilterDiameterMm(e.target.value)}
-                  placeholder="Диаметр Ø, мм (напр. 219)"
-                  className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#1e3799] focus:bg-white font-mono"
-                />
-              </div>
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={handleResetFilters}
-                  title="Сбросить все фильтры"
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-xs inline-flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Сброс</span>
-                </button>
-              )}
-            </div>
-          </div>
+          {/* Поиск по диаметру Ø, мм */}
+          <FormField label="Диаметр (Ø, мм)">
+            <Input
+              type="text"
+              value={filterDiameterMm}
+              onChange={(e) => setFilterDiameterMm(e.target.value)}
+              placeholder="57, 219, 1420"
+              className="w-28 font-mono"
+            />
+          </FormField>
+
+          {hasActiveFilters && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleResetFilters}
+              title="Сбросить все фильтры"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Сбросить</span>
+            </Button>
+          )}
         </div>
+
+        <div className="text-[11px] text-slate-500 font-medium pb-1.5 whitespace-nowrap">
+          Найдено:{' '}
+          <span className="font-bold text-[#1e3799]">
+            {filteredTechCards.length}
+          </span>{' '}
+          из {techCards.length} ТК
+        </div>
+      </div>
 
         {filteredTechCards.length === 0 ? (
           <div className="p-8 text-center bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
@@ -541,7 +531,6 @@ export const TechCardsDirectoryView: React.FC<TechCardsDirectoryViewProps> = ({
             ))}
           </div>
         )}
-      </div>
 
       {tcModal.isOpen && (
         <div

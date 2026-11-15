@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { NdtDeficitStatementResult } from '../../utils/laboratoryLogic';
 import { LaboratorySubTab } from './types';
+import { Button, FormField, Input, Select } from '../ui';
 
 interface LabHeaderProps {
   selectedObjectName: string;
@@ -53,53 +54,50 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
   return (
     <>
       {/* Шапка раздела «Лаборатория НК» и сквозная панель KPI */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs text-slate-500">
+      <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mb-1">
               <Radiation className="w-3.5 h-3.5 text-[#1e3799] shrink-0" />
               <span>Лаборатория НК</span>
               <span aria-hidden="true">·</span>
-              <span>
+              <span className="font-semibold text-slate-700">
                 {selectedObjectName === 'ALL'
-                  ? 'Все объекты строительства'
+                  ? 'Все объекты'
                   : selectedObjectName}
               </span>
-              <span aria-hidden="true">·</span>
-              <span>СТО Газпром 15-1.1-002-2023 / ГОСТ 32569-2013</span>
             </div>
-            <h2
-              className="text-lg sm:text-xl font-bold text-slate-900"
-              style={{ fontFamily: '"Jost", sans-serif' }}
-            >
-              Заявки на НК от ПТО, дефицитная ведомость по квотам и выпуск заключений
+            <h2 className="text-base sm:text-lg font-bold text-slate-900">
+              Контроль качества и выдача заключений НК
             </h2>
           </div>
 
-          {/* Селектор Шифра РД и экспорт дефицитной ведомости */}
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={selectedRdCode}
-              onChange={(e) => onSelectRdCode(e.target.value)}
-              aria-label="Фильтр по шифру РД"
-              className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#1e3799] cursor-pointer"
-            >
-              <option value="ALL">Все шифры РД</option>
-              {availableRdCodes.map((r) => (
-                <option key={r.code} value={r.code}>
-                  {r.code}
-                </option>
-              ))}
-            </select>
+          {/* Селектор Шифра РД и экспорт дефицитной ведомости (strict-industrial-ui) */}
+          <div className="flex flex-wrap items-end gap-2">
+            <FormField label="Шифр РД" className="w-48 sm:w-56">
+              <Select
+                value={selectedRdCode}
+                onChange={(e) => onSelectRdCode(e.target.value)}
+                className="w-full truncate font-medium text-slate-800"
+              >
+                <option value="ALL">Все шифры РД</option>
+                {availableRdCodes.map((r) => (
+                  <option key={r.code} value={r.code}>
+                    {r.code}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
 
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={onExportDeficitCsv}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-300 hover:border-[#1e3799] text-slate-700 hover:text-[#1e3799] text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              title="Выгрузить дефицитную ведомость в CSV"
             >
-              <Download className="w-3.5 h-3.5" />
-              <span>Выгрузить ведомость (.CSV)</span>
-            </button>
+              <Download className="w-3.5 h-3.5 text-[#1e3799]" />
+              <span>Экспорт ведомости (.CSV)</span>
+            </Button>
           </div>
         </div>
 
@@ -242,18 +240,18 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
           <div className="flex items-center gap-2 flex-1 max-w-md min-w-[240px]">
             <div className="relative flex-1">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
+              <Input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск по шифру РД, линии, № стыка, клейму или № заключения..."
-                className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-slate-50 border border-slate-300 text-xs text-slate-900 focus:outline-none focus:bg-white focus:border-[#1e3799]"
+                placeholder="Шифр, линия, стык, клеймо..."
+                className="w-full pl-8 pr-7"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>

@@ -675,12 +675,6 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = (props) =
         uniqueObjectNames={uniqueObjectNames}
         uniqueRdCodes={uniqueRdCodes}
         uniqueContours={uniqueContours}
-        selectedObjectName={selectedObjectName}
-        availableObjectOptions={availableObjectOptions}
-        onSelectObjectName={(newObj) => {
-          onSelectObjectName(newObj);
-          onSelectRdCode('ALL');
-        }}
         selectedRdCode={selectedRdCode}
         availableRdCodes={availableFilterRdCodes}
         onSelectRdCode={onSelectRdCode}

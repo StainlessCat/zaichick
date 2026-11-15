@@ -23,6 +23,7 @@ import {
   useResizableColumns,
   ColumnResizeHandle,
 } from '../../utils/useResizableColumns';
+import { Button } from '../ui';
 
 export interface WeldersDirectoryViewProps {
   welders: WelderProfile[];
@@ -246,33 +247,28 @@ export const WeldersDirectoryView: React.FC<WeldersDirectoryViewProps> = ({
     <div className="space-y-4">
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-slate-50/70">
-            <div>
-              <h3 className="text-xs font-bold text-slate-900">
-                Реестр аттестованных сварщиков (НАКС), допускных листов и бригадных клейм
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                При выборе клейма (или нескольких сварщиков / бригадного клейма) в Паспорте стыка ФИО и номера удостоверений подтягиваются автоматически
-              </p>
-            </div>
+          <div className="px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-slate-50/70">
+            <h3 className="text-xs font-bold text-slate-900">
+              Аттестованные сварщики (НАКС) и бригадные клейма
+            </h3>
             {canEdit && (
               <div className="flex items-center gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => openWelderModal(null, true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e3799] text-[#1e3799] bg-sky-50 hover:bg-sky-100 text-xs font-semibold transition-colors"
                 >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>Создать бригадное клеймо</span>
-                </button>
-                <button
+                  <Users className="w-3.5 h-3.5 text-[#1e3799]" />
+                  <span>Бригадное клеймо</span>
+                </Button>
+                <Button
                   type="button"
+                  variant="primary"
                   onClick={() => openWelderModal(null, false)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e3799] text-white hover:bg-[#15276e] text-xs font-semibold transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Добавить сварщика</span>
-                </button>
+                </Button>
               </div>
             )}
           </div>

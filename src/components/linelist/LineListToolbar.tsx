@@ -31,10 +31,7 @@ export interface LineListToolbarProps {
   uniqueRdCodes: string[];
   uniqueContours: string[];
 
-  // Контекст открытого проекта (strict-industrial-ui)
-  selectedObjectName?: string;
-  availableObjectOptions?: string[];
-  onSelectObjectName?: (name: string) => void;
+  // Фильтр по шифру РД в рамках выбранного в меню объекта
   selectedRdCode?: string;
   availableRdCodes?: string[];
   onSelectRdCode?: (code: string) => void;
@@ -67,9 +64,6 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
   uniqueObjectNames,
   uniqueRdCodes,
   uniqueContours,
-  selectedObjectName,
-  availableObjectOptions,
-  onSelectObjectName,
   selectedRdCode,
   availableRdCodes,
   onSelectRdCode,
@@ -124,27 +118,10 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
 
       {/* Верхняя панель управления разделом «Проект (лайнлист)» (strict-industrial-ui) */}
       <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5">
-        {/* Левая группа: Контекст проекта (Объект, Шифр РД) и метеостанция */}
+        {/* Левая группа: Шифр РД и метеостанция */}
         <div className="flex flex-wrap items-end gap-2">
-          {availableObjectOptions && onSelectObjectName && (
-            <FormField label="Объект" className="w-48 sm:w-56">
-              <Select
-                value={selectedObjectName || 'ALL'}
-                onChange={(e) => onSelectObjectName(e.target.value)}
-                className="w-full truncate font-medium text-slate-800"
-              >
-                <option value="ALL">Все объекты (сводный режим)</option>
-                {availableObjectOptions.map((obj) => (
-                  <option key={obj} value={obj}>
-                    {obj}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-          )}
-
           {availableRdCodes && onSelectRdCode && (
-            <FormField label="Шифр РД" className="w-44 sm:w-52">
+            <FormField label="Шифр РД" className="w-48 sm:w-56">
               <Select
                 value={selectedRdCode || 'ALL'}
                 onChange={(e) => onSelectRdCode(e.target.value)}

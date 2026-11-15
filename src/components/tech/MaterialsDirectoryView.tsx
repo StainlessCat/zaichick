@@ -23,6 +23,7 @@ import {
   useResizableColumns,
   ColumnResizeHandle,
 } from '../../utils/useResizableColumns';
+import { Button } from '../ui';
 
 export interface MaterialsDirectoryViewProps {
   materials: WeldingMaterialCertificate[];
@@ -157,24 +158,19 @@ export const MaterialsDirectoryView: React.FC<MaterialsDirectoryViewProps> = ({
     <div className="space-y-4">
 
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-slate-50/70">
-            <div>
-              <h3 className="text-xs font-bold text-slate-900">
-                Перечень сварочных материалов с номерами сертификатов и датами проведения входного контроля (ВК)
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                Все даты проведения входного контроля отображаются строго в формате ДД.ММ.ГГ
-              </p>
-            </div>
+          <div className="px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-slate-50/70">
+            <h3 className="text-xs font-bold text-slate-900">
+              Сварочные материалы и сертификаты входного контроля (ВК)
+            </h3>
             {canEdit && (
-              <button
+              <Button
                 type="button"
+                variant="primary"
                 onClick={() => openMatModal(null)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e3799] text-white hover:bg-[#15276e] text-xs font-semibold transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Добавить сварочный материал</span>
-              </button>
+                <span>Добавить материал</span>
+              </Button>
             )}
           </div>
 

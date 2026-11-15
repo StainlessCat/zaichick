@@ -19,6 +19,7 @@ import {
   exportLrvCatalogToExcel,
   readLrvCatalogFromExcelFile,
 } from '../utils/excelUtils';
+import { Button } from './ui';
 import {
   detectLrvConnectionType,
   detectLrvElementType,
@@ -497,25 +498,25 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
         </div>
       )}
 
-      {/* Верхняя панель каталога ЛРВ */}
-      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 shadow-2xs flex flex-wrap items-center justify-between gap-2">
+      {/* Верхняя панель каталога ЛРВ (strict-industrial-ui) */}
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5">
         {/* Переключатель фильтрации по статусу позиций ЛРВ */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+        <div className="h-8 box-border flex items-center p-0.5 bg-slate-100 rounded-md border border-slate-300">
           <button
             type="button"
             onClick={() => setStatusFilter('all')}
-            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+            className={`h-full box-border px-2.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
               statusFilter === 'all'
                 ? 'bg-white text-[#1e3799] shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Все позиции ({catalog.length})
+            Все ({catalog.length})
           </button>
           <button
             type="button"
             onClick={() => setStatusFilter('active')}
-            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+            className={`h-full box-border px-2.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
               statusFilter === 'active'
                 ? 'bg-white text-emerald-800 shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -526,7 +527,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
           <button
             type="button"
             onClick={() => setStatusFilter('superseded')}
-            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+            className={`h-full box-border px-2.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
               statusFilter === 'superseded'
                 ? 'bg-white text-amber-800 shadow-2xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -536,26 +537,28 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 justify-end">
-          <button
+        <div className="flex flex-wrap items-end gap-1.5 justify-end">
+          <Button
             type="button"
+            variant="secondary"
             onClick={() => exportLrvCatalogToExcel(filteredCatalog, false)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors"
+            title="Выгрузить каталог ЛРВ в Excel"
           >
             <Download className="w-3.5 h-3.5 text-[#1e3799]" />
-            <span>Выгрузить каталог (.xlsx)</span>
-          </button>
+            <span>Выгрузить (.xlsx)</span>
+          </Button>
 
           {canEdit && (
             <>
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={() => exportLrvCatalogToExcel([], true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors"
+                title="Скачать пустой шаблон для заполнения"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
                 <span>Шаблон Excel</span>
-              </button>
+              </Button>
 
               <input
                 ref={fileInputRef}
@@ -563,25 +566,29 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
                 accept=".xlsx,.xls,.csv"
                 onChange={handleExcelFileUpload}
                 className="hidden"
+                aria-label="Загрузить из Excel"
               />
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[#1e3799]/30 bg-[#e8f1fc] text-[#1e3799] text-xs font-semibold hover:bg-sky-100 transition-colors"
+                title="Импорт позиций ЛРВ из файла Excel"
               >
-                <Upload className="w-4 h-4" />
-                <span>Загрузить из Excel (.xlsx / .csv)</span>
-              </button>
+                <Upload className="w-3.5 h-3.5 text-[#1e3799]" />
+                <span>Импорт Excel</span>
+              </Button>
 
               {onDeleteLrvItems &&
                 selectedLrvIds.length > 0 &&
                 (confirmBulkDeleteLrv ? (
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-red-300 bg-red-50 text-xs">
-                    <span className="font-bold text-red-800">
-                      Удалить {selectedLrvIds.length} поз. ЛРВ?
+                  <div className="flex items-center gap-1 h-8 box-border px-2 rounded-md border border-red-300 bg-red-50 text-xs">
+                    <span className="font-bold text-red-800 text-[11px] whitespace-nowrap">
+                      Удалить {selectedLrvIds.length} поз.?
                     </span>
-                    <button
+                    <Button
                       type="button"
+                      variant="danger"
+                      className="h-6 px-2 text-[11px]"
                       onClick={() => {
                         const itemsToDelete = catalog.filter((i) =>
                           selectedLrvIds.includes(i.id)
@@ -591,7 +598,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
                         );
                         if (usedItems.length > 0) {
                           setBulkDeleteBlockMessage(
-                            `Из ${itemsToDelete.length} выбранных позиций ${usedItems.length} поз. (например, код «${usedItems[0]?.lrvCode}») уже привязаны к сварным стыкам. Согласно нормативным требованиям целостности данных, их физическое удаление запрещено. Аннулируйте эти позиции индивидуально с указанием реквизитов письма о замене.`
+                            `Из ${itemsToDelete.length} выбранных позиций ${usedItems.length} поз. уже привязаны к сварным стыкам. Физическое удаление запрещено.`
                           );
                           setConfirmBulkDeleteLrv(false);
                           return;
@@ -600,41 +607,43 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
                         setSelectedLrvIds([]);
                         setConfirmBulkDeleteLrv(false);
                       }}
-                      className="px-2 py-0.5 rounded bg-red-600 text-white font-bold hover:bg-red-700"
                     >
-                      Да, удалить
-                    </button>
-                    <button
+                      Да
+                    </Button>
+                    <Button
                       type="button"
+                      variant="secondary"
+                      className="h-6 px-2 text-[11px]"
                       onClick={() => setConfirmBulkDeleteLrv(false)}
-                      className="px-2 py-0.5 rounded bg-white border border-slate-300 text-slate-700"
                     >
-                      Отмена
-                    </button>
+                      Нет
+                    </Button>
                   </div>
                 ) : (
-                  <button
+                  <Button
                     type="button"
+                    variant="danger"
                     onClick={() => setConfirmBulkDeleteLrv(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 transition-colors"
+                    title="Удалить выбранные позиции каталога ЛРВ"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>Удалить материалы ({selectedLrvIds.length})</span>
-                  </button>
+                    <span>Удалить ({selectedLrvIds.length})</span>
+                  </Button>
                 ))}
 
-              <button
+              <Button
                 type="button"
+                variant="primary"
                 onClick={() => {
                   setEditingLrvId(null);
                   setIsCategoryManuallySet(false);
                   setShowAddForm((v) => !v);
                 }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] transition-colors"
+                title="Добавить позицию детали трубопровода"
               >
-                <Plus className="w-4 h-4" />
-                <span>Добавить позицию ЛРВ</span>
-              </button>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Добавить позицию</span>
+              </Button>
             </>
           )}
         </div>

@@ -2,10 +2,10 @@
 
 @layer base {
   :root {
-    --font-display: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-mono: 'IBM Plex Mono', monospace;
-    --font-century-gothic: 'Jost', 'Century Gothic', CenturyGothic, AppleGothic, sans-serif;
+    --font-display: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+    --font-century-gothic: 'Jost', 'Century Gothic', CenturyGothic, AppleGothic, 'Segoe UI', sans-serif;
     --brand-navy: #1e3799;
     --brand-navy-dark: #15276e;
     --brand-sky: #e8f1fc;

@@ -103,9 +103,9 @@ export const JournalRdSelector: React.FC<JournalRdSelectorProps> = ({
         onClick={() => setIsRdOpen((prev) => !prev)}
         aria-haspopup="listbox"
         aria-expanded={isRdOpen}
-        className={`inline-flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors cursor-pointer select-none min-w-[280px] sm:min-w-[420px] max-w-[92vw] sm:max-w-[480px] ${
+        className={`h-8 leading-none box-border inline-flex items-center justify-between gap-2 px-3 rounded-md border text-xs font-medium transition-colors cursor-pointer select-none min-w-[240px] sm:min-w-[340px] max-w-[92vw] sm:max-w-[420px] ${
           currentRdCode !== 'ALL'
-            ? 'border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] font-semibold shadow-2xs'
+            ? 'border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] font-semibold'
             : 'border-slate-300 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900'
         }`}
         title={

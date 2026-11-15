@@ -25,6 +25,7 @@ import {
   useResizableColumns,
   ColumnResizeHandle,
 } from '../utils/useResizableColumns';
+import { Button } from './ui';
 
 interface ReadinessReportViewProps {
   joints: WeldJoint[];
@@ -250,10 +251,10 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
           </button>
         </div>
       )}
-      {/* Шапка отчёта и переключатель условий группировки */}
-      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3">
+      {/* Шапка отчёта и переключатель условий группировки (strict-industrial-ui) */}
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5">
         <div
-          className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200"
+          className="h-8 box-border flex items-center p-0.5 bg-slate-100 rounded-md border border-slate-300"
           role="group"
           aria-label="Условия формирования отчётности"
         >
@@ -265,9 +266,9 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
                 setCondition(opt.id);
                 setColumnFilters({});
               }}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+              className={`h-full box-border px-2.5 rounded text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
                 condition === opt.id
-                  ? 'bg-[#1e3799] text-white shadow-xs'
+                  ? 'bg-[#1e3799] text-white shadow-2xs'
                   : 'text-slate-700 hover:text-slate-900'
               }`}
             >
@@ -276,35 +277,38 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-end gap-1.5">
           {Object.keys(columnFilters).length > 0 && (
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setColumnFilters({})}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-50 border border-sky-200 text-xs font-semibold text-[#1e3799] hover:bg-sky-100"
+              title="Сбросить фильтры"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Сбросить фильтры ({Object.keys(columnFilters).length})</span>
-            </button>
+              <span>Сброс ({Object.keys(columnFilters).length})</span>
+            </Button>
           )}
 
-          <button
+          <Button
             type="button"
+            variant="secondary"
             onClick={handleExportReportXlsx}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 whitespace-nowrap cursor-pointer"
+            title="Выгрузить отчёт готовности в Excel"
           >
-            <Download className="w-4 h-4" />
-            <span>Выгрузить (.XLSX)</span>
-          </button>
+            <Download className="w-3.5 h-3.5 text-[#1e3799]" />
+            <span>Экспорт (.XLSX)</span>
+          </Button>
 
-          <button
+          <Button
             type="button"
+            variant="primary"
             onClick={handleExportReport}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] whitespace-nowrap cursor-pointer"
+            title="Выгрузить сводку готовности в CSV"
           >
-            <Download className="w-4 h-4" />
-            <span>Выгрузить сводку (.CSV)</span>
-          </button>
+            <Download className="w-3.5 h-3.5" />
+            <span>Экспорт (.CSV)</span>
+          </Button>
         </div>
       </div>
 

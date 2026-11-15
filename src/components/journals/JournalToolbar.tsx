@@ -7,6 +7,7 @@ import {
   Printer,
 } from 'lucide-react';
 import { JournalStandard, WeatherDailyItem, WeatherStationItem } from '../../types/welding';
+import { Button, FormField } from '../ui';
 import { JournalLineSelector } from './JournalLineSelector';
 import { JournalRdSelector } from './JournalRdSelector';
 import { JournalLineOption, JournalRdOption, LineWeldingAlert } from './types';
@@ -65,81 +66,83 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
   onApplyWeatherTemp,
 }) => {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2.5 no-print">
-      {/* Селекторы шифра РД и линии, и переключатель нормативной формы */}
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5 no-print">
+      {/* Левая группа: селекторы РД, линии, форма стандарта и метеомодуль */}
+      <div className="flex flex-wrap items-end gap-2">
         {/* 1. Выбор шифра РД */}
-        <JournalRdSelector
-          currentRdCode={currentRdCode}
-          rdOptions={rdOptions}
-          selectedObjectName={selectedObjectName}
-          onSelectRd={onSelectRd}
-        />
+        <FormField label="Шифр РД">
+          <JournalRdSelector
+            currentRdCode={currentRdCode}
+            rdOptions={rdOptions}
+            selectedObjectName={selectedObjectName}
+            onSelectRd={onSelectRd}
+          />
+        </FormField>
 
         {/* 2. Выбор линии */}
-        <JournalLineSelector
-          selectedLineKey={selectedLineKey}
-          activeLineDisplayLabel={activeLineDisplayLabel}
-          availableLines={availableLines}
-          currentRdCode={currentRdCode}
-          selectedObjectName={selectedObjectName}
-          relevantJointsCount={relevantJointsCount}
-          onSelectLine={onSelectLine}
-        />
+        <FormField label="Линия">
+          <JournalLineSelector
+            selectedLineKey={selectedLineKey}
+            activeLineDisplayLabel={activeLineDisplayLabel}
+            availableLines={availableLines}
+            currentRdCode={currentRdCode}
+            selectedObjectName={selectedObjectName}
+            relevantJointsCount={relevantJointsCount}
+            onSelectLine={onSelectLine}
+          />
+        </FormField>
 
-        {/* Оповещение: выбранная линия заварена не полностью (иконка в первом блоке) */}
+        {/* Оповещение: выбранная линия заварена не полностью */}
         {lineWeldingAlert && !lineWeldingAlert.isFullyWelded && (
           <div
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold shadow-2xs select-none"
-            title={`Внимание: выбранная линия заварена не полностью!\n• Всего стыков на линии: ${lineWeldingAlert.total}\n• Сварено: ${lineWeldingAlert.welded}\n• Не заварено: ${lineWeldingAlert.unweldedCount}${
-              lineWeldingAlert.unweldedJointNumbers.length > 0
-                ? ` (№: ${lineWeldingAlert.unweldedJointNumbers.slice(0, 10).join(', ')}${lineWeldingAlert.unweldedJointNumbers.length > 10 ? '...' : ''})`
-                : ''
-            }`}
+            className="h-8 box-border inline-flex items-center gap-1.5 px-2.5 rounded-md bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold select-none shrink-0"
+            title={`Линия заварена не полностью: ${lineWeldingAlert.welded} из ${lineWeldingAlert.total} стыков`}
           >
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span className="whitespace-nowrap font-medium">
-              Линия не заварена ({lineWeldingAlert.welded}/{lineWeldingAlert.total})
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="whitespace-nowrap font-medium text-[11px]">
+              Не заварено ({lineWeldingAlert.welded}/{lineWeldingAlert.total})
             </span>
           </div>
         )}
 
-        <div className="h-5 w-px bg-slate-200 hidden sm:block mx-0.5" />
+        <div className="h-5 w-px bg-slate-200 hidden lg:block mx-0.5" />
 
         {/* 3. Переключатель нормативной формы журнала */}
-        <div
-          className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200"
-          role="group"
-          aria-label="Выбор нормативной формы журнала"
-        >
-          <button
-            type="button"
-            onClick={() => onSwitchStandard('СТО Газпром 15-1.1-002-2023')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-              standard === 'СТО Газпром 15-1.1-002-2023'
-                ? 'bg-[#1e3799] text-white shadow-xs'
-                : 'text-slate-700 hover:text-slate-900'
-            }`}
+        <FormField label="Форма журнала">
+          <div
+            className="h-8 box-border flex items-center p-0.5 bg-slate-100 rounded-md border border-slate-300"
+            role="group"
+            aria-label="Выбор нормативной формы журнала"
           >
-            Форма СТО Газпром 15-1.1-002-2023 (49 граф)
-          </button>
-          <button
-            type="button"
-            onClick={() => onSwitchStandard('ГОСТ 32569-2013')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
-              standard === 'ГОСТ 32569-2013'
-                ? 'bg-[#1e3799] text-white shadow-xs'
-                : 'text-slate-700 hover:text-slate-900'
-            }`}
-          >
-            Форма ГОСТ 32569-2013 (17 граф)
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => onSwitchStandard('СТО Газпром 15-1.1-002-2023')}
+              className={`h-full box-border px-2.5 rounded text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                standard === 'СТО Газпром 15-1.1-002-2023'
+                  ? 'bg-[#1e3799] text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              СТО Газпром (49 граф)
+            </button>
+            <button
+              type="button"
+              onClick={() => onSwitchStandard('ГОСТ 32569-2013')}
+              className={`h-full box-border px-2.5 rounded text-[11px] font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                standard === 'ГОСТ 32569-2013'
+                  ? 'bg-[#1e3799] text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-900'
+              }`}
+            >
+              ГОСТ 32569 (17 граф)
+            </button>
+          </div>
+        </FormField>
 
-        {/* 4. Метеомодуль: выбор метеостанции и просмотр температур (strict-industrial-ui) */}
+        {/* 4. Метеомодуль (strict-industrial-ui) */}
         {weatherStations && onSelectWeatherStation && (
           <>
-            <div className="h-5 w-px bg-slate-200 hidden sm:block mx-0.5" />
+            <div className="h-5 w-px bg-slate-200 hidden lg:block mx-0.5" />
             <WeatherStationWidget
               selectedStationId={weatherStationId}
               stations={weatherStations}
@@ -154,36 +157,38 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
         )}
       </div>
 
-      {/* Экспорт и печать */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
+      {/* Правая группа: Экспорт и печать */}
+      <div className="flex flex-wrap items-end gap-1.5">
+        <Button
           type="button"
+          variant="primary"
           onClick={onExportXlsx}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
+          title="Выгрузить журнал сварочных работ в Excel"
         >
-          <FileSpreadsheet className="w-4 h-4" />
+          <FileSpreadsheet className="w-3.5 h-3.5" />
           <span>Выгрузить (.XLSX)</span>
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
+          variant="secondary"
           onClick={onExportCsv}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e3799]/30 bg-[#f0f5fc] text-[#1e3799] text-xs font-semibold hover:bg-sky-100 transition-colors whitespace-nowrap cursor-pointer"
+          title="Экспорт в CSV"
         >
-          <Download className="w-4 h-4" />
+          <Download className="w-3.5 h-3.5" />
           <span>.CSV</span>
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
+          variant="secondary"
           onClick={onPrintOrExportPdfA3}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap cursor-pointer shadow-2xs"
-          title="Скачать готовый PDF-лист формата А3 Альбомная и вызвать диалог печати"
+          title="Печать или экспорт листа формата А3"
         >
-          <Printer className="w-4 h-4 text-[#1e3799]" />
+          <Printer className="w-3.5 h-3.5 text-[#1e3799]" />
           <FileText className="w-3.5 h-3.5 text-slate-500" />
-          <span>Печать / PDF (А3 Альбомная)</span>
-        </button>
+          <span>Печать / PDF (А3)</span>
+        </Button>
       </div>
     </div>
   );

@@ -14,8 +14,8 @@ export const FormField: React.FC<FormFieldProps> = ({
   title,
 }) => {
   return (
-    <div className={`flex flex-col justify-end ${className}`} title={title}>
-      <label className="text-[11px] font-semibold text-slate-700 whitespace-nowrap truncate mb-1 leading-none select-none">
+    <div className={`flex flex-col justify-end ${className}`} title={title || label}>
+      <label className="block h-4 leading-4 text-xs font-semibold text-slate-700 whitespace-nowrap truncate mb-1 select-none">
         {label}
       </label>
       {children}

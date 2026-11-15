@@ -9,6 +9,7 @@ import {
 import { useResizableColumns } from '../utils/useResizableColumns';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import { Button, Input, Select } from './ui';
 
 interface AuditHistoryViewProps {
   logs?: AuditLogEntry[];
@@ -137,85 +138,88 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5">
         <div>
           {isAdmin && (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-xs font-semibold text-[#1e3799]">
+            <span className="inline-flex items-center gap-1.5 px-2.5 h-8 box-border rounded-md bg-indigo-50 border border-indigo-200 text-xs font-semibold text-[#1e3799]">
               <ShieldCheck className="w-3.5 h-3.5" />
               <span>Режим администратора</span>
             </span>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Кнопки смены пароля администратора и очистки журнала аудита отображаются СТРОГО только при входе в качестве администратора */}
+        <div className="flex flex-wrap items-end gap-1.5">
           {isAdmin && onOpenAdminPasswordModal && (
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={onOpenAdminPasswordModal}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-50 border border-indigo-200 text-xs font-semibold text-[#1e3799] hover:bg-indigo-100 transition-colors cursor-pointer"
               title="Изменить пароль учётной записи администратора"
             >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Сменить пароль админа</span>
-            </button>
+              <Lock className="w-3.5 h-3.5 text-[#1e3799]" />
+              <span>Пароль админа</span>
+            </Button>
           )}
+
           {isAdmin && onClearAuditLog && (
             !confirmClear ? (
-              <button
+              <Button
                 type="button"
+                variant="danger"
                 disabled={logs.length === 0}
                 onClick={() => setConfirmClear(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-50 border border-red-200 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-45 disabled:pointer-events-none transition-colors cursor-pointer"
-                title="Полная очистка журнала аудита (доступно только администратору)"
+                title="Очистить журнал аудита"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Очистить журнал аудита ({logs.length})</span>
-              </button>
+                <span>Очистить ({logs.length})</span>
+              </Button>
             ) : (
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-50 border border-red-300">
-                <span className="text-xs font-semibold text-red-800">
-                  Очистить все записи ({logs.length})?
+              <div className="flex items-center gap-1 h-8 box-border px-2 rounded-md bg-red-50 border border-red-300">
+                <span className="text-xs font-semibold text-red-800 whitespace-nowrap">
+                  Очистить ({logs.length})?
                 </span>
-                <button
+                <Button
                   type="button"
+                  variant="danger"
+                  className="h-6 px-2 text-[11px]"
                   onClick={() => {
                     onClearAuditLog();
                     setConfirmClear(false);
                     setColumnFilters({});
                   }}
-                  className="px-2.5 py-1 rounded bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition-colors cursor-pointer"
                 >
-                  Да, очистить
-                </button>
-                <button
+                  Да
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  className="h-6 px-2 text-[11px]"
                   onClick={() => setConfirmClear(false)}
-                  className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-100 transition-colors cursor-pointer"
                 >
-                  Отмена
-                </button>
+                  Нет
+                </Button>
               </div>
             )
           )}
 
           {Object.keys(columnFilters).length > 0 && (
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setColumnFilters({})}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-sky-50 border border-sky-200 text-xs font-semibold text-[#1e3799] hover:bg-sky-100"
+              title="Сбросить фильтры столбцов"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Сбросить фильтры столбцов ({Object.keys(columnFilters).length})</span>
-            </button>
+              <span>Сброс ({Object.keys(columnFilters).length})</span>
+            </Button>
           )}
 
-          <select
+          <Select
             value={opFilter}
             onChange={(e) => setOpFilter(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-xs font-medium text-slate-700"
+            className="w-48"
           >
-            <option value="ALL">Все типы операций ({logs.length})</option>
+            <option value="ALL">Все операции ({logs.length})</option>
             <option value="single_edit">Одиночная правка</option>
             <option value="bulk_edit">Массовое редактирование</option>
             <option value="create_joint">Добавление стыков</option>
@@ -225,16 +229,16 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
             <option value="user_created">Создание пользователей</option>
             <option value="user_modified">Изменение прав / ролей</option>
             <option value="user_deleted">Удаление пользователей</option>
-          </select>
+          </Select>
 
-          <div className="relative w-72">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
+          <div className="relative w-64">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <Input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск по ФИО, линии, стыку, полю..."
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+              placeholder="ФИО, линия, стык, поле..."
+              className="w-full pl-8"
             />
           </div>
         </div>
