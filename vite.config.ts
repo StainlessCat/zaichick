@@ -1,6 +1,7 @@
+/// <reference types="vitest/config" />
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig(() => {
   return {
@@ -10,6 +11,11 @@ export default defineConfig(() => {
         // import.meta.dirname — стандарт ESM, рекомендован Vite 6+
         '@': import.meta.dirname,
       },
+    },
+    test: {
+      globals: true,
+      environment: 'node',
+      include: ['src/**/*.{test,spec}.{ts,tsx}'],
     },
     build: {
       chunkSizeWarningLimit: 1500,
