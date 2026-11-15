@@ -5,6 +5,7 @@ import type {
   WeldJoint,
 } from '../../types/welding';
 import {
+  bulkUpdateJointsTemperaturesFromArchive,
   deriveFacilitiesFromLineList,
   fetchAmbientTemperatureAuto,
   resolveFacilityDefaultLocation,
@@ -190,32 +191,23 @@ export function useFacilityWeatherState({
           message: 'У объекта нет загруженного архива наблюдений метеостанции',
         };
       }
-      const archive = fac.weatherArchive;
-      let count = 0;
       recordUndoSnapshot(
         `Массовое обновление температур стыков объекта ${facilityName} по метеостанции`
       );
-      setJoints((prev) =>
-        prev.map((j) => {
-          if (j.objectName !== facilityName) return j;
-          if (
-            j.weldingDate &&
-            archive[j.weldingDate] !== undefined &&
-            archive[j.weldingDate].trim() !== ''
-          ) {
-            count++;
-            return {
-              ...j,
-              ambientTemp: archive[j.weldingDate],
-              weatherSource: fac.weatherStation || 'Метеостанция объекта',
-            };
-          }
-          return j;
-        })
-      );
+      let updatedCount = 0;
+      setJoints((prev) => {
+        const res = bulkUpdateJointsTemperaturesFromArchive(
+          prev,
+          facilityName,
+          fac.weatherArchive,
+          fac.weatherStation
+        );
+        updatedCount = res.updatedCount;
+        return res.updatedJoints;
+      });
       return {
-        updatedCount: count,
-        message: `Успешно обновлено ${count} стыков по фактическим наблюдениям станции`,
+        updatedCount,
+        message: `Успешно обновлено ${updatedCount} стыков по фактическим наблюдениям станции`,
       };
     },
     [derivedFacilities, recordUndoSnapshot, setJoints]

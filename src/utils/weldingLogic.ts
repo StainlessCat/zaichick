@@ -33,4 +33,5 @@ export * from './normativeValidation';
 export * from './ndtQuotas';
 export * from './linelistUtils';
 export * from './weatherArchiveUtils';
+export * from './weatherLogic';
 export { ROSGIDROMET_STATIONS, ROSHIDROMET_STATIONS } from '../data/rosgidrometStations';
