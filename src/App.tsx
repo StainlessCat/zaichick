@@ -958,28 +958,9 @@ export const App: React.FC = () => {
       />
 
       <AppMainContent
-        activeSection={activeSection}
-        setActiveSection={setActiveSection}
-        selectedObjectName={selectedObjectName}
-        setSelectedObjectName={setSelectedObjectName}
-        selectedRdCode={selectedRdCode}
-        setSelectedRdCode={setSelectedRdCode}
-        joints={joints}
         scopedJoints={filters.scopedJoints}
         filteredAndSortedJoints={filters.filteredAndSortedJoints}
-        projectLineList={projectLineList}
-        lrvCatalog={lrvCatalog}
-        welders={welders}
-        techCards={techCards}
-        weldingMaterials={weldingMaterials}
-        derivedFacilities={derivedFacilities}
-        auditLogs={auditLogs}
-        labRequests={labRequests}
-        currentUser={currentUser}
-        userPermissions={userPermissions}
         dynamicInspectors={dynamicInspectors}
-        isDbConnected={isDbConnected}
-        pendingSyncCount={pendingSyncCount}
         isLoadingDemoDataset={isLoadingDemoDataset}
         onLoadKharasaveyDemo={handleLoadKharasaveyDemo}
         selectedJointIds={filters.selectedJointIds}
@@ -1049,10 +1030,8 @@ export const App: React.FC = () => {
         isBulkEditOpen={filters.isBulkEditOpen}
         onCloseBulkEdit={() => filters.setIsBulkEditOpen(false)}
         selectedJoints={joints.filter((j) => filters.selectedJointIds.includes(j.id))}
-        welders={welders}
         dynamicInspectors={dynamicInspectors}
         currentFacility={currentFacility}
-        currentUser={currentUser}
         onApplyBulkUpdate={jointActions.handleApplyBulkUpdate}
         passportModal={filters.passportModal}
         onClosePassportModal={() =>
@@ -1062,15 +1041,6 @@ export const App: React.FC = () => {
             joint: null,
           })
         }
-        allJoints={joints}
-        derivedFacilities={derivedFacilities}
-        projectLineList={projectLineList}
-        lrvCatalog={lrvCatalog}
-        techCards={techCards}
-        weldingMaterials={weldingMaterials}
-        auditLogs={auditLogs}
-        selectedObjectName={selectedObjectName}
-        selectedRdCode={selectedRdCode}
         onSaveJointFromPassport={jointActions.handleSaveJointFromPassport}
         onNavigateJoint={(target) =>
           filters.setPassportModal((prev) => ({
@@ -1088,10 +1058,6 @@ export const App: React.FC = () => {
         activeLocationFacility={activeLocationFacility}
         onSaveFacilityLocation={dirActions.handleSaveFacilityLocation}
         onBulkUpdateJointsTemperaturesFromStation={handleBulkUpdateJointsTemperaturesFromStation}
-        isLoginModalOpen={isLoginModalOpen}
-        onCloseLoginModal={() => setIsLoginModalOpen(false)}
-        userAccounts={userAccounts}
-        loginModalInitialMode={loginModalInitialMode}
         isAuthenticated={isAuthenticated}
         onChangeAdminPassword={dirActions.handleChangeAdminPassword}
         onToggleAdminRights={dirActions.handleToggleAdminRights}
@@ -1127,12 +1093,6 @@ export const App: React.FC = () => {
         onLoadKharasaveyDemo={handleLoadKharasaveyDemo}
         isServerDbModalOpen={isServerDbModalOpen}
         onCloseServerDbModal={() => setIsServerDbModalOpen(false)}
-        serverDbMeta={serverDbMeta}
-        isDbConnected={isDbConnected}
-        isDbSyncing={isDbSyncing}
-        pendingSyncCount={pendingSyncCount}
-        lastSyncError={lastSyncError}
-        onRetrySync={triggerImmediateSync}
         scopedJoints={filters.scopedJoints.length > 0 ? filters.scopedJoints : joints}
         onRefreshFromServer={async () => {
           await fetchServerDbState(false);

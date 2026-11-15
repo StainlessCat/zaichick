@@ -30,6 +30,7 @@ import { OptimisticConflictModal } from '../OptimisticConflictModal';
 import { EMPTY_FACILITY_FALLBACK } from '../../hooks';
 import { FACILITY_LOCATION_PRESETS } from '../../data/seedData';
 import type { FacilityGeoOverride } from '../../hooks/useServerSync';
+import { useAuth, useAppContext } from '../../context';
 
 export interface AppModalsContainerProps {
   // Column Templates Modal
@@ -50,10 +51,10 @@ export interface AppModalsContainerProps {
   isBulkEditOpen: boolean;
   onCloseBulkEdit: () => void;
   selectedJoints: WeldJoint[];
-  welders: WelderProfile[];
+  welders?: WelderProfile[];
   dynamicInspectors: InspectorProfile[];
   currentFacility: FacilityObject;
-  currentUser: UserAccount;
+  currentUser?: UserAccount;
   onApplyBulkUpdate: (patch: Partial<WeldJoint>) => void;
 
   // Joint Passport Modal
@@ -63,15 +64,15 @@ export interface AppModalsContainerProps {
     joint: WeldJoint | null;
   };
   onClosePassportModal: () => void;
-  allJoints: WeldJoint[];
-  derivedFacilities: FacilityObject[];
-  projectLineList: ProjectLineItem[];
-  lrvCatalog: LRVItem[];
-  techCards: TechCardItem[];
-  weldingMaterials: WeldingMaterialCertificate[];
-  auditLogs: AuditLogEntry[];
-  selectedObjectName: string;
-  selectedRdCode: string;
+  allJoints?: WeldJoint[];
+  derivedFacilities?: FacilityObject[];
+  projectLineList?: ProjectLineItem[];
+  lrvCatalog?: LRVItem[];
+  techCards?: TechCardItem[];
+  weldingMaterials?: WeldingMaterialCertificate[];
+  auditLogs?: AuditLogEntry[];
+  selectedObjectName?: string;
+  selectedRdCode?: string;
   onSaveJointFromPassport: (
     savedJoint: WeldJoint,
     isSupplementary: boolean,
@@ -103,10 +104,10 @@ export interface AppModalsContainerProps {
   ) => { updatedCount: number; message: string };
 
   // Login Modal
-  isLoginModalOpen: boolean;
-  onCloseLoginModal: () => void;
-  userAccounts: UserAccount[];
-  loginModalInitialMode: LoginModalMode;
+  isLoginModalOpen?: boolean;
+  onCloseLoginModal?: () => void;
+  userAccounts?: UserAccount[];
+  loginModalInitialMode?: LoginModalMode;
   isAuthenticated: boolean;
   onChangeAdminPassword: (
     adminLogin: string,
@@ -136,12 +137,12 @@ export interface AppModalsContainerProps {
   // Server DB Status Modal
   isServerDbModalOpen: boolean;
   onCloseServerDbModal: () => void;
-  serverDbMeta: ServerDbMetadata | null;
-  isDbConnected: boolean;
-  isDbSyncing: boolean;
-  pendingSyncCount: number;
-  lastSyncError: string | null;
-  onRetrySync: () => Promise<boolean>;
+  serverDbMeta?: ServerDbMetadata | null;
+  isDbConnected?: boolean;
+  isDbSyncing?: boolean;
+  pendingSyncCount?: number;
+  lastSyncError?: string | null;
+  onRetrySync?: () => Promise<boolean>;
   scopedJoints: WeldJoint[];
   onRefreshFromServer: () => Promise<void>;
   onTriggerSimulatedConflict: (jointId: string) => Promise<void>;
@@ -154,84 +155,92 @@ export interface AppModalsContainerProps {
   onForceClientOverwrite: (clientJoint: WeldJoint, serverVersion: number) => void;
 }
 
-export const AppModalsContainer: React.FC<AppModalsContainerProps> = ({
-  isColumnsModalOpen,
-  onCloseColumnsModal,
-  columnOrder,
-  visibleColumns,
-  onSetColumnOrder,
-  onSetVisibleColumns,
-  templates,
-  activeTemplateId,
-  onApplyTemplate,
-  onSaveNewTemplate,
-  onDeleteTemplate,
-  onResetColumnWidths,
-  isBulkEditOpen,
-  onCloseBulkEdit,
-  selectedJoints,
-  welders,
-  dynamicInspectors,
-  currentFacility,
-  currentUser,
-  onApplyBulkUpdate,
-  passportModal,
-  onClosePassportModal,
-  allJoints,
-  derivedFacilities,
-  projectLineList,
-  lrvCatalog,
-  techCards,
-  weldingMaterials,
-  auditLogs,
-  selectedObjectName,
-  selectedRdCode,
-  onSaveJointFromPassport,
-  onNavigateJoint,
-  onDeleteJointFromPassport,
-  onOpenFacilityLocation,
-  isImportExcelOpen,
-  onCloseImportExcel,
-  onImportJoints,
-  locationModalFacilityName,
-  onCloseLocationModal,
-  activeLocationFacility,
-  onSaveFacilityLocation,
-  onBulkUpdateJointsTemperaturesFromStation,
-  isLoginModalOpen,
-  onCloseLoginModal,
-  userAccounts,
-  loginModalInitialMode,
-  isAuthenticated,
-  onChangeAdminPassword,
-  onToggleAdminRights,
-  onRegisterAccount,
-  onDeleteAccount,
-  onAuthenticate,
-  backupModalState,
-  onCloseBackupModal,
-  currentPayload,
-  onRestoreBackup,
-  onAuthorZeroReset,
-  onAuthorRestoreDemoSeed,
-  onLoadKharasaveyDemo,
-  isServerDbModalOpen,
-  onCloseServerDbModal,
-  serverDbMeta,
-  isDbConnected,
-  isDbSyncing,
-  pendingSyncCount,
-  lastSyncError,
-  onRetrySync,
-  scopedJoints,
-  onRefreshFromServer,
-  onTriggerSimulatedConflict,
-  activeConflict,
-  onCloseConflictModal,
-  onAcceptServerVersion,
-  onApplyAutoMerge,
-  onForceClientOverwrite,
-}) => {
+export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => {
+  const auth = useAuth();
+  const app = useAppContext();
+
+  const currentUser = props.currentUser ?? auth.currentUser;
+  const userAccounts = props.userAccounts ?? auth.userAccounts;
+  const isLoginModalOpen = props.isLoginModalOpen ?? auth.isLoginModalOpen;
+  const onCloseLoginModal =
+    props.onCloseLoginModal ?? (() => auth.setIsLoginModalOpen(false));
+  const loginModalInitialMode =
+    props.loginModalInitialMode ?? auth.loginModalInitialMode;
+
+  const welders = props.welders ?? app.welders;
+  const allJoints = props.allJoints ?? app.joints;
+  const derivedFacilities = props.derivedFacilities ?? app.derivedFacilities;
+  const projectLineList = props.projectLineList ?? app.projectLineList;
+  const lrvCatalog = props.lrvCatalog ?? app.lrvCatalog;
+  const techCards = props.techCards ?? app.techCards;
+  const weldingMaterials = props.weldingMaterials ?? app.weldingMaterials;
+  const auditLogs = props.auditLogs ?? app.auditLogs;
+  const selectedObjectName = props.selectedObjectName ?? app.selectedObjectName;
+  const selectedRdCode = props.selectedRdCode ?? app.selectedRdCode;
+  const serverDbMeta = props.serverDbMeta ?? app.serverDbMeta;
+  const isDbConnected = props.isDbConnected ?? app.isDbConnected;
+  const isDbSyncing = props.isDbSyncing ?? app.isDbSyncing;
+  const pendingSyncCount = props.pendingSyncCount ?? app.pendingSyncCount;
+  const lastSyncError = props.lastSyncError ?? app.lastSyncError;
+  const onRetrySync = props.onRetrySync ?? app.onTriggerSync;
+
+  const {
+    isColumnsModalOpen,
+    onCloseColumnsModal,
+    columnOrder,
+    visibleColumns,
+    onSetColumnOrder,
+    onSetVisibleColumns,
+    templates,
+    activeTemplateId,
+    onApplyTemplate,
+    onSaveNewTemplate,
+    onDeleteTemplate,
+    onResetColumnWidths,
+    isBulkEditOpen,
+    onCloseBulkEdit,
+    selectedJoints,
+    dynamicInspectors,
+    currentFacility,
+    onApplyBulkUpdate,
+    passportModal,
+    onClosePassportModal,
+    onSaveJointFromPassport,
+    onNavigateJoint,
+    onDeleteJointFromPassport,
+    onOpenFacilityLocation,
+    isImportExcelOpen,
+    onCloseImportExcel,
+    onImportJoints,
+    locationModalFacilityName,
+    onCloseLocationModal,
+    activeLocationFacility,
+    onSaveFacilityLocation,
+    onBulkUpdateJointsTemperaturesFromStation,
+    isAuthenticated,
+    onChangeAdminPassword,
+    onToggleAdminRights,
+    onRegisterAccount,
+    onDeleteAccount,
+    onAuthenticate,
+    backupModalState,
+    onCloseBackupModal,
+    currentPayload,
+    onRestoreBackup,
+    onAuthorZeroReset,
+    onAuthorRestoreDemoSeed,
+    onLoadKharasaveyDemo,
+    isServerDbModalOpen,
+    onCloseServerDbModal,
+    scopedJoints,
+    onRefreshFromServer,
+    onTriggerSimulatedConflict,
+    activeConflict,
+    onCloseConflictModal,
+    onAcceptServerVersion,
+    onApplyAutoMerge,
+    onForceClientOverwrite,
+  } = props;
   return (
     <>
       <ColumnTemplatesModal

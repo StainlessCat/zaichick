@@ -28,30 +28,31 @@ import { ReadinessReportView } from '../ReadinessReportView';
 import { LrvCatalogView } from '../LrvCatalogView';
 import { AuditHistoryView } from '../AuditHistoryView';
 import { UserGuideBookletView } from '../UserGuideBookletView';
+import { useAuth, useAppContext } from '../../context';
 
 export interface AppMainContentProps {
-  activeSection: AppSection;
-  setActiveSection: (sec: AppSection) => void;
-  selectedObjectName: string;
-  setSelectedObjectName: (name: string) => void;
-  selectedRdCode: string;
-  setSelectedRdCode: (code: string) => void;
-  joints: WeldJoint[];
+  activeSection?: AppSection;
+  setActiveSection?: (sec: AppSection) => void;
+  selectedObjectName?: string;
+  setSelectedObjectName?: (name: string) => void;
+  selectedRdCode?: string;
+  setSelectedRdCode?: (code: string) => void;
+  joints?: WeldJoint[];
   scopedJoints: WeldJoint[];
   filteredAndSortedJoints: WeldJoint[];
-  projectLineList: ProjectLineItem[];
-  lrvCatalog: LRVItem[];
-  welders: WelderProfile[];
-  techCards: TechCardItem[];
-  weldingMaterials: WeldingMaterialCertificate[];
-  derivedFacilities: FacilityObject[];
-  auditLogs: AuditLogEntry[];
-  labRequests: NdtLabRequest[];
-  currentUser: UserAccount;
-  userPermissions: RolePermissions;
+  projectLineList?: ProjectLineItem[];
+  lrvCatalog?: LRVItem[];
+  welders?: WelderProfile[];
+  techCards?: TechCardItem[];
+  weldingMaterials?: WeldingMaterialCertificate[];
+  derivedFacilities?: FacilityObject[];
+  auditLogs?: AuditLogEntry[];
+  labRequests?: NdtLabRequest[];
+  currentUser?: UserAccount;
+  userPermissions?: RolePermissions;
   dynamicInspectors: InspectorProfile[];
-  isDbConnected: boolean;
-  pendingSyncCount: number;
+  isDbConnected?: boolean;
+  pendingSyncCount?: number;
   isLoadingDemoDataset: boolean;
   onLoadKharasaveyDemo: () => Promise<void>;
   // Реестр стыков
@@ -146,78 +147,83 @@ export interface AppMainContentProps {
   };
 }
 
-export const AppMainContent: React.FC<AppMainContentProps> = ({
-  activeSection,
-  setActiveSection,
-  selectedObjectName,
-  setSelectedObjectName,
-  selectedRdCode,
-  setSelectedRdCode,
-  joints,
-  scopedJoints,
-  filteredAndSortedJoints,
-  projectLineList,
-  lrvCatalog,
-  welders,
-  techCards,
-  weldingMaterials,
-  derivedFacilities,
-  auditLogs,
-  labRequests,
-  currentUser,
-  userPermissions,
-  dynamicInspectors,
-  isDbConnected,
-  pendingSyncCount,
-  isLoadingDemoDataset,
-  onLoadKharasaveyDemo,
-  selectedJointIds,
-  onToggleSelectRow,
-  onToggleSelectAll,
-  onClearSelection,
-  weldingDateFrom,
-  weldingDateTo,
-  onWeldingDateFromChange,
-  onWeldingDateToChange,
-  onResetDateRange,
-  confirmBulkDeleteJoints,
-  onSetConfirmBulkDeleteJoints,
-  onBulkDeleteSelectedJoints,
-  onOpenBulkEdit,
-  onQuickAddSupplementaryJoint,
-  onOpenImportExcel,
-  onOpenCreatePassport,
-  onOpenEditPassport,
-  activeTemplateId,
-  templates,
-  onApplyTemplate,
-  visibleColumns,
-  activeColumnDefs,
-  columnWidths,
-  onOpenColumnsModal,
-  columnFilters,
-  activeFilterKeys,
-  onSetColumnFilter,
-  onResetAllFilters,
-  sortConfig,
-  onSetSortConfig,
-  openFilterColumnKey,
-  onSetOpenFilterColumnKey,
-  getUniqueValuesForColumn,
-  onColumnResizeStart,
-  onColumnAutoFit,
-  onMoveColumnInline,
-  onHideColumnInline,
-  setColumnFilters,
-  onCreateLabRequest,
-  onAcceptLabRequest,
-  onSaveLabConclusions,
-  onDeleteLabRequest,
-  onOpenFacilityLocation,
-  onOpenAdminPasswordModal,
-  onEditJointInPassport,
-  dirActions,
-}) => {
+export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
+  const auth = useAuth();
+  const app = useAppContext();
+
+  const activeSection = props.activeSection ?? app.activeSection;
+  const setActiveSection = props.setActiveSection ?? app.setActiveSection;
+  const selectedObjectName = props.selectedObjectName ?? app.selectedObjectName;
+  const setSelectedObjectName = props.setSelectedObjectName ?? app.setSelectedObjectName;
+  const selectedRdCode = props.selectedRdCode ?? app.selectedRdCode;
+  const setSelectedRdCode = props.setSelectedRdCode ?? app.setSelectedRdCode;
+  const joints = props.joints ?? app.joints;
+  const projectLineList = props.projectLineList ?? app.projectLineList;
+  const lrvCatalog = props.lrvCatalog ?? app.lrvCatalog;
+  const welders = props.welders ?? app.welders;
+  const techCards = props.techCards ?? app.techCards;
+  const weldingMaterials = props.weldingMaterials ?? app.weldingMaterials;
+  const derivedFacilities = props.derivedFacilities ?? app.derivedFacilities;
+  const auditLogs = props.auditLogs ?? app.auditLogs;
+  const labRequests = props.labRequests ?? app.labRequests;
+  const currentUser = props.currentUser ?? auth.currentUser;
+  const userPermissions = props.userPermissions ?? auth.userPermissions;
+  const isDbConnected = props.isDbConnected ?? app.isDbConnected;
+  const pendingSyncCount = props.pendingSyncCount ?? app.pendingSyncCount;
+
+  const {
+    scopedJoints,
+    filteredAndSortedJoints,
+    dynamicInspectors,
+    isLoadingDemoDataset,
+    onLoadKharasaveyDemo,
+    selectedJointIds,
+    onToggleSelectRow,
+    onToggleSelectAll,
+    onClearSelection,
+    weldingDateFrom,
+    weldingDateTo,
+    onWeldingDateFromChange,
+    onWeldingDateToChange,
+    onResetDateRange,
+    confirmBulkDeleteJoints,
+    onSetConfirmBulkDeleteJoints,
+    onBulkDeleteSelectedJoints,
+    onOpenBulkEdit,
+    onQuickAddSupplementaryJoint,
+    onOpenImportExcel,
+    onOpenCreatePassport,
+    onOpenEditPassport,
+    activeTemplateId,
+    templates,
+    onApplyTemplate,
+    visibleColumns,
+    activeColumnDefs,
+    columnWidths,
+    onOpenColumnsModal,
+    columnFilters,
+    activeFilterKeys,
+    onSetColumnFilter,
+    onResetAllFilters,
+    sortConfig,
+    onSetSortConfig,
+    openFilterColumnKey,
+    onSetOpenFilterColumnKey,
+    getUniqueValuesForColumn,
+    onColumnResizeStart,
+    onColumnAutoFit,
+    onMoveColumnInline,
+    onHideColumnInline,
+    setColumnFilters,
+    onCreateLabRequest,
+    onAcceptLabRequest,
+    onSaveLabConclusions,
+    onDeleteLabRequest,
+    onOpenFacilityLocation,
+    onOpenAdminPasswordModal,
+    onEditJointInPassport,
+    dirActions,
+  } = props;
   return (
     <main className="flex-1 max-w-[1920px] w-full mx-auto p-3 sm:p-4 space-y-3">
       {selectedObjectName === 'УКПГ-1С Харасавэйское ГКМ' &&
