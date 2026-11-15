@@ -321,6 +321,10 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'project_linelist' && (
         <ProjectLineListView
+          selectedObjectName={selectedObjectName}
+          onSelectObjectName={setSelectedObjectName}
+          selectedRdCode={selectedRdCode}
+          onSelectRdCode={setSelectedRdCode}
           onAddLineItems={dirActions.handleAddLineItems}
           onUpdateLineItem={dirActions.handleUpdateLineItem}
           onBulkUpdateLineItems={dirActions.handleBulkUpdateLineItems}

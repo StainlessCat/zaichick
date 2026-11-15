@@ -1,10 +1,17 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FacilityObject,
   LineListColumnKey,
   ProjectLineItem,
+  WeatherDailyItem,
+  WeatherStationItem,
   WeldJoint,
 } from '../types/welding';
+import {
+  fetchWeatherDaily,
+  fetchWeatherStations,
+  refreshWeatherStation,
+} from '../api/weatherApi';
 import {
   buildUniqueLineId,
   computeLineListItemStatus,
@@ -36,6 +43,8 @@ export interface ProjectLineListViewProps {
   facilities?: FacilityObject[];
   selectedObjectName?: string;
   selectedRdCode?: string;
+  onSelectObjectName?: (name: string) => void;
+  onSelectRdCode?: (code: string) => void;
   onAddLineItems: (items: ProjectLineItem[]) => void;
   onUpdateLineItem: (
     updated: ProjectLineItem,
@@ -61,6 +70,8 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = (props) =
   const facilities = props.facilities ?? app.derivedFacilities;
   const selectedObjectName = props.selectedObjectName ?? app.selectedObjectName;
   const selectedRdCode = props.selectedRdCode ?? app.selectedRdCode;
+  const onSelectObjectName = props.onSelectObjectName ?? app.setSelectedObjectName;
+  const onSelectRdCode = props.onSelectRdCode ?? app.setSelectedRdCode;
   const canEdit = props.canEdit ?? auth.userPermissions.canEditLineList;
   const currentUserRoleLabel = props.currentUserRoleLabel ?? auth.userPermissions.categoryLabel;
 
@@ -166,6 +177,102 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = (props) =
     const fromLines = lineList.map((l) => l.objectName.trim()).filter(Boolean);
     return Array.from(new Set([...fromFac, ...fromLines]));
   }, [facilities, lineList]);
+
+  // Список доступных шифров РД для фильтрации по выбранному объекту
+  const availableFilterRdCodes = useMemo(() => {
+    let lines = lineList;
+    if (selectedObjectName !== 'ALL') {
+      lines = lines.filter((l) => l.objectName === selectedObjectName);
+    }
+    const rdsFromLines = lines.map((l) => l.rdCode.trim()).filter(Boolean);
+    const fac = facilities.find((f) => f.name === selectedObjectName);
+    const rdsFromFac = fac ? fac.rdCodes.map((r) => r.code.trim()).filter(Boolean) : [];
+    return Array.from(new Set([...rdsFromLines, ...rdsFromFac]));
+  }, [facilities, lineList, selectedObjectName]);
+
+  // Состояния метеомодуля РФ (SYNOP + NOAA GSOD)
+  const [weatherStations, setWeatherStations] = useState<WeatherStationItem[]>([]);
+  const [selectedWeatherStationId, setSelectedWeatherStationId] = useState<string>('');
+  const [dailyWeather, setDailyWeather] = useState<WeatherDailyItem | null>(null);
+  const [isLoadingWeather, setIsLoadingWeather] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchWeatherStations().then((items) => {
+      if (isMounted) setWeatherStations(items);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const facility = facilities.find((f) => f.name === selectedObjectName);
+    if (facility?.weatherStationId) {
+      setSelectedWeatherStationId(facility.weatherStationId);
+    } else {
+      const lineWithStation = lineList.find(
+        (l) => (selectedObjectName === 'ALL' || l.objectName === selectedObjectName) && l.weatherStationId
+      );
+      if (lineWithStation?.weatherStationId) {
+        setSelectedWeatherStationId(lineWithStation.weatherStationId);
+      } else {
+        setSelectedWeatherStationId('');
+      }
+    }
+  }, [selectedObjectName, facilities, lineList]);
+
+  const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  useEffect(() => {
+    if (!selectedWeatherStationId) {
+      setDailyWeather(null);
+      return;
+    }
+    let isMounted = true;
+    setIsLoadingWeather(true);
+    fetchWeatherDaily(selectedWeatherStationId, todayDate, todayDate)
+      .then((records) => {
+        if (!isMounted) return;
+        const rec = records.find((r) => r.obsDate === todayDate) || records[0] || null;
+        setDailyWeather(rec);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingWeather(false);
+      });
+  }, [selectedWeatherStationId, todayDate]);
+
+  const handleRefreshWeather = useCallback(async () => {
+    if (!selectedWeatherStationId) return;
+    setIsLoadingWeather(true);
+    try {
+      const updated = await refreshWeatherStation(selectedWeatherStationId);
+      if (updated) {
+        const records = await fetchWeatherDaily(selectedWeatherStationId, todayDate, todayDate);
+        const rec = records.find((r) => r.obsDate === todayDate) || records[0] || null;
+        setDailyWeather(rec);
+      }
+    } finally {
+      setIsLoadingWeather(false);
+    }
+  }, [selectedWeatherStationId, todayDate]);
+
+  const handleSelectStation = useCallback(
+    (stationId: string) => {
+      setSelectedWeatherStationId(stationId);
+      if (selectedObjectName !== 'ALL' && onBulkUpdateLineItems) {
+        const station = weatherStations.find((s) => s.id === stationId);
+        const scopedLines = lineList.filter((l) => l.objectName === selectedObjectName);
+        if (scopedLines.length > 0) {
+          onBulkUpdateLineItems(
+            scopedLines.map((l) => l.id),
+            { weatherStationId: stationId, weatherStationName: station?.name }
+          );
+        }
+      }
+    },
+    [selectedObjectName, lineList, weatherStations, onBulkUpdateLineItems]
+  );
 
   // Список доступных шифров РД для выбранного в форме объекта
   const rdsForCurrentObject = useMemo(() => {
@@ -568,6 +675,21 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = (props) =
         uniqueObjectNames={uniqueObjectNames}
         uniqueRdCodes={uniqueRdCodes}
         uniqueContours={uniqueContours}
+        selectedObjectName={selectedObjectName}
+        availableObjectOptions={availableObjectOptions}
+        onSelectObjectName={(newObj) => {
+          onSelectObjectName(newObj);
+          onSelectRdCode('ALL');
+        }}
+        selectedRdCode={selectedRdCode}
+        availableRdCodes={availableFilterRdCodes}
+        onSelectRdCode={onSelectRdCode}
+        weatherStationId={selectedWeatherStationId}
+        weatherStations={weatherStations}
+        onSelectWeatherStation={handleSelectStation}
+        dailyWeather={dailyWeather}
+        isLoadingWeather={isLoadingWeather}
+        onRefreshWeather={handleRefreshWeather}
       />
 
       {/* Панель управления структурой (Объекты и Шифры РД с каскадным удалением) */}

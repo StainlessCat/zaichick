@@ -7,8 +7,11 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
+import { Button, FormField, Select } from '../ui';
+import { WeatherDailyItem, WeatherStationItem } from '../../types/welding';
+import { WeatherStationWidget } from '../journals/WeatherStationWidget';
 
-interface LineListToolbarProps {
+export interface LineListToolbarProps {
   canEdit: boolean;
   currentUserRoleLabel: string;
   showStructureManager: boolean;
@@ -27,6 +30,22 @@ interface LineListToolbarProps {
   uniqueObjectNames: string[];
   uniqueRdCodes: string[];
   uniqueContours: string[];
+
+  // Контекст открытого проекта (strict-industrial-ui)
+  selectedObjectName?: string;
+  availableObjectOptions?: string[];
+  onSelectObjectName?: (name: string) => void;
+  selectedRdCode?: string;
+  availableRdCodes?: string[];
+  onSelectRdCode?: (code: string) => void;
+
+  // Метеомодуль (strict-industrial-ui)
+  weatherStationId?: string;
+  weatherStations?: WeatherStationItem[];
+  onSelectWeatherStation?: (stationId: string) => void;
+  dailyWeather?: WeatherDailyItem | null;
+  isLoadingWeather?: boolean;
+  onRefreshWeather?: () => void;
 }
 
 export const LineListToolbar: React.FC<LineListToolbarProps> = ({
@@ -48,6 +67,18 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
   uniqueObjectNames,
   uniqueRdCodes,
   uniqueContours,
+  selectedObjectName,
+  availableObjectOptions,
+  onSelectObjectName,
+  selectedRdCode,
+  availableRdCodes,
+  onSelectRdCode,
+  weatherStationId,
+  weatherStations,
+  onSelectWeatherStation,
+  dailyWeather,
+  isLoadingWeather,
+  onRefreshWeather,
 }) => {
   return (
     <>
@@ -67,7 +98,7 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
         ))}
       </datalist>
 
-      {/* Скрытый input для загрузки реального файла Excel (.xlsx, .xls, .csv) */}
+      {/* Скрытый input для загрузки файла Excel (.xlsx, .xls, .csv) */}
       <input
         ref={fileInputRef}
         type="file"
@@ -78,11 +109,11 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
       />
 
       {!canEdit && (
-        <div className="px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 font-semibold">
-            <Lock className="w-4 h-4 text-amber-700 shrink-0" />
-            <span>
-              Ролевое ограничение (RBAC): Текущая роль — «{currentUserRoleLabel}». Редактирование вкладки «Проект (лайнлист)» доступно только роли «Инженер ПТО». Включён режим чтения (выгрузка в Excel и переход к стыкам доступны).
+        <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 font-semibold min-w-0">
+            <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+            <span className="truncate">
+              Ролевое ограничение: Текущая роль — «{currentUserRoleLabel}». Режим чтения (выгрузка в Excel доступна).
             </span>
           </div>
           <span className="px-2 py-0.5 rounded bg-amber-200/70 text-amber-900 font-mono text-[11px] shrink-0">
@@ -91,109 +122,160 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
         </div>
       )}
 
-      {/* Верхняя панель управления разделом «Проект (лайнлист)» */}
-      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 shadow-2xs flex flex-wrap items-center justify-end gap-2">
-        <div className="flex flex-wrap items-center gap-2 w-full justify-end">
+      {/* Верхняя панель управления разделом «Проект (лайнлист)» (strict-industrial-ui) */}
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5">
+        {/* Левая группа: Контекст проекта (Объект, Шифр РД) и метеостанция */}
+        <div className="flex flex-wrap items-end gap-2">
+          {availableObjectOptions && onSelectObjectName && (
+            <FormField label="Объект" className="w-48 sm:w-56">
+              <Select
+                value={selectedObjectName || 'ALL'}
+                onChange={(e) => onSelectObjectName(e.target.value)}
+                className="w-full truncate font-medium text-slate-800"
+              >
+                <option value="ALL">Все объекты (сводный режим)</option>
+                {availableObjectOptions.map((obj) => (
+                  <option key={obj} value={obj}>
+                    {obj}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
+
+          {availableRdCodes && onSelectRdCode && (
+            <FormField label="Шифр РД" className="w-44 sm:w-52">
+              <Select
+                value={selectedRdCode || 'ALL'}
+                onChange={(e) => onSelectRdCode(e.target.value)}
+                className="w-full truncate font-medium text-slate-800"
+              >
+                <option value="ALL">Все шифры РД</option>
+                {availableRdCodes.map((rd) => (
+                  <option key={rd} value={rd}>
+                    {rd}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          )}
+
+          {weatherStations && onSelectWeatherStation && (
+            <>
+              <div className="h-5 w-px bg-slate-200 hidden lg:block mx-0.5" />
+              <WeatherStationWidget
+                selectedStationId={weatherStationId}
+                stations={weatherStations}
+                onSelectStation={onSelectWeatherStation}
+                dailyWeather={dailyWeather}
+                isLoading={isLoadingWeather}
+                onRefresh={onRefreshWeather}
+              />
+            </>
+          )}
+        </div>
+
+        {/* Правая группа: Действия со строками лайнлиста */}
+        <div className="flex flex-wrap items-end gap-1.5">
           {canEdit && (
-            <button
+            <Button
               type="button"
+              variant={showStructureManager ? 'danger' : 'secondary'}
               onClick={onToggleStructureManager}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors border cursor-pointer ${
-                showStructureManager
-                  ? 'bg-red-50 border-red-300 text-red-700'
-                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
               title="Удаление объектов строительства, шифров РД и линий"
             >
-              <Trash2 className="w-4 h-4 text-red-600" />
-              <span>Объекты / Шифры РД (Удаление)</span>
-            </button>
+              <Trash2 className="w-3.5 h-3.5 text-red-600" />
+              <span>Объекты / РД</span>
+            </Button>
           )}
 
           {canEdit && selectedLineIds.length > 0 && (
             !confirmBulkDelete ? (
-              <button
+              <Button
                 type="button"
+                variant="danger"
                 onClick={() => setConfirmBulkDelete(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 border border-red-300 text-red-700 hover:bg-red-100 text-xs font-semibold transition-colors cursor-pointer"
+                title="Удалить выделенные линии проекта"
               >
-                <Trash2 className="w-4 h-4" />
-                <span>Удалить линии ({selectedLineIds.length})</span>
-              </button>
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Удалить ({selectedLineIds.length})</span>
+              </Button>
             ) : (
-              <div className="inline-flex items-center gap-1 bg-red-50 border border-red-400 rounded-lg px-2.5 py-1">
-                <span className="text-xs font-bold text-red-800">
+              <div className="flex items-center gap-1 h-8 box-border px-2 bg-red-50 border border-red-300 rounded-md">
+                <span className="text-[11px] font-bold text-red-800 whitespace-nowrap">
                   Удалить {selectedLineIds.length} лин.?
                 </span>
-                <button
+                <Button
                   type="button"
+                  variant="danger"
+                  className="h-6 px-2 text-[11px]"
                   onClick={() => {
                     onDeleteLineItems(selectedLineIds);
                     onClearSelection();
                     setConfirmBulkDelete(false);
                   }}
-                  className="px-2 py-1 rounded bg-red-600 text-white text-xs font-bold hover:bg-red-700 cursor-pointer"
                 >
                   Да
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  className="h-6 px-2 text-[11px]"
                   onClick={() => setConfirmBulkDelete(false)}
-                  className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-700 text-xs font-semibold cursor-pointer"
                 >
                   Нет
-                </button>
+                </Button>
               </div>
             )
           )}
 
           {canEdit && (
-            <button
+            <Button
               type="button"
+              variant={selectedLineIds.length > 0 ? 'primary' : 'secondary'}
               onClick={onOpenBulkModal}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors border cursor-pointer ${
-                selectedLineIds.length > 0
-                  ? 'bg-[#e8f1fc] border-[#1e3799] text-[#1e3799] hover:bg-sky-100'
-                  : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
+              title="Групповое редактирование параметров выбранных линий"
             >
-              <Layers className="w-4 h-4 text-[#1e3799]" />
+              <Layers className="w-3.5 h-3.5" />
               <span>
                 Групповое ред.
                 {selectedLineIds.length > 0 ? ` (${selectedLineIds.length})` : ''}
               </span>
-            </button>
+            </Button>
           )}
 
           {canEdit && (
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={onToggleImportPanel}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#1e3799] text-[#1e3799] bg-sky-50/70 hover:bg-sky-100 text-xs font-semibold transition-colors cursor-pointer"
+              title="Импорт линий из файла Excel или буфера обмена"
             >
-              <Upload className="w-4 h-4" />
-              <span>Загрузить из Excel (.xlsx / .csv)</span>
-            </button>
+              <Upload className="w-3.5 h-3.5 text-[#1e3799]" />
+              <span>Импорт Excel</span>
+            </Button>
           )}
 
-          <button
+          <Button
             type="button"
+            variant="secondary"
             onClick={onExportExcel}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 text-xs font-semibold transition-colors cursor-pointer"
+            title="Выгрузить строки лайнлиста в файл Excel"
           >
-            <Download className="w-4 h-4 text-[#1e3799]" />
-            <span>Выгрузить лайнлист (.xlsx)</span>
-          </button>
+            <Download className="w-3.5 h-3.5 text-[#1e3799]" />
+            <span>Экспорт (.xlsx)</span>
+          </Button>
 
           {canEdit && (
-            <button
+            <Button
               type="button"
+              variant="primary"
               onClick={onOpenCreateLineModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1e3799] text-white hover:bg-[#15276e] text-xs font-semibold transition-colors cursor-pointer"
+              title="Добавить новую технологическую линию"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               <span>Добавить линию</span>
-            </button>
+            </Button>
           )}
         </div>
       </div>
