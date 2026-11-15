@@ -10,11 +10,14 @@ import type {
   WeldJoint,
 } from '../../types/welding';
 import {
+  createSystemAuditEntry,
+  getRedoActionLabel,
+  getUndoActionLabel,
   MAX_HISTORY_STEPS,
   performRedoStep,
   performUndoStep,
   pushHistorySnapshot,
-} from '../../utils/weldingLogic';
+} from '../../utils/undoRedo';
 import type { FacilityGeoOverride } from '../useServerSync';
 import type { AppDataSnapshot } from './types';
 
@@ -77,51 +80,21 @@ export function useUndoRedoState({
       jointId = 'sys-dict',
       explicitOperationType?: AuditLogEntry['operationType']
     ) => {
-      let resolvedOpType: AuditLogEntry['operationType'] =
-        explicitOperationType ||
-        (actionType === 'Создание стыка' ? 'create_joint' : 'single_edit');
-
-      if (!explicitOperationType) {
-        const lowerAction = actionType.toLowerCase();
-        const lowerField = fieldChanged.toLowerCase();
-        if (lowerAction.includes('аннулирование лрв')) {
-          resolvedOpType = 'lrv_superseded';
-        } else if (
-          lowerAction.includes('лайнлист') ||
-          lowerField.includes('лайнлист')
-        ) {
-          resolvedOpType = 'linelist_change';
-        } else if (lowerAction.includes('создание пользователя')) {
-          resolvedOpType = 'user_created';
-        } else if (lowerAction.includes('удаление пользователя')) {
-          resolvedOpType = 'user_deleted';
-        } else if (
-          lowerAction.includes('пользовател') ||
-          lowerField.includes('парол')
-        ) {
-          resolvedOpType = 'user_modified';
-        }
-      }
-
-      const entry: AuditLogEntry = {
-        id: `aud-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        timestamp: new Date().toISOString(),
-        userLogin: currentUser.login,
-        userFullName: currentUser.fullName,
-        userRole: currentUser.role,
-        jointId,
-        jointNumber,
+      const entry = createSystemAuditEntry({
+        currentUser,
+        actionType,
         uniqueLineId,
-        rdCode: selectedRdCode === 'ALL' ? 'СИСТЕМА' : selectedRdCode,
-        fieldKey: 'system',
-        fieldLabel: fieldChanged,
+        jointNumber,
+        fieldChanged,
         oldValue,
         newValue,
-        operationType: resolvedOpType,
-      };
+        jointId,
+        selectedRdCode,
+        explicitOperationType,
+      });
       setAuditLogs((prev) => [entry, ...prev]);
     },
-    [currentUser.login, currentUser.fullName, currentUser.role, selectedRdCode, setAuditLogs]
+    [currentUser, selectedRdCode, setAuditLogs]
   );
 
   const buildCurrentSnapshot = useCallback(
@@ -180,8 +153,7 @@ export function useUndoRedoState({
 
   const handleUndo = useCallback(() => {
     if (undoStack.length === 0) return;
-    const lastAction =
-      undoStack[undoStack.length - 1]?.actionLabel || 'действие';
+    const lastAction = getUndoActionLabel(undoStack);
     const currentSnap = buildCurrentSnapshot(lastAction);
     const res = performUndoStep(
       undoStack,
@@ -212,8 +184,7 @@ export function useUndoRedoState({
 
   const handleRedo = useCallback(() => {
     if (redoStack.length === 0) return;
-    const nextAction =
-      redoStack[redoStack.length - 1]?.actionLabel || 'действие';
+    const nextAction = getRedoActionLabel(redoStack);
     const currentSnap = buildCurrentSnapshot(nextAction);
     const res = performRedoStep(
       undoStack,

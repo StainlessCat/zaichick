@@ -22,6 +22,7 @@ export * from './filters';
 export * from './dates';
 export * from './pipeCalc';
 export * from './history';
+export * from './undoRedo';
 export * from './columns';
 export * from './readiness';
 export * from './journals';
