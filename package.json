@@ -9,7 +9,7 @@
     "preview": "vite preview --host 127.0.0.1 --port 5173",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test src/utils/weldingLogic.test.ts"
+    "test": "node --import tsx --test \"src/utils/*.test.ts\""
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

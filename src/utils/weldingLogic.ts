@@ -15,6 +15,7 @@
  * - weatherArchiveUtils.ts: Посуточный архив температур и автоподбор фактических наблюдений
  */
 
+export * from './formatting';
 export * from './dates';
 export * from './pipeCalc';
 export * from './history';
