@@ -2,8 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RotateCcw } from 'lucide-react';
 import {
   JournalStandard,
+  WeatherDailyItem,
+  WeatherStationItem,
   WeldJoint,
 } from '../types/welding';
+import {
+  fetchWeatherDaily,
+  fetchWeatherStations,
+  refreshWeatherStation,
+} from '../api/weatherApi';
 import {
   extractRdSuffix,
   formatDateDDMMYY,
@@ -162,6 +169,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
         rdCode: pl.rdCode,
         pipelineCategory: pl.pipelineCategory || '',
         qualityLevel: pl.qualityLevel || '',
+        weatherStationId: pl.weatherStationId,
         jointsCount: 0,
       });
     }
@@ -361,6 +369,107 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
 
     return list;
   }, [objectScopedJoints, currentRdCode, selectedLineKey, selectedLineItem]);
+
+  // Состояния метеомодуля РФ (SYNOP + NOAA GSOD)
+  const [weatherStations, setWeatherStations] = useState<WeatherStationItem[]>([]);
+  const [selectedWeatherStationId, setSelectedWeatherStationId] = useState<string>('');
+  const [dailyWeather, setDailyWeather] = useState<WeatherDailyItem | null>(null);
+  const [isLoadingWeather, setIsLoadingWeather] = useState<boolean>(false);
+
+  // Загрузка справочника метеостанций РФ
+  useEffect(() => {
+    let isMounted = true;
+    fetchWeatherStations().then((items) => {
+      if (isMounted) setWeatherStations(items);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Автопривязка метеостанции по линии или объекту
+  useEffect(() => {
+    if (selectedLineItem?.weatherStationId) {
+      setSelectedWeatherStationId(selectedLineItem.weatherStationId);
+    } else {
+      const facility = facilities.find((f) => f.name === selectedObjectName);
+      if (facility?.weatherStationId) {
+        setSelectedWeatherStationId(facility.weatherStationId);
+      }
+    }
+  }, [selectedLineItem, selectedObjectName, facilities]);
+
+  // Определение даты для фактических метеонаблюдений (дата сварки первого/последнего стыка или сегодня)
+  const activeJointDate = useMemo(() => {
+    const dates = lineScopedJoints
+      .map((j) => j.weldingDate)
+      .filter((d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d));
+    if (dates.length > 0) {
+      return dates[dates.length - 1];
+    }
+    return new Date().toISOString().slice(0, 10);
+  }, [lineScopedJoints]);
+
+  // Загрузка суточной температуры при смене метеостанции или даты
+  useEffect(() => {
+    if (!selectedWeatherStationId || !activeJointDate) {
+      setDailyWeather(null);
+      return;
+    }
+    let isMounted = true;
+    setIsLoadingWeather(true);
+    fetchWeatherDaily(selectedWeatherStationId, activeJointDate, activeJointDate)
+      .then((records) => {
+        if (!isMounted) return;
+        const record = records.find((r) => r.obsDate === activeJointDate) || records[0] || null;
+        setDailyWeather(record);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingWeather(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedWeatherStationId, activeJointDate]);
+
+  // Принудительное обновление погоды со шлюза SYNOP
+  const handleRefreshWeather = async () => {
+    if (!selectedWeatherStationId) return;
+    setIsLoadingWeather(true);
+    try {
+      const res = await refreshWeatherStation(selectedWeatherStationId, 3);
+      const records = await fetchWeatherDaily(selectedWeatherStationId, activeJointDate, activeJointDate);
+      const record = records.find((r) => r.obsDate === activeJointDate) || records[0] || null;
+      setDailyWeather(record);
+      showToast(`Метеоданные обновлены со шлюза SYNOP (${res.refreshedCount} сут.).`);
+    } catch {
+      showToast('Ошибка при обновлении метеоданных со шлюза.');
+    } finally {
+      setIsLoadingWeather(false);
+    }
+  };
+
+  // Подстановка фактической температуры в стыки линии
+  const handleApplyWeatherTemp = (tempMean: number) => {
+    const formatted = tempMean > 0 ? `+${tempMean.toFixed(1)}` : tempMean.toFixed(1);
+    let updatedCount = 0;
+    lineScopedJoints.forEach((j) => {
+      if (!j.ambientTemp && onEditJoint) {
+        onEditJoint({
+          ...j,
+          ambientTemp: formatted,
+          weatherSource: dailyWeather?.source === 'SYNOP_LIVE' ? 'SYNOP Ogimet' : 'NOAA GSOD',
+        });
+        updatedCount++;
+      }
+    });
+    if (updatedCount > 0) {
+      showToast(`Фактическая температура ${formatted}°C внесена в ${updatedCount} стык(ов).`);
+    } else {
+      showToast(`Текущая температура ${formatted}°C готова к автоматическому внесению.`);
+    }
+  };
 
   // Регулирование ширины столбцов журнала по ГОСТ 32569-2013
   const {
@@ -703,6 +812,14 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
         onExportXlsx={handleExportXlsx}
         onExportCsv={handleExportCsv}
         onPrintOrExportPdfA3={handlePrintOrExportPdfA3}
+        weatherStationId={selectedWeatherStationId}
+        weatherStations={weatherStations}
+        onSelectWeatherStation={setSelectedWeatherStationId}
+        activeJointDate={activeJointDate}
+        dailyWeather={dailyWeather}
+        isLoadingWeather={isLoadingWeather}
+        onRefreshWeather={handleRefreshWeather}
+        onApplyWeatherTemp={handleApplyWeatherTemp}
       />
 
       {/* Официальный нормативный бланк выбранного журнала */}

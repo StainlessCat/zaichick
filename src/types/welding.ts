@@ -593,6 +593,8 @@ export interface ProjectLineItem {
   pvkPercent: number; // 15. Процент контроля ПВК
   manualStatus?: string; // 16. Статус из Excel (если по линии ещё нет стыков в базе)
   testDate: string; // 17. Дата испытания (хранится YYYY-MM-DD или ДД.ММ.ГГ, отображается ДД.ММ.ГГ)
+  weatherStationId?: string; // Привязка к метеостанции РФ (weather_stations.id)
+  weatherStationName?: string; // Название метеостанции (WMO)
   version?: number;
 }
 
@@ -614,3 +616,27 @@ export type LineListColumnKey =
   | 'pvkPercent'
   | 'computedStatus'
   | 'testDate';
+
+export interface WeatherStationItem {
+  id: string;
+  wmoId: string;
+  usaf?: string;
+  wban?: string;
+  name: string;
+  region?: string;
+  latitude: number;
+  longitude: number;
+  isActive: boolean;
+  distanceKm?: number;
+}
+
+export interface WeatherDailyItem {
+  id: string;
+  stationId: string;
+  obsDate: string;
+  tMin?: number | null;
+  tMax?: number | null;
+  tMean?: number | null;
+  source: string;
+  updatedAt?: string;
+}

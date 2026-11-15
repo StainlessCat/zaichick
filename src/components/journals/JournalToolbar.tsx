@@ -6,10 +6,11 @@ import {
   FileText,
   Printer,
 } from 'lucide-react';
-import { JournalStandard } from '../../types/welding';
+import { JournalStandard, WeatherDailyItem, WeatherStationItem } from '../../types/welding';
 import { JournalLineSelector } from './JournalLineSelector';
 import { JournalRdSelector } from './JournalRdSelector';
 import { JournalLineOption, JournalRdOption, LineWeldingAlert } from './types';
+import { WeatherStationWidget } from './WeatherStationWidget';
 
 interface JournalToolbarProps {
   currentRdCode: string;
@@ -27,6 +28,15 @@ interface JournalToolbarProps {
   onExportXlsx: () => void;
   onExportCsv: () => void;
   onPrintOrExportPdfA3: () => void;
+  // Метеомодуль (strict-industrial-ui)
+  weatherStationId?: string;
+  weatherStations?: WeatherStationItem[];
+  onSelectWeatherStation?: (stationId: string) => void;
+  activeJointDate?: string;
+  dailyWeather?: WeatherDailyItem | null;
+  isLoadingWeather?: boolean;
+  onRefreshWeather?: () => void;
+  onApplyWeatherTemp?: (temp: number) => void;
 }
 
 export const JournalToolbar: React.FC<JournalToolbarProps> = ({
@@ -45,6 +55,14 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
   onExportXlsx,
   onExportCsv,
   onPrintOrExportPdfA3,
+  weatherStationId,
+  weatherStations,
+  onSelectWeatherStation,
+  activeJointDate,
+  dailyWeather,
+  isLoadingWeather,
+  onRefreshWeather,
+  onApplyWeatherTemp,
 }) => {
   return (
     <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2.5 no-print">
@@ -117,6 +135,23 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
             Форма ГОСТ 32569-2013 (17 граф)
           </button>
         </div>
+
+        {/* 4. Метеомодуль: выбор метеостанции и просмотр температур (strict-industrial-ui) */}
+        {weatherStations && onSelectWeatherStation && (
+          <>
+            <div className="h-5 w-px bg-slate-200 hidden sm:block mx-0.5" />
+            <WeatherStationWidget
+              selectedStationId={weatherStationId}
+              stations={weatherStations}
+              onSelectStation={onSelectWeatherStation}
+              activeDate={activeJointDate}
+              dailyWeather={dailyWeather}
+              isLoading={isLoadingWeather}
+              onRefresh={onRefreshWeather}
+              onApplyTemp={onApplyWeatherTemp}
+            />
+          </>
+        )}
       </div>
 
       {/* Экспорт и печать */}

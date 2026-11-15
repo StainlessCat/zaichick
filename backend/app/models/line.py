@@ -23,6 +23,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.facility import Facility
     from app.models.joint import WeldJoint
+    from app.models.weather import WeatherStation
 
 
 class ProjectLine(Base):
@@ -79,6 +80,12 @@ class ProjectLine(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    weather_station_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("weather_stations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -91,3 +98,4 @@ class ProjectLine(Base):
 
     facility: Mapped[Facility] = relationship(back_populates="lines")
     joints: Mapped[list[WeldJoint]] = relationship(back_populates="line")
+    weather_station_rel: Mapped[WeatherStation | None] = relationship(back_populates="lines")

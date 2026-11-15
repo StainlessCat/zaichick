@@ -536,6 +536,25 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
               />
             </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Метеостанция РФ (погода и подогрев)
+              </label>
+              <input
+                type="text"
+                placeholder="Метеостанция или WMO ID"
+                value={editForm.weatherStationName || ''}
+                onChange={(e) =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    weatherStationName: e.target.value,
+                  }))
+                }
+                aria-label="Метеостанция РФ"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-medium"
+              />
+            </div>
           </div>
 
           {mode === 'edit' && (

@@ -191,6 +191,7 @@ class ProjectLineCreate(BaseModel):
     pvk_percent: float = Field(default=0.0, ge=0.0, le=100.0)
     manual_status: str | None = None
     test_date: date | None = None
+    weather_station_id: uuid.UUID | None = None
     sort_order: int = 0
 
 
@@ -214,6 +215,7 @@ class ProjectLineUpdate(BaseModel):
     pvk_percent: float | None = Field(default=None, ge=0.0, le=100.0)
     manual_status: str | None = None
     test_date: date | None = None
+    weather_station_id: uuid.UUID | None = None
     sort_order: int | None = None
 
 
@@ -243,6 +245,7 @@ class ProjectLineOut(BaseModel):
     sort_order: int
     version: int
     updated_by_id: uuid.UUID | None = None
+    weather_station_id: uuid.UUID | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     computed_status: LineCompletionStatusOut | None = None

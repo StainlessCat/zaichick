@@ -21,6 +21,7 @@ from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
 from app.models.settings import AppSetting, ColumnTemplate
 from app.models.user import User
+from app.models.weather import WeatherDaily, WeatherStation
 from app.models.welding_tech import (
     Inspector,
     TechCard,
@@ -54,6 +55,8 @@ __all__ = [
     "TechCard",
     "TechCardPreheatRule",
     "User",
+    "WeatherDaily",
+    "WeatherStation",
     "WeldJoint",
     "Welder",
     "WelderNaksCert",

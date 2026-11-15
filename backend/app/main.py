@@ -19,6 +19,7 @@ from app.api.routes.naks import router as naks_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.templates import router as templates_router
 from app.api.routes.users import router as users_router
+from app.api.routes.weather import router as weather_router
 from app.api.routes.welding_journals import router as welding_journals_router
 from app.api.routes.wps import router as wps_router
 from app.core.config import get_settings
@@ -77,6 +78,7 @@ app.include_router(welding_journals_router)
 app.include_router(reports_router)
 app.include_router(templates_router)
 app.include_router(events_router)
+app.include_router(weather_router)
 app.include_router(exports_router)
 app.include_router(imports_router)
 

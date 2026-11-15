@@ -40,6 +40,7 @@ export interface JournalLineOption {
   rdCode: string;
   pipelineCategory: string;
   qualityLevel: string;
+  weatherStationId?: string;
   jointsCount: number;
 }
 
