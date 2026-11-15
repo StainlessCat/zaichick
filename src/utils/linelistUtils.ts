@@ -88,35 +88,8 @@ export function suggestNextJointNumber(
  * Фильтрация каталога ЛРВ по шифру РД.
  * По умолчанию в паспорте стыка запрещено брать материалы из других шифров РД.
  */
-export function filterLrvCatalogByRd(
-  catalog: LRVItem[],
-  rdCode: string,
-  allowOtherRdCodes = false
-): LRVItem[] {
-  if (allowOtherRdCodes) return catalog;
-  return catalog.filter((item) => item.rdCode === rdCode);
-}
-
-/**
- * Сортировка стыков для Журналов сварочных работ (СТО Газпром 15-1.1-002-2023 и ГОСТ 32569-2013):
- * строго в хронологическом порядке по дате сварки (weldingDate).
- * Стыки без даты сварки помещаются в конец списка.
- */
-export function sortJointsChronologically(joints: WeldJoint[]): WeldJoint[] {
-  return [...joints].sort((a, b) => {
-    const dateA = a.weldingDate ? a.weldingDate.trim() : '';
-    const dateB = b.weldingDate ? b.weldingDate.trim() : '';
-    if (dateA && !dateB) return -1;
-    if (!dateA && dateB) return 1;
-    if (dateA !== dateB) {
-      return dateA.localeCompare(dateB);
-    }
-    if (a.uniqueLineId !== b.uniqueLineId) {
-      return a.uniqueLineId.localeCompare(b.uniqueLineId, 'ru');
-    }
-    return a.jointNumber.localeCompare(b.jointNumber, 'ru', { numeric: true });
-  });
-}
+// Реэкспорт функций фильтрации и сортировки из изолированного модуля filters.ts
+export { filterLrvCatalogByRd, sortJointsChronologically } from './filters';
 
 /**
  * Массовое редактирование выбранных стыков (за исключением номера стыка jointNumber!)

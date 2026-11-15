@@ -5,13 +5,10 @@ import {
   WeldJointFieldKey,
 } from '../types/welding';
 import {
-  ALL_COLUMNS,
-  formatDateDDMMYY,
-  getJointEquivDiaInch,
-  isDateColumnKey,
-  isWeldingDateInRange,
-} from '../utils/weldingLogic';
-import { getJointLabRequestStatus } from '../utils/laboratoryLogic';
+  computeColumnUniqueValues,
+  filterAndSortJoints,
+  filterJointsByScope,
+} from '../utils/filters';
 
 export interface UseRegistryFiltersParams {
   joints: WeldJoint[];
@@ -65,74 +62,17 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
   const [isImportExcelOpen, setIsImportExcelOpen] = useState(false);
 
   const scopedJoints = useMemo(() => {
-    return joints.filter((j) => {
-      if (selectedObjectName !== 'ALL' && j.objectName !== selectedObjectName) {
-        return false;
-      }
-      if (selectedRdCode !== 'ALL' && j.rdCode !== selectedRdCode) {
-        return false;
-      }
-      return true;
-    });
+    return filterJointsByScope(joints, selectedObjectName, selectedRdCode);
   }, [joints, selectedObjectName, selectedRdCode]);
 
   const filteredAndSortedJoints = useMemo(() => {
-    const q = globalSearch.trim().toLowerCase();
-
-    const filtered = scopedJoints.filter((joint) => {
-      for (const [colKey, allowedValues] of Object.entries(columnFilters)) {
-        if (!allowedValues) continue;
-        const rawVal =
-          colKey === 'labRequestStatus'
-            ? getJointLabRequestStatus(joint, labRequests)
-            : String(joint[colKey as WeldJointFieldKey] ?? '');
-        if (!allowedValues.includes(rawVal)) {
-          return false;
-        }
-      }
-
-      if (!isWeldingDateInRange(joint.weldingDate, weldingDateFrom, weldingDateTo)) {
-        return false;
-      }
-
-      if (q) {
-        return ALL_COLUMNS.some((col) => {
-          const rawStr =
-            col.key === 'labRequestStatus'
-              ? getJointLabRequestStatus(joint, labRequests)
-              : String(joint[col.key] ?? '');
-          const formattedStr = isDateColumnKey(col.key)
-            ? formatDateDDMMYY(rawStr)
-            : rawStr;
-          return (
-            rawStr.toLowerCase().includes(q) ||
-            formattedStr.toLowerCase().includes(q)
-          );
-        });
-      }
-      return true;
-    });
-
-    if (!sortConfig) return filtered;
-
-    const { key, direction } = sortConfig;
-    return [...filtered].sort((a, b) => {
-      const valA =
-        key === 'equivDiameterInch'
-          ? getJointEquivDiaInch(a)
-          : key === 'labRequestStatus'
-          ? getJointLabRequestStatus(a, labRequests)
-          : a[key] ?? '';
-      const valB =
-        key === 'equivDiameterInch'
-          ? getJointEquivDiaInch(b)
-          : key === 'labRequestStatus'
-          ? getJointLabRequestStatus(b, labRequests)
-          : b[key] ?? '';
-      const cmp = String(valA).localeCompare(String(valB), 'ru', {
-        numeric: true,
-      });
-      return direction === 'asc' ? cmp : -cmp;
+    return filterAndSortJoints(scopedJoints, {
+      columnFilters,
+      globalSearch,
+      weldingDateFrom,
+      weldingDateTo,
+      sortConfig,
+      labRequests,
     });
   }, [
     scopedJoints,
@@ -146,20 +86,7 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
 
   const getUniqueValuesForColumn = useCallback(
     (colKey: WeldJointFieldKey) => {
-      const counts = new Map<string, number>();
-      for (const j of scopedJoints) {
-        const raw =
-          colKey === 'equivDiameterInch'
-            ? getJointEquivDiaInch(j)
-            : colKey === 'labRequestStatus'
-            ? getJointLabRequestStatus(j, labRequests)
-            : j[colKey];
-        const val = String(raw ?? '');
-        counts.set(val, (counts.get(val) || 0) + 1);
-      }
-      return Array.from(counts.entries())
-        .map(([value, count]) => ({ value, count }))
-        .sort((a, b) => a.value.localeCompare(b.value, 'ru', { numeric: true }));
+      return computeColumnUniqueValues(scopedJoints, colKey, labRequests);
     },
     [scopedJoints, labRequests]
   );
