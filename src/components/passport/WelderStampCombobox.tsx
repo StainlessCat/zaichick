@@ -158,8 +158,8 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="relative">
-      <label className="flex items-center justify-between gap-1.5 text-xs font-bold text-slate-800 mb-1">
+    <div ref={containerRef} className="relative flex flex-col justify-end">
+      <label className="flex items-center justify-between gap-1.5 h-4 leading-4 text-xs font-semibold text-slate-800 mb-1 select-none">
         <span className="inline-flex items-center gap-1.5">
           <Users
             className={`w-3.5 h-3.5 ${
@@ -215,7 +215,7 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
           placeholder={placeholder}
           aria-label={ariaLabel}
           autoComplete="off"
-          className={`w-full pl-8 pr-14 py-2 bg-white border rounded-lg text-xs font-mono font-bold transition-colors ${
+          className={`w-full h-8 pl-8 pr-14 bg-white border rounded-md text-xs font-mono font-bold transition-colors ${
             matchedProfile
               ? 'border-[#1e3799] text-[#1e3799]'
               : inputText.trim()

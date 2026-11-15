@@ -28,6 +28,7 @@ import {
   GOST_16037_JOINT_TYPES,
   NAKS_WELDING_POSITIONS,
 } from '../../utils/weldingLogic';
+import { Button, FormField, Input, Select } from '../ui';
 import { WelderStampCombobox } from './WelderStampCombobox';
 
 export const WELDING_TYPE_OPTIONS: WeldingType[] = [
@@ -196,119 +197,80 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
         </div>
 
         {/* Строка 1: Дата сварки, Технологическая карта, Вид сварки (с проверкой по ТК), Авто-температура воздуха */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-start">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
           <div className="lg:col-span-3">
-            <label className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1 h-5">
-              <span>Дата сварки *</span>
-              <span className="font-mono text-[#1e3799]">
-                {formatDateDDMMYY(form.weldingDate) || 'ДД.ММ.ГГ'}
-              </span>
-            </label>
-            <input
-              type="date"
-              value={form.weldingDate}
-              onChange={(e) =>
-                setForm((prev: WeldJoint) => ({
-                  ...prev,
-                  weldingDate: e.target.value,
-                }))
-              }
-              aria-label="Дата сварки"
-              className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-semibold"
-            />
+            <FormField label="Дата сварки *">
+              <Input
+                type="date"
+                value={form.weldingDate}
+                onChange={(e) =>
+                  setForm((prev: WeldJoint) => ({
+                    ...prev,
+                    weldingDate: e.target.value,
+                  }))
+                }
+                aria-label="Дата сварки"
+                className="w-full font-mono font-semibold"
+              />
+            </FormField>
           </div>
 
           <div className="lg:col-span-4">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1 h-5 min-h-[20px] max-h-[20px] overflow-hidden leading-none">
-              <span className="truncate">Техкарта (ТК) *</span>
-              {autoMatchedTechCard && autoMatchedTechCard.number !== form.techCardNumber && (
-                <button
-                  type="button"
-                  onClick={() => handleSelectTechCard(autoMatchedTechCard.number)}
-                  className="p-1 rounded text-amber-600 hover:text-amber-700 hover:bg-amber-100 transition-colors shrink-0"
-                  title={`Автоподбор ТК под Ø${currentJointDiam}×${currentJointWall} мм: нажать для применения ${autoMatchedTechCard.number} (${autoMatchedTechCard.weldingType})`}
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-                </button>
-              )}
-              {autoMatchedTechCard && autoMatchedTechCard.number === form.techCardNumber && (
-                <span
-                  className="inline-flex items-center text-emerald-600 shrink-0"
-                  title={`ТК ${autoMatchedTechCard.number} соответствует параметрам стыка`}
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
-                </span>
-              )}
-            </div>
-            <select
-              value={form.techCardNumber}
-              onChange={(e) => handleSelectTechCard(e.target.value)}
-              aria-label="Технологическая карта на сварку"
-              className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-bold text-[#1e3799]"
-            >
-              {techCards.map((tc) => (
-                <option key={tc.id} value={tc.number}>
-                  {tc.number} · {tc.weldingType} (Ø{tc.minDiameterMm}–{tc.maxDiameterMm} мм)
-                </option>
-              ))}
-              {!techCards.some((tc) => tc.number === form.techCardNumber) &&
-                form.techCardNumber && (
-                  <option value={form.techCardNumber}>
-                    {form.techCardNumber}
+            <FormField label="Техкарта (ТК) *">
+              <Select
+                value={form.techCardNumber}
+                onChange={(e) => handleSelectTechCard(e.target.value)}
+                aria-label="Технологическая карта на сварку"
+                className="w-full font-mono font-bold"
+              >
+                {techCards.map((tc) => (
+                  <option key={tc.id} value={tc.number}>
+                    {tc.number} · {tc.weldingType} (Ø{tc.minDiameterMm}–{tc.maxDiameterMm} мм)
                   </option>
-                )}
-            </select>
+                ))}
+                {!techCards.some((tc) => tc.number === form.techCardNumber) &&
+                  form.techCardNumber && (
+                    <option value={form.techCardNumber}>
+                      {form.techCardNumber}
+                    </option>
+                  )}
+              </Select>
+            </FormField>
           </div>
 
           <div className="lg:col-span-3">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-1 h-5">
-              <span className="truncate">Вид сварки *</span>
-              {selectedTechCard && !weldingTypeValidation.isValid && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setForm((prev: WeldJoint) => ({
+            <FormField label="Вид сварки *">
+              <Select
+                value={form.weldingType}
+                onChange={(e) => {
+                  const newMethod = e.target.value as WeldingType;
+                  setForm((prev: WeldJoint) => {
+                    const firstStamp = prev.welderStamp.split(/[\s,]+/)[0];
+                    const w1 = findWelderByStamp(personalWelders, firstStamp, false);
+                    const newCert = w1
+                      ? getWelderCertForMethod(w1, newMethod).certNumber || prev.welderCertNumber
+                      : prev.welderCertNumber;
+                    return {
                       ...prev,
-                      weldingType: selectedTechCard.weldingType,
-                    }))
-                  }
-                  className="text-[10px] font-mono text-[#1e3799] hover:underline"
-                  title="Установить вид сварки по выбранной техкарте"
-                >
-                  По ТК: {selectedTechCard.weldingType}
-                </button>
-              )}
-            </div>
-            <select
-              value={form.weldingType}
-              onChange={(e) => {
-                const newMethod = e.target.value as WeldingType;
-                setForm((prev: WeldJoint) => {
-                  const firstStamp = prev.welderStamp.split(/[\s,]+/)[0];
-                  const w1 = findWelderByStamp(personalWelders, firstStamp, false);
-                  const newCert = w1
-                    ? getWelderCertForMethod(w1, newMethod).certNumber || prev.welderCertNumber
-                    : prev.welderCertNumber;
-                  return {
-                    ...prev,
-                    weldingType: newMethod,
-                    welderCertNumber: newCert,
-                  };
-                });
-              }}
-              aria-label="Вид сварки"
-              className={`w-full px-2.5 py-2 bg-white border rounded-md text-xs font-mono font-bold ${
-                weldingTypeValidation.isValid
-                  ? 'border-emerald-400 text-emerald-900'
-                  : 'border-red-400 text-red-900 bg-red-50/40'
-              }`}
-            >
-              {WELDING_TYPE_OPTIONS.map((wt: WeldingType) => (
-                <option key={wt} value={wt}>
-                  {wt}
-                </option>
-              ))}
-            </select>
+                      weldingType: newMethod,
+                      welderCertNumber: newCert,
+                    };
+                  });
+                }}
+                aria-label="Вид сварки"
+                className={`w-full font-mono font-bold ${
+                  weldingTypeValidation.isValid
+                    ? 'border-emerald-400 text-emerald-900'
+                    : 'border-red-400 text-red-900 bg-red-50/40'
+                }`}
+              >
+                {WELDING_TYPE_OPTIONS.map((wt: WeldingType) => (
+                  <option key={wt} value={wt}>
+                    {wt}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
             <div
               className={`mt-1 px-2 py-1 rounded text-[10px] flex items-center gap-1 ${
                 weldingTypeValidation.isValid
@@ -328,86 +290,34 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
 
           <div className="lg:col-span-2">
-            <div className="flex items-center justify-between text-xs font-medium text-slate-600 mb-1 h-5">
-              <span>T возд., °C</span>
-              {form.ambientTemp ? (
-                <span
-                  className={`text-[9px] px-1 py-0.2 rounded font-sans font-semibold ${
-                    archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
-                      ? 'bg-sky-100 text-sky-800'
-                      : 'bg-emerald-100 text-emerald-800'
-                  }`}
-                  title={
-                    archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
-                      ? `Данные получены из архива метеостанции ${currentWeatherStationName}`
-                      : 'Фактический замер температуры поверенным термометром при сварке на объекте'
-                  }
-                >
-                  {archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
-                    ? 'Метеостанция'
-                    : 'Замер на трассе'}
-                </span>
+            <FormField label="T возд., °C">
+              {rbac.canEditPrepAndWeldingFields ? (
+                <div className="relative">
+                  <Input
+                    type="text"
+                    value={form.ambientTemp || ''}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        ambientTemp: normalizeDecimalInput(e.target.value),
+                      }))
+                    }
+                    placeholder="нет данных"
+                    title="Температура воздуха"
+                    className="w-full pl-7 pr-2 font-mono font-bold"
+                  />
+                  <CloudSun
+                    className="w-3.5 h-3.5 absolute left-2 top-2 text-sky-600 pointer-events-none"
+                  />
+                </div>
               ) : (
-                <span className="text-[9px] px-1 py-0.2 rounded font-sans bg-slate-100 text-slate-500">
-                  Нет данных
-                </span>
+                <div
+                  className="h-8 px-2 border border-slate-300 rounded-md bg-slate-50 flex items-center text-xs font-mono font-bold text-slate-700"
+                >
+                  {form.ambientTemp ? `${form.ambientTemp} °C` : 'нет данных'}
+                </div>
               )}
-            </div>
-
-            {rbac.canEditPrepAndWeldingFields ? (
-              <div className="relative">
-                <input
-                  type="text"
-                  value={form.ambientTemp || ''}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      ambientTemp: normalizeDecimalInput(e.target.value),
-                    }))
-                  }
-                  placeholder="нет данных"
-                  title="Температура воздуха: введите фактический замер на трассе или используйте данные метеостанции"
-                  className={`w-full pl-7 pr-2 py-1.5 rounded-md border text-xs font-mono font-bold transition-colors ${
-                    form.ambientTemp
-                      ? archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
-                        ? 'bg-[#f4f8fe] border-sky-300 text-[#1e3799]'
-                        : 'bg-emerald-50 border-emerald-300 text-emerald-900'
-                      : 'bg-slate-50 border-slate-200 text-slate-500'
-                  }`}
-                />
-                <CloudSun
-                  className={`w-3.5 h-3.5 absolute left-2 top-2.5 ${
-                    form.ambientTemp
-                      ? archivedStationTemp && (form.ambientTemp === archivedStationTemp || form.ambientTemp === '+' + archivedStationTemp)
-                        ? 'text-sky-600'
-                        : 'text-emerald-600'
-                      : 'text-slate-400'
-                  }`}
-                />
-              </div>
-            ) : (
-              <div
-                title={
-                  form.ambientTemp
-                    ? `Источник: ${currentWeatherStationName} (наблюдения станции)`
-                    : 'За указанную дату фактические наблюдения метеостанции отсутствуют'
-                }
-                className={`px-2.5 py-2 rounded-md border flex items-center justify-between text-xs font-mono font-bold ${
-                  form.ambientTemp
-                    ? 'bg-[#f4f8fe] border-sky-200 text-[#1e3799]'
-                    : 'bg-slate-50 border-slate-200 text-slate-400'
-                }`}
-              >
-                <span className="inline-flex items-center gap-1.5">
-                  <CloudSun className={`w-3.5 h-3.5 shrink-0 ${form.ambientTemp ? 'text-sky-600' : 'text-slate-400'}`} />
-                  {form.ambientTemp ? (
-                    <span>{form.ambientTemp} °C</span>
-                  ) : (
-                    <span className="italic font-normal text-slate-500">нет данных</span>
-                  )}
-                </span>
-              </div>
-            )}
+            </FormField>
 
             <div className="mt-1 flex items-center justify-between text-[10px]">
               <span
@@ -607,46 +517,46 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
         </div>
 
         {/* Строка 3: Температура подогрева и Сварочные материалы */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
           <div className="lg:col-span-5">
-            <label className="block text-xs font-bold text-slate-800 mb-1">
-              Температура подогрева, °C *
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                inputMode="decimal"
-                value={form.preheatTemp ?? ''}
-                onChange={(e) =>
-                  setForm((prev: WeldJoint) => ({
-                    ...prev,
-                    preheatTemp: normalizeDecimalInput(e.target.value),
-                  }))
-                }
-                placeholder="Напр.: 150"
-                aria-label="Температура подогрева"
-                className={`w-full px-3 py-2 bg-white border rounded-md text-xs font-mono font-bold ${
-                  preheatValidation.isValid
-                    ? 'border-emerald-400 text-emerald-900'
-                    : 'border-red-400 text-red-900 bg-red-50/40'
-                }`}
-              />
-              {preheatValidation.requiredMinC > 0 && (
-                <button
-                  type="button"
-                  onClick={() =>
+            <FormField label="Температура подогрева, °C *">
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={form.preheatTemp ?? ''}
+                  onChange={(e) =>
                     setForm((prev: WeldJoint) => ({
                       ...prev,
-                      preheatTemp: String(preheatValidation.requiredMinC),
+                      preheatTemp: normalizeDecimalInput(e.target.value),
                     }))
                   }
-                  className="px-2.5 py-2 rounded-md bg-sky-50 border border-sky-200 text-[#1e3799] text-[11px] font-mono font-semibold whitespace-nowrap hover:bg-sky-100"
-                  title="Подставить минимальную температуру подогрева по ТК"
-                >
-                  Норма ≥ +{preheatValidation.requiredMinC} °C
-                </button>
-              )}
-            </div>
+                  placeholder="Напр.: 150"
+                  aria-label="Температура подогрева"
+                  className={`w-full font-mono font-bold ${
+                    preheatValidation.isValid
+                      ? 'border-emerald-400 text-emerald-900'
+                      : 'border-red-400 text-red-900 bg-red-50/40'
+                  }`}
+                />
+                {preheatValidation.requiredMinC > 0 && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() =>
+                      setForm((prev: WeldJoint) => ({
+                        ...prev,
+                        preheatTemp: String(preheatValidation.requiredMinC),
+                      }))
+                    }
+                    className="shrink-0 text-[11px] font-mono font-semibold"
+                    title="Подставить минимальную температуру подогрева по ТК"
+                  >
+                    ≥ +{preheatValidation.requiredMinC} °C
+                  </Button>
+                )}
+              </div>
+            </FormField>
             <div
               className={`mt-1.5 px-2.5 py-1.5 rounded text-[11px] flex items-start gap-1.5 ${
                 preheatValidation.isValid
@@ -664,59 +574,57 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
 
           <div className="lg:col-span-4">
-            <label className="block text-xs font-bold text-slate-800 mb-1">
-              Сварочные материалы
-            </label>
-            <select
-              value={form.weldingMaterials}
-              onChange={(e) =>
-                setForm((prev: WeldJoint) => ({
-                  ...prev,
-                  weldingMaterials: e.target.value,
-                }))
-              }
-              aria-label="Сварочные материалы"
-              className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
-            >
-              {weldingMaterialsList.map((wm) => (
-                <option key={wm.id} value={wm.brandAndDiameter}>
-                  {wm.brandAndDiameter} ({wm.certificateNumber} · ВК{' '}
-                  {formatDateDDMMYY(wm.incomingControlDate)})
-                </option>
-              ))}
-              {!weldingMaterialsList.some(
-                (wm) => wm.brandAndDiameter === form.weldingMaterials
-              ) &&
-                form.weldingMaterials && (
-                  <option value={form.weldingMaterials}>
-                    {form.weldingMaterials}
+            <FormField label="Сварочные материалы">
+              <Select
+                value={form.weldingMaterials}
+                onChange={(e) =>
+                  setForm((prev: WeldJoint) => ({
+                    ...prev,
+                    weldingMaterials: e.target.value,
+                  }))
+                }
+                aria-label="Сварочные материалы"
+                className="w-full font-mono"
+              >
+                {weldingMaterialsList.map((wm) => (
+                  <option key={wm.id} value={wm.brandAndDiameter}>
+                    {wm.brandAndDiameter} ({wm.certificateNumber} · ВК{' '}
+                    {formatDateDDMMYY(wm.incomingControlDate)})
                   </option>
-                )}
-            </select>
+                ))}
+                {!weldingMaterialsList.some(
+                  (wm) => wm.brandAndDiameter === form.weldingMaterials
+                ) &&
+                  form.weldingMaterials && (
+                    <option value={form.weldingMaterials}>
+                      {form.weldingMaterials}
+                    </option>
+                  )}
+              </Select>
+            </FormField>
           </div>
 
           <div className="lg:col-span-3">
-            <label className="block text-xs font-bold text-slate-800 mb-1">
-              Ответственное лицо
-            </label>
-            <input
-              type="text"
-              value={form.responsiblePerson}
-              onChange={(e) =>
-                setForm((prev: WeldJoint) => ({
-                  ...prev,
-                  responsiblePerson: e.target.value,
-                }))
-              }
-              aria-label="Ответственное лицо"
-              className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-md text-xs"
-            />
+            <FormField label="Ответственное лицо">
+              <Input
+                type="text"
+                value={form.responsiblePerson}
+                onChange={(e) =>
+                  setForm((prev: WeldJoint) => ({
+                    ...prev,
+                    responsiblePerson: e.target.value,
+                  }))
+                }
+                aria-label="Ответственное лицо"
+                className="w-full"
+              />
+            </FormField>
           </div>
         </div>
 
         {/* Строка 4: Радиопереключатель «Стыковое / Угловое», Место сварки, Тип сварного соединения по ГОСТ 16037, Положение при сварке */}
         <div className="space-y-3 pt-2 border-t border-slate-100">
-          <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+          <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
             <span className="text-xs font-bold text-slate-800">
               Вид сварного соединения:
             </span>
@@ -757,19 +665,11 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 <span>Угловое (врезка / штуцер)</span>
               </label>
             </div>
-            <span className="text-[11px] text-slate-500 font-mono">
-              {form.jointKind === 'Угловое'
-                ? 'Врезка: допускаются разные диаметры деталей'
-                : 'Стыковое: диаметры деталей должны совпадать'}
-            </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
-                Тип стыка (место) *
-              </label>
-              <select
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <FormField label="Тип стыка (место) *">
+              <Select
                 value={form.jointType || 'Монтажный'}
                 onChange={(e) =>
                   setForm((prev: WeldJoint) => ({
@@ -778,18 +678,15 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                   }))
                 }
                 aria-label="Тип стыка"
-                className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-semibold text-[#1e3799]"
+                className="w-full text-xs font-semibold"
               >
                 <option value="Монтажный">Монтажный (площадка)</option>
                 <option value="Цеховой">Цеховой (цех / база)</option>
-              </select>
-            </div>
+              </Select>
+            </FormField>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
-                Тип соединения по ГОСТ 16037 *
-              </label>
-              <select
+            <FormField label="Тип соединения по ГОСТ 16037 *">
+              <Select
                 value={form.gostJointType || (form.jointKind === 'Угловое' ? 'У16' : 'С17')}
                 onChange={(e) =>
                   setForm((prev: WeldJoint) => ({
@@ -798,7 +695,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                   }))
                 }
                 aria-label="Тип сварного соединения"
-                className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-semibold text-[#1e3799]"
+                className="w-full text-xs font-semibold"
               >
                 {filteredGostOptions.map((gost) => (
                   <option key={gost.code} value={gost.code}>
@@ -810,14 +707,11 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                     {form.gostJointType}
                   </option>
                 )}
-              </select>
-            </div>
+              </Select>
+            </FormField>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-800 mb-1 whitespace-nowrap">
-                Положение при сварке *
-              </label>
-              <select
+            <FormField label="Положение при сварке *">
+              <Select
                 value={form.weldingPosition || 'В1'}
                 onChange={(e) =>
                   setForm((prev: WeldJoint) => ({
@@ -826,15 +720,15 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                   }))
                 }
                 aria-label="Положение"
-                className="w-full px-2.5 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-semibold text-[#1e3799]"
+                className="w-full text-xs font-semibold"
               >
                 {NAKS_WELDING_POSITIONS.map((pos) => (
                   <option key={pos.code} value={pos.code}>
                     {pos.description}
                   </option>
                 ))}
-              </select>
-            </div>
+              </Select>
+            </FormField>
           </div>
         </div>
       </div>
