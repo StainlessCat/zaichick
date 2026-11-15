@@ -184,7 +184,7 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
   });
 
   test('5. enforceFieldLevelRbacOnJointSave предотвращает подделку НК при создании и редактировании стыка', () => {
-    const mockJoint: WeldJoint = {
+    const mockJoint = {
       id: 'j-1',
       jointNumber: 'С-101',
       objectName: 'УКПГ-1С',
@@ -193,7 +193,7 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
       welderStamp: 'СВ01',
       vikResult: 'Не проводился',
       ndtResult: 'Не проводился',
-    };
+    } as WeldJoint;
 
     // 1) ПТО пытается создать новый стык сразу со статусом «Годен» по ВИК и НК
     const attemptedNewJoint: WeldJoint = {
@@ -257,6 +257,7 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
         fullName: 'Петров Петр Петрович',
         role: 'Дефектоскопист',
         department: 'Лаборатория НК',
+        sessionNumber: 1,
       },
       {
         id: 'u2',
@@ -264,6 +265,7 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
         fullName: 'Иванов Иван Иванович',
         role: 'Инженер ПТО',
         department: 'ПТО',
+        sessionNumber: 2,
       },
     ];
 
