@@ -264,9 +264,8 @@ export async function refreshWeatherStation(
         latestTMean: data.latest_t_mean,
       };
     }
+    return { status: 'error', refreshedCount: 0, latestTMean: null };
   } catch {
-    // fallback
+    return { status: 'error', refreshedCount: 0, latestTMean: null };
   }
-
-  return { status: 'ok', refreshedCount: 1, latestTMean: null };
 }

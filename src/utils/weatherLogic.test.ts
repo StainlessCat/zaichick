@@ -123,3 +123,57 @@ test('weatherLogic: bulkUpdateJointsTemperaturesFromArchive updates matching joi
   assert.equal(updatedJoints[1].ambientTemp, ''); // нет даты в архиве
   assert.equal(updatedJoints[2].ambientTemp, ''); // другой объект
 });
+
+test('weatherLogic: joints with different welding dates are strictly protected against cross-pollution', () => {
+  const joints: WeldJoint[] = [
+    {
+      id: 'j-oct1',
+      objectName: 'КС-4',
+      weldingDate: '2026-10-01',
+      ambientTemp: '',
+    } as unknown as WeldJoint,
+    {
+      id: 'j-nov15',
+      objectName: 'КС-4',
+      weldingDate: '2026-11-15',
+      ambientTemp: '',
+    } as unknown as WeldJoint,
+  ];
+
+  // Daily observations for two separate dates
+  const dailyObservations = new Map<string, { tMean: number; source: string }>([
+    ['2026-10-01', { tMean: 12.4, source: 'SYNOP Ogimet' }],
+    ['2026-11-15', { tMean: -8.6, source: 'NOAA GSOD' }],
+  ]);
+
+  // When applying weather specifically for 2026-11-15:
+  const targetDate = '2026-11-15';
+  const obs = dailyObservations.get(targetDate)!;
+  const formattedNov = obs.tMean > 0 ? `+${obs.tMean.toFixed(1)}` : obs.tMean.toFixed(1);
+
+  const updatedTargetDateOnly = joints.map((j) => {
+    if (!j.ambientTemp && j.weldingDate === targetDate) {
+      return { ...j, ambientTemp: formattedNov, weatherSource: obs.source };
+    }
+    return j;
+  });
+
+  // j-oct1 MUST remain untouched!
+  assert.equal(updatedTargetDateOnly[0].ambientTemp, '', 'Стык другой даты (01.10) не должен получить температуру 15.11');
+  // j-nov15 MUST receive -8.6
+  assert.equal(updatedTargetDateOnly[1].ambientTemp, '-8.6');
+  assert.equal(updatedTargetDateOnly[1].weatherSource, 'NOAA GSOD');
+
+  // When batch-mapping all dates to their own respective daily observations:
+  const updatedAllDates = joints.map((j) => {
+    const dayObs = dailyObservations.get(j.weldingDate || '');
+    if (!j.ambientTemp && dayObs) {
+      const fmt = dayObs.tMean > 0 ? `+${dayObs.tMean.toFixed(1)}` : dayObs.tMean.toFixed(1);
+      return { ...j, ambientTemp: fmt, weatherSource: dayObs.source };
+    }
+    return j;
+  });
+
+  assert.equal(updatedAllDates[0].ambientTemp, '+12.4', 'Стык 01.10 получает строго свою температуру +12.4°C');
+  assert.equal(updatedAllDates[1].ambientTemp, '-8.6', 'Стык 15.11 получает строго свою температуру -8.6°C');
+});

@@ -28,7 +28,7 @@ export interface JointsRegistryViewProps {
   welders?: WelderProfile[];
   labRequests?: NdtLabRequest[];
   currentUserFullName?: string;
-  onCreateLabRequest?: (newReq: NdtLabRequest) => void;
+  onCreateLabRequest?: (newReq: NdtLabRequest) => Promise<boolean> | boolean | void;
   selectedJointIds: string[];
   onToggleSelectRow: (jointId: string) => void;
   onToggleSelectAll: () => void;

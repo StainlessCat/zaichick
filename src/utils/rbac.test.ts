@@ -274,4 +274,14 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
     expect(merged.some((i) => i.fullName === 'Петров П.П.')).toBe(true);
     expect(merged.some((i) => i.fullName === 'Иванов И.И.')).toBe(false);
   });
+
+  test('8. Гостевой профиль (anonymous / customer) строго заблокирован от создания заявок и выдачи заключений', () => {
+    const perms = getUserRolePermissions(anonymousUser);
+    expect(perms.category).toBe('customer');
+    expect(perms.canEditNdtFields).toBe(false);
+    expect(perms.canEditLineList).toBe(false);
+    expect(perms.canCreateOrDeleteJoints).toBe(false);
+    expect(perms.canEditPrepAndWeldingFields).toBe(false);
+    expect(perms.canEditWeldingTech).toBe(false);
+  });
 });

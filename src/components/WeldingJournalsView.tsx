@@ -450,24 +450,102 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
     }
   };
 
-  // Подстановка фактической температуры в стыки линии
+  // Подстановка фактической температуры в стыки линии строго по дате сварки
   const handleApplyWeatherTemp = (tempMean: number) => {
+    if (!activeJointDate) {
+      showToast('Дата сварки не определена.');
+      return;
+    }
     const formatted = tempMean > 0 ? `+${tempMean.toFixed(1)}` : tempMean.toFixed(1);
     let updatedCount = 0;
+    let otherDatesCount = 0;
+
     lineScopedJoints.forEach((j) => {
       if (!j.ambientTemp && onEditJoint) {
-        onEditJoint({
-          ...j,
-          ambientTemp: formatted,
-          weatherSource: dailyWeather?.source === 'SYNOP_LIVE' ? 'SYNOP Ogimet' : 'NOAA GSOD',
-        });
-        updatedCount++;
+        if (j.weldingDate === activeJointDate) {
+          onEditJoint({
+            ...j,
+            ambientTemp: formatted,
+            weatherSource: dailyWeather?.source === 'SYNOP_LIVE' ? 'SYNOP Ogimet' : 'NOAA GSOD',
+          });
+          updatedCount++;
+        } else if (j.weldingDate) {
+          otherDatesCount++;
+        }
       }
     });
+
     if (updatedCount > 0) {
-      showToast(`Фактическая температура ${formatted}°C внесена в ${updatedCount} стык(ов).`);
+      let msg = `Фактическая температура ${formatted}°C внесена в ${updatedCount} стык(ов) за дату ${activeJointDate}.`;
+      if (otherDatesCount > 0) {
+        msg += ` Стыки других дат (${otherDatesCount} шт.) защищены от подмены данных.`;
+      }
+      showToast(msg);
+    } else if (otherDatesCount > 0) {
+      showToast(`Стыков без температуры за дату ${activeJointDate} нет. На линии есть ${otherDatesCount} стыков за другие даты.`);
     } else {
-      showToast(`Текущая температура ${formatted}°C готова к автоматическому внесению.`);
+      showToast(`Все стыки за дату ${activeJointDate} уже имеют заполненную температуру.`);
+    }
+  };
+
+  // Пакетное заполнение температуры по всем уникальным датам сварки линии
+  const handleApplyAllDatesWeather = async () => {
+    if (!selectedWeatherStationId) {
+      showToast('Метеостанция не привязана к объекту.');
+      return;
+    }
+    const emptyJoints = lineScopedJoints.filter(
+      (j) => !j.ambientTemp && j.weldingDate && /^\d{4}-\d{2}-\d{2}$/.test(j.weldingDate)
+    );
+    if (emptyJoints.length === 0) {
+      showToast('Нет стыков с незаполненной температурой.');
+      return;
+    }
+    const uniqueDates = Array.from(new Set(emptyJoints.map((j) => j.weldingDate!))).sort();
+    const minDate = uniqueDates[0];
+    const maxDate = uniqueDates[uniqueDates.length - 1];
+
+    setIsLoadingWeather(true);
+    try {
+      const dailyRecords = await fetchWeatherDaily(selectedWeatherStationId, minDate, maxDate);
+      const recordsByDate = new Map<string, WeatherDailyItem>();
+      dailyRecords.forEach((r) => {
+        if (r.obsDate) recordsByDate.set(r.obsDate, r);
+      });
+
+      let updatedCount = 0;
+      let missingCount = 0;
+      const updatedDates = new Set<string>();
+
+      emptyJoints.forEach((j) => {
+        const rec = recordsByDate.get(j.weldingDate!);
+        if (rec && rec.tMean != null && onEditJoint) {
+          const formatted = rec.tMean > 0 ? `+${rec.tMean.toFixed(1)}` : rec.tMean.toFixed(1);
+          onEditJoint({
+            ...j,
+            ambientTemp: formatted,
+            weatherSource: rec.source === 'SYNOP_LIVE' ? 'SYNOP Ogimet' : 'NOAA GSOD',
+          });
+          updatedCount++;
+          updatedDates.add(j.weldingDate!);
+        } else {
+          missingCount++;
+        }
+      });
+
+      if (updatedCount > 0) {
+        showToast(
+          `Внесена температура для ${updatedCount} стык(ов) по ${updatedDates.size} датам сварки.${
+            missingCount > 0 ? ` Пропущено ${missingCount} стык(ов) без данных в метеоархиве.` : ''
+          }`
+        );
+      } else {
+        showToast(`В архиве метеостанции нет данных на даты сварки (${uniqueDates.join(', ')}).`);
+      }
+    } catch {
+      showToast('Ошибка при загрузке архивных метеоданных.');
+    } finally {
+      setIsLoadingWeather(false);
     }
   };
 
@@ -820,6 +898,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
         isLoadingWeather={isLoadingWeather}
         onRefreshWeather={handleRefreshWeather}
         onApplyWeatherTemp={handleApplyWeatherTemp}
+        onApplyAllDatesWeather={handleApplyAllDatesWeather}
       />
 
       {/* Официальный нормативный бланк выбранного журнала */}

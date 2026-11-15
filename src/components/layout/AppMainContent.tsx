@@ -103,12 +103,12 @@ export interface AppMainContentProps {
     React.SetStateAction<Partial<Record<WeldJointFieldKey, string[]>>>
   >;
   // Лаборатория НК
-  onCreateLabRequest: (req: NdtLabRequest) => void;
+  onCreateLabRequest: (req: NdtLabRequest) => Promise<boolean> | void;
   onAcceptLabRequest: (
     requestId: string,
     defectoscopistName: string,
     jointUpdates: Array<{ jointId: string; patch: Partial<WeldJoint> }>
-  ) => void;
+  ) => Promise<boolean> | void;
   onSaveLabConclusions: (
     jointUpdates: Array<{ jointId: string; patch: Partial<WeldJoint> }>,
     actionSummary: string,

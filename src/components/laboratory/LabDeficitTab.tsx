@@ -9,6 +9,7 @@ interface LabDeficitTabProps {
   expandedRdCodes: Record<string, boolean>;
   setExpandedRdCodes: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   onOpenCreateRequestModal: (line: NdtLineDeficitRow) => void;
+  canCreateRequest?: boolean;
 }
 
 export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
@@ -18,6 +19,7 @@ export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
   expandedRdCodes,
   setExpandedRdCodes,
   onOpenCreateRequestModal,
+  canCreateRequest = true,
 }) => {
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
@@ -319,9 +321,14 @@ export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
                             <td className="py-2.5 px-3 text-right">
                               <button
                                 type="button"
-                                disabled={line.weldedCount === 0}
+                                disabled={line.weldedCount === 0 || !canCreateRequest}
                                 onClick={() => onOpenCreateRequestModal(line)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-200 disabled:text-slate-400 text-white text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                                title={
+                                  !canCreateRequest
+                                    ? 'Для формирования заявки требуется авторизация с ролью инженера ПТО'
+                                    : undefined
+                                }
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-200 disabled:text-slate-400 text-white text-[11px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
                               >
                                 <Plus className="w-3.5 h-3.5" />
                                 <span>Сформировать заявку ({line.candidateJoints.length || line.weldedCount} ст.)</span>

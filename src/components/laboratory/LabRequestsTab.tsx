@@ -30,6 +30,7 @@ interface LabRequestsTabProps {
   inspectors: InspectorProfile[];
   jointsById: Map<string, WeldJoint>;
   canDeleteRequest?: boolean;
+  canAcceptRequest?: boolean;
   onOpenCreateRequestModal: () => void;
   onAcceptRequestClick: (req: NdtLabRequest) => void;
   onDeleteRequestClick?: (req: NdtLabRequest) => void;
@@ -47,6 +48,7 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
   inspectors,
   jointsById,
   canDeleteRequest,
+  canAcceptRequest = true,
   onOpenCreateRequestModal,
   onAcceptRequestClick,
   onDeleteRequestClick,
@@ -174,8 +176,14 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                     {req.status === 'Подана ПТО' && (
                       <button
                         type="button"
+                        disabled={!canAcceptRequest}
                         onClick={() => onAcceptRequestClick(req)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap"
+                        title={
+                          !canAcceptRequest
+                            ? 'Для приёмки заявки в работу требуется авторизация с ролью дефектоскописта ЛНК'
+                            : undefined
+                        }
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 disabled:text-slate-400 text-slate-950 text-xs font-bold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
                       >
                         <Play className="w-3.5 h-3.5" />
                         <span>Принять заявку в работу ЛНК</span>

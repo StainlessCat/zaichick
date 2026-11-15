@@ -38,6 +38,7 @@ interface JournalToolbarProps {
   isLoadingWeather?: boolean;
   onRefreshWeather?: () => void;
   onApplyWeatherTemp?: (temp: number) => void;
+  onApplyAllDatesWeather?: () => void;
 }
 
 export const JournalToolbar: React.FC<JournalToolbarProps> = ({
@@ -64,6 +65,7 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
   isLoadingWeather,
   onRefreshWeather,
   onApplyWeatherTemp,
+  onApplyAllDatesWeather,
 }) => {
   return (
     <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5 no-print">
@@ -152,6 +154,7 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
               isLoading={isLoadingWeather}
               onRefresh={onRefreshWeather}
               onApplyTemp={onApplyWeatherTemp}
+              onApplyAllDates={onApplyAllDatesWeather}
             />
           </>
         )}

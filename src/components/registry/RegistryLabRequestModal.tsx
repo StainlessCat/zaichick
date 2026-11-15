@@ -36,6 +36,8 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
   const [labReqStage, setLabReqStage] =
     useState<NdtLabControlStage>('Первичный ВИК и НК');
   const [labReqNotes, setLabReqNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const candidateEvaluation = useMemo(() => {
     const targetSet = new Set(candidateJointIds);
@@ -61,8 +63,8 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
 
   if (!isOpen) return null;
 
-  const handleConfirmSubmit = () => {
-    if (candidateEvaluation.eligible.length === 0) return;
+  const handleConfirmSubmit = async () => {
+    if (candidateEvaluation.eligible.length === 0 || isSubmitting) return;
 
     // Группируем допущенные стыки по линиям, чтобы создать корректные заявки по каждой линии
     const byLine = new Map<string, WeldJoint[]>();
@@ -72,48 +74,62 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
       byLine.set(j.uniqueLineId, list);
     }
 
+    setIsSubmitting(true);
+    setSubmitError(null);
+
     let indexOffset = 0;
     const createdNumbers: string[] = [];
-    for (const [uLineId, lineJoints] of byLine.entries()) {
-      const sample = lineJoints[0];
-      const matchedLine = lines.find((l) => l.uniqueLineId === uLineId);
-      const reqNum =
-        byLine.size === 1
-          ? labReqNumber.trim() || suggestNextLabRequestNumber(labRequests)
-          : `${
-              labReqNumber.trim() || suggestNextLabRequestNumber(labRequests)
-            }/${indexOffset + 1}`;
-      indexOffset += 1;
-      createdNumbers.push(reqNum);
+    try {
+      for (const [uLineId, lineJoints] of byLine.entries()) {
+        const sample = lineJoints[0];
+        const matchedLine = lines.find((l) => l.uniqueLineId === uLineId);
+        const reqNum =
+          byLine.size === 1
+            ? labReqNumber.trim() || suggestNextLabRequestNumber(labRequests)
+            : `${
+                labReqNumber.trim() || suggestNextLabRequestNumber(labRequests)
+              }/${indexOffset + 1}`;
+        indexOffset += 1;
+        createdNumbers.push(reqNum);
 
-      const newReq: NdtLabRequest = {
-        id: `lab-req-${Date.now()}-${indexOffset}`,
-        requestNumber: reqNum,
-        createdAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-        createdDate: labReqDate || new Date().toISOString().slice(0, 10),
-        createdBy: currentUserFullName,
-        objectName: sample.objectName,
-        rdCode: sample.rdCode,
-        lineNumber: sample.lineNumber,
-        uniqueLineId: uLineId,
-        contour: sample.contour || matchedLine?.testContour || '',
-        requestedMethod: labReqMethod,
-        controlStage: labReqStage,
-        jointIds: lineJoints.map((j) => j.id),
-        status: 'Подана ПТО',
-        notes:
-          labReqNotes.trim() ||
-          `Заявка направлена из реестра стыков (${lineJoints.length} ст., дата сварки и клеймо НАКС проверены без замечаний)`,
-      };
-      onCreateLabRequest(newReq);
+        const newReq: NdtLabRequest = {
+          id: `lab-req-${Date.now()}-${indexOffset}`,
+          requestNumber: reqNum,
+          createdAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
+          createdDate: labReqDate || new Date().toISOString().slice(0, 10),
+          createdBy: currentUserFullName,
+          objectName: sample.objectName,
+          rdCode: sample.rdCode,
+          lineNumber: sample.lineNumber,
+          uniqueLineId: uLineId,
+          contour: sample.contour || matchedLine?.testContour || '',
+          requestedMethod: labReqMethod,
+          controlStage: labReqStage,
+          jointIds: lineJoints.map((j) => j.id),
+          status: 'Подана ПТО',
+          notes:
+            labReqNotes.trim() ||
+            `Заявка направлена из реестра стыков (${lineJoints.length} ст., дата сварки и клеймо НАКС проверены без замечаний)`,
+        };
+        const ok = await Promise.resolve(onCreateLabRequest(newReq));
+        if (ok === false) {
+          setSubmitError('Сервер отклонил сохранение заявки на НК. Проверьте права доступа и подключение.');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      onClose();
+      onSuccess(
+        `Заявка в Лабораторию НК (${createdNumbers.join(', ')}) успешно направлена для ${
+          candidateEvaluation.eligible.length
+        } ст. Статус в реестре обновлён на «Заявка подана».`
+      );
+    } catch (err: any) {
+      setSubmitError(err?.message || 'Ошибка передачи заявки на сервер');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    onClose();
-    onSuccess(
-      `Заявка в Лабораторию НК (${createdNumbers.join(', ')}) успешно направлена для ${
-        candidateEvaluation.eligible.length
-      } ст. Статус в реестре обновлён на «Заявка подана».`
-    );
   };
 
   return (
@@ -278,6 +294,13 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
               className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
             />
           </div>
+
+          {submitError && (
+            <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{submitError}</span>
+            </div>
+          )}
         </div>
 
         <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
@@ -288,19 +311,22 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer"
+              disabled={isSubmitting}
+              className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer disabled:opacity-50"
             >
               Отмена
             </button>
             <button
               type="button"
-              disabled={candidateEvaluation.eligible.length === 0}
+              disabled={candidateEvaluation.eligible.length === 0 || isSubmitting}
               onClick={handleConfirmSubmit}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-300 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-300 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:cursor-not-allowed"
             >
-              <Send className="w-3.5 h-3.5" />
+              <Send className={`w-3.5 h-3.5 ${isSubmitting ? 'animate-pulse' : ''}`} />
               <span>
-                Направить заявку ({candidateEvaluation.eligible.length} ст.)
+                {isSubmitting
+                  ? 'Сохранение...'
+                  : `Направить заявку (${candidateEvaluation.eligible.length} ст.)`}
               </span>
             </button>
           </div>

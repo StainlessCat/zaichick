@@ -59,6 +59,7 @@ interface LabConclusionsTabProps {
   onOpenJointPassport: (joint: WeldJoint) => void;
   inspectors: InspectorProfile[];
   joints: WeldJoint[];
+  canProcessNdt?: boolean;
 }
 
 export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
@@ -84,6 +85,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
   onOpenJointPassport,
   inspectors,
   joints,
+  canProcessNdt = true,
 }) => {
   return (
     <div className="space-y-3">
@@ -156,8 +158,14 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
           {dirtyJointsCount > 0 && (
             <button
               type="button"
+              disabled={!canProcessNdt}
               onClick={onSaveAllDirtyRows}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap"
+              title={
+                !canProcessNdt
+                  ? 'Для сохранения заключений требуется авторизация с ролью дефектоскописта ЛНК'
+                  : undefined
+              }
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white text-xs font-bold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
             >
               <Check className="w-4 h-4" />
               <span>
@@ -321,8 +329,14 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
             <div>
               <button
                 type="button"
+                disabled={!canProcessNdt}
                 onClick={onApplyBatchConclusions}
-                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e3799] hover:bg-[#15276e] text-white text-xs font-bold transition-colors cursor-pointer whitespace-nowrap"
+                title={
+                  !canProcessNdt
+                    ? 'Для пакетного внесения заключений требуется авторизация с ролью дефектоскописта ЛНК'
+                    : undefined
+                }
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-300 disabled:text-slate-500 text-white text-xs font-bold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
               >
                 <FileCheck2 className="w-3.5 h-3.5" />
                 <span>Внести в ведомость</span>
@@ -608,8 +622,14 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                       <td className="py-2 px-3 text-right">
                         <button
                           type="button"
+                          disabled={!canProcessNdt}
                           onClick={() => onCommitSingleJointConclusion(joint)}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                          title={
+                            !canProcessNdt
+                              ? 'Для оформления заключения требуется авторизация с ролью дефектоскописта ЛНК'
+                              : undefined
+                          }
+                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 whitespace-nowrap ${
                             isCompleted && !row.isDirty
                               ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900'
                               : 'bg-[#1e3799] hover:bg-[#15276e] text-white'

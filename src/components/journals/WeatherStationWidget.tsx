@@ -13,6 +13,7 @@ export interface WeatherStationWidgetProps {
   isLoading?: boolean;
   onRefresh?: () => void;
   onApplyTemp?: (tMean: number) => void;
+  onApplyAllDates?: () => void;
   className?: string;
 }
 
@@ -25,6 +26,7 @@ export const WeatherStationWidget: React.FC<WeatherStationWidgetProps> = ({
   isLoading = false,
   onRefresh,
   onApplyTemp,
+  onApplyAllDates,
   className = '',
 }) => {
   const currentStation = stations.find((s) => s.id === selectedStationId);
@@ -113,16 +115,30 @@ export const WeatherStationWidget: React.FC<WeatherStationWidgetProps> = ({
         </Button>
       )}
 
-      {/* 4. Опциональная кнопка подстановки в стык */}
+      {/* 4. Опциональная кнопка подстановки в стыки активной даты */}
       {onApplyTemp && hasTempData && dailyWeather?.tMean != null && (
         <Button
           type="button"
           variant="primary"
           onClick={() => onApplyTemp(dailyWeather.tMean!)}
-          title="Подставить фактическую среднесуточную температуру воздуха в выбранный стык"
+          title={`Подставить фактическую температуру ${formatTemp(dailyWeather.tMean)} в незаполненные стыки строго за дату ${activeDate || 'сегодня'}`}
           className="shrink-0 font-semibold"
         >
-          <span>В стык ({formatTemp(dailyWeather.tMean)})</span>
+          <span>В дату {activeDate ? activeDate.slice(5).replace('-', '.') : ''} ({formatTemp(dailyWeather.tMean)})</span>
+        </Button>
+      )}
+
+      {/* 5. Пакетное заполнение всех дат сварки линии */}
+      {onApplyAllDates && (
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={onApplyAllDates}
+          disabled={isLoading}
+          title="Запросить суточные наблюдения архива по всем датам сварки линии и заполнить температуру для каждого дня индивидуально"
+          className="shrink-0 font-semibold"
+        >
+          <span>Заполнить все даты</span>
         </Button>
       )}
     </div>

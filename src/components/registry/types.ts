@@ -100,6 +100,6 @@ export interface RegistryLabRequestModalProps {
   welders: WelderProfile[];
   labRequests: NdtLabRequest[];
   currentUserFullName: string;
-  onCreateLabRequest: (req: NdtLabRequest) => void;
+  onCreateLabRequest: (req: NdtLabRequest) => Promise<boolean> | boolean | void;
   onSuccess: (message: string) => void;
 }

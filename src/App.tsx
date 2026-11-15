@@ -574,39 +574,46 @@ export const App: React.FC = () => {
   ]);
 
   const handleCreateLabRequest = useCallback(
-    async (newReq: NdtLabRequest) => {
-      setLabRequests((prev) => [newReq, ...prev]);
+    async (newReq: NdtLabRequest): Promise<boolean> => {
+      if (!isAuthenticated) {
+        const msg = 'Для регистрации заявки на НК требуется вход в систему под учётной записью инженера ПТО.';
+        if (setLastSyncError) setLastSyncError(msg);
+        return false;
+      }
       try {
         const fresh = await zaychickApi.createLabRequest(newReq);
-        setLabRequests((prev) =>
-          prev.map((r) =>
-            r.id === newReq.id || r.requestNumber === newReq.requestNumber ? fresh : r
-          )
-        );
+        setLabRequests((prev) => [
+          fresh,
+          ...prev.filter(
+            (r) => r.id !== fresh.id && r.requestNumber !== fresh.requestNumber
+          ),
+        ]);
         bumpRevisionMeta(
           `Создана заявка на НК ${fresh.requestNumber}`,
           currentUser.fullName
         );
-      } catch (err) {
-        console.warn('Серверная регистрация заявки на НК не удалась:', err);
+        appendSystemAuditEntry(
+          'Подача заявки на НК от ПТО в Лабораторию',
+          newReq.uniqueLineId,
+          `${newReq.jointIds.length} ст.`,
+          'Заявка на НК',
+          '—',
+          `${fresh.requestNumber} (${fresh.requestedMethod}, ${fresh.controlStage}) — ${fresh.createdBy}`,
+          fresh.jointIds[0] || 'lab-req',
+          'bulk_edit'
+        );
+        if (setLastSyncError) setLastSyncError(null);
+        return true;
+      } catch (err: any) {
+        console.error('Серверная регистрация заявки на НК не удалась:', err);
+        const errMsg = err?.message || String(err);
         if (setLastSyncError) {
-          setLastSyncError(
-            `Ошибка регистрации заявки на НК: ${err instanceof Error ? err.message : String(err)}`
-          );
+          setLastSyncError(`Ошибка регистрации заявки на НК на сервере: ${errMsg}`);
         }
+        return false;
       }
-      appendSystemAuditEntry(
-        'Подача заявки на НК от ПТО в Лабораторию',
-        newReq.uniqueLineId,
-        `${newReq.jointIds.length} ст.`,
-        'Заявка на НК',
-        '—',
-        `${newReq.requestNumber} (${newReq.requestedMethod}, ${newReq.controlStage}) — ${newReq.createdBy}`,
-        newReq.jointIds[0] || 'lab-req',
-        'bulk_edit'
-      );
     },
-    [appendSystemAuditEntry, bumpRevisionMeta, currentUser.fullName, setLastSyncError]
+    [appendSystemAuditEntry, bumpRevisionMeta, currentUser.fullName, isAuthenticated, setLastSyncError]
   );
 
   const handleAcceptLabRequest = useCallback(
@@ -614,23 +621,14 @@ export const App: React.FC = () => {
       requestId: string,
       defectoscopistName: string,
       jointUpdates: Array<{ jointId: string; patch: Partial<WeldJoint> }>
-    ) => {
+    ): Promise<boolean> => {
+      if (!isAuthenticated) {
+        const msg = 'Для приёмки заявки в работу требуется вход в систему под учётной записью дефектоскописта ЛНК.';
+        if (setLastSyncError) setLastSyncError(msg);
+        return false;
+      }
       const targetReq = labRequests.find((r) => r.id === requestId);
       const acceptedAtIso = new Date().toISOString();
-      const acceptedAtDisplay = acceptedAtIso.slice(0, 16).replace('T', ' ');
-
-      setLabRequests((prev) =>
-        prev.map((r) =>
-          r.id === requestId
-            ? {
-                ...r,
-                status: 'В работе ЛНК',
-                acceptedAt: acceptedAtDisplay,
-                acceptedBy: defectoscopistName,
-              }
-            : r
-        )
-      );
 
       try {
         const fresh = await zaychickApi.updateLabRequest(
@@ -642,39 +640,49 @@ export const App: React.FC = () => {
           },
           targetReq?.version
         );
+
         setLabRequests((prev) => prev.map((r) => (r.id === requestId ? fresh : r)));
-      } catch (err) {
-        console.warn('Серверное обновление статуса заявки не удалось:', err);
-      }
 
-      if (jointUpdates.length > 0) {
-        await jointActions.handleBatchUpdateJointsFromLab(
-          jointUpdates,
-          `ЛНК: Приём заявки ${targetReq?.requestNumber || ''} в работу (${defectoscopistName})`
+        if (jointUpdates.length > 0) {
+          await jointActions.handleBatchUpdateJointsFromLab(
+            jointUpdates,
+            `ЛНК: Приём заявки ${targetReq?.requestNumber || ''} в работу (${defectoscopistName})`
+          );
+        }
+
+        appendSystemAuditEntry(
+          'Приём заявки на НК в работу дефектоскопистом ЛНК',
+          targetReq?.uniqueLineId || 'ЛНК',
+          `${targetReq?.jointIds.length ?? jointUpdates.length} ст.`,
+          'Статус заявки НК',
+          'Подана ПТО',
+          `В работе ЛНК (${defectoscopistName})`,
+          targetReq?.jointIds[0] || 'lab-accept',
+          'bulk_edit'
         );
+        bumpRevisionMeta(
+          `Заявка НК ${targetReq?.requestNumber || ''} принята в работу`,
+          currentUser.fullName
+        );
+        if (setLastSyncError) setLastSyncError(null);
+        return true;
+      } catch (err: any) {
+        console.error('Серверное обновление статуса заявки не удалось:', err);
+        const errMsg = err?.message || String(err);
+        if (setLastSyncError) {
+          setLastSyncError(`Ошибка приёмки заявки на сервере: ${errMsg}`);
+        }
+        return false;
       }
-
-      appendSystemAuditEntry(
-        'Приём заявки на НК в работу дефектоскопистом ЛНК',
-        targetReq?.uniqueLineId || 'ЛНК',
-        `${targetReq?.jointIds.length ?? jointUpdates.length} ст.`,
-        'Статус заявки НК',
-        'Подана ПТО',
-        `В работе ЛНК (${defectoscopistName})`,
-        targetReq?.jointIds[0] || 'lab-accept',
-        'bulk_edit'
-      );
-      bumpRevisionMeta(
-        `Заявка НК ${targetReq?.requestNumber || ''} принята в работу`,
-        currentUser.fullName
-      );
     },
     [
       appendSystemAuditEntry,
       bumpRevisionMeta,
       currentUser.fullName,
+      isAuthenticated,
       jointActions,
       labRequests,
+      setLastSyncError,
     ]
   );
 

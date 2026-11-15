@@ -9,6 +9,7 @@ export interface AuthContextValue {
   userPermissions: RolePermissions;
   userAccounts: UserAccount[];
   setUserAccounts: React.Dispatch<React.SetStateAction<UserAccount[]>>;
+  isAuthenticated: boolean;
   isLoginModalOpen: boolean;
   setIsLoginModalOpen: (open: boolean) => void;
   loginModalInitialMode: LoginModalMode;
@@ -25,6 +26,7 @@ export const AuthContext = createContext<AuthContextValue>({
   userPermissions: defaultPermissions,
   userAccounts: [ANONYMOUS_USER],
   setUserAccounts: () => {},
+  isAuthenticated: false,
   isLoginModalOpen: false,
   setIsLoginModalOpen: () => {},
   loginModalInitialMode: 'login',
@@ -64,6 +66,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
     return getUserRolePermissions(currentUser);
   }, [currentUser]);
 
+  const isAuthenticated = useMemo(() => {
+    return (
+      Boolean(currentUser.login) &&
+      currentUser.login !== 'anonymous' &&
+      currentUser.login !== ANONYMOUS_USER.login &&
+      userPermissions.category !== 'customer'
+    );
+  }, [currentUser.login, userPermissions.category]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       currentUser,
@@ -71,6 +82,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
       userPermissions,
       userAccounts,
       setUserAccounts,
+      isAuthenticated,
       isLoginModalOpen,
       setIsLoginModalOpen,
       loginModalInitialMode,
@@ -84,6 +96,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
       userPermissions,
       userAccounts,
       setUserAccounts,
+      isAuthenticated,
       isLoginModalOpen,
       setIsLoginModalOpen,
       loginModalInitialMode,

@@ -50,12 +50,12 @@ interface LaboratoryViewProps {
   onSelectObjectName?: (name: string) => void;
   onSelectRdCode?: (rd: string) => void;
   labRequests?: NdtLabRequest[];
-  onCreateLabRequest: (newRequest: NdtLabRequest) => void;
+  onCreateLabRequest: (newRequest: NdtLabRequest) => Promise<boolean> | boolean | void;
   onAcceptLabRequest: (
     requestId: string,
     inspectorName: string,
     jointUpdates: { jointId: string; patch: Partial<WeldJoint> }[]
-  ) => void;
+  ) => Promise<boolean> | boolean | void;
   onSaveLabConclusions: (
     jointUpdates: { jointId: string; patch: Partial<WeldJoint> }[],
     actionSummary: string,
@@ -122,6 +122,18 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     }
     return inspectors[0]?.fullName || shortCurrent || 'Орлова Е.В.';
   }, [currentUser.fullName, inspectors]);
+
+  const canCreateRequest =
+    auth.isAuthenticated &&
+    (userPermissions.canEditLineList ||
+      userPermissions.category === 'admin' ||
+      userPermissions.category === 'pto');
+
+  const canProcessNdt =
+    auth.isAuthenticated &&
+    (userPermissions.canEditNdtFields ||
+      userPermissions.category === 'admin' ||
+      userPermissions.category === 'ndt');
 
   const [selectedInspectorForAccept, setSelectedInspectorForAccept] =
     useState<string>(defaultInspectorName);
@@ -288,7 +300,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
   };
 
   // Отправка заявки от инженера ПТО в Лабораторию НК
-  const handleSubmitNewRequest = () => {
+  const handleSubmitNewRequest = async () => {
     const {
       lineRow,
       selectedJointIds,
@@ -331,17 +343,31 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       notes: notes.trim(),
     };
 
-    onCreateLabRequest(newReq);
-    setRequestModalState((prev) => ({ ...prev, isOpen: false }));
-    setActiveTab('requests');
-    showBanner(
-      'success',
-      `Заявка № ${reqNumber} (${selectedJointIds.length} ст., метод ${requestedMethod}) сформирована инженером ПТО и передана в Лабораторию НК.`
-    );
+    try {
+      const ok = await Promise.resolve(onCreateLabRequest(newReq));
+      if (ok !== false) {
+        setRequestModalState((prev) => ({ ...prev, isOpen: false }));
+        setActiveTab('requests');
+        showBanner(
+          'success',
+          `Заявка № ${reqNumber} (${selectedJointIds.length} ст., метод ${requestedMethod}) сформирована инженером ПТО и передана в Лабораторию НК.`
+        );
+      } else {
+        showBanner(
+          'error',
+          `Ошибка регистрации заявки № ${reqNumber} на сервере. Заявка не сохранена.`
+        );
+      }
+    } catch (err: any) {
+      showBanner(
+        'error',
+        `Сбой при регистрации заявки на сервере: ${err?.message || String(err)}`
+      );
+    }
   };
 
   // Приёмка заявки дефектоскопистом в работу
-  const handleAcceptRequestClick = (req: NdtLabRequest) => {
+  const handleAcceptRequestClick = async (req: NdtLabRequest) => {
     const inspector = selectedInspectorForAccept.trim() || defaultInspectorName;
     const updates: { jointId: string; patch: Partial<WeldJoint> }[] = [];
 
@@ -352,11 +378,25 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       updates.push({ jointId: jId, patch });
     }
 
-    onAcceptLabRequest(req.id, inspector, updates);
-    showBanner(
-      'success',
-      `Заявка № ${req.requestNumber} принята в работу дефектоскопистом (${inspector}). Статус ${updates.length} стыков обновлён на «В работе» во всех разделах системы.`
-    );
+    try {
+      const ok = await Promise.resolve(onAcceptLabRequest(req.id, inspector, updates));
+      if (ok !== false) {
+        showBanner(
+          'success',
+          `Заявка № ${req.requestNumber} принята в работу дефектоскопистом (${inspector}). Статус ${updates.length} стыков обновлён на «В работе» во всех разделах системы.`
+        );
+      } else {
+        showBanner(
+          'error',
+          `Сервер отклонил приём заявки № ${req.requestNumber} в работу. Проверьте права доступа.`
+        );
+      }
+    } catch (err: any) {
+      showBanner(
+        'error',
+        `Сбой приёмки заявки на сервере: ${err?.message || String(err)}`
+      );
+    }
   };
 
   // Переход из заявки к оформлению заключений
@@ -824,6 +864,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           expandedRdCodes={expandedRdCodes}
           setExpandedRdCodes={setExpandedRdCodes}
           onOpenCreateRequestModal={handleOpenCreateRequestModal}
+          canCreateRequest={canCreateRequest}
         />
       )}
 
@@ -839,6 +880,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           inspectors={inspectors}
           jointsById={jointsById}
           canDeleteRequest={userPermissions.category === 'admin' || userPermissions.canEditLineList}
+          canAcceptRequest={canProcessNdt}
           onOpenCreateRequestModal={() => handleOpenCreateRequestModal()}
           onAcceptRequestClick={handleAcceptRequestClick}
           onDeleteRequestClick={
@@ -903,6 +945,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           onOpenJointPassport={onOpenJointPassport}
           inspectors={inspectors}
           joints={joints}
+          canProcessNdt={canProcessNdt}
         />
       )}
 
