@@ -310,17 +310,7 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'laboratory' && (
         <LaboratoryView
-          joints={joints}
-          lineList={projectLineList}
-          facilities={derivedFacilities}
-          selectedObjectName={selectedObjectName}
-          selectedRdCode={selectedRdCode}
-          onSelectObjectName={setSelectedObjectName}
-          onSelectRdCode={setSelectedRdCode}
-          currentUser={currentUser}
-          userPermissions={userPermissions}
           inspectors={dynamicInspectors}
-          labRequests={labRequests}
           onCreateLabRequest={onCreateLabRequest}
           onAcceptLabRequest={onAcceptLabRequest}
           onSaveLabConclusions={onSaveLabConclusions}
@@ -331,13 +321,6 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'project_linelist' && (
         <ProjectLineListView
-          lineList={projectLineList}
-          joints={joints}
-          facilities={derivedFacilities}
-          selectedObjectName={selectedObjectName}
-          selectedRdCode={selectedRdCode}
-          canEdit={userPermissions.canEditLineList}
-          currentUserRoleLabel={userPermissions.categoryLabel}
           onAddLineItems={dirActions.handleAddLineItems}
           onUpdateLineItem={dirActions.handleUpdateLineItem}
           onBulkUpdateLineItems={dirActions.handleBulkUpdateLineItems}
@@ -356,11 +339,6 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'welding_tech' && (
         <WeldingTechView
-          welders={welders}
-          techCards={techCards}
-          materials={weldingMaterials}
-          canEdit={userPermissions.canEditWeldingTech}
-          currentUserRoleLabel={userPermissions.categoryLabel}
           onSaveWelder={dirActions.handleSaveWelder}
           onDeleteWelder={dirActions.handleDeleteWelder}
           onSaveTechCard={dirActions.handleSaveTechCard}
@@ -395,20 +373,6 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'lrv_catalog' && (
         <LrvCatalogView
-          joints={joints}
-          catalog={
-            selectedObjectName !== 'ALL'
-              ? lrvCatalog.filter((item) => item.objectName === selectedObjectName)
-              : lrvCatalog
-          }
-          facilities={
-            selectedObjectName !== 'ALL'
-              ? derivedFacilities.filter((f) => f.name === selectedObjectName)
-              : derivedFacilities
-          }
-          selectedRdCode={selectedRdCode}
-          canEdit={userPermissions.canEditLrvCatalog}
-          currentUserRoleLabel={userPermissions.categoryLabel}
           onAddLrvItems={dirActions.handleAddLrvItems}
           onUpdateLrvItem={dirActions.handleUpdateLrvItem}
           onDeleteLrvItems={dirActions.handleDeleteLrvItems}
@@ -417,8 +381,6 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'audit_log' && (
         <AuditHistoryView
-          logs={auditLogs}
-          isAdmin={userPermissions.category === 'admin'}
           onClearAuditLog={dirActions.handleClearAuditLogs}
           onOpenAdminPasswordModal={onOpenAdminPasswordModal}
         />

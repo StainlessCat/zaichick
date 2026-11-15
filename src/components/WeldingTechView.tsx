@@ -13,15 +13,16 @@ import {
 import { WeldersDirectoryView } from './tech/WeldersDirectoryView';
 import { TechCardsDirectoryView } from './tech/TechCardsDirectoryView';
 import { MaterialsDirectoryView } from './tech/MaterialsDirectoryView';
+import { useAuth, useAppContext } from '../context';
 
 export interface WeldingTechViewProps {
-  welders: WelderProfile[];
+  welders?: WelderProfile[];
   onSaveWelder: (welder: WelderProfile) => void;
   onDeleteWelder?: (stamp: string) => void;
-  techCards: TechCardItem[];
+  techCards?: TechCardItem[];
   onSaveTechCard: (card: TechCardItem) => void;
   onDeleteTechCard?: (id: string) => void;
-  materials: WeldingMaterialCertificate[];
+  materials?: WeldingMaterialCertificate[];
   onSaveMaterial: (material: WeldingMaterialCertificate) => void;
   onDeleteMaterial?: (id: string) => void;
   canEdit?: boolean;
@@ -30,19 +31,24 @@ export interface WeldingTechViewProps {
 
 export type TechTab = 'welders' | 'tech_cards' | 'materials';
 
-export const WeldingTechView: React.FC<WeldingTechViewProps> = ({
-  welders,
-  onSaveWelder,
-  onDeleteWelder,
-  techCards,
-  onSaveTechCard,
-  onDeleteTechCard,
-  materials,
-  onSaveMaterial,
-  onDeleteMaterial,
-  canEdit = true,
-  currentUserRoleLabel = 'Технолог по сварке',
-}) => {
+export const WeldingTechView: React.FC<WeldingTechViewProps> = (props) => {
+  const auth = useAuth();
+  const app = useAppContext();
+
+  const welders = props.welders ?? app.welders;
+  const techCards = props.techCards ?? app.techCards;
+  const materials = props.materials ?? app.weldingMaterials;
+  const canEdit = props.canEdit ?? auth.userPermissions.canEditWeldingTech;
+  const currentUserRoleLabel = props.currentUserRoleLabel ?? auth.userPermissions.categoryLabel;
+
+  const {
+    onSaveWelder,
+    onDeleteWelder,
+    onSaveTechCard,
+    onDeleteTechCard,
+    onSaveMaterial,
+    onDeleteMaterial,
+  } = props;
   const [activeTab, setActiveTab] = useState<TechTab>('welders');
 
   return (

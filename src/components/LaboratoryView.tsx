@@ -34,21 +34,22 @@ import {
   LabRequestsTab,
   RequestModalState,
 } from './laboratory';
+import { useAuth, useAppContext } from '../context';
 
 export type { LaboratorySubTab, LabJointDraftRow };
 
 interface LaboratoryViewProps {
-  joints: WeldJoint[];
-  lineList: ProjectLineItem[];
-  facilities: FacilityObject[];
+  joints?: WeldJoint[];
+  lineList?: ProjectLineItem[];
+  facilities?: FacilityObject[];
   inspectors: InspectorProfile[];
-  currentUser: UserAccount;
-  userPermissions: RolePermissions;
-  selectedObjectName: string;
-  selectedRdCode: string;
-  onSelectObjectName: (name: string) => void;
-  onSelectRdCode: (rd: string) => void;
-  labRequests: NdtLabRequest[];
+  currentUser?: UserAccount;
+  userPermissions?: RolePermissions;
+  selectedObjectName?: string;
+  selectedRdCode?: string;
+  onSelectObjectName?: (name: string) => void;
+  onSelectRdCode?: (rd: string) => void;
+  labRequests?: NdtLabRequest[];
   onCreateLabRequest: (newRequest: NdtLabRequest) => void;
   onAcceptLabRequest: (
     requestId: string,
@@ -64,23 +65,29 @@ interface LaboratoryViewProps {
   onOpenJointPassport: (joint: WeldJoint) => void;
 }
 
-export const LaboratoryView: React.FC<LaboratoryViewProps> = ({
-  joints,
-  lineList,
-  facilities,
-  inspectors,
-  currentUser,
-  userPermissions,
-  selectedObjectName,
-  selectedRdCode,
-  onSelectRdCode,
-  labRequests,
-  onCreateLabRequest,
-  onAcceptLabRequest,
-  onSaveLabConclusions,
-  onDeleteLabRequest,
-  onOpenJointPassport,
-}) => {
+export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
+  const auth = useAuth();
+  const app = useAppContext();
+
+  const joints = props.joints ?? app.joints;
+  const lineList = props.lineList ?? app.projectLineList;
+  const facilities = props.facilities ?? app.derivedFacilities;
+  const currentUser = props.currentUser ?? auth.currentUser;
+  const userPermissions = props.userPermissions ?? auth.userPermissions;
+  const selectedObjectName = props.selectedObjectName ?? app.selectedObjectName;
+  const selectedRdCode = props.selectedRdCode ?? app.selectedRdCode;
+  const onSelectObjectName = props.onSelectObjectName ?? app.setSelectedObjectName;
+  const onSelectRdCode = props.onSelectRdCode ?? app.setSelectedRdCode;
+  const labRequests = props.labRequests ?? app.labRequests;
+
+  const {
+    inspectors,
+    onCreateLabRequest,
+    onAcceptLabRequest,
+    onSaveLabConclusions,
+    onDeleteLabRequest,
+    onOpenJointPassport,
+  } = props;
   const [activeTab, setActiveTab] = useState<LaboratorySubTab>('deficit');
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyDeficitLines, setOnlyDeficitLines] = useState(false);

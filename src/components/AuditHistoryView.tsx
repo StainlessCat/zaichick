@@ -7,20 +7,28 @@ import {
   TableColumnFilterHeader,
 } from './TableColumnFilterPopover';
 import { useResizableColumns } from '../utils/useResizableColumns';
+import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 
 interface AuditHistoryViewProps {
-  logs: AuditLogEntry[];
+  logs?: AuditLogEntry[];
   isAdmin?: boolean;
   onClearAuditLog?: () => void;
   onOpenAdminPasswordModal?: () => void;
 }
 
 export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
-  logs,
-  isAdmin = false,
-  onClearAuditLog,
+  logs: propLogs,
+  isAdmin: propIsAdmin,
+  onClearAuditLog: propOnClearAuditLog,
   onOpenAdminPasswordModal,
 }) => {
+  const app = useAppContext();
+  const auth = useAuth();
+
+  const logs = propLogs ?? app.auditLogs ?? [];
+  const isAdmin = propIsAdmin ?? (auth.userPermissions.category === 'admin');
+  const onClearAuditLog = propOnClearAuditLog ?? (() => app.setAuditLogs([]));
   const [search, setSearch] = useState('');
   const [opFilter, setOpFilter] = useState<string>('ALL');
   const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});

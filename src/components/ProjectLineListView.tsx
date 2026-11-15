@@ -28,13 +28,14 @@ import {
   RowModalState,
   SortConfig,
 } from './linelist';
+import { useAuth, useAppContext } from '../context';
 
 export interface ProjectLineListViewProps {
-  lineList: ProjectLineItem[];
-  joints: WeldJoint[];
-  facilities: FacilityObject[];
-  selectedObjectName: string;
-  selectedRdCode: string;
+  lineList?: ProjectLineItem[];
+  joints?: WeldJoint[];
+  facilities?: FacilityObject[];
+  selectedObjectName?: string;
+  selectedRdCode?: string;
   onAddLineItems: (items: ProjectLineItem[]) => void;
   onUpdateLineItem: (
     updated: ProjectLineItem,
@@ -51,23 +52,28 @@ export interface ProjectLineListViewProps {
   currentUserRoleLabel?: string;
 }
 
-export const ProjectLineListView: React.FC<ProjectLineListViewProps> = ({
-  lineList,
-  joints,
-  facilities,
-  selectedObjectName,
-  selectedRdCode,
-  onAddLineItems,
-  onUpdateLineItem,
-  onBulkUpdateLineItems,
-  onDeleteLineItems,
-  onDeleteObject,
-  onDeleteRdCode,
-  onOpenLineInRegistry,
-  onOpenFacilityLocation,
-  canEdit = true,
-  currentUserRoleLabel = 'Инженер ПТО',
-}) => {
+export const ProjectLineListView: React.FC<ProjectLineListViewProps> = (props) => {
+  const auth = useAuth();
+  const app = useAppContext();
+
+  const lineList = props.lineList ?? app.projectLineList;
+  const joints = props.joints ?? app.joints;
+  const facilities = props.facilities ?? app.derivedFacilities;
+  const selectedObjectName = props.selectedObjectName ?? app.selectedObjectName;
+  const selectedRdCode = props.selectedRdCode ?? app.selectedRdCode;
+  const canEdit = props.canEdit ?? auth.userPermissions.canEditLineList;
+  const currentUserRoleLabel = props.currentUserRoleLabel ?? auth.userPermissions.categoryLabel;
+
+  const {
+    onAddLineItems,
+    onUpdateLineItem,
+    onBulkUpdateLineItems,
+    onDeleteLineItems,
+    onDeleteObject,
+    onDeleteRdCode,
+    onOpenLineInRegistry,
+    onOpenFacilityLocation,
+  } = props;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [showImportPanel, setShowImportPanel] = useState(false);

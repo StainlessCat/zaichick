@@ -39,11 +39,12 @@ import {
   useResizableColumns,
   ColumnResizeHandle,
 } from '../utils/useResizableColumns';
+import { useAuth, useAppContext } from '../context';
 
 interface LrvCatalogViewProps {
-  catalog: LRVItem[];
-  facilities: FacilityObject[];
-  selectedRdCode: string;
+  catalog?: LRVItem[];
+  facilities?: FacilityObject[];
+  selectedRdCode?: string;
   onAddLrvItems: (items: LRVItem[]) => void;
   onUpdateLrvItem?: (item: LRVItem) => void;
   onDeleteLrvItems?: (ids: string[]) => void;
@@ -52,17 +53,30 @@ interface LrvCatalogViewProps {
   joints?: WeldJoint[];
 }
 
-export const LrvCatalogView: React.FC<LrvCatalogViewProps> = ({
-  catalog,
-  facilities,
-  selectedRdCode,
-  onAddLrvItems,
-  onUpdateLrvItem,
-  onDeleteLrvItems,
-  canEdit = true,
-  currentUserRoleLabel = 'Инженер ПТО',
-  joints = [],
-}) => {
+export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
+  const auth = useAuth();
+  const app = useAppContext();
+
+  const joints = props.joints ?? app.joints;
+  const catalog =
+    props.catalog ??
+    (app.selectedObjectName !== 'ALL'
+      ? app.lrvCatalog.filter((item) => item.objectName === app.selectedObjectName)
+      : app.lrvCatalog);
+  const facilities =
+    props.facilities ??
+    (app.selectedObjectName !== 'ALL'
+      ? app.derivedFacilities.filter((f) => f.name === app.selectedObjectName)
+      : app.derivedFacilities);
+  const selectedRdCode = props.selectedRdCode ?? app.selectedRdCode;
+  const canEdit = props.canEdit ?? auth.userPermissions.canEditLrvCatalog;
+  const currentUserRoleLabel = props.currentUserRoleLabel ?? auth.userPermissions.categoryLabel;
+
+  const {
+    onAddLrvItems,
+    onUpdateLrvItem,
+    onDeleteLrvItems,
+  } = props;
   const allRds = useMemo(
     () =>
       facilities.flatMap((f) =>
