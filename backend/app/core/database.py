@@ -91,9 +91,10 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
         session.info["pending_sse_events"] = []
         try:
             yield session
-            if session.is_active and session.in_transaction():
-                await event_bus.flush_pg_notifications(session)
-                await session.commit()
+            if session.is_active:
+                if session.in_transaction() or session.dirty or session.new or session.deleted:
+                    await event_bus.flush_pg_notifications(session)
+                    await session.commit()
             await event_bus.dispatch_pending_session_events(session)
         except Exception:
             event_bus.clear_pending_session_events(session)

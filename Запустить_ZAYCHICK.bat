@@ -37,7 +37,7 @@ REM 2. Проверка Python-окружения
 set "PYTHON_CMD="
 if exist "backend\.venv\Scripts\python.exe" (
     set "PYTHON_CMD=backend\.venv\Scripts\python.exe"
-    set "UVICORN_CMD=backend\.venv\Scripts\uvicorn.exe"
+    set "UVICORN_CMD=backend\.venv\Scripts\python.exe -m uvicorn"
     set "ALEMBIC_CMD=backend\.venv\Scripts\alembic.exe"
     echo [OK] Найдено виртуальное окружение backend\.venv
 ) else (
