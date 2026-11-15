@@ -27,12 +27,6 @@ export default defineConfig(() => {
             if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
               return 'react-vendor';
             }
-            if (id.includes('node_modules/pdfmake/build/vfs_fonts')) {
-              return 'pdf-fonts';
-            }
-            if (id.includes('node_modules/pdfmake')) {
-              return 'pdf-vendor';
-            }
             if (id.includes('node_modules/lucide-react')) {
               return 'lucide-vendor';
             }

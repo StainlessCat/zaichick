@@ -7,6 +7,7 @@ import {
   CloudSun,
   Database,
   Download,
+  ExternalLink,
   FileSpreadsheet,
   FileText,
   Flame,
@@ -20,7 +21,6 @@ import {
   Users,
 } from 'lucide-react';
 import { ZaychickLogo } from './ZaychickLogo';
-import { downloadUserGuideBookletPdf } from '../utils/pdfBookletGenerator';
 
 type GuideRoleFilter = 'all' | 'tech' | 'pto' | 'lnk' | 'cheatsheet' | 'deploy';
 
@@ -33,16 +33,13 @@ export const UserGuideBookletView: React.FC = () => {
     setTimeout(() => setBookletToast(''), 4500);
   };
 
-  const handleDownloadPdf = () => {
-    downloadUserGuideBookletPdf();
-    showToast(
-      'Сформирован и скачан файл «ZAYCHICK_Buklet_Rukovodstvo_Polzovatelya.pdf» (7 листов А4).'
-    );
+  const handleOpenHtmlGuide = () => {
+    window.open('/user_guide.html', '_blank', 'noopener,noreferrer');
+    showToast('Интерактивное руководство пользователя открыто в новой вкладке.');
   };
 
   const handlePrintBooklet = () => {
     document.body.classList.add('print-booklet-a4');
-    downloadUserGuideBookletPdf();
     try {
       window.print();
     } catch {
@@ -51,9 +48,7 @@ export const UserGuideBookletView: React.FC = () => {
     setTimeout(() => {
       document.body.classList.remove('print-booklet-a4');
     }, 500);
-    showToast(
-      'Буклет подготовлен к печати А4 (одновременно скачана PDF-версия для печати из любого просмотрщика).'
-    );
+    showToast('Руководство отправлено на печать.');
   };
 
   const showPage = (pageRoles: GuideRoleFilter[]) => {
@@ -93,11 +88,12 @@ export const UserGuideBookletView: React.FC = () => {
 
           <button
             type="button"
-            onClick={handleDownloadPdf}
+            onClick={handleOpenHtmlGuide}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] transition-colors shadow-xs cursor-pointer"
+            title="Открыть полное интерактивное руководство в новой вкладке"
           >
-            <Download className="w-4 h-4" />
-            <span>Скачать буклет (.PDF)</span>
+            <ExternalLink className="w-4 h-4" />
+            <span>Открыть руководство в новой вкладке (HTML)</span>
           </button>
 
           <button
@@ -106,9 +102,32 @@ export const UserGuideBookletView: React.FC = () => {
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
           >
             <Printer className="w-4 h-4 text-[#1e3799]" />
-            <span>Печать буклета (А4)</span>
+            <span>Печать руководства (А4)</span>
           </button>
         </div>
+      </div>
+
+      {/* Баннер интерактивного руководства пользователя */}
+      <div className="bg-gradient-to-r from-[#1e3799] to-[#005eb8] rounded-xl p-4 text-white flex flex-wrap items-center justify-between gap-4 shadow-sm no-print">
+        <div className="max-w-2xl">
+          <div className="text-xs font-bold uppercase tracking-wider text-sky-200 mb-1">
+            Интерактивная документация ZAYCHICK v2.4.0
+          </div>
+          <h2 className="text-base font-bold text-white">
+            Полное руководство пользователя с навигацией по разделам
+          </h2>
+          <p className="text-xs text-sky-100 mt-1">
+            Подробное описание фактического функционала всех модулей, ролевой модели RBAC и регламентных ограничений системы. Доступно для чтения и печати в отдельной вкладке.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleOpenHtmlGuide}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white text-[#1e3799] font-bold text-xs hover:bg-sky-50 transition-colors shadow-sm cursor-pointer shrink-0"
+        >
+          <ExternalLink className="w-4 h-4 text-[#1e3799]" />
+          <span>Перейти к руководству (HTML)</span>
+        </button>
       </div>
 
       {/* Интерактивный фильтр по ролям (скрывается при печати) */}

@@ -26,7 +26,6 @@ import {
   exportWeldingJournalToExcel,
   triggerBlobDownload,
 } from '../utils/excelUtils';
-import { exportWeldingJournalToPdfA3 } from '../utils/pdfBookletGenerator';
 import { validateJournalCompleteness } from '../utils/journals';
 import { useResizableColumns } from '../utils/useResizableColumns';
 import { applyTableColumnFiltersAndSort } from './TableColumnFilterPopover';
@@ -781,54 +780,6 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
     }
   };
 
-  const handlePrintOrExportPdfA3 = () => {
-    const headers =
-      standard === 'ГОСТ 32569-2013'
-        ? GOST_32569_2013_JOURNAL_COLUMNS.map((c) => c.label)
-        : STO_GAZPROM_15_1_1_002_2023_COLUMNS.map((c) => c.label);
-    const colNumbers =
-      standard === 'ГОСТ 32569-2013'
-        ? GOST_32569_2013_JOURNAL_COLUMNS.map((c) => String(c.colNumber))
-        : STO_GAZPROM_15_1_1_002_2023_COLUMNS.map((c) => String(c.colNumber));
-    const rows = chronologicalJoints.map((j, idx) =>
-      standard === 'ГОСТ 32569-2013'
-        ? formatGost32569JournalRow(j, idx, materials, lrvCatalog).cells
-        : formatStoGazpromJournalRow(j, idx, lrvCatalog).cells
-    );
-
-    const displayObjectName =
-      (selectedObjectName === 'ALL' ? 'Сводный реестр' : selectedObjectName) +
-      (selectedLineKey !== 'ALL' && selectedLineItem
-        ? ` (Линия: ${selectedLineItem.lineNumber})`
-        : '');
-
-    if (!confirmIfUnsynced()) return;
-    const comp = confirmCompletenessBeforeExport();
-    if (!comp.proceed) return;
-    exportWeldingJournalToPdfA3(
-      standard,
-      displayObjectName,
-      currentRdCode || 'ALL',
-      headers,
-      colNumbers,
-      rows,
-      {
-        isDraftUnsynced: isOfflineOrUnsynced,
-        unsyncedCount: pendingSyncCount,
-        isDraftIncomplete: comp.isDraftIncomplete,
-        missingCount: comp.missingCount,
-      }
-    );
-    try {
-      window.print();
-    } catch {
-      // ignore sandbox print restrictions
-    }
-    showToast(
-      `Сформирован широкоформатный лист печати А3 (PDF) для журнала «${standard}» (${chronologicalJoints.length} зап.).`
-    );
-  };
-
   const currentFormationDate = formatDateDDMMYY(
     new Date().toISOString().slice(0, 10)
   );
@@ -889,7 +840,6 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
         onSwitchStandard={handleSwitchStandard}
         onExportXlsx={handleExportXlsx}
         onExportCsv={handleExportCsv}
-        onPrintOrExportPdfA3={handlePrintOrExportPdfA3}
         weatherStationId={selectedWeatherStationId}
         weatherStations={weatherStations}
         onSelectWeatherStation={setSelectedWeatherStationId}

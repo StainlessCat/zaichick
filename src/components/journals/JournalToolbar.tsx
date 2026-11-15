@@ -3,8 +3,6 @@ import {
   AlertTriangle,
   Download,
   FileSpreadsheet,
-  FileText,
-  Printer,
 } from 'lucide-react';
 import { JournalStandard, WeatherDailyItem, WeatherStationItem } from '../../types/welding';
 import { Button, FormField } from '../ui';
@@ -28,7 +26,6 @@ interface JournalToolbarProps {
   onSwitchStandard: (standard: JournalStandard) => void;
   onExportXlsx: () => void;
   onExportCsv: () => void;
-  onPrintOrExportPdfA3: () => void;
   // Метеомодуль (strict-industrial-ui)
   weatherStationId?: string;
   weatherStations?: WeatherStationItem[];
@@ -56,7 +53,6 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
   onSwitchStandard,
   onExportXlsx,
   onExportCsv,
-  onPrintOrExportPdfA3,
   weatherStationId,
   weatherStations,
   onSelectWeatherStation,
@@ -160,7 +156,7 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
         )}
       </div>
 
-      {/* Правая группа: Экспорт и печать */}
+      {/* Правая группа: Экспорт */}
       <div className="flex flex-wrap items-end gap-1.5">
         <Button
           type="button"
@@ -180,17 +176,6 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
         >
           <Download className="w-3.5 h-3.5" />
           <span>.CSV</span>
-        </Button>
-
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={onPrintOrExportPdfA3}
-          title="Печать или экспорт листа формата А3"
-        >
-          <Printer className="w-3.5 h-3.5 text-[#1e3799]" />
-          <FileText className="w-3.5 h-3.5 text-slate-500" />
-          <span>Печать / PDF (А3)</span>
         </Button>
       </div>
     </div>

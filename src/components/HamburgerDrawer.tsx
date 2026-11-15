@@ -160,8 +160,8 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = (props) => {
     },
     {
       id: 'user_guide',
-      title: 'Руководство пользователя (Буклет PDF)',
-      badge: '6 стр. А4',
+      title: 'Руководство пользователя (HTML)',
+      badge: 'В новой вкладке',
       icon: <BookOpen className="w-4 h-4" />,
     },
   ];
@@ -265,6 +265,9 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = (props) => {
                     key={item.id}
                     type="button"
                     onClick={() => {
+                      if (item.id === 'user_guide') {
+                        window.open('/user_guide.html', '_blank', 'noopener,noreferrer');
+                      }
                       onSelectSection(item.id);
                       onClose();
                     }}
