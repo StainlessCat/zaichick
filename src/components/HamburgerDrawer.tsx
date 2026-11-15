@@ -160,8 +160,7 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = (props) => {
     },
     {
       id: 'user_guide',
-      title: 'Руководство пользователя (HTML)',
-      badge: 'В новой вкладке',
+      title: 'Руководство пользователя',
       icon: <BookOpen className="w-4 h-4" />,
     },
   ];

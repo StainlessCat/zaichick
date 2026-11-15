@@ -3,12 +3,10 @@ import { AlertTriangle, CheckCircle2, RotateCcw } from 'lucide-react';
 import {
   JournalStandard,
   WeatherDailyItem,
-  WeatherStationItem,
   WeldJoint,
 } from '../types/welding';
 import {
   fetchWeatherDaily,
-  fetchWeatherStations,
   refreshWeatherStation,
 } from '../api/weatherApi';
 import {
@@ -370,33 +368,19 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
   }, [objectScopedJoints, currentRdCode, selectedLineKey, selectedLineItem]);
 
   // Состояния метеомодуля РФ (SYNOP + NOAA GSOD)
-  const [weatherStations, setWeatherStations] = useState<WeatherStationItem[]>([]);
-  const [selectedWeatherStationId, setSelectedWeatherStationId] = useState<string>('');
+  // Метеостанция берётся строго из настроек объекта (в меню) и распространяется на журналы
+  const currentFacility = useMemo(() => {
+    return (
+      facilities.find((f) => f.name === selectedObjectName) ||
+      (selectedObjectName === 'ALL' ? facilities[0] : undefined)
+    );
+  }, [facilities, selectedObjectName]);
+
+  const selectedWeatherStationId = currentFacility?.weatherStationId || '';
+  const selectedWeatherStationName = currentFacility?.weatherStation || '';
+
   const [dailyWeather, setDailyWeather] = useState<WeatherDailyItem | null>(null);
   const [isLoadingWeather, setIsLoadingWeather] = useState<boolean>(false);
-
-  // Загрузка справочника метеостанций РФ
-  useEffect(() => {
-    let isMounted = true;
-    fetchWeatherStations().then((items) => {
-      if (isMounted) setWeatherStations(items);
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // Автопривязка метеостанции по линии или объекту
-  useEffect(() => {
-    if (selectedLineItem?.weatherStationId) {
-      setSelectedWeatherStationId(selectedLineItem.weatherStationId);
-    } else {
-      const facility = facilities.find((f) => f.name === selectedObjectName);
-      if (facility?.weatherStationId) {
-        setSelectedWeatherStationId(facility.weatherStationId);
-      }
-    }
-  }, [selectedLineItem, selectedObjectName, facilities]);
 
   // Определение даты для фактических метеонаблюдений (дата сварки первого/последнего стыка или сегодня)
   const activeJointDate = useMemo(() => {
@@ -840,9 +824,7 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
         onSwitchStandard={handleSwitchStandard}
         onExportXlsx={handleExportXlsx}
         onExportCsv={handleExportCsv}
-        weatherStationId={selectedWeatherStationId}
-        weatherStations={weatherStations}
-        onSelectWeatherStation={setSelectedWeatherStationId}
+        weatherStationName={selectedWeatherStationName}
         activeJointDate={activeJointDate}
         dailyWeather={dailyWeather}
         isLoadingWeather={isLoadingWeather}

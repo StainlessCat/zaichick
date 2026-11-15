@@ -4,7 +4,7 @@ import {
   Download,
   FileSpreadsheet,
 } from 'lucide-react';
-import { JournalStandard, WeatherDailyItem, WeatherStationItem } from '../../types/welding';
+import { JournalStandard, WeatherDailyItem } from '../../types/welding';
 import { Button, FormField } from '../ui';
 import { JournalLineSelector } from './JournalLineSelector';
 import { JournalRdSelector } from './JournalRdSelector';
@@ -26,10 +26,8 @@ interface JournalToolbarProps {
   onSwitchStandard: (standard: JournalStandard) => void;
   onExportXlsx: () => void;
   onExportCsv: () => void;
-  // Метеомодуль (strict-industrial-ui)
-  weatherStationId?: string;
-  weatherStations?: WeatherStationItem[];
-  onSelectWeatherStation?: (stationId: string) => void;
+  // Метеомодуль
+  weatherStationName?: string;
   activeJointDate?: string;
   dailyWeather?: WeatherDailyItem | null;
   isLoadingWeather?: boolean;
@@ -53,9 +51,7 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
   onSwitchStandard,
   onExportXlsx,
   onExportCsv,
-  weatherStationId,
-  weatherStations,
-  onSelectWeatherStation,
+  weatherStationName,
   activeJointDate,
   dailyWeather,
   isLoadingWeather,
@@ -137,14 +133,12 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
           </div>
         </FormField>
 
-        {/* 4. Метеомодуль (strict-industrial-ui) */}
-        {weatherStations && onSelectWeatherStation && (
+        {/* 4. Метеомодуль */}
+        {weatherStationName !== undefined && (
           <>
             <div className="h-5 w-px bg-slate-200 hidden lg:block mx-0.5" />
             <WeatherStationWidget
-              selectedStationId={weatherStationId}
-              stations={weatherStations}
-              onSelectStation={onSelectWeatherStation}
+              stationName={weatherStationName}
               activeDate={activeJointDate}
               dailyWeather={dailyWeather}
               isLoading={isLoadingWeather}

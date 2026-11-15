@@ -83,7 +83,7 @@ export const UserGuideBookletView: React.FC = () => {
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 transition-colors shadow-xs"
           >
             <Download className="w-4 h-4" />
-            <span>Скачать архив программы (.ZIP)</span>
+            <span>Скачать архив программы</span>
           </a>
 
           <button
@@ -93,7 +93,7 @@ export const UserGuideBookletView: React.FC = () => {
             title="Открыть полное интерактивное руководство в новой вкладке"
           >
             <ExternalLink className="w-4 h-4" />
-            <span>Открыть руководство в новой вкладке (HTML)</span>
+            <span>Открыть руководство в новой вкладке</span>
           </button>
 
           <button
@@ -102,7 +102,7 @@ export const UserGuideBookletView: React.FC = () => {
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
           >
             <Printer className="w-4 h-4 text-[#1e3799]" />
-            <span>Печать руководства (А4)</span>
+            <span>Печать руководства</span>
           </button>
         </div>
       </div>
@@ -126,7 +126,7 @@ export const UserGuideBookletView: React.FC = () => {
           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white text-[#1e3799] font-bold text-xs hover:bg-sky-50 transition-colors shadow-sm cursor-pointer shrink-0"
         >
           <ExternalLink className="w-4 h-4 text-[#1e3799]" />
-          <span>Перейти к руководству (HTML)</span>
+          <span>Перейти к руководству</span>
         </button>
       </div>
 

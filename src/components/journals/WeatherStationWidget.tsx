@@ -1,13 +1,10 @@
 import React from 'react';
-import { CloudRain, RefreshCw, Thermometer } from 'lucide-react';
-import { Button, FormField, Select } from '../ui';
-import { WeatherDailyItem, WeatherStationItem } from '../../types/welding';
-import { createWeatherStationAlias } from '../../api/weatherApi';
+import { RefreshCw, Thermometer } from 'lucide-react';
+import { Button, FormField } from '../ui';
+import { WeatherDailyItem } from '../../types/welding';
 
 export interface WeatherStationWidgetProps {
-  selectedStationId?: string;
-  stations: WeatherStationItem[];
-  onSelectStation: (stationId: string) => void;
+  stationName?: string;
   activeDate?: string; // YYYY-MM-DD
   dailyWeather?: WeatherDailyItem | null;
   isLoading?: boolean;
@@ -18,9 +15,7 @@ export interface WeatherStationWidgetProps {
 }
 
 export const WeatherStationWidget: React.FC<WeatherStationWidgetProps> = ({
-  selectedStationId,
-  stations,
-  onSelectStation,
+  stationName,
   activeDate,
   dailyWeather,
   isLoading = false,
@@ -29,8 +24,6 @@ export const WeatherStationWidget: React.FC<WeatherStationWidgetProps> = ({
   onApplyAllDates,
   className = '',
 }) => {
-  const currentStation = stations.find((s) => s.id === selectedStationId);
-
   const formatTemp = (val: number | null | undefined): string => {
     if (val === null || val === undefined || Number.isNaN(val)) return '—';
     return val > 0 ? `+${val.toFixed(1)}°` : `${val.toFixed(1)}°`;
@@ -40,36 +33,23 @@ export const WeatherStationWidget: React.FC<WeatherStationWidgetProps> = ({
 
   return (
     <div className={`flex flex-wrap items-end gap-2 text-xs ${className}`}>
-      {/* 1. Селектор метеостанции */}
-      <FormField label="Метеостанция" className="w-52">
-        <Select
-          value={selectedStationId || ''}
-          onChange={(e) => {
-            const nextId = e.target.value;
-            onSelectStation(nextId);
-            const found = stations.find((s) => s.id === nextId);
-            if (found && found.matchedSettlement) {
-              createWeatherStationAlias({
-                settlementName: found.matchedSettlement,
-                stationId: found.id,
-                distanceKm: found.distanceKm,
-              }).catch(() => {});
-            }
-          }}
-          className="w-full truncate font-medium text-slate-800"
+      {/* 1. Отображение метеостанции объекта (только чтение, настройка в меню объекта) */}
+      <FormField label="Метеостанция объекта" className="shrink-0 max-w-[210px]">
+        <div
+          className="h-8 box-border px-2.5 bg-slate-50 border border-slate-300 rounded-md flex items-center font-medium text-[11px] leading-none text-slate-800 select-none truncate"
+          title={
+            stationName && stationName.trim()
+              ? `Метеостанция объекта: ${stationName}`
+              : 'Метеостанция не привязана к объекту. Настройте в меню объекта'
+          }
         >
-          <option value="">Не привязана</option>
-          {stations.map((st) => (
-            <option key={st.id} value={st.id}>
-              {st.name} ({st.wmoId})
-              {st.matchedSettlement ? ` · ${st.matchedSettlement}` : ''}
-              {st.distanceKm != null ? ` (${st.distanceKm.toFixed(0)} км)` : ''}
-            </option>
-          ))}
-        </Select>
+          <span className="truncate">
+            {stationName && stationName.trim() ? stationName : 'Не привязана'}
+          </span>
+        </div>
       </FormField>
 
-      {/* 2. Компактный бейдж фактической температуры мин / ср / макс °C */}
+      {/* 2. Компактный бейдж фактической температуры мин / ср / макс */}
       <FormField label="t° воздуха" className="shrink-0">
         <div className="h-8 box-border px-2.5 bg-slate-50 border border-slate-300 rounded-md flex items-center gap-2 font-mono text-[11px] leading-none text-slate-800 select-none">
           <Thermometer className="w-3.5 h-3.5 text-[#1e3799] shrink-0" />
@@ -77,15 +57,15 @@ export const WeatherStationWidget: React.FC<WeatherStationWidgetProps> = ({
             <span className="text-slate-400">Загрузка...</span>
           ) : hasTempData ? (
             <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="text-blue-700" title="Минимальная температура суточного интервала">
+              <span className="text-blue-700" title="Минимальная температура">
                 мин {formatTemp(dailyWeather?.tMin)}
               </span>
               <span className="text-slate-300">/</span>
-              <span className="font-bold text-slate-900" title="Среднесуточная температура воздуха">
+              <span className="font-bold text-slate-900" title="Среднесуточная температура">
                 ср {formatTemp(dailyWeather?.tMean)}
               </span>
               <span className="text-slate-300">/</span>
-              <span className="text-amber-700" title="Максимальная температура суточного интервала">
+              <span className="text-amber-700" title="Максимальная температура">
                 макс {formatTemp(dailyWeather?.tMax)}
               </span>
               {dailyWeather?.source && (
@@ -100,14 +80,14 @@ export const WeatherStationWidget: React.FC<WeatherStationWidgetProps> = ({
         </div>
       </FormField>
 
-      {/* 3. Кнопка принудительного обновления погоды */}
-      {onRefresh && currentStation && (
+      {/* 3. Кнопка обновления фактической погоды */}
+      {onRefresh && stationName && (
         <Button
           type="button"
           variant="secondary"
           onClick={onRefresh}
           disabled={isLoading}
-          title={`Обновить фактическую погоду со шлюза для ${currentStation.name}`}
+          title={`Обновить фактическую погоду для ${stationName}`}
           className="shrink-0"
         >
           <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${isLoading ? 'animate-spin' : ''}`} />
@@ -115,16 +95,16 @@ export const WeatherStationWidget: React.FC<WeatherStationWidgetProps> = ({
         </Button>
       )}
 
-      {/* 4. Опциональная кнопка подстановки в стыки активной даты */}
+      {/* 4. Кнопка подстановки в стыки активной даты */}
       {onApplyTemp && hasTempData && dailyWeather?.tMean != null && (
         <Button
           type="button"
           variant="primary"
           onClick={() => onApplyTemp(dailyWeather.tMean!)}
-          title={`Подставить фактическую температуру ${formatTemp(dailyWeather.tMean)} в незаполненные стыки строго за дату ${activeDate || 'сегодня'}`}
+          title={`Подставить фактическую температуру ${formatTemp(dailyWeather.tMean)} в стыки за дату ${activeDate || 'сегодня'}`}
           className="shrink-0 font-semibold"
         >
-          <span>В дату {activeDate ? activeDate.slice(5).replace('-', '.') : ''} ({formatTemp(dailyWeather.tMean)})</span>
+          <span>Внести за {activeDate ? activeDate.slice(5).replace('-', '.') : 'дату'}</span>
         </Button>
       )}
 

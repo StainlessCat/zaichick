@@ -8,8 +8,6 @@ import {
   Upload,
 } from 'lucide-react';
 import { Button, FormField, Select } from '../ui';
-import { WeatherDailyItem, WeatherStationItem } from '../../types/welding';
-import { WeatherStationWidget } from '../journals/WeatherStationWidget';
 
 export interface LineListToolbarProps {
   canEdit: boolean;
@@ -35,14 +33,6 @@ export interface LineListToolbarProps {
   selectedRdCode?: string;
   availableRdCodes?: string[];
   onSelectRdCode?: (code: string) => void;
-
-  // Метеомодуль (strict-industrial-ui)
-  weatherStationId?: string;
-  weatherStations?: WeatherStationItem[];
-  onSelectWeatherStation?: (stationId: string) => void;
-  dailyWeather?: WeatherDailyItem | null;
-  isLoadingWeather?: boolean;
-  onRefreshWeather?: () => void;
 }
 
 export const LineListToolbar: React.FC<LineListToolbarProps> = ({
@@ -67,12 +57,6 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
   selectedRdCode,
   availableRdCodes,
   onSelectRdCode,
-  weatherStationId,
-  weatherStations,
-  onSelectWeatherStation,
-  dailyWeather,
-  isLoadingWeather,
-  onRefreshWeather,
 }) => {
   return (
     <>
@@ -135,20 +119,6 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
                 ))}
               </Select>
             </FormField>
-          )}
-
-          {weatherStations && onSelectWeatherStation && (
-            <>
-              <div className="h-5 w-px bg-slate-200 hidden lg:block mx-0.5" />
-              <WeatherStationWidget
-                selectedStationId={weatherStationId}
-                stations={weatherStations}
-                onSelectStation={onSelectWeatherStation}
-                dailyWeather={dailyWeather}
-                isLoading={isLoadingWeather}
-                onRefresh={onRefreshWeather}
-              />
-            </>
           )}
         </div>
 
