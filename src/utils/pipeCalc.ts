@@ -293,35 +293,8 @@ export function calculateEquivalentDiaInch(
   return Math.round(dInch * k * 100) / 100;
 }
 
-/**
- * Извлекает или рассчитывает эквивалентный дюйм-диаметр (EDI) стыка по Методу А
- */
-export function getJointEquivDiaInch(
-  joint: Pick<WeldJoint, 'diameterMm' | 'diameterInch' | 'wallThickness'> & {
-    equivDiameterInch?: number;
-  }
-): number {
-  if (joint.equivDiameterInch !== undefined && !Number.isNaN(joint.equivDiameterInch)) {
-    return joint.equivDiameterInch;
-  }
-  return calculateEquivalentDiaInch(
-    joint.diameterInch || joint.diameterMm,
-    joint.wallThickness
-  );
-}
-
-/**
- * Извлекает или рассчитывает номинальный дюйм-диаметр стыка
- */
-export function getJointNominalInch(
-  joint: Pick<WeldJoint, 'diameterMm' | 'diameterInch'>
-): number {
-  if (joint.diameterInch) {
-    const parsed = inchStringToNumeric(joint.diameterInch);
-    if (parsed > 0) return parsed;
-  }
-  return mmToNumericInchDiameter(joint.diameterMm);
-}
+// Реэкспорт вычисляемых свойств стыка из изолированного модуля jointDerived.ts
+export { getJointEquivDiaInch, getJointNominalInch } from './jointDerived';
 
 /**
  * Определяет условный проход DN [мм] по наружному диаметру трубы/детали в мм
