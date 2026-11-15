@@ -148,3 +148,83 @@ test('filters: filterLrvCatalogByRd correctly restricts or bypasses', () => {
   assert.equal(filterLrvCatalogByRd(sampleLrv, 'RD-01').length, 1);
   assert.equal(filterLrvCatalogByRd(sampleLrv, 'RD-01', true).length, 2);
 });
+
+test('tech card matching: findMatchingTechCard and classifyJointElements filter by joint kind, elements and diameter', async () => {
+  const { classifyJointElements, findMatchingTechCard } = await import('./pipeCalc');
+
+  // Классификация элементов
+  assert.equal(classifyJointElements('Труба', 'Труба 219х10', 'Труба', 'Труба 219х10'), 'Труба+Труба');
+  assert.equal(classifyJointElements('Труба', 'Труба 219х10', 'СДТ', 'Отвод ОК 90-219'), 'Труба+СДТ');
+  assert.equal(classifyJointElements('СДТ', 'Отвод ОК', 'СДТ', 'Переход ПК'), 'СДТ+СДТ');
+  assert.equal(classifyJointElements('Труба', 'Труба 219х10', 'ЗРА', 'Кран шаровой DN200'), 'Труба+ЗРА');
+  assert.equal(classifyJointElements('СДТ', 'Переход ПК', 'ЗРА', 'Кран шаровой'), 'СДТ+ЗРА');
+
+  // Подбор ТК
+  const mockCards = [
+    {
+      id: 'tc1',
+      number: 'ТК-01',
+      title: 'Стыковые швы Труба-Труба',
+      weldingType: 'РАД+РД',
+      jointKind: 'Стыковое' as const,
+      elementCombination: 'Труба+Труба' as const,
+      minDiameterMm: 57,
+      maxDiameterMm: 325,
+      minWallThicknessMm: 4,
+      maxWallThicknessMm: 16,
+      ntd: 'СТО Газпром',
+      steelGroup: '09Г2С',
+      recommendedMaterials: 'Св-08Г2С',
+      preheatRules: [],
+    },
+    {
+      id: 'tc2',
+      number: 'ТК-02',
+      title: 'Угловые швы штуцеров Труба-СДТ',
+      weldingType: 'РАД+РД',
+      jointKind: 'Угловое' as const,
+      elementCombination: 'Труба+СДТ' as const,
+      minDiameterMm: 14,
+      maxDiameterMm: 89,
+      minWallThicknessMm: 2,
+      maxWallThicknessMm: 8,
+      ntd: 'СТО Газпром',
+      steelGroup: '09Г2С',
+      recommendedMaterials: 'Св-08Г2С',
+      preheatRules: [],
+    },
+  ];
+
+  // Точный подбор по диаметру и типу соединения
+  const match1 = findMatchingTechCard(mockCards, {
+    diameterMm: 219,
+    wallThicknessMm: 8,
+    jointKind: 'Стыковое',
+    elementCombination: 'Труба+Труба',
+  });
+  assert.equal(match1?.number, 'ТК-01');
+
+  const match2 = findMatchingTechCard(mockCards, {
+    diameterMm: 57,
+    wallThicknessMm: 4,
+    jointKind: 'Угловое',
+    elementCombination: 'Труба+СДТ',
+  });
+  assert.equal(match2?.number, 'ТК-02');
+
+  // Несоответствие по диаметру (выход из диапазона)
+  const matchFailDiameter = findMatchingTechCard(mockCards, {
+    diameterMm: 530,
+    wallThicknessMm: 12,
+    jointKind: 'Стыковое',
+  });
+  assert.equal(matchFailDiameter, null);
+
+  // Несоответствие по типу соединения
+  const matchFailKind = findMatchingTechCard(mockCards, {
+    diameterMm: 219,
+    wallThicknessMm: 8,
+    jointKind: 'Угловое',
+  });
+  assert.equal(matchFailKind, null);
+});
