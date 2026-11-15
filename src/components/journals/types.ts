@@ -8,13 +8,13 @@ import {
 } from '../../types/welding';
 
 export interface WeldingJournalsViewProps {
-  joints: WeldJoint[];
+  joints?: WeldJoint[];
   allJoints?: WeldJoint[];
   lines?: ProjectLineItem[];
   facilities?: FacilityObject[];
   materials?: WeldingMaterialCertificate[];
   lrvCatalog?: LRVItem[];
-  selectedObjectName: string;
+  selectedObjectName?: string;
   selectedRdCode?: string;
   onEditJoint: (joint: WeldJoint) => void;
   onSelectObjectName?: (name: string) => void;

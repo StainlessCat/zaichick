@@ -19,9 +19,10 @@ import {
   RegistryToolbar,
   UserRolePermissions,
 } from './registry';
+import { useAuth, useAppContext } from '../context';
 
 export interface JointsRegistryViewProps {
-  joints: WeldJoint[];
+  joints?: WeldJoint[];
   filteredAndSortedJoints: WeldJoint[];
   lines?: ProjectLineItem[];
   welders?: WelderProfile[];
@@ -41,7 +42,7 @@ export interface JointsRegistryViewProps {
   onResetDateRange: () => void;
 
   // Действия и разграничение прав (Field-Level RBAC)
-  userPermissions: UserRolePermissions;
+  userPermissions?: UserRolePermissions;
   confirmBulkDeleteJoints: boolean;
   onSetConfirmBulkDeleteJoints: (val: boolean) => void;
   onBulkDeleteSelectedJoints: () => void;
@@ -84,53 +85,58 @@ export interface JointsRegistryViewProps {
   onHideColumnInline: (key: WeldJointFieldKey) => void;
 }
 
-const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = ({
-  joints,
-  filteredAndSortedJoints,
-  lines = [],
-  welders = [],
-  labRequests = [],
-  currentUserFullName = 'Инженер ПТО',
-  onCreateLabRequest,
-  selectedJointIds,
-  onToggleSelectRow,
-  onToggleSelectAll,
-  onClearSelection,
-  weldingDateFrom,
-  weldingDateTo,
-  onWeldingDateFromChange,
-  onWeldingDateToChange,
-  onResetDateRange,
-  userPermissions,
-  confirmBulkDeleteJoints,
-  onSetConfirmBulkDeleteJoints,
-  onBulkDeleteSelectedJoints,
-  onOpenBulkEdit,
-  onQuickAddSupplementaryJoint,
-  onOpenImportExcel,
-  onOpenCreatePassport,
-  onOpenEditPassport,
-  activeTemplateId,
-  templates,
-  onApplyTemplate,
-  visibleColumns,
-  activeColumnDefs,
-  columnWidths,
-  onOpenColumnsModal,
-  columnFilters,
-  activeFilterKeys,
-  onSetColumnFilter,
-  onResetAllFilters,
-  sortConfig,
-  onSetSortConfig,
-  openFilterColumnKey,
-  onSetOpenFilterColumnKey,
-  getUniqueValuesForColumn,
-  onColumnResizeStart,
-  onColumnAutoFit,
-  onMoveColumnInline,
-  onHideColumnInline,
-}) => {
+const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) => {
+  const auth = useAuth();
+  const app = useAppContext();
+
+  const joints = props.joints ?? app.joints;
+  const filteredAndSortedJoints = props.filteredAndSortedJoints;
+  const lines = props.lines ?? app.projectLineList ?? [];
+  const welders = props.welders ?? app.welders ?? [];
+  const labRequests = props.labRequests ?? app.labRequests ?? [];
+  const currentUserFullName = props.currentUserFullName ?? auth.currentUser?.fullName ?? 'Инженер ПТО';
+  const userPermissions = props.userPermissions ?? auth.userPermissions;
+
+  const {
+    onCreateLabRequest,
+    selectedJointIds,
+    onToggleSelectRow,
+    onToggleSelectAll,
+    onClearSelection,
+    weldingDateFrom,
+    weldingDateTo,
+    onWeldingDateFromChange,
+    onWeldingDateToChange,
+    onResetDateRange,
+    confirmBulkDeleteJoints,
+    onSetConfirmBulkDeleteJoints,
+    onBulkDeleteSelectedJoints,
+    onOpenBulkEdit,
+    onQuickAddSupplementaryJoint,
+    onOpenImportExcel,
+    onOpenCreatePassport,
+    onOpenEditPassport,
+    activeTemplateId,
+    templates,
+    onApplyTemplate,
+    visibleColumns,
+    activeColumnDefs,
+    columnWidths,
+    onOpenColumnsModal,
+    columnFilters,
+    activeFilterKeys,
+    onSetColumnFilter,
+    onResetAllFilters,
+    sortConfig,
+    onSetSortConfig,
+    openFilterColumnKey,
+    onSetOpenFilterColumnKey,
+    getUniqueValuesForColumn,
+    onColumnResizeStart,
+    onColumnAutoFit,
+    onMoveColumnInline,
+    onHideColumnInline,
+  } = props;
   // Состояние модального окна подачи заявки на НК из Реестра стыков
   const [isLabReqModalOpen, setIsLabReqModalOpen] = useState(false);
   const [labReqCandidateIds, setLabReqCandidateIds] = useState<string[]>([]);

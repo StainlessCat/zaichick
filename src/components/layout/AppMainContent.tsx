@@ -266,12 +266,7 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'registry' && (
         <JointsRegistryView
-          joints={joints}
           filteredAndSortedJoints={filteredAndSortedJoints}
-          lines={projectLineList}
-          welders={welders}
-          labRequests={labRequests}
-          currentUserFullName={currentUser.fullName}
           onCreateLabRequest={onCreateLabRequest}
           selectedJointIds={selectedJointIds}
           onToggleSelectRow={onToggleSelectRow}
@@ -282,7 +277,6 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
           onWeldingDateFromChange={onWeldingDateFromChange}
           onWeldingDateToChange={onWeldingDateToChange}
           onResetDateRange={onResetDateRange}
-          userPermissions={userPermissions}
           confirmBulkDeleteJoints={confirmBulkDeleteJoints}
           onSetConfirmBulkDeleteJoints={onSetConfirmBulkDeleteJoints}
           onBulkDeleteSelectedJoints={onBulkDeleteSelectedJoints}
@@ -378,18 +372,6 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'journals' && (
         <WeldingJournalsView
-          joints={joints}
-          allJoints={joints}
-          lines={projectLineList}
-          facilities={derivedFacilities}
-          materials={weldingMaterials}
-          lrvCatalog={lrvCatalog}
-          selectedObjectName={selectedObjectName}
-          selectedRdCode={selectedRdCode}
-          onSelectObjectName={setSelectedObjectName}
-          onSelectRdCode={setSelectedRdCode}
-          isDbConnected={isDbConnected}
-          pendingSyncCount={pendingSyncCount}
           onEditJoint={onEditJointInPassport}
         />
       )}

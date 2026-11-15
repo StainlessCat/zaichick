@@ -33,22 +33,24 @@ import {
   LineWeldingAlert,
   WeldingJournalsViewProps,
 } from './journals';
+import { useAppContext } from '../context';
 
-export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = ({
-  joints,
-  allJoints,
-  lines = [],
-  facilities = [],
-  materials = [],
-  lrvCatalog = [],
-  selectedObjectName,
-  selectedRdCode = 'ALL',
-  onEditJoint,
-  onSelectObjectName,
-  onSelectRdCode,
-  isDbConnected = true,
-  pendingSyncCount = 0,
-}) => {
+export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) => {
+  const app = useAppContext();
+
+  const joints = props.joints ?? app.joints;
+  const allJoints = props.allJoints ?? app.joints;
+  const lines = props.lines ?? app.projectLineList ?? [];
+  const facilities = props.facilities ?? app.derivedFacilities ?? [];
+  const materials = props.materials ?? app.weldingMaterials ?? [];
+  const lrvCatalog = props.lrvCatalog ?? app.lrvCatalog ?? [];
+  const selectedObjectName = props.selectedObjectName ?? app.selectedObjectName;
+  const selectedRdCode = props.selectedRdCode ?? app.selectedRdCode ?? 'ALL';
+  const onSelectObjectName = props.onSelectObjectName ?? app.setSelectedObjectName;
+  const onSelectRdCode = props.onSelectRdCode ?? app.setSelectedRdCode;
+  const isDbConnected = props.isDbConnected ?? app.isDbConnected;
+  const pendingSyncCount = props.pendingSyncCount ?? app.pendingSyncCount;
+  const onEditJoint = props.onEditJoint;
   // По умолчанию открываем форму по СТО Газпром 15-1.1-002-2023 (49 граф)
   const [standard, setStandard] = useState<JournalStandard>(
     'СТО Газпром 15-1.1-002-2023'
