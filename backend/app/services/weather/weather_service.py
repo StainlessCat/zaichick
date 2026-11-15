@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.weather import WeatherDaily, WeatherStation, WeatherStationAlias
 from app.services.weather.geo import haversine_distance_km
 from app.services.weather.gsod_loader import fetch_gsod_for_station
+from app.services.weather.reference_stations import get_deterministic_station_uuid
 from app.services.weather.synop_parser import fetch_synop_daily
 
 logger = logging.getLogger(__name__)
@@ -54,8 +55,39 @@ async def geocode_settlement_nominatim(
     return None
 
 
-async def get_station_by_id(session: AsyncSession, station_id: uuid.UUID) -> WeatherStation | None:
-    """Retrieve weather station by primary key UUID."""
+async def get_station_by_id(
+    session: AsyncSession, station_id: uuid.UUID | str
+) -> WeatherStation | None:
+    """Retrieve weather station by primary key UUID, deterministic UUID5, or WMO ID / pseudo-ID."""
+    if isinstance(station_id, str):
+        station_id_str = station_id.strip()
+        # 1. Direct UUID
+        try:
+            parsed_uuid = uuid.UUID(station_id_str)
+            stmt = select(WeatherStation).where(WeatherStation.id == parsed_uuid)
+            res = await session.execute(stmt)
+            found = res.scalar_one_or_none()
+            if found:
+                return found
+        except (ValueError, AttributeError):
+            pass
+
+        # 2. WMO code (strip 'st-' if present, e.g. 'st-30528' -> '30528')
+        clean_wmo = station_id_str[3:] if station_id_str.startswith("st-") else station_id_str
+        stmt = select(WeatherStation).where(
+            (WeatherStation.wmo_id == clean_wmo) | (WeatherStation.usaf == clean_wmo)
+        )
+        res = await session.execute(stmt)
+        found = res.scalar_one_or_none()
+        if found:
+            return found
+
+        # 3. Deterministic UUID5
+        uuid5_id = get_deterministic_station_uuid(clean_wmo)
+        stmt = select(WeatherStation).where(WeatherStation.id == uuid5_id)
+        res = await session.execute(stmt)
+        return res.scalar_one_or_none()
+
     stmt = select(WeatherStation).where(WeatherStation.id == station_id)
     res = await session.execute(stmt)
     return res.scalar_one_or_none()
@@ -295,7 +327,7 @@ async def upsert_weather_daily_records(
 
 async def get_or_fetch_daily_weather(
     session: AsyncSession,
-    station_id: uuid.UUID,
+    station_id: uuid.UUID | str,
     date_from: date,
     date_to: date,
 ) -> list[WeatherDaily]:
@@ -304,11 +336,13 @@ async def get_or_fetch_daily_weather(
     if not station:
         return []
 
+    canonical_id = station.id
+
     # 1. Fetch existing cached records
     stmt = (
         select(WeatherDaily)
         .where(
-            WeatherDaily.station_id == station_id,
+            WeatherDaily.station_id == canonical_id,
             WeatherDaily.obs_date >= date_from,
             WeatherDaily.obs_date <= date_to,
         )
@@ -363,7 +397,7 @@ async def get_or_fetch_daily_weather(
 
     # 5. Persist fetched records into database
     if new_records:
-        await upsert_weather_daily_records(session, station_id, new_records)
+        await upsert_weather_daily_records(session, canonical_id, new_records)
 
     # 6. Re-query full sorted series
     res_final = await session.execute(stmt)
@@ -372,7 +406,7 @@ async def get_or_fetch_daily_weather(
 
 async def refresh_station_weather(
     session: AsyncSession,
-    station_id: uuid.UUID,
+    station_id: uuid.UUID | str,
     days: int = 3,
 ) -> dict[str, Any]:
     """Force refresh of current / recent temperatures for a station via SYNOP."""
@@ -384,7 +418,7 @@ async def refresh_station_weather(
     date_from = today - timedelta(days=days)
 
     synop_records = await fetch_synop_daily(station.wmo_id, date_from, today)
-    saved_count = await upsert_weather_daily_records(session, station_id, synop_records)
+    saved_count = await upsert_weather_daily_records(session, station.id, synop_records)
 
     latest_date: date | None = None
     latest_t_mean: float | None = None

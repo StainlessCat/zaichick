@@ -4,11 +4,12 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
-from app.models.enums import RoleEnum
+from app.models.enums import ControlResultEnum, RoleEnum
+from app.models.joint import WeldJoint
 from app.models.lab_request import NdtLabRequestModel
 from app.models.user import User
 from app.schemas.domain import (
@@ -28,6 +29,14 @@ from app.services.event_bus import event_bus
 
 router = APIRouter(prefix="/api/lab-requests", tags=["lab-requests"])
 
+VALID_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "Подана ПТО": {"Подана ПТО", "В работе ЛНК", "Отклонена"},
+    "Новая": {"Новая", "В работе ЛНК", "Отклонена"},
+    "В работе ЛНК": {"В работе ЛНК", "Выполнена", "Отклонена", "Подана ПТО"},
+    "Отклонена": {"Отклонена", "Подана ПТО"},
+    "Выполнена": {"Выполнена"},  # Terminal status; reopen requires ADMIN
+}
+
 
 def _build_lab_request(payload: NdtLabRequestCreate) -> NdtLabRequestModel:
     now = datetime.now(timezone.utc)
@@ -45,10 +54,10 @@ def _build_lab_request(payload: NdtLabRequestCreate) -> NdtLabRequestModel:
         control_stage=payload.control_stage.strip(),
         requested_method=payload.requested_method.strip(),
         joint_ids=payload.joint_ids,
-        status=payload.status.strip(),
-        accepted_at=payload.accepted_at,
-        accepted_by=payload.accepted_by.strip() if payload.accepted_by else None,
-        completed_at=payload.completed_at,
+        status="Подана ПТО",
+        accepted_at=None,
+        accepted_by=None,
+        completed_at=None,
         notes=payload.notes.strip() if payload.notes else None,
         version=1,
         updated_at=now,
@@ -122,6 +131,8 @@ async def create_lab_request(
 ) -> NdtLabRequestOut:
     """
     Create a new NDT laboratory request (PTO or PIL or ADMIN).
+    Validates joint existence, line attribution, prevents duplicates,
+    and initializes status to 'Подана ПТО'.
     Dispatches SSE event `lab_request.created`.
     """
     if current_user.role not in (RoleEnum.ADMIN, RoleEnum.PTO, RoleEnum.PIL):
@@ -142,6 +153,85 @@ async def create_lab_request(
             f"Заявка с номером «{req_num}» уже зарегистрирована в системе.",
             details={"request_number": req_num},
         )
+
+    # 1. Joint list must not be empty
+    if not payload.joint_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Заявка на НК должна содержать хотя бы один стык.",
+        )
+
+    # 2. Validate existence and line attribution of all joints
+    joint_uuids: list[uuid.UUID] = []
+    joint_str_ids: list[str] = []
+    for jid in payload.joint_ids:
+        try:
+            joint_uuids.append(uuid.UUID(str(jid)))
+        except (ValueError, TypeError):
+            joint_str_ids.append(str(jid))
+
+    conditions = []
+    if joint_uuids:
+        conditions.append(WeldJoint.id.in_(joint_uuids))
+    if joint_str_ids:
+        conditions.append(WeldJoint.legacy_id.in_(joint_str_ids))
+
+    joints_res = await session.execute(select(WeldJoint).where(or_(*conditions)))
+    found_joints = joints_res.scalars().all()
+
+    found_keys: set[str] = set()
+    for j in found_joints:
+        found_keys.add(str(j.id))
+        if j.legacy_id:
+            found_keys.add(j.legacy_id)
+
+    missing_keys = [str(jid) for jid in payload.joint_ids if str(jid) not in found_keys]
+    if missing_keys:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Стыки с идентификаторами {missing_keys} не найдены в базе данных.",
+        )
+
+    req_line_id = payload.unique_line_id.strip()
+    foreign_joints = [
+        j.joint_number
+        for j in found_joints
+        if j.unique_line_id and j.unique_line_id.strip() != req_line_id
+    ]
+    if foreign_joints:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Стыки [{', '.join(foreign_joints[:5])}] не принадлежат указанной линии «{req_line_id}»."
+            ),
+        )
+
+    # 3. Guard against duplicate active requests for the same joints with the same method
+    active_reqs_res = await session.execute(
+        select(NdtLabRequestModel).where(
+            NdtLabRequestModel.unique_line_id == req_line_id,
+            NdtLabRequestModel.status.in_(["Подана ПТО", "Новая", "В работе ЛНК"]),
+        )
+    )
+    active_requests = active_reqs_res.scalars().all()
+    req_method_norm = payload.requested_method.strip().upper()
+    req_stage_norm = payload.control_stage.strip().upper()
+    payload_joint_set = {str(jid) for jid in payload.joint_ids}
+
+    for act_req in active_requests:
+        act_method_norm = act_req.requested_method.strip().upper()
+        act_stage_norm = act_req.control_stage.strip().upper()
+        if act_method_norm == req_method_norm and act_stage_norm == req_stage_norm:
+            act_joints = {str(x) for x in (act_req.joint_ids or [])}
+            overlap = payload_joint_set & act_joints
+            if overlap:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Стыки {list(overlap)} уже включены в активную заявку "
+                        f"№{act_req.request_number} (статус «{act_req.status}») на метод {payload.requested_method}."
+                    ),
+                )
 
     lab_req = _build_lab_request(payload)
     session.add(lab_req)
@@ -186,7 +276,7 @@ async def update_lab_request(
 ) -> NdtLabRequestOut:
     """
     Update an NDT lab request (status update, accept, conclusion, notes).
-    Guarded with row-level OCC versioning.
+    Guarded with row-level OCC versioning and FSM transitions.
     Dispatches SSE event `lab_request.updated`.
     """
     if current_user.role not in (RoleEnum.ADMIN, RoleEnum.PTO, RoleEnum.PIL):
@@ -207,6 +297,83 @@ async def update_lab_request(
         )
 
     patch_data = payload.model_dump(exclude_unset=True)
+
+    # 1. Protection against changing joint_ids in in-progress or completed requests
+    if "joint_ids" in patch_data and patch_data["joint_ids"] != lab_req.joint_ids:
+        if lab_req.status in ("В работе ЛНК", "Выполнена") and current_user.role != RoleEnum.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Изменение состава стыков в заявке, находящейся в работе или выполненной, запрещено.",
+            )
+
+    # 2. Status FSM and Role Transitions
+    if "status" in patch_data and patch_data["status"] != lab_req.status:
+        new_status = patch_data["status"]
+        allowed = VALID_STATUS_TRANSITIONS.get(lab_req.status, set())
+        if new_status not in allowed and current_user.role != RoleEnum.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Недопустимый переход статуса заявки: из «{lab_req.status}» в «{new_status}».",
+            )
+
+        now = datetime.now(timezone.utc)
+        if new_status == "В работе ЛНК":
+            if current_user.role not in (RoleEnum.ADMIN, RoleEnum.PIL):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Принять заявку в работу может только сотрудник ЛНК (PIL) или Администратор.",
+                )
+            patch_data.setdefault("accepted_at", now)
+            patch_data.setdefault("accepted_by", current_user.full_name or current_user.login)
+
+        elif new_status == "Выполнена":
+            if current_user.role not in (RoleEnum.ADMIN, RoleEnum.PIL):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Завершить заявку может только сотрудник ЛНК (PIL) или Администратор.",
+                )
+
+            # Check joints completion in database
+            joint_ids_to_check = patch_data.get("joint_ids", lab_req.joint_ids) or []
+            if joint_ids_to_check:
+                joint_uuids: list[uuid.UUID] = []
+                joint_str_ids: list[str] = []
+                for jid in joint_ids_to_check:
+                    try:
+                        joint_uuids.append(uuid.UUID(str(jid)))
+                    except (ValueError, TypeError):
+                        joint_str_ids.append(str(jid))
+
+                conditions = []
+                if joint_uuids:
+                    conditions.append(WeldJoint.id.in_(joint_uuids))
+                if joint_str_ids:
+                    conditions.append(WeldJoint.legacy_id.in_(joint_str_ids))
+
+                if conditions:
+                    joints_res = await session.execute(select(WeldJoint).where(or_(*conditions)))
+                    joints = joints_res.scalars().all()
+
+                    unverified: list[str] = []
+                    method_upper = (patch_data.get("requested_method") or lab_req.requested_method).upper()
+                    for j in joints:
+                        if "ВИК" in method_upper or "VIK" in method_upper:
+                            if not j.vik_result or j.vik_result == ControlResultEnum.NOT_CONDUCTED:
+                                unverified.append(f"{j.joint_number} (нет ВИК)")
+                        else:
+                            if not j.ndt_result or j.ndt_result == ControlResultEnum.NOT_CONDUCTED:
+                                unverified.append(f"{j.joint_number} (нет заключения НК)")
+
+                    if unverified and current_user.role != RoleEnum.ADMIN:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=(
+                                f"Невозможно перевести заявку в «Выполнена»: для стыков "
+                                f"[{', '.join(unverified[:5])}] отсутствуют подтверждённые результаты контроля."
+                            ),
+                        )
+            patch_data.setdefault("completed_at", now)
+
     enforce_optimistic_lock(
         entity_type="lab_request",
         entity_obj=lab_req,

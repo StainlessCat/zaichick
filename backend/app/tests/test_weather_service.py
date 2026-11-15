@@ -493,3 +493,80 @@ async def test_api_create_weather_station_alias():
         app.dependency_overrides.pop(get_db_session, None)
 
 
+@pytest.mark.asyncio
+async def test_station_id_unification_and_st_prefix_resolution():
+    """Verify that get_station_by_id accepts UUID, WMO ID, and 'st-' prefix without error."""
+    from app.services.weather.reference_stations import (
+        ensure_baseline_weather_stations_seeded,
+        get_deterministic_station_uuid,
+    )
+    from app.services.weather.weather_service import get_station_by_id
+    from app.core.database import async_session_factory
+
+    seeded_count = await ensure_baseline_weather_stations_seeded()
+    assert seeded_count >= 0
+
+    async with async_session_factory() as session:
+        # 1. Resolve by canonical UUID
+        expected_salekhard_uuid = get_deterministic_station_uuid("23330")
+        st_by_uuid = await get_station_by_id(session, expected_salekhard_uuid)
+        assert st_by_uuid is not None
+        assert st_by_uuid.wmo_id == "23330"
+        assert "Салехард" in st_by_uuid.name
+
+        # 2. Resolve by clean WMO string
+        st_by_wmo = await get_station_by_id(session, "23330")
+        assert st_by_wmo is not None
+        assert st_by_wmo.id == expected_salekhard_uuid
+
+        # 3. Resolve by frontend pseudo-id with 'st-' prefix
+        st_by_prefix = await get_station_by_id(session, "st-23330")
+        assert st_by_prefix is not None
+        assert st_by_prefix.id == expected_salekhard_uuid
+
+
+@pytest.mark.asyncio
+async def test_api_daily_weather_accepts_st_prefix():
+    """Verify /api/weather/daily accepts 'st-...' and returns 200 without HTTP 422."""
+    test_user = _make_test_user(RoleEnum.PTO)
+    st_id = uuid.uuid4()
+    mock_st = WeatherStation(
+        id=st_id,
+        wmo_id="30528",
+        name="Казачинское",
+        latitude=55.85,
+        longitude=107.60,
+        is_active=True,
+    )
+    mock_daily = WeatherDaily(
+        id=uuid.uuid4(),
+        station_id=st_id,
+        obs_date=date(2026, 11, 14),
+        t_min=-12.0,
+        t_max=-4.0,
+        t_mean=-8.0,
+        source="test",
+    )
+
+    app.dependency_overrides[get_current_user] = lambda: test_user
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            with patch("app.api.routes.weather.get_station_by_id", return_value=mock_st), \
+                 patch("app.api.routes.weather.get_or_fetch_daily_weather", return_value=[mock_daily]):
+                # Query with st-30528 prefix and single date parameter
+                resp = await client.get("/api/weather/daily?station_id=st-30528&date=2026-11-14")
+                assert resp.status_code == 200
+                data = resp.json()
+                assert isinstance(data, list)
+                assert len(data) == 1
+                assert data[0]["station_id"] == str(st_id)
+                assert data[0]["t_min"] == -12.0
+                assert data[0]["t_max"] == -4.0
+                assert data[0]["t_mean"] == -8.0
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+

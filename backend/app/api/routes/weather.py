@@ -89,13 +89,26 @@ async def create_or_update_station_alias(
 
 @router.get("/daily", response_model=list[WeatherDailyOut])
 async def get_weather_daily(
-    station_id: uuid.UUID,
-    date_from: date,
-    date_to: date,
+    station_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    date: date | None = Query(default=None, alias="date"),
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[WeatherDailyOut]:
     """Retrieve daily temperature series, backfilling missing dates from SYNOP and NOAA GSOD."""
+    if date is not None:
+        if date_from is None:
+            date_from = date
+        if date_to is None:
+            date_to = date
+
+    if date_from is None or date_to is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать диапазон дат date_from и date_to (или дату date).",
+        )
+
     if date_from > date_to:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -115,7 +128,7 @@ async def get_weather_daily(
 
 @router.post("/stations/{station_id}/refresh", response_model=WeatherStationRefreshResponse)
 async def refresh_weather_for_station(
-    station_id: uuid.UUID,
+    station_id: str,
     request: Request,
     days: int = Query(default=3, ge=1, le=14),
     current_user: User = Depends(get_current_user),
@@ -130,7 +143,7 @@ async def refresh_weather_for_station(
         )
 
     try:
-        result = await refresh_station_weather(session, station_id, days=days)
+        result = await refresh_station_weather(session, station.id, days=days)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -141,7 +154,7 @@ async def refresh_weather_for_station(
         session,
         action="WEATHER_STATION_REFRESH",
         entity_type="weather_station",
-        entity_id=str(station_id),
+        entity_id=str(station.id),
         user=current_user,
         ip_address=get_client_ip(request),
         summary=f"Принудительное обновление погоды для станции «{station.name}» (WMO: {station.wmo_id})",
