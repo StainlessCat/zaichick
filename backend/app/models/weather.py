@@ -37,6 +37,7 @@ class WeatherStation(Base):
     usaf: Mapped[str | None] = mapped_column(String(10), nullable=True)
     wban: Mapped[str | None] = mapped_column(String(10), nullable=True)
     name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    name_en: Mapped[str | None] = mapped_column(String(255), nullable=True)
     region: Mapped[str | None] = mapped_column(String(255), nullable=True)
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
@@ -55,7 +56,38 @@ class WeatherStation(Base):
     daily_records: Mapped[list[WeatherDaily]] = relationship(
         back_populates="station", cascade="all, delete-orphan"
     )
+    aliases: Mapped[list[WeatherStationAlias]] = relationship(
+        back_populates="station", cascade="all, delete-orphan"
+    )
     lines: Mapped[list[ProjectLine]] = relationship(back_populates="weather_station_rel")
+
+
+class WeatherStationAlias(Base):
+    """Alias linking small settlements (e.g. villages, towns) to nearby weather stations."""
+
+    __tablename__ = "weather_station_aliases"
+    __table_args__ = (
+        UniqueConstraint("settlement_name", "station_id", name="uq_settlement_station"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    settlement_name: Mapped[str] = mapped_column(
+        String(255), index=True, nullable=False
+    )
+    station_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("weather_stations.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    station: Mapped[WeatherStation] = relationship(back_populates="aliases")
 
 
 class WeatherDaily(Base):

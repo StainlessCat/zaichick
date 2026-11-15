@@ -14,11 +14,29 @@ class WeatherStationOut(BaseModel):
     usaf: str | None = None
     wban: str | None = None
     name: str
+    name_en: str | None = None
     region: str | None = None
     latitude: float
     longitude: float
     is_active: bool = True
     distance_km: float | None = None
+    matched_settlement: str | None = None
+
+
+class WeatherStationAliasCreate(BaseModel):
+    settlement_name: str = Field(..., min_length=2, max_length=255)
+    station_id: uuid.UUID
+    distance_km: float | None = None
+
+
+class WeatherStationAliasOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    settlement_name: str
+    station_id: uuid.UUID
+    distance_km: float | None = None
+    created_at: datetime
 
 
 class WeatherDailyOut(BaseModel):

@@ -10,6 +10,8 @@ from app.api.deps import get_client_ip, get_current_user, get_db_session
 from app.models.user import User
 from app.schemas.weather import (
     WeatherDailyOut,
+    WeatherStationAliasCreate,
+    WeatherStationAliasOut,
     WeatherStationOut,
     WeatherStationRefreshResponse,
 )
@@ -18,6 +20,7 @@ from app.services.weather.weather_service import (
     get_or_fetch_daily_weather,
     get_station_by_id,
     refresh_station_weather,
+    save_or_update_station_alias,
     search_weather_stations,
 )
 
@@ -33,7 +36,7 @@ async def list_weather_stations(
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[WeatherStationOut]:
-    """Search Russian weather stations by name/WMO ID or find closest by coordinates."""
+    """Search Russian weather stations by name/WMO ID, aliases or find closest by coordinates."""
     results = await search_weather_stations(
         session,
         search=search,
@@ -42,6 +45,46 @@ async def list_weather_stations(
         limit=limit,
     )
     return [WeatherStationOut.model_validate(st) for st in results]
+
+
+@router.post("/aliases", response_model=WeatherStationAliasOut, status_code=status.HTTP_201_CREATED)
+async def create_or_update_station_alias(
+    payload: WeatherStationAliasCreate,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> WeatherStationAliasOut:
+    """Save or update settlement alias link to a weather station."""
+    station = await get_station_by_id(session, payload.station_id)
+    if not station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Метеостанция с ID '{payload.station_id}' не найдена.",
+        )
+
+    alias = await save_or_update_station_alias(
+        session,
+        settlement_name=payload.settlement_name,
+        station_id=payload.station_id,
+        distance_km=payload.distance_km,
+    )
+
+    await record_audit_log(
+        session,
+        action="WEATHER_ALIAS_CREATE",
+        entity_type="weather_station_alias",
+        entity_id=str(alias.id),
+        user=current_user,
+        ip_address=get_client_ip(request),
+        summary=f"Привязка населённого пункта «{payload.settlement_name}» к станции «{station.name}» ({payload.distance_km or 0:.1f} км)",
+        new_data={
+            "settlement_name": payload.settlement_name,
+            "station_id": str(payload.station_id),
+            "distance_km": payload.distance_km,
+        },
+    )
+
+    return WeatherStationAliasOut.model_validate(alias)
 
 
 @router.get("/daily", response_model=list[WeatherDailyOut])

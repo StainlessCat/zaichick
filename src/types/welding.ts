@@ -623,10 +623,19 @@ export interface WeatherStationItem {
   usaf?: string;
   wban?: string;
   name: string;
+  nameEn?: string;
   region?: string;
   latitude: number;
   longitude: number;
   isActive: boolean;
+  distanceKm?: number;
+  matchedSettlement?: string;
+}
+
+export interface WeatherStationAliasItem {
+  id?: string;
+  settlementName: string;
+  stationId: string;
   distanceKm?: number;
 }
 

@@ -5,16 +5,53 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, or_, select
+import httpx
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.weather import WeatherDaily, WeatherStation
+from app.models.weather import WeatherDaily, WeatherStation, WeatherStationAlias
 from app.services.weather.geo import haversine_distance_km
 from app.services.weather.gsod_loader import fetch_gsod_for_station
 from app.services.weather.synop_parser import fetch_synop_daily
 
 logger = logging.getLogger(__name__)
+
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_USER_AGENT = "ZAYCHICK-Welding-QC/2.0 (contact: pto-support@zaychick.app)"
+
+
+async def geocode_settlement_nominatim(
+    search_query: str,
+    timeout: float = 6.0,
+) -> tuple[float, float, str] | None:
+    """Geocode settlement in Russia using OpenStreetMap Nominatim."""
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(
+                NOMINATIM_URL,
+                params={
+                    "q": search_query.strip(),
+                    "countrycodes": "ru",
+                    "format": "json",
+                    "limit": 1,
+                },
+                headers={
+                    "User-Agent": NOMINATIM_USER_AGENT,
+                    "Accept-Language": "ru",
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list) and len(data) > 0:
+                    first = data[0]
+                    lat = float(first["lat"])
+                    lon = float(first["lon"])
+                    display_name = first.get("display_name", search_query.strip())
+                    return lat, lon, display_name
+    except Exception as exc:
+        logger.warning("Nominatim geocoding failed for %r: %s", search_query, exc)
+    return None
 
 
 async def get_station_by_id(session: AsyncSession, station_id: uuid.UUID) -> WeatherStation | None:
@@ -22,6 +59,39 @@ async def get_station_by_id(session: AsyncSession, station_id: uuid.UUID) -> Wea
     stmt = select(WeatherStation).where(WeatherStation.id == station_id)
     res = await session.execute(stmt)
     return res.scalar_one_or_none()
+
+
+async def save_or_update_station_alias(
+    session: AsyncSession,
+    settlement_name: str,
+    station_id: uuid.UUID,
+    distance_km: float | None = None,
+) -> WeatherStationAlias:
+    """Save or update settlement alias link to a weather station."""
+    clean_name = settlement_name.strip()
+    stmt = select(WeatherStationAlias).where(
+        WeatherStationAlias.settlement_name == clean_name,
+        WeatherStationAlias.station_id == station_id,
+    )
+    res = await session.execute(stmt)
+    existing = res.scalar_one_or_none()
+    if existing:
+        if distance_km is not None:
+            existing.distance_km = distance_km
+        await session.commit()
+        await session.refresh(existing)
+        return existing
+
+    new_alias = WeatherStationAlias(
+        id=uuid.uuid4(),
+        settlement_name=clean_name,
+        station_id=station_id,
+        distance_km=distance_km,
+    )
+    session.add(new_alias)
+    await session.commit()
+    await session.refresh(new_alias)
+    return new_alias
 
 
 async def search_weather_stations(
@@ -32,42 +102,151 @@ async def search_weather_stations(
     lon: float | None = None,
     limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """Search stations by text query or find nearest by geographic coordinates."""
-    stmt = select(WeatherStation).where(WeatherStation.is_active.is_(True))
+    """Search stations by text query or find nearest by geographic coordinates.
 
-    if search and search.strip():
-        term = f"%{search.strip()}%"
-        stmt = stmt.where(
+    Supports:
+    1. Local search across weather_stations (name, name_en, wmo_id, region, usaf)
+       and weather_station_aliases (settlement_name).
+    2. Fallback to OpenStreetMap Nominatim when local search yields 0 results and len(search) >= 3,
+       returning the 3 nearest stations by haversine distance.
+    """
+    clean_search = search.strip() if search and search.strip() else None
+
+    # --- Phase 1: Local DB search ---
+    matched_stations_dict: dict[uuid.UUID, dict[str, Any]] = {}
+
+    if clean_search:
+        term = f"%{clean_search}%"
+
+        # 1a. Search in weather_station_aliases
+        alias_stmt = (
+            select(WeatherStationAlias, WeatherStation)
+            .join(WeatherStation, WeatherStationAlias.station_id == WeatherStation.id)
+            .where(
+                WeatherStation.is_active.is_(True),
+                WeatherStationAlias.settlement_name.ilike(term),
+            )
+        )
+        alias_res = await session.execute(alias_stmt)
+        alias_rows = alias_res.all() if hasattr(alias_res, "all") else []
+        for alias, st in alias_rows:
+            dist_km = alias.distance_km
+            if dist_km is None and lat is not None and lon is not None:
+                dist_km = haversine_distance_km(lat, lon, st.latitude, st.longitude)
+            matched_stations_dict[st.id] = {
+                "id": st.id,
+                "wmo_id": st.wmo_id,
+                "usaf": st.usaf,
+                "wban": st.wban,
+                "name": st.name,
+                "name_en": st.name_en,
+                "region": st.region,
+                "latitude": st.latitude,
+                "longitude": st.longitude,
+                "is_active": st.is_active,
+                "distance_km": dist_km,
+                "matched_settlement": alias.settlement_name,
+            }
+
+        # 1b. Search directly in weather_stations
+        st_stmt = select(WeatherStation).where(
+            WeatherStation.is_active.is_(True),
             or_(
                 WeatherStation.name.ilike(term),
+                WeatherStation.name_en.ilike(term),
                 WeatherStation.wmo_id.ilike(term),
                 WeatherStation.region.ilike(term),
                 WeatherStation.usaf.ilike(term),
-            )
+            ),
         )
-
-    res = await session.execute(stmt)
-    stations = list(res.scalars().all())
-
-    results: list[dict[str, Any]] = []
-    for st in stations:
-        dist_km: float | None = None
-        if lat is not None and lon is not None:
+        st_res = await session.execute(st_stmt)
+        for st in st_res.scalars().all():
+            if st.id not in matched_stations_dict:
+                dist_km = None
+                if lat is not None and lon is not None:
+                    dist_km = haversine_distance_km(lat, lon, st.latitude, st.longitude)
+                matched_stations_dict[st.id] = {
+                    "id": st.id,
+                    "wmo_id": st.wmo_id,
+                    "usaf": st.usaf,
+                    "wban": st.wban,
+                    "name": st.name,
+                    "name_en": st.name_en,
+                    "region": st.region,
+                    "latitude": st.latitude,
+                    "longitude": st.longitude,
+                    "is_active": st.is_active,
+                    "distance_km": dist_km,
+                    "matched_settlement": None,
+                }
+    elif lat is not None and lon is not None:
+        # Geographic query without search text
+        all_st_stmt = select(WeatherStation).where(WeatherStation.is_active.is_(True))
+        all_res = await session.execute(all_st_stmt)
+        for st in all_res.scalars().all():
             dist_km = haversine_distance_km(lat, lon, st.latitude, st.longitude)
+            matched_stations_dict[st.id] = {
+                "id": st.id,
+                "wmo_id": st.wmo_id,
+                "usaf": st.usaf,
+                "wban": st.wban,
+                "name": st.name,
+                "name_en": st.name_en,
+                "region": st.region,
+                "latitude": st.latitude,
+                "longitude": st.longitude,
+                "is_active": st.is_active,
+                "distance_km": dist_km,
+                "matched_settlement": None,
+            }
+    else:
+        # Default list
+        all_st_stmt = select(WeatherStation).where(WeatherStation.is_active.is_(True))
+        all_res = await session.execute(all_st_stmt)
+        for st in all_res.scalars().all():
+            matched_stations_dict[st.id] = {
+                "id": st.id,
+                "wmo_id": st.wmo_id,
+                "usaf": st.usaf,
+                "wban": st.wban,
+                "name": st.name,
+                "name_en": st.name_en,
+                "region": st.region,
+                "latitude": st.latitude,
+                "longitude": st.longitude,
+                "is_active": st.is_active,
+                "distance_km": None,
+                "matched_settlement": None,
+            }
 
-        results.append({
-            "id": st.id,
-            "wmo_id": st.wmo_id,
-            "usaf": st.usaf,
-            "wban": st.wban,
-            "name": st.name,
-            "region": st.region,
-            "latitude": st.latitude,
-            "longitude": st.longitude,
-            "is_active": st.is_active,
-            "distance_km": dist_km,
-        })
+    # --- Phase 2: If 0 results and search >= 3 chars, query OpenStreetMap Nominatim ---
+    if not matched_stations_dict and clean_search and len(clean_search) >= 3:
+        geo = await geocode_settlement_nominatim(clean_search)
+        if geo:
+            geo_lat, geo_lon, _ = geo
+            all_st_stmt = select(WeatherStation).where(WeatherStation.is_active.is_(True))
+            all_res = await session.execute(all_st_stmt)
+            stations_with_dist: list[dict[str, Any]] = []
+            for st in all_res.scalars().all():
+                dist_km = haversine_distance_km(geo_lat, geo_lon, st.latitude, st.longitude)
+                stations_with_dist.append({
+                    "id": st.id,
+                    "wmo_id": st.wmo_id,
+                    "usaf": st.usaf,
+                    "wban": st.wban,
+                    "name": st.name,
+                    "name_en": st.name_en,
+                    "region": st.region,
+                    "latitude": st.latitude,
+                    "longitude": st.longitude,
+                    "is_active": st.is_active,
+                    "distance_km": dist_km,
+                    "matched_settlement": clean_search,
+                })
+            stations_with_dist.sort(key=lambda s: s["distance_km"])
+            return stations_with_dist[:3]
 
+    results = list(matched_stations_dict.values())
     if lat is not None and lon is not None:
         results.sort(key=lambda s: s["distance_km"] if s["distance_km"] is not None else 999999.0)
     else:

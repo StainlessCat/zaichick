@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
 from app.models.weather import WeatherStation
+from app.services.weather.translit import transliterate_station_name
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -70,11 +71,14 @@ def extract_rs_stations_from_csv(
             continue
 
         seen_wmo.add(wmo_id)
+        name_en = name
+        name_ru = transliterate_station_name(name)
         stations.append({
             "wmo_id": wmo_id,
             "usaf": usaf,
             "wban": wban or "99999",
-            "name": name,
+            "name": name_ru,
+            "name_en": name_en,
             "region": region,
             "latitude": latitude,
             "longitude": longitude,
@@ -104,6 +108,7 @@ async def seed_stations_to_db(stations: list[dict[str, Any]], batch_size: int = 
                     usaf=st["usaf"],
                     wban=st["wban"],
                     name=st["name"],
+                    name_en=st.get("name_en"),
                     region=st["region"],
                     latitude=st["latitude"],
                     longitude=st["longitude"],
@@ -114,6 +119,7 @@ async def seed_stations_to_db(stations: list[dict[str, Any]], batch_size: int = 
                         "usaf": st["usaf"],
                         "wban": st["wban"],
                         "name": st["name"],
+                        "name_en": st.get("name_en"),
                         "region": st["region"],
                         "latitude": st["latitude"],
                         "longitude": st["longitude"],

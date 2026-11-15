@@ -12,7 +12,7 @@ from app.cli.seed_stations import extract_rs_stations_from_csv
 from app.main import app
 from app.models.enums import RoleEnum
 from app.models.user import User
-from app.models.weather import WeatherDaily, WeatherStation
+from app.models.weather import WeatherDaily, WeatherStation, WeatherStationAlias
 from app.services.weather.geo import haversine_distance_km
 from app.services.weather.gsod_loader import fahrenheit_to_celsius, parse_gsod_csv
 from app.services.weather.synop_parser import (
@@ -20,7 +20,11 @@ from app.services.weather.synop_parser import (
     parse_ogimet_data,
     parse_section1_air_temp,
 )
-from app.services.weather.weather_service import search_weather_stations
+from app.services.weather.translit import transliterate_station_name
+from app.services.weather.weather_service import (
+    save_or_update_station_alias,
+    search_weather_stations,
+)
 
 
 def _make_test_user(role: RoleEnum = RoleEnum.PTO) -> User:
@@ -144,12 +148,14 @@ def test_extract_rs_stations_from_isd_history_csv():
     assert len(stations) == 2  # Norway skipped, duplicate 23330 skipped, 0,0 coords skipped
 
     assert stations[0]["wmo_id"] == "23330"
-    assert stations[0]["name"] == "SALEHARD"
+    assert stations[0]["name"] == "Салехард"
+    assert stations[0]["name_en"] == "SALEHARD"
     assert stations[0]["latitude"] == 66.533
     assert stations[0]["longitude"] == 66.667
 
     assert stations[1]["wmo_id"] == "28661"
-    assert stations[1]["name"] == "KURGAN"
+    assert stations[1]["name"] == "Курган"
+    assert stations[1]["name_en"] == "KURGAN"
 
 
 @pytest.mark.asyncio
@@ -254,6 +260,8 @@ async def test_search_weather_stations_nearest_sorting():
     class _ResultMock:
         def scalars(self):
             return _ScalarsMock()
+        def all(self):
+            return []
 
     mock_session.execute = AsyncMock(return_value=_ResultMock())
 
@@ -271,4 +279,217 @@ async def test_search_weather_stations_nearest_sorting():
     assert results[0]["distance_km"] < 20.0
     assert results[1]["name"] == "САНКТ-ПЕТЕРБУРГ"
     assert results[1]["distance_km"] > 600.0
+
+
+def test_transliteration_noaa_station_names():
+    """Verify Russian transliteration and dictionary lookup for NOAA station names."""
+    assert transliterate_station_name("ZIGALOVO") == "Жигалово"
+    assert transliterate_station_name("KAZACINSKOE") == "Казачинское"
+    assert transliterate_station_name("UST-KUT") == "Усть-Кут"
+    assert transliterate_station_name("NOVY URENGOY") == "Новый Уренгой"
+    assert transliterate_station_name("KARAM") == "Карам"
+
+
+@pytest.mark.asyncio
+async def test_search_weather_stations_with_settlement_alias():
+    """Verify local search matches small settlements via weather_station_aliases."""
+    mock_session = AsyncMock()
+
+    st_kazachinskoe = WeatherStation(
+        id=uuid.uuid4(),
+        wmo_id="30528",
+        usaf="305280",
+        wban="99999",
+        name="Казачинское",
+        name_en="KAZACINSKOE",
+        region="Иркутская область",
+        latitude=55.85,
+        longitude=107.60,
+        is_active=True,
+    )
+    alias_karam = WeatherStationAlias(
+        id=uuid.uuid4(),
+        settlement_name="Карам",
+        station_id=st_kazachinskoe.id,
+        distance_km=42.5,
+    )
+
+    class _AliasResultMock:
+        def all(self):
+            return [(alias_karam, st_kazachinskoe)]
+
+    class _StResultMock:
+        def scalars(self):
+            class _Scalars:
+                def all(self):
+                    return []
+            return _Scalars()
+
+    async def _mock_exec(stmt):
+        stmt_str = str(stmt)
+        if "weather_station_aliases" in stmt_str:
+            return _AliasResultMock()
+        return _StResultMock()
+
+    mock_session.execute = AsyncMock(side_effect=_mock_exec)
+
+    results = await search_weather_stations(mock_session, search="Карам")
+    assert len(results) == 1
+    assert results[0]["id"] == st_kazachinskoe.id
+    assert results[0]["name"] == "Казачинское"
+    assert results[0]["matched_settlement"] == "Карам"
+    assert results[0]["distance_km"] == 42.5
+
+
+@pytest.mark.asyncio
+async def test_search_weather_stations_nominatim_fallback_for_small_settlement():
+    """Verify fallback to OpenStreetMap Nominatim when settlement is not in local DB."""
+    mock_session = AsyncMock()
+
+    st1 = WeatherStation(
+        id=uuid.uuid4(),
+        wmo_id="30528",
+        usaf="305280",
+        wban="99999",
+        name="Казачинское",
+        latitude=55.85,
+        longitude=107.60,
+        is_active=True,
+    )
+    st2 = WeatherStation(
+        id=uuid.uuid4(),
+        wmo_id="30536",
+        usaf="305360",
+        wban="99999",
+        name="Жигалово",
+        latitude=54.80,
+        longitude=105.15,
+        is_active=True,
+    )
+    st3 = WeatherStation(
+        id=uuid.uuid4(),
+        wmo_id="30433",
+        usaf="304330",
+        wban="99999",
+        name="Киренск",
+        latitude=57.77,
+        longitude=108.07,
+        is_active=True,
+    )
+    st4 = WeatherStation(
+        id=uuid.uuid4(),
+        wmo_id="27612",
+        usaf="276120",
+        wban="99999",
+        name="Москва ВДНХ",
+        latitude=55.83,
+        longitude=37.62,
+        is_active=True,
+    )
+
+    class _EmptyResultMock:
+        def all(self):
+            return []
+        def scalars(self):
+            class _EmptyScalars:
+                def all(self):
+                    return []
+            return _EmptyScalars()
+
+    class _AllStationsResultMock:
+        def scalars(self):
+            class _AllScalars:
+                def all(self):
+                    return [st4, st3, st2, st1]
+            return _AllScalars()
+
+    call_count = 0
+
+    async def _mock_exec(stmt):
+        nonlocal call_count
+        call_count += 1
+        stmt_str = str(stmt)
+        if "weather_station_aliases" in stmt_str or call_count <= 2:
+            return _EmptyResultMock()
+        return _AllStationsResultMock()
+
+    mock_session.execute = AsyncMock(side_effect=_mock_exec)
+
+    # Mock Nominatim returning coordinates of settlement Karam (55.55, 107.54)
+    with patch(
+        "app.services.weather.weather_service.geocode_settlement_nominatim",
+        new_callable=AsyncMock,
+        return_value=(55.55, 107.54, "Карам, Казачинско-Ленский район, Иркутская область, Россия"),
+    ):
+        results = await search_weather_stations(
+            mock_session,
+            search="Карам, Иркутская область",
+            limit=20,
+        )
+
+        # Must return exactly 3 closest stations
+        assert len(results) == 3
+        # First closest should be Казачинское (~34 km)
+        assert results[0]["name"] == "Казачинское"
+        assert results[0]["distance_km"] is not None
+        assert results[0]["distance_km"] < 50.0
+        assert results[0]["matched_settlement"] == "Карам, Иркутская область"
+
+        # Moscow (~4100 km) must not be in the top 3
+        names = [r["name"] for r in results]
+        assert "Москва ВДНХ" not in names
+
+
+@pytest.mark.asyncio
+async def test_api_create_weather_station_alias():
+    """Verify POST /api/weather/aliases creates an alias linking settlement to station."""
+    test_user = _make_test_user(RoleEnum.PTO)
+    mock_db = AsyncMock()
+
+    app.dependency_overrides[get_current_user] = lambda: test_user
+    app.dependency_overrides[get_db_session] = lambda: mock_db
+
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            st_id = uuid.uuid4()
+            mock_st = WeatherStation(
+                id=st_id,
+                wmo_id="30528",
+                name="Казачинское",
+                latitude=55.85,
+                longitude=107.60,
+                is_active=True,
+            )
+            mock_alias = WeatherStationAlias(
+                id=uuid.uuid4(),
+                settlement_name="Карам",
+                station_id=st_id,
+                distance_km=42.5,
+                created_at=datetime.now(timezone.utc),
+            )
+
+            with patch("app.api.routes.weather.get_station_by_id", return_value=mock_st), \
+                 patch("app.api.routes.weather.save_or_update_station_alias", return_value=mock_alias), \
+                 patch("app.api.routes.weather.record_audit_log", new_callable=AsyncMock) as mock_audit:
+                resp = await client.post(
+                    "/api/weather/aliases",
+                    json={
+                        "settlement_name": "Карам",
+                        "station_id": str(st_id),
+                        "distance_km": 42.5,
+                    },
+                )
+                assert resp.status_code == 201
+                data = resp.json()
+                assert data["settlement_name"] == "Карам"
+                assert data["station_id"] == str(st_id)
+                assert data["distance_km"] == 42.5
+                assert mock_audit.await_count == 1
+                assert mock_audit.call_args[1]["action"] == "WEATHER_ALIAS_CREATE"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db_session, None)
+
 

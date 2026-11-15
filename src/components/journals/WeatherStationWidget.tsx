@@ -2,6 +2,7 @@ import React from 'react';
 import { CloudRain, RefreshCw, Thermometer } from 'lucide-react';
 import { Button, FormField, Select } from '../ui';
 import { WeatherDailyItem, WeatherStationItem } from '../../types/welding';
+import { createWeatherStationAlias } from '../../api/weatherApi';
 
 export interface WeatherStationWidgetProps {
   selectedStationId?: string;
@@ -41,14 +42,26 @@ export const WeatherStationWidget: React.FC<WeatherStationWidgetProps> = ({
       <FormField label="Метеостанция" className="w-52">
         <Select
           value={selectedStationId || ''}
-          onChange={(e) => onSelectStation(e.target.value)}
+          onChange={(e) => {
+            const nextId = e.target.value;
+            onSelectStation(nextId);
+            const found = stations.find((s) => s.id === nextId);
+            if (found && found.matchedSettlement) {
+              createWeatherStationAlias({
+                settlementName: found.matchedSettlement,
+                stationId: found.id,
+                distanceKm: found.distanceKm,
+              }).catch(() => {});
+            }
+          }}
           className="w-full truncate font-medium text-slate-800"
         >
           <option value="">Не привязана</option>
           {stations.map((st) => (
             <option key={st.id} value={st.id}>
               {st.name} ({st.wmoId})
-              {st.distanceKm != null ? ` · ${st.distanceKm.toFixed(0)} км` : ''}
+              {st.matchedSettlement ? ` · ${st.matchedSettlement}` : ''}
+              {st.distanceKm != null ? ` (${st.distanceKm.toFixed(0)} км)` : ''}
             </option>
           ))}
         </Select>
