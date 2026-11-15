@@ -337,8 +337,8 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-900 text-white font-mono text-[11px]">
-                <th className="py-2.5 px-2.5 w-8 text-center">
+              <tr className="bg-[#1e3799] text-white select-none text-xs font-semibold shadow-xs">
+                <th className="py-2.5 px-2.5 w-8 text-center border-r border-white/15">
                   <input
                     type="checkbox"
                     checked={
@@ -357,17 +357,17 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                       setSelectedConclusionJointIds(allChecked ? [] : allIds);
                     }}
                     aria-label="Выбрать все стыки ведомости"
-                    className="rounded border-slate-400"
+                    className="rounded border-white/40 text-sky-400 focus:ring-sky-300 cursor-pointer"
                   />
                 </th>
-                <th className="py-2.5 px-2.5">Линия / № стыка</th>
-                <th className="py-2.5 px-2.5">D×S / Сварка</th>
-                <th className="py-2.5 px-2.5">Акт ВИК (№, дата, итог)</th>
-                <th className="py-2.5 px-2.5">Метод НК</th>
-                <th className="py-2.5 px-2.5">№ заключения НК</th>
-                <th className="py-2.5 px-2.5">Дата заключения</th>
-                <th className="py-2.5 px-2.5">Результат НК</th>
-                <th className="py-2.5 px-2.5">Дефектоскопист ЛНК</th>
+                <th className="py-2.5 px-2.5 border-r border-white/15">Линия / № стыка</th>
+                <th className="py-2.5 px-2.5 border-r border-white/15">D×S / Сварка</th>
+                <th className="py-2.5 px-2.5 border-r border-white/15">Акт ВИК (№, дата, итог)</th>
+                <th className="py-2.5 px-2.5 border-r border-white/15">Метод НК</th>
+                <th className="py-2.5 px-2.5 border-r border-white/15">№ заключения НК</th>
+                <th className="py-2.5 px-2.5 border-r border-white/15">Дата заключения</th>
+                <th className="py-2.5 px-2.5 border-r border-white/15">Результат НК</th>
+                <th className="py-2.5 px-2.5 border-r border-white/15">Дефектоскопист ЛНК</th>
                 <th className="py-2.5 px-3 text-right">Действие</th>
               </tr>
             </thead>

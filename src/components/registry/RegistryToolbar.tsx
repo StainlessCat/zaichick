@@ -184,7 +184,16 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
         <div className="h-5 w-px bg-slate-200 hidden sm:block mx-0.5" />
 
         {/* Выбор шаблона таблицы */}
-        <FormField label="Шаблон таблицы" className="w-44">
+        <FormField
+          label={
+            <span className="inline-flex items-center gap-1">
+              <Bookmark className="w-3.5 h-3.5 text-[#1e3799] shrink-0" />
+              <span>Шаблон таблицы</span>
+            </span>
+          }
+          className="w-44"
+          title="Шаблон таблицы"
+        >
           <Select
             value={activeTemplateId}
             onChange={(e) => {
@@ -210,7 +219,7 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
           aria-label={`Настройка столбцов (${visibleColumnsCount} из ${totalColumnsCount})`}
           title={`Настройка столбцов (${visibleColumnsCount} из ${totalColumnsCount})`}
         >
-          <Columns className="w-3.5 h-3.5 text-[#1e3799]" />
+          <Columns className="w-4.5 h-4.5 text-[#1e3799]" />
         </Button>
       </div>
     </div>

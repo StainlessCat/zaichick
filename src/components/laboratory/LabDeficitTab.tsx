@@ -128,16 +128,16 @@ export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr className="bg-slate-900 text-white font-mono text-[11px]">
-                          <th className="py-2.5 px-3">Линия / Контур ГИ</th>
-                          <th className="py-2.5 px-2.5 text-center">Кат. / Ур.</th>
-                          <th className="py-2.5 px-2.5 text-right">Сварено / Всего</th>
-                          <th className="py-2.5 px-3 text-center">ВИК (норма 100%)</th>
-                          <th className="py-2.5 px-3 text-center">РК (% по проекту)</th>
-                          <th className="py-2.5 px-3 text-center">УЗК (% по проекту)</th>
-                          <th className="py-2.5 px-3 text-center">ПВК (% по проекту)</th>
-                          <th className="py-2.5 px-3">Квота по сварщикам</th>
-                          <th className="py-2.5 px-3 text-center">Статус квоты НК</th>
+                        <tr className="bg-[#1e3799] text-white select-none text-xs font-semibold shadow-xs">
+                          <th className="py-2.5 px-3 border-r border-white/15">Линия / Контур ГИ</th>
+                          <th className="py-2.5 px-2.5 text-center border-r border-white/15">Кат. / Ур.</th>
+                          <th className="py-2.5 px-2.5 text-right border-r border-white/15">Сварено / Всего</th>
+                          <th className="py-2.5 px-3 text-center border-r border-white/15">ВИК (норма 100%)</th>
+                          <th className="py-2.5 px-3 text-center border-r border-white/15">РК (% по проекту)</th>
+                          <th className="py-2.5 px-3 text-center border-r border-white/15">УЗК (% по проекту)</th>
+                          <th className="py-2.5 px-3 text-center border-r border-white/15">ПВК (% по проекту)</th>
+                          <th className="py-2.5 px-3 border-r border-white/15">Квота по сварщикам</th>
+                          <th className="py-2.5 px-3 text-center border-r border-white/15">Статус квоты НК</th>
                           <th className="py-2.5 px-3 text-right">Заявка от ПТО в ЛНК</th>
                         </tr>
                       </thead>

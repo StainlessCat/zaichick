@@ -72,7 +72,7 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
               onClick={() => setRequestStatusFilter(tab.id)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
                 requestStatusFilter === tab.id
-                  ? 'bg-slate-900 text-white'
+                  ? 'bg-[#1e3799] text-white'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
@@ -212,16 +212,16 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-700 font-mono text-[11px] border-b border-slate-200">
-                        <th className="py-2 px-3">№ стыка</th>
-                        <th className="py-2 px-3">Линия</th>
-                        <th className="py-2 px-3">Типоразмер D×S</th>
-                        <th className="py-2 px-3">Дата сварки</th>
-                        <th className="py-2 px-3">Клеймо сварщика</th>
-                        <th className="py-2 px-3">Свариваемые элементы (ЛРВ)</th>
-                        <th className="py-2 px-3">Акт ВИК</th>
-                        <th className="py-2 px-3">Заключение НК ({req.requestedMethod})</th>
-                        <th className="py-2 px-3">Дефектоскопист</th>
+                      <tr className="bg-[#1e3799] text-white select-none text-xs font-semibold shadow-xs">
+                        <th className="py-2 px-3 border-r border-white/15">№ стыка</th>
+                        <th className="py-2 px-3 border-r border-white/15">Линия</th>
+                        <th className="py-2 px-3 border-r border-white/15">Типоразмер D×S</th>
+                        <th className="py-2 px-3 border-r border-white/15">Дата сварки</th>
+                        <th className="py-2 px-3 border-r border-white/15">Клеймо сварщика</th>
+                        <th className="py-2 px-3 border-r border-white/15">Свариваемые элементы (ЛРВ)</th>
+                        <th className="py-2 px-3 border-r border-white/15">Акт ВИК</th>
+                        <th className="py-2 px-3 border-r border-white/15">Заключение НК ({req.requestedMethod})</th>
+                        <th className="py-2 px-3 border-r border-white/15">Дефектоскопист</th>
                         <th className="py-2 px-3 text-right">Паспорт</th>
                       </tr>
                     </thead>
