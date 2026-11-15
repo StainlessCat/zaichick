@@ -2,10 +2,12 @@ import React from 'react';
 import { UserCheck, X } from 'lucide-react';
 import {
   NdtLabControlStage,
+  NdtLabRequest,
   NdtMethod,
 } from '../../types/welding';
 import { formatDateDDMMYY } from '../../utils/weldingLogic';
 import {
+  getActiveLabRequestForJoint,
   NdtDeficitStatementResult,
   NdtLineDeficitRow,
 } from '../../utils/laboratoryLogic';
@@ -20,6 +22,7 @@ interface LabRequestModalProps {
   requestModalState: RequestModalState;
   setRequestModalState: React.Dispatch<React.SetStateAction<RequestModalState>>;
   deficitStatement: NdtDeficitStatementResult;
+  labRequests: NdtLabRequest[];
   onOpenCreateRequestModal: (lineRow: NdtLineDeficitRow) => void;
   onSubmitNewRequest: () => void;
   onClose: () => void;
@@ -30,6 +33,7 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
   requestModalState,
   setRequestModalState,
   deficitStatement,
+  labRequests,
   onOpenCreateRequestModal,
   onSubmitNewRequest,
   onClose,
@@ -188,18 +192,34 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
                     onClick={() => {
                       const row = requestModalState.lineRow;
                       if (!row) return;
-                      const pool =
-                        row.candidateJoints.length > 0
-                          ? row.candidateJoints
-                          : row.allWeldedJoints;
+                      const unrequested = row.allWeldedJoints.filter(
+                        (j) =>
+                          !getActiveLabRequestForJoint(
+                            j.id,
+                            labRequests,
+                            requestModalState.requestedMethod
+                          ) &&
+                          (row.candidateJoints.some((c) => c.id === j.id) ||
+                            row.candidateJoints.length === 0)
+                      );
                       setRequestModalState((prev) => ({
                         ...prev,
-                        selectedJointIds: pool.map((j) => j.id),
+                        selectedJointIds: unrequested.map((j) => j.id),
                       }));
                     }}
                     className="text-[11px] font-semibold text-[#1e3799] hover:underline cursor-pointer"
                   >
-                    Выбрать все неохваченные ({requestModalState.lineRow.candidateJoints.length})
+                    Выбрать все неохваченные ({
+                      requestModalState.lineRow.allWeldedJoints.filter(
+                        (j) =>
+                          !getActiveLabRequestForJoint(
+                            j.id,
+                            labRequests,
+                            requestModalState.requestedMethod
+                          ) &&
+                          (requestModalState.lineRow?.candidateJoints.some((c) => c.id === j.id) ?? true)
+                      ).length
+                    })
                   </button>
                   <span className="text-slate-300">|</span>
                   <button
@@ -207,43 +227,83 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
                     onClick={() => {
                       const row = requestModalState.lineRow;
                       if (!row) return;
+                      const available = row.allWeldedJoints.filter(
+                        (j) =>
+                          !getActiveLabRequestForJoint(
+                            j.id,
+                            labRequests,
+                            requestModalState.requestedMethod
+                          )
+                      );
                       setRequestModalState((prev) => ({
                         ...prev,
-                        selectedJointIds: row.allWeldedJoints.map((j) => j.id),
+                        selectedJointIds: available.map((j) => j.id),
                       }));
                     }}
                     className="text-[11px] font-semibold text-slate-600 hover:underline cursor-pointer"
                   >
-                    Выбрать все сваренные ({requestModalState.lineRow.allWeldedJoints.length})
+                    Выбрать все доступные ({
+                      requestModalState.lineRow.allWeldedJoints.filter(
+                        (j) =>
+                          !getActiveLabRequestForJoint(
+                            j.id,
+                            labRequests,
+                            requestModalState.requestedMethod
+                          )
+                      ).length
+                    })
                   </button>
                 </div>
               </div>
 
               <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
                 {requestModalState.lineRow.allWeldedJoints.map((j) => {
+                  const activeReq = getActiveLabRequestForJoint(
+                    j.id,
+                    labRequests,
+                    requestModalState.requestedMethod
+                  );
                   const checked = requestModalState.selectedJointIds.includes(j.id);
+                  const isDisabled = Boolean(activeReq);
+
                   return (
                     <label
                       key={j.id}
-                      className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer"
+                      className={`flex items-center justify-between gap-3 px-3 py-2 transition-colors ${
+                        isDisabled
+                          ? 'bg-amber-50/40 cursor-not-allowed opacity-90'
+                          : 'hover:bg-slate-50 cursor-pointer'
+                      }`}
+                      title={
+                        activeReq
+                          ? `Стык уже включен в активную заявку №${activeReq.requestNumber} (статус «${activeReq.status}») на метод ${activeReq.requestedMethod}`
+                          : undefined
+                      }
                     >
                       <div className="flex items-center gap-2.5">
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={() =>
+                          disabled={isDisabled}
+                          onChange={() => {
+                            if (isDisabled) return;
                             setRequestModalState((prev) => ({
                               ...prev,
                               selectedJointIds: prev.selectedJointIds.includes(j.id)
                                 ? prev.selectedJointIds.filter((id) => id !== j.id)
                                 : [...prev.selectedJointIds, j.id],
-                            }))
-                          }
-                          className="rounded border-slate-300 text-[#1e3799]"
+                            }));
+                          }}
+                          className="rounded border-slate-300 text-[#1e3799] disabled:bg-slate-200 disabled:text-slate-400"
                         />
                         <span className="font-mono font-bold text-slate-900">
                           Стык № {j.jointNumber}
                         </span>
+                        {activeReq && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                            В заявке №{activeReq.requestNumber} ({activeReq.status})
+                          </span>
+                        )}
                         <span className="font-mono text-slate-600">
                           {j.diameterMm}×{j.wallThickness} мм · Сварка{' '}
                           {formatDateDDMMYY(j.weldingDate)} · Клеймо {j.welderStamp}

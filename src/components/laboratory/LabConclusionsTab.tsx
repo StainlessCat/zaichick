@@ -252,8 +252,8 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
             </div>
 
             <div className="lg:col-span-2">
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                № заключения НК (стартовый или общий)
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                № официального заключения ЛНК *
               </label>
               <div className="flex items-center gap-1">
                 <input
@@ -265,11 +265,8 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                       baseReportNumber: e.target.value,
                     }))
                   }
-                  placeholder={suggestNextConclusionNumber(
-                    joints,
-                    batchPreset.ndtMethod
-                  )}
-                  className="flex-1 min-w-0 px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-mono"
+                  placeholder="№ из бланка ЛНК (напр. ЗАК-104)..."
+                  className="flex-1 min-w-0 px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-mono font-semibold"
                 />
                 <button
                   type="button"
@@ -282,7 +279,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                       ),
                     }))
                   }
-                  title="Сгенерировать следующий свободный номер заключения"
+                  title="Подставить черновой автоинкрементный номер"
                   className="px-2 py-1.5 rounded bg-white border border-slate-300 hover:border-[#1e3799] text-[#1e3799] text-[11px] font-semibold cursor-pointer shrink-0"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
@@ -532,12 +529,15 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                                 ndtReportNumber: e.target.value,
                               })
                             }
-                            placeholder={suggestNextConclusionNumber(
-                              joints,
-                              row.ndtMethod
-                            )}
+                            placeholder="№ из бланка..."
                             aria-label={`Номер заключения НК для стыка ${joint.jointNumber}`}
-                            className="w-32 px-2 py-1 rounded bg-white border border-slate-300 text-xs font-mono font-semibold text-slate-900 focus:border-[#1e3799] focus:outline-none"
+                            className={`w-32 px-2 py-1 rounded bg-white border text-xs font-mono font-semibold text-slate-900 focus:border-[#1e3799] focus:outline-none ${
+                              !row.ndtReportNumber.trim() &&
+                              row.ndtResult !== 'Не проводился' &&
+                              row.ndtResult !== 'В работе'
+                                ? 'border-amber-400 bg-amber-50/40'
+                                : 'border-slate-300'
+                            }`}
                           />
                           <button
                             type="button"
@@ -549,7 +549,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                                 ),
                               })
                             }
-                            title="Присвоить следующий номер заключения автоматически"
+                            title="Подставить черновой номер заключения"
                             className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-[#1e3799] cursor-pointer"
                           >
                             <Sparkles className="w-3 h-3" />

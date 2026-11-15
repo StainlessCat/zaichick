@@ -162,9 +162,10 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         joints,
         lineList,
         selectedObjectName,
-        selectedRdCode
+        selectedRdCode,
+        labRequests
       ),
-    [joints, lineList, selectedObjectName, selectedRdCode]
+    [joints, lineList, selectedObjectName, selectedRdCode, labRequests]
   );
 
   // По умолчанию раскрываем все группы шифров РД
@@ -526,9 +527,14 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
   // Оформление заключения по одному стыку в строке ведомости
   const handleCommitSingleJointConclusion = (joint: WeldJoint) => {
     const row = getRowDraft(joint);
-    const reportNumToUse =
-      row.ndtReportNumber.trim() ||
-      suggestNextConclusionNumber(joints, row.ndtMethod);
+    const reportNum = row.ndtReportNumber.trim();
+    if (!reportNum && row.ndtResult !== 'Не проводился' && row.ndtResult !== 'В работе') {
+      showBanner(
+        'error',
+        `Стык № ${joint.jointNumber}: укажите официальный номер заключения/протокола ЛНК из первичного документа.`
+      );
+      return;
+    }
 
     const input: LabConclusionFormInput = {
       stage: row.stage,
@@ -538,7 +544,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       vikResult: row.vikResult,
       vikInspector: row.vikInspector || row.ndtInspector || defaultInspectorName,
       ndtMethod: row.ndtMethod,
-      ndtReportNumber: reportNumToUse,
+      ndtReportNumber: reportNum,
       ndtDate: row.ndtDate,
       ndtResult: row.ndtResult,
       ndtInspector: row.ndtInspector || defaultInspectorName,
@@ -553,7 +559,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     Promise.resolve(
       onSaveLabConclusions(
         [{ jointId: joint.id, patch: res.patch }],
-        `Оформлено заключение НК № ${reportNumToUse} (${input.ndtMethod}: ${input.ndtResult}) по стыку № ${joint.jointNumber}`,
+        `Оформлено заключение НК № ${reportNum} (${input.ndtMethod}: ${input.ndtResult}) по стыку № ${joint.jointNumber}`,
         activeRequestObj?.id
       )
     )
@@ -566,7 +572,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           });
           showBanner(
             'success',
-            `Заключение № ${reportNumToUse} (${input.ndtMethod} — «${input.ndtResult}») по стыку № ${joint.jointNumber} внесено в ведомость и синхронизировано во всех разделах программы.`
+            `Заключение № ${reportNum} (${input.ndtMethod} — «${input.ndtResult}») по стыку № ${joint.jointNumber} внесено в ведомость и синхронизировано во всех разделах программы.`
           );
         } else {
           showBanner(
@@ -597,9 +603,14 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       return;
     }
 
-    const baseNum =
-      batchPreset.baseReportNumber.trim() ||
-      suggestNextConclusionNumber(joints, batchPreset.ndtMethod);
+    const baseNum = batchPreset.baseReportNumber.trim();
+    if (!baseNum && batchPreset.ndtResult !== 'Не проводился' && batchPreset.ndtResult !== 'В работе') {
+      showBanner(
+        'error',
+        'Для пакетного применения укажите номер официального заключения/протокола ЛНК (из первичного бланка).'
+      );
+      return;
+    }
 
     const updates: { jointId: string; patch: Partial<WeldJoint> }[] = [];
 
@@ -955,6 +966,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         requestModalState={requestModalState}
         setRequestModalState={setRequestModalState}
         deficitStatement={deficitStatement}
+        labRequests={labRequests}
         onOpenCreateRequestModal={handleOpenCreateRequestModal}
         onSubmitNewRequest={handleSubmitNewRequest}
         onClose={() => setRequestModalState((prev) => ({ ...prev, isOpen: false }))}

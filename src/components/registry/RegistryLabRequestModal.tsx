@@ -7,6 +7,7 @@ import {
   WeldJoint,
 } from '../../types/welding';
 import {
+  getActiveLabRequestForJoint,
   getJointLabRequestStatus,
   suggestNextLabRequestNumber,
   validateJointForLabRequestSubmission,
@@ -46,11 +47,18 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
     const rejected: Array<{ joint: WeldJoint; reasons: string[] }> = [];
 
     for (const j of candidates) {
-      const status = getJointLabRequestStatus(j, labRequests);
+      const actReq = getActiveLabRequestForJoint(j.id, labRequests, labReqMethod);
       const val = validateJointForLabRequestSubmission(j, welders);
       const reasons = [...val.reasons];
-      if (status === 'Заявка подана' || status === 'Заявка в работе') {
-        reasons.push(`По стыку уже числится статус «${status}»`);
+      if (actReq) {
+        reasons.push(
+          `Стык уже включен в активную заявку №${actReq.requestNumber} (${actReq.status}) на метод ${actReq.requestedMethod}`
+        );
+      } else {
+        const status = getJointLabRequestStatus(j, labRequests);
+        if (status === 'Заявка подана' || status === 'Заявка в работе') {
+          reasons.push(`По стыку уже числится статус «${status}»`);
+        }
       }
       if (reasons.length === 0) {
         eligible.push(j);

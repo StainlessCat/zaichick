@@ -191,6 +191,34 @@ export function isJointInWorkByMethod(
 }
 
 /**
+ * Проверяет, включен ли стык в активную заявку на НК («Подана ПТО» или «В работе ЛНК»).
+ * Если указан requestedMethod, проверяет конфликтность по запрашиваемому методу контроля.
+ */
+export function getActiveLabRequestForJoint(
+  jointId: string,
+  labRequests: NdtLabRequest[],
+  requestedMethod?: string
+): NdtLabRequest | undefined {
+  if (!labRequests || labRequests.length === 0) return undefined;
+  return labRequests.find((r) => {
+    if (r.status !== 'Подана ПТО' && r.status !== 'В работе ЛНК') {
+      return false;
+    }
+    if (!r.jointIds || !r.jointIds.includes(jointId)) {
+      return false;
+    }
+    if (requestedMethod && r.requestedMethod) {
+      const rmNorm = requestedMethod.trim().toUpperCase();
+      const reqNorm = r.requestedMethod.trim().toUpperCase();
+      if (rmNorm !== reqNorm && !reqNorm.includes(rmNorm) && !rmNorm.includes(reqNorm)) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+/**
  * Вычисляет полную дефицитную ведомость неразрушающего контроля с группировкой по шифрам РД и линиям
  * и учётом нормативного процента контроля (РК %, УЗК %, ПВК %, ВИК 100%) и квот по сварщикам.
  */
@@ -198,7 +226,8 @@ export function calculateLaboratoryDeficitStatement(
   joints: WeldJoint[],
   lineList: ProjectLineItem[],
   selectedObjectName = 'ALL',
-  selectedRdCode = 'ALL'
+  selectedRdCode = 'ALL',
+  labRequests: NdtLabRequest[] = []
 ): NdtDeficitStatementResult {
   const scopedJoints = joints.filter((j) => {
     if (selectedObjectName !== 'ALL' && j.objectName !== selectedObjectName) return false;
@@ -356,8 +385,27 @@ export function calculateLaboratoryDeficitStatement(
       }
     }
 
-    // Кандидаты на включение в заявку НК: сваренные стыки, у которых не завершён контроль или открыт ремонт
+    const totalPhysicalDeficit = rkDeficit + uzkDeficit + pvkDeficit;
+    let recommendedMethod: NdtMethod = 'РК';
+    if (rkDeficit > 0 && uzkDeficit > 0) {
+      recommendedMethod = 'РК+УЗК';
+    } else if (uzkDeficit > 0 && rkDeficit === 0) {
+      recommendedMethod = 'УЗК';
+    } else if (pvkDeficit > 0 && rkDeficit === 0 && uzkDeficit === 0) {
+      recommendedMethod = 'ПВК';
+    } else if (uzkPlanPct > rkPlanPct && rkPlanPct === 0) {
+      recommendedMethod = 'УЗК';
+    }
+
+    // Кандидаты на включение в заявку НК: сваренные стыки, у которых не завершён контроль или открыт ремонт,
+    // и которые ещё не находятся в активной заявке ЛНК на рекомендованный метод
     const candidateJoints = allWeldedJoints.filter((j) => {
+      if (
+        getActiveLabRequestForJoint(j.id, labRequests, recommendedMethod) &&
+        !isJointCurrentlyInRepair(j)
+      ) {
+        return false;
+      }
       if (isJointCurrentlyInRepair(j)) return true;
       if (j.vikResult !== 'Годен') return true;
       if (
@@ -370,18 +418,6 @@ export function calculateLaboratoryDeficitStatement(
       }
       return false;
     });
-
-    const totalPhysicalDeficit = rkDeficit + uzkDeficit + pvkDeficit;
-    let recommendedMethod: NdtMethod = 'РК';
-    if (rkDeficit > 0 && uzkDeficit > 0) {
-      recommendedMethod = 'РК+УЗК';
-    } else if (uzkDeficit > 0 && rkDeficit === 0) {
-      recommendedMethod = 'УЗК';
-    } else if (pvkDeficit > 0 && rkDeficit === 0 && uzkDeficit === 0) {
-      recommendedMethod = 'ПВК';
-    } else if (uzkPlanPct > rkPlanPct && rkPlanPct === 0) {
-      recommendedMethod = 'УЗК';
-    }
 
     const hasDeficit =
       vikDeficit > 0 ||
