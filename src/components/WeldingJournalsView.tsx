@@ -2,13 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, RotateCcw } from 'lucide-react';
 import {
   JournalStandard,
-  WeatherDailyItem,
   WeldJoint,
 } from '../types/welding';
-import {
-  fetchWeatherDaily,
-  refreshWeatherStation,
-} from '../api/weatherApi';
 import {
   extractRdSuffix,
   formatDateDDMMYY,
@@ -367,171 +362,6 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
     return list;
   }, [objectScopedJoints, currentRdCode, selectedLineKey, selectedLineItem]);
 
-  // Состояния метеомодуля РФ (SYNOP + NOAA GSOD)
-  // Метеостанция берётся строго из настроек объекта (в меню) и распространяется на журналы
-  const currentFacility = useMemo(() => {
-    return (
-      facilities.find((f) => f.name === selectedObjectName) ||
-      (selectedObjectName === 'ALL' ? facilities[0] : undefined)
-    );
-  }, [facilities, selectedObjectName]);
-
-  const selectedWeatherStationId = currentFacility?.weatherStationId || '';
-  const selectedWeatherStationName = currentFacility?.weatherStation || '';
-
-  const [dailyWeather, setDailyWeather] = useState<WeatherDailyItem | null>(null);
-  const [isLoadingWeather, setIsLoadingWeather] = useState<boolean>(false);
-
-  // Определение даты для фактических метеонаблюдений (дата сварки первого/последнего стыка или сегодня)
-  const activeJointDate = useMemo(() => {
-    const dates = lineScopedJoints
-      .map((j) => j.weldingDate)
-      .filter((d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d));
-    if (dates.length > 0) {
-      return dates[dates.length - 1];
-    }
-    return new Date().toISOString().slice(0, 10);
-  }, [lineScopedJoints]);
-
-  // Загрузка суточной температуры при смене метеостанции или даты
-  useEffect(() => {
-    if (!selectedWeatherStationId || !activeJointDate) {
-      setDailyWeather(null);
-      return;
-    }
-    let isMounted = true;
-    setIsLoadingWeather(true);
-    fetchWeatherDaily(selectedWeatherStationId, activeJointDate, activeJointDate)
-      .then((records) => {
-        if (!isMounted) return;
-        const record = records.find((r) => r.obsDate === activeJointDate) || records[0] || null;
-        setDailyWeather(record);
-      })
-      .finally(() => {
-        if (isMounted) setIsLoadingWeather(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedWeatherStationId, activeJointDate]);
-
-  // Принудительное обновление погоды со шлюза SYNOP
-  const handleRefreshWeather = async () => {
-    if (!selectedWeatherStationId) return;
-    setIsLoadingWeather(true);
-    try {
-      const res = await refreshWeatherStation(selectedWeatherStationId, 3);
-      const records = await fetchWeatherDaily(selectedWeatherStationId, activeJointDate, activeJointDate);
-      const record = records.find((r) => r.obsDate === activeJointDate) || records[0] || null;
-      setDailyWeather(record);
-      showToast(`Метеоданные обновлены со шлюза SYNOP (${res.refreshedCount} сут.).`);
-    } catch {
-      showToast('Ошибка при обновлении метеоданных со шлюза.');
-    } finally {
-      setIsLoadingWeather(false);
-    }
-  };
-
-  // Подстановка фактической температуры в стыки линии строго по дате сварки
-  const handleApplyWeatherTemp = (tempMean: number) => {
-    if (!activeJointDate) {
-      showToast('Дата сварки не определена.');
-      return;
-    }
-    const formatted = tempMean > 0 ? `+${tempMean.toFixed(1)}` : tempMean.toFixed(1);
-    let updatedCount = 0;
-    let otherDatesCount = 0;
-
-    lineScopedJoints.forEach((j) => {
-      if (!j.ambientTemp && onEditJoint) {
-        if (j.weldingDate === activeJointDate) {
-          onEditJoint({
-            ...j,
-            ambientTemp: formatted,
-            weatherSource: dailyWeather?.source === 'SYNOP_LIVE' ? 'SYNOP Ogimet' : 'NOAA GSOD',
-          });
-          updatedCount++;
-        } else if (j.weldingDate) {
-          otherDatesCount++;
-        }
-      }
-    });
-
-    if (updatedCount > 0) {
-      let msg = `Фактическая температура ${formatted}°C внесена в ${updatedCount} стык(ов) за дату ${activeJointDate}.`;
-      if (otherDatesCount > 0) {
-        msg += ` Стыки других дат (${otherDatesCount} шт.) защищены от подмены данных.`;
-      }
-      showToast(msg);
-    } else if (otherDatesCount > 0) {
-      showToast(`Стыков без температуры за дату ${activeJointDate} нет. На линии есть ${otherDatesCount} стыков за другие даты.`);
-    } else {
-      showToast(`Все стыки за дату ${activeJointDate} уже имеют заполненную температуру.`);
-    }
-  };
-
-  // Пакетное заполнение температуры по всем уникальным датам сварки линии
-  const handleApplyAllDatesWeather = async () => {
-    if (!selectedWeatherStationId) {
-      showToast('Метеостанция не привязана к объекту.');
-      return;
-    }
-    const emptyJoints = lineScopedJoints.filter(
-      (j) => !j.ambientTemp && j.weldingDate && /^\d{4}-\d{2}-\d{2}$/.test(j.weldingDate)
-    );
-    if (emptyJoints.length === 0) {
-      showToast('Нет стыков с незаполненной температурой.');
-      return;
-    }
-    const uniqueDates = Array.from(new Set(emptyJoints.map((j) => j.weldingDate!))).sort();
-    const minDate = uniqueDates[0];
-    const maxDate = uniqueDates[uniqueDates.length - 1];
-
-    setIsLoadingWeather(true);
-    try {
-      const dailyRecords = await fetchWeatherDaily(selectedWeatherStationId, minDate, maxDate);
-      const recordsByDate = new Map<string, WeatherDailyItem>();
-      dailyRecords.forEach((r) => {
-        if (r.obsDate) recordsByDate.set(r.obsDate, r);
-      });
-
-      let updatedCount = 0;
-      let missingCount = 0;
-      const updatedDates = new Set<string>();
-
-      emptyJoints.forEach((j) => {
-        const rec = recordsByDate.get(j.weldingDate!);
-        if (rec && rec.tMean != null && onEditJoint) {
-          const formatted = rec.tMean > 0 ? `+${rec.tMean.toFixed(1)}` : rec.tMean.toFixed(1);
-          onEditJoint({
-            ...j,
-            ambientTemp: formatted,
-            weatherSource: rec.source === 'SYNOP_LIVE' ? 'SYNOP Ogimet' : 'NOAA GSOD',
-          });
-          updatedCount++;
-          updatedDates.add(j.weldingDate!);
-        } else {
-          missingCount++;
-        }
-      });
-
-      if (updatedCount > 0) {
-        showToast(
-          `Внесена температура для ${updatedCount} стык(ов) по ${updatedDates.size} датам сварки.${
-            missingCount > 0 ? ` Пропущено ${missingCount} стык(ов) без данных в метеоархиве.` : ''
-          }`
-        );
-      } else {
-        showToast(`В архиве метеостанции нет данных на даты сварки (${uniqueDates.join(', ')}).`);
-      }
-    } catch {
-      showToast('Ошибка при загрузке архивных метеоданных.');
-    } finally {
-      setIsLoadingWeather(false);
-    }
-  };
-
   // Регулирование ширины столбцов журнала по ГОСТ 32569-2013
   const {
     getColumnWidth: getGostColWidth,
@@ -824,13 +654,6 @@ export const WeldingJournalsView: React.FC<WeldingJournalsViewProps> = (props) =
         onSwitchStandard={handleSwitchStandard}
         onExportXlsx={handleExportXlsx}
         onExportCsv={handleExportCsv}
-        weatherStationName={selectedWeatherStationName}
-        activeJointDate={activeJointDate}
-        dailyWeather={dailyWeather}
-        isLoadingWeather={isLoadingWeather}
-        onRefreshWeather={handleRefreshWeather}
-        onApplyWeatherTemp={handleApplyWeatherTemp}
-        onApplyAllDatesWeather={handleApplyAllDatesWeather}
       />
 
       {/* Официальный нормативный бланк выбранного журнала */}

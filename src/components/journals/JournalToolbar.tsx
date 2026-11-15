@@ -4,12 +4,11 @@ import {
   Download,
   FileSpreadsheet,
 } from 'lucide-react';
-import { JournalStandard, WeatherDailyItem } from '../../types/welding';
+import { JournalStandard } from '../../types/welding';
 import { Button, FormField } from '../ui';
 import { JournalLineSelector } from './JournalLineSelector';
 import { JournalRdSelector } from './JournalRdSelector';
 import { JournalLineOption, JournalRdOption, LineWeldingAlert } from './types';
-import { WeatherStationWidget } from './WeatherStationWidget';
 
 interface JournalToolbarProps {
   currentRdCode: string;
@@ -26,14 +25,6 @@ interface JournalToolbarProps {
   onSwitchStandard: (standard: JournalStandard) => void;
   onExportXlsx: () => void;
   onExportCsv: () => void;
-  // Метеомодуль
-  weatherStationName?: string;
-  activeJointDate?: string;
-  dailyWeather?: WeatherDailyItem | null;
-  isLoadingWeather?: boolean;
-  onRefreshWeather?: () => void;
-  onApplyWeatherTemp?: (temp: number) => void;
-  onApplyAllDatesWeather?: () => void;
 }
 
 export const JournalToolbar: React.FC<JournalToolbarProps> = ({
@@ -51,13 +42,6 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
   onSwitchStandard,
   onExportXlsx,
   onExportCsv,
-  weatherStationName,
-  activeJointDate,
-  dailyWeather,
-  isLoadingWeather,
-  onRefreshWeather,
-  onApplyWeatherTemp,
-  onApplyAllDatesWeather,
 }) => {
   return (
     <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5 no-print">
@@ -132,22 +116,6 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
             </button>
           </div>
         </FormField>
-
-        {/* 4. Метеомодуль */}
-        {weatherStationName !== undefined && (
-          <>
-            <div className="h-5 w-px bg-slate-200 hidden lg:block mx-0.5" />
-            <WeatherStationWidget
-              stationName={weatherStationName}
-              activeDate={activeJointDate}
-              dailyWeather={dailyWeather}
-              isLoading={isLoadingWeather}
-              onRefresh={onRefreshWeather}
-              onApplyTemp={onApplyWeatherTemp}
-              onApplyAllDates={onApplyAllDatesWeather}
-            />
-          </>
-        )}
       </div>
 
       {/* Правая группа: Экспорт */}
@@ -159,7 +127,7 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
           title="Выгрузить журнал сварочных работ в Excel"
         >
           <FileSpreadsheet className="w-3.5 h-3.5" />
-          <span>Выгрузить (.XLSX)</span>
+          <span>Выгрузить в Excel</span>
         </Button>
 
         <Button
@@ -169,7 +137,7 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
           title="Экспорт в CSV"
         >
           <Download className="w-3.5 h-3.5" />
-          <span>.CSV</span>
+          <span>CSV</span>
         </Button>
       </div>
     </div>
