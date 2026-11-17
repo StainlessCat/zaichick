@@ -244,7 +244,7 @@ export const UserGuideBookletView: React.FC = () => {
                     {
                       step: 'ШАГ 2',
                       role: 'Инженер ПТО',
-                      title: 'Лайнлист и Каталог ЛРВ',
+                      title: 'Лайнлист и База материалов',
                       desc: 'Заносит линии РД, нормы % контроля и спецификацию труб и деталей с заводами-изготовителями.',
                     },
                     {
@@ -476,9 +476,9 @@ export const UserGuideBookletView: React.FC = () => {
               <div className="p-5 rounded-lg border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-slate-900">
-                    Этап Б. Ведение «Каталога ЛРВ и спецификаций» (роли: Технолог / Администратор)
+                    Этап Б. Ведение «Базы материалов» (роли: Технолог / Администратор)
                   </h3>
-                  <span className="text-xs font-mono text-[#1e3799]">Меню ➔ Каталог ЛРВ</span>
+                  <span className="text-xs font-mono text-[#1e3799]">Меню ➔ База материалов</span>
                 </div>
                 <div className="p-2.5 rounded bg-amber-50 border border-amber-200 text-xs text-amber-900">
                   <strong>Разграничение полномочий (RBAC):</strong> Каталог ЛРВ формируется и актуализируется исключительно Главным технологом или Администратором системы (импорт номенклатуры, привязка заводов-изготовителей и сертификатов). Инженер ПТО использует каталог в режиме <strong>выбора готовых позиций</strong> при компоновке линий и паспортов стыков. Прямое создание и изменение номенклатуры ЛРВ для роли ПТО заблокировано.
@@ -862,7 +862,7 @@ export const UserGuideBookletView: React.FC = () => {
                       <tr className="bg-white">
                         <td className="py-2 px-3 border-r border-slate-200 font-mono font-bold text-[#1e3799]">03</td>
                         <td className="py-2 px-3 border-r border-slate-200 font-semibold">Инженер ПТО</td>
-                        <td className="py-2 px-3 border-r border-slate-200">Каталог ЛРВ</td>
+                        <td className="py-2 px-3 border-r border-slate-200">База материалов</td>
                         <td className="py-2 px-3 border-r border-slate-200">Коды ЛРВ, диаметры, сталь, ГОСТ, завод-изготовитель</td>
                         <td className="py-2 px-3 text-slate-600">Автозаполнение деталей в стыке и графа 6 журнала СТО Газпром</td>
                       </tr>

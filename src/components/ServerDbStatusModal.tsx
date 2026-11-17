@@ -204,7 +204,7 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
               </div>
               <div className="p-2.5 rounded-lg bg-white border border-slate-200">
                 <div className="text-[10px] font-mono text-slate-400">lrv_catalog</div>
-                <div className="font-bold text-slate-900 mt-0.5">Каталог ЛРВ</div>
+                <div className="font-bold text-slate-900 mt-0.5">База материалов</div>
                 <div className="font-mono font-bold text-sm text-[#1e3799]">
                   {dbMeta?.counts.lrvCatalog ?? 0} зап.
                 </div>

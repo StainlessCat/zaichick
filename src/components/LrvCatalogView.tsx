@@ -511,7 +511,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Все ({catalog.length})
+            Все
           </button>
           <button
             type="button"
@@ -522,7 +522,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Активные ({activeCount})
+            Активные
           </button>
           <button
             type="button"
@@ -533,7 +533,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Аннулированные ({supersededCount})
+            Аннулированные
           </button>
         </div>
 
@@ -542,7 +542,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
             type="button"
             variant="secondary"
             onClick={() => exportLrvCatalogToExcel(filteredCatalog, false)}
-            title="Выгрузить каталог ЛРВ в Excel"
+            title="Выгрузить базу материалов в Excel"
           >
             <Download className="w-3.5 h-3.5 text-[#1e3799]" />
             <span>Выгрузить в Excel</span>
@@ -683,7 +683,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
             <h3 className="text-xs font-bold text-[#1e3799]">
               {editingLrvId
                 ? `Редактирование позиции ЛРВ (${newLrvCode})`
-                : 'Новая позиция спецификации ЛРВ'}
+                : 'Новая позиция базы материалов'}
             </h3>
             <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
               <input

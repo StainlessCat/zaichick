@@ -149,7 +149,7 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = (props) => {
     },
     {
       id: 'lrv_catalog',
-      title: 'Каталог ЛРВ и спецификации',
+      title: 'База материалов',
       badge: `${lrvCatalogCount}`,
       icon: <Database className="w-4 h-4" />,
     },
