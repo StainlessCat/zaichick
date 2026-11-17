@@ -1,9 +1,18 @@
 import React from 'react';
 import {
   AlertTriangle,
+  BookOpen,
+  Building2,
+  ClipboardList,
+  Database,
+  Flame,
+  FolderKanban,
+  History,
   LogIn,
   LogOut,
   Menu,
+  PieChart,
+  Radiation,
   Redo2,
   RotateCw,
   Undo2,
@@ -37,6 +46,70 @@ export interface AppHeaderProps {
   onRedo?: () => void;
   onOpenDrawer?: () => void;
 }
+
+interface MainNavItem {
+  id: AppSection;
+  shortLabel: string;
+  title: string;
+  icon: React.ReactElement<{ className?: string }>;
+}
+
+const MAIN_NAV_ITEMS: MainNavItem[] = [
+  {
+    id: 'project_linelist',
+    shortLabel: 'Лайнлист',
+    title: 'Лайнлист технологических линий',
+    icon: <FolderKanban className="w-3.5 h-3.5" />,
+  },
+  {
+    id: 'registry',
+    shortLabel: 'Реестр стыков',
+    title: 'Реестр сварных стыков и ввод данных',
+    icon: <ClipboardList className="w-3.5 h-3.5" />,
+  },
+  {
+    id: 'journals',
+    shortLabel: 'Журналы сварки',
+    title: 'Журналы сварочных работ',
+    icon: <BookOpen className="w-3.5 h-3.5" />,
+  },
+  {
+    id: 'laboratory',
+    shortLabel: 'Контроль НК',
+    title: 'Лаборатория неразрушающего контроля',
+    icon: <Radiation className="w-3.5 h-3.5" />,
+  },
+  {
+    id: 'lrv_catalog',
+    shortLabel: 'База материалов',
+    title: 'База материалов и комплектующих',
+    icon: <Database className="w-3.5 h-3.5" />,
+  },
+  {
+    id: 'welding_tech',
+    shortLabel: 'Технология',
+    title: 'Технология сварочного производства',
+    icon: <Flame className="w-3.5 h-3.5" />,
+  },
+  {
+    id: 'readiness',
+    shortLabel: 'Аналитика',
+    title: 'Отчётность по готовности',
+    icon: <PieChart className="w-3.5 h-3.5" />,
+  },
+  {
+    id: 'audit_log',
+    shortLabel: 'Аудит',
+    title: 'Журнал аудита операций',
+    icon: <History className="w-3.5 h-3.5" />,
+  },
+  {
+    id: 'user_guide',
+    shortLabel: 'Руководство',
+    title: 'Руководство пользователя',
+    icon: <BookOpen className="w-3.5 h-3.5" />,
+  },
+];
 
 export const AppHeader: React.FC<AppHeaderProps> = (props) => {
   const auth = useAuth();
@@ -73,20 +146,48 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
 
   return (
     <header className="sticky top-0 z-30 bg-[#1e3799] text-white border-b border-sky-400/20 shadow-md no-print">
-      <div className="max-w-[1920px] mx-auto px-4 py-2 flex items-center justify-between gap-4">
-        <div
-          onClick={onLogoClick}
-          className="flex items-center min-w-0 shrink-0 cursor-pointer select-none"
-          title="zaychick"
-        >
-          <ZaychickLogo variant="header" size={38} />
+      <div className="max-w-[1920px] mx-auto px-4 py-2 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div
+            onClick={onLogoClick}
+            className="flex items-center min-w-0 shrink-0 cursor-pointer select-none"
+            title="zaychick"
+          >
+            <ZaychickLogo variant="header" size={38} />
+          </div>
+
+          <div
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 border border-sky-300/30 rounded-lg px-2 sm:px-2.5 py-1 text-xs text-white transition-colors"
+            title="Объект строительства (быстрая фильтрация данных)"
+          >
+            <Building2 className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+            <select
+              value={app.selectedObjectName || 'ALL'}
+              onChange={(e) => {
+                const val = e.target.value;
+                app.setSelectedObjectName(val === 'ALL' ? '' : val);
+                app.setSelectedRdCode('ALL');
+              }}
+              className="bg-transparent text-white font-medium text-xs focus:outline-none cursor-pointer pr-1 max-w-[120px] sm:max-w-[180px] md:max-w-[240px] truncate"
+              aria-label="Выбор объекта строительства"
+            >
+              <option value="ALL" className="text-slate-900 bg-white">
+                Все объекты
+              </option>
+              {app.derivedFacilities.map((f) => (
+                <option key={f.id} value={f.name} className="text-slate-900 bg-white">
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="flex items-center justify-center flex-1 min-w-0 px-2 text-center">
+        <div className="hidden lg:flex items-center justify-center flex-1 min-w-0 px-2 text-center">
           <div className="inline-flex items-center justify-center gap-2 max-w-full">
             {sectionIcons[activeSection]}
             <h1
-              className="text-xs sm:text-sm md:text-base font-bold text-white uppercase tracking-wider truncate font-century-gothic"
+              className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider truncate font-century-gothic"
               style={{
                 fontFamily:
                   '"Jost", "Century Gothic", CenturyGothic, AppleGothic, sans-serif',
@@ -138,7 +239,7 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
           )}
 
           {isAuthenticated ? (
-            <div className="hidden lg:inline-flex items-center gap-1 bg-white/10 border border-sky-300/30 rounded-lg px-2 py-1 text-xs">
+            <div className="hidden sm:inline-flex items-center gap-1 bg-white/10 border border-sky-300/30 rounded-lg px-2 py-1 text-xs">
               <button
                 type="button"
                 onClick={onOpenLoginModal}
@@ -217,6 +318,38 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
           </button>
         </div>
       </div>
+
+      {/* Горизонтальный Top Sub-Nav Bar: быстрый переход в 1 клик */}
+      <nav
+        className="border-t border-sky-400/20 bg-[#162a75] px-2 sm:px-4 py-1 flex items-center gap-1 overflow-x-auto scroll-smooth"
+        aria-label="Основная навигация по разделам программы"
+      >
+        <div className="max-w-[1920px] mx-auto w-full flex items-center gap-1">
+          {MAIN_NAV_ITEMS.map((item) => {
+            const isActive = activeSection === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => app.setActiveSection(item.id)}
+                className={`h-7 px-2.5 sm:px-3 rounded-md text-xs flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-white text-[#1e3799] font-bold shadow-xs'
+                    : 'text-sky-100 hover:text-white hover:bg-white/10 font-medium'
+                }`}
+                title={item.title}
+              >
+                {React.cloneElement(item.icon, {
+                  className: `w-3.5 h-3.5 shrink-0 ${
+                    isActive ? 'text-[#1e3799]' : 'text-sky-300'
+                  }`,
+                })}
+                <span>{item.shortLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </header>
   );
 };

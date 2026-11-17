@@ -227,6 +227,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
   const [elem2TypeFilter, setElem2TypeFilter] =
     useState<LrvElementCategory>('Все типы');
   const [elem2SizeFilter, setElem2SizeFilter] = useState<string>('all');
+  const initialSnapshotRef = useRef<string>('');
 
   const [form, setForm] = useState<WeldJoint>(() => {
     if (initialJoint) return { ...initialJoint };
@@ -523,7 +524,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
         (i) => i.lrvCode === initialJoint.lrv2Code
       );
 
-      setForm({
+      const loadedJoint: WeldJoint = {
         ...initialJoint,
         ambientTemp: initialJoint.ambientTemp ?? '',
         elem1Name: initLrv1?.shortName || initialJoint.elem1Name,
@@ -559,7 +560,9 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
         gostJointType: initialJoint.gostJointType || 'С17',
         weldingPosition: initialJoint.weldingPosition || 'В1',
         preheatTemp: initialJoint.preheatTemp ?? '',
-      });
+      };
+      setForm(loadedJoint);
+      initialSnapshotRef.current = JSON.stringify(loadedJoint);
       const num = parseInt(initialJoint.jointNumber, 10);
       setIsSupplementaryMode(
         Boolean(initialJoint.isSupplementary) ||
@@ -595,80 +598,84 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     setWelder2Stamp('');
     setBrigadeStamp('');
 
-    setForm((prev) => ({
-      ...prev,
-      id: `j-${Date.now()}`,
-      objectName: firstFac.name,
-      rdCode: activeRdObj.code,
-      contour:
-        activeLine?.testContour || activeRdObj.contours[0] || prev.contour,
-      lineNumber: lineNum,
-      uniqueLineId: uid,
-      jointNumber: nextNum,
-      diameterMm: lrv1?.diameterMm || 159,
-      diameterInch: mmToInchDiameter(lrv1?.diameterMm || 159),
-      wallThickness: lrv1?.wallThickness || 8.0,
-      lrv1Code: lrv1?.lrvCode || '',
-      elem1Name: lrv1?.shortName || '',
-      elem1Material: lrv1?.material || '09Г2С',
-      elem1Ntd: lrv1?.ntd || 'ГОСТ 8732-78',
-      elem1DiameterMm: lrv1?.diameterMm || 159,
-      elem1WallThickness: lrv1?.wallThickness || 8.0,
-      elem1Manufacturer: lrv1?.manufacturer || '',
-      elem1FactoryNumber: '',
-      elem1Length: '',
-      lrv2Code: lrv2?.lrvCode || '',
-      elem2Name: lrv2?.shortName || '',
-      elem2Material: lrv2?.material || '09Г2С',
-      elem2Ntd: lrv2?.ntd || 'ГОСТ 17375-2001',
-      elem2DiameterMm: lrv1?.diameterMm || 159,
-      elem2WallThickness: lrv1?.wallThickness || 8.0,
-      elem2Manufacturer: lrv2?.manufacturer || '',
-      elem2FactoryNumber: '',
-      elem2Length: '',
-      weldingDate: '',
-      ambientTemp: '',
-      preheatTemp: '',
-      weldingType: techCards[0]?.weldingType || 'РАД+РД',
-      gostJointType: 'С17',
-      weldingPosition: 'В1',
-      welderStamp: '',
-      welderStampsList: [],
-      welderFullName: '',
-      welderCertNumber: '',
-      responsiblePerson: '',
-      techCardNumber: techCards[0]?.number || '',
-      vikResult: 'Не проводился',
-      vikDate: '',
-      vikInspector: '',
-      ndtType: 'РК',
-      ndtDate: '',
-      ndtResult: 'Не проводился',
-      ndtInspector: '',
-      dupNdtType: 'Не требуется',
-      dupNdtDate: '',
-      dupNdtResult: 'Не проводился',
-      dupNdtInspector: '',
-      repairAction: '',
-      repairDate: '',
-      repairTechCard: '',
-      repairWelderStamp: '',
-      repairForeman: '',
-      repairVikNumber: '',
-      repairVikDate: '',
-      repairVikResult: 'Не проводился',
-      repairVikInspector: '',
-      repairNdtType: 'Не требуется',
-      repairNdtNumber: '',
-      repairNdtDate: '',
-      repairNdtResult: 'Не проводился',
-      repairNdtInspector: '',
-      repairDupNdtType: 'Не требуется',
-      repairDupNdtNumber: '',
-      repairDupNdtDate: '',
-      repairDupNdtResult: 'Не проводился',
-      repairDupNdtInspector: '',
-    }));
+    setForm((prev) => {
+      const createdJoint: WeldJoint = {
+        ...prev,
+        id: `j-${Date.now()}`,
+        objectName: firstFac.name,
+        rdCode: activeRdObj.code,
+        contour:
+          activeLine?.testContour || activeRdObj.contours[0] || prev.contour,
+        lineNumber: lineNum,
+        uniqueLineId: uid,
+        jointNumber: nextNum,
+        diameterMm: lrv1?.diameterMm || 159,
+        diameterInch: mmToInchDiameter(lrv1?.diameterMm || 159),
+        wallThickness: lrv1?.wallThickness || 8.0,
+        lrv1Code: lrv1?.lrvCode || '',
+        elem1Name: lrv1?.shortName || '',
+        elem1Material: lrv1?.material || '09Г2С',
+        elem1Ntd: lrv1?.ntd || 'ГОСТ 8732-78',
+        elem1DiameterMm: lrv1?.diameterMm || 159,
+        elem1WallThickness: lrv1?.wallThickness || 8.0,
+        elem1Manufacturer: lrv1?.manufacturer || '',
+        elem1FactoryNumber: '',
+        elem1Length: '',
+        lrv2Code: lrv2?.lrvCode || '',
+        elem2Name: lrv2?.shortName || '',
+        elem2Material: lrv2?.material || '09Г2С',
+        elem2Ntd: lrv2?.ntd || 'ГОСТ 17375-2001',
+        elem2DiameterMm: lrv1?.diameterMm || 159,
+        elem2WallThickness: lrv1?.wallThickness || 8.0,
+        elem2Manufacturer: lrv2?.manufacturer || '',
+        elem2FactoryNumber: '',
+        elem2Length: '',
+        weldingDate: '',
+        ambientTemp: '',
+        preheatTemp: '',
+        weldingType: techCards[0]?.weldingType || 'РАД+РД',
+        gostJointType: 'С17',
+        weldingPosition: 'В1',
+        welderStamp: '',
+        welderStampsList: [],
+        welderFullName: '',
+        welderCertNumber: '',
+        responsiblePerson: '',
+        techCardNumber: techCards[0]?.number || '',
+        vikResult: 'Не проводился',
+        vikDate: '',
+        vikInspector: '',
+        ndtType: 'РК',
+        ndtDate: '',
+        ndtResult: 'Не проводился',
+        ndtInspector: '',
+        dupNdtType: 'Не требуется',
+        dupNdtDate: '',
+        dupNdtResult: 'Не проводился',
+        dupNdtInspector: '',
+        repairAction: '',
+        repairDate: '',
+        repairTechCard: '',
+        repairWelderStamp: '',
+        repairForeman: '',
+        repairVikNumber: '',
+        repairVikDate: '',
+        repairVikResult: 'Не проводился',
+        repairVikInspector: '',
+        repairNdtType: 'Не требуется',
+        repairNdtNumber: '',
+        repairNdtDate: '',
+        repairNdtResult: 'Не проводился',
+        repairNdtInspector: '',
+        repairDupNdtType: 'Не требуется',
+        repairDupNdtNumber: '',
+        repairDupNdtDate: '',
+        repairDupNdtResult: 'Не проводился',
+        repairDupNdtInspector: '',
+      };
+      initialSnapshotRef.current = JSON.stringify(createdJoint);
+      return createdJoint;
+    });
   }, [isOpen, mode, initialJoint]);
 
   // Автоматический пересчёт температуры воздуха при изменении объекта или даты сварки (с приоритетом метеоархива объекта)
@@ -1107,6 +1114,35 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     form.ndtResult === 'Ремонт' ||
     form.ndtResult === 'Вырезать';
 
+  const handleSafeClose = () => {
+    const currentSnapshot = JSON.stringify(form);
+    const isDirty =
+      initialSnapshotRef.current !== '' &&
+      currentSnapshot !== initialSnapshotRef.current;
+
+    if (isDirty) {
+      const confirmDiscard = window.confirm(
+        'В паспорте стыка есть несохранённые изменения. Закрыть без сохранения?'
+      );
+      if (!confirmDiscard) {
+        return;
+      }
+    }
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleSafeClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, form]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
@@ -1120,7 +1156,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     >
       <div
         className="fixed inset-0 bg-slate-900/45 backdrop-blur-[1px]"
-        onClick={onClose}
+        onClick={handleSafeClose}
       />
 
       <div className="relative z-10 w-full max-w-6xl bg-white rounded-xl shadow-2xl border border-slate-200 flex flex-col max-h-[94vh] overflow-hidden">
@@ -1132,7 +1168,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
           prevJoint={prevJoint}
           nextJoint={nextJoint}
           onNavigateToJoint={handleNavigateToJoint}
-          onClose={onClose}
+          onClose={handleSafeClose}
         />
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -1165,7 +1201,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
               baseJointForSupp={baseJointForSupp}
               onOpenFacilityLocation={onOpenFacilityLocation}
               onDeleteJoint={onDeleteJoint}
-              onClose={onClose}
+              onClose={handleSafeClose}
               handleRdCodeChangeInCreate={handleRdCodeChangeInCreate}
             />
 
@@ -1291,7 +1327,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
             <div className="flex flex-wrap items-center gap-2.5">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleSafeClose}
                 className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer transition-colors"
               >
                 Отмена
