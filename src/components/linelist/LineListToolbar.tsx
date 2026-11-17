@@ -145,7 +145,7 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
                 title="Удалить выделенные линии проекта"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Удалить ({selectedLineIds.length})</span>
+                <span>Удалить · {selectedLineIds.length}</span>
               </Button>
             ) : (
               <div className="flex items-center gap-1 h-8 box-border px-2 bg-red-50 border border-red-300 rounded-md">
@@ -186,7 +186,7 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
               <Layers className="w-3.5 h-3.5" />
               <span>
                 Групповое редактирование
-                {selectedLineIds.length > 0 ? ` (${selectedLineIds.length})` : ''}
+                {selectedLineIds.length > 0 ? ` · ${selectedLineIds.length}` : ''}
               </span>
             </Button>
           )}

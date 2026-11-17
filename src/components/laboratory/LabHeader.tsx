@@ -110,7 +110,7 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
             <div className="mt-1 text-xl font-bold font-mono tabular-nums text-slate-900">
               {deficitStatement.totals.totalWelded}
               <span className="text-xs font-normal text-slate-500 ml-1">
-                шт. ({deficitStatement.totals.totalLines} лин.)
+                шт. · {deficitStatement.totals.totalLines} лин.
               </span>
             </div>
           </div>

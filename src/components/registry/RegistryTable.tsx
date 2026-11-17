@@ -209,12 +209,21 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                 const isSorted = sortConfig?.key === col.key;
                 const isFilterOpen = openFilterColumnKey === col.key;
                 const colWidth = columnWidths[col.key] ?? col.minWidth;
+                const isJointNumber = col.key === 'jointNumber';
 
                 return (
                   <th
                     key={col.key}
-                    style={{ width: `${colWidth}px`, minWidth: `${col.minWidth}px` }}
-                    className="relative py-3 px-2.5 font-bold border-r border-white/15 text-left whitespace-nowrap group select-none"
+                    style={{
+                      width: `${colWidth}px`,
+                      minWidth: `${col.minWidth}px`,
+                      ...(isJointNumber ? { left: '36px' } : {}),
+                    }}
+                    className={`relative py-3 px-2.5 font-bold text-left whitespace-nowrap select-none ${
+                      isJointNumber
+                        ? 'sticky left-9 z-30 bg-[#1e3799] border-r-2 border-sky-400/50 shadow-[2px_0_5px_rgba(0,0,0,0.15)]'
+                        : 'border-r border-white/15'
+                    }`}
                   >
                     <div className="flex items-center justify-between gap-1.5">
                       <button
@@ -339,12 +348,17 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                   const missingFields = getMissingPassportFields(joint);
                   const isIncomplete =
                     Boolean(joint.weldingDate) && missingFields.length > 0;
+                  const stickyCellBgClass = isSelected
+                    ? 'bg-[#eaf2fd] group-hover:bg-[#dce9fb]'
+                    : virtualRow.index % 2 === 0
+                    ? 'bg-white group-hover:bg-slate-50'
+                    : 'bg-[#fafcff] group-hover:bg-slate-100';
 
                   return (
                     <tr
                       key={joint.id}
                       onClick={() => onToggleSelectRow(joint.id)}
-                      className={`transition-colors cursor-pointer select-none ${
+                      className={`group transition-colors cursor-pointer select-none ${
                         isSelected
                           ? 'bg-[#eaf2fd] hover:bg-[#dce9fb]'
                           : virtualRow.index % 2 === 0
@@ -355,7 +369,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                       {/* Чекбокс строки (липкий) */}
                       <td
                         onClick={(e) => e.stopPropagation()}
-                        className="py-2 px-2.5 border-r border-slate-200 text-center sticky left-0 z-10 bg-inherit"
+                        className={`py-2 px-2.5 border-r border-slate-200 text-center sticky left-0 z-10 ${stickyCellBgClass}`}
                       >
                         <input
                           type="checkbox"
@@ -393,8 +407,8 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                           return (
                             <td
                               key={col.key}
-                              style={cellStyle}
-                              className="py-2 px-2.5 border-r border-slate-200 font-mono font-bold text-slate-900 whitespace-nowrap overflow-hidden text-ellipsis"
+                              style={{ ...cellStyle, left: '36px' }}
+                              className={`py-2 px-2.5 border-r-2 border-slate-300 font-mono font-bold text-slate-900 whitespace-nowrap overflow-hidden text-ellipsis sticky left-9 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.08)] ${stickyCellBgClass}`}
                             >
                               <button
                                 type="button"
@@ -411,10 +425,10 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                                 </span>
                                 {isSupp && (
                                   <span
-                                    className="ml-1.5 text-[10px] font-normal text-[#1e3799] shrink-0"
+                                    className="ml-1.5 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 text-[#1e3799] shrink-0"
                                     title="Дополнительный стык"
                                   >
-                                    (доп.)
+                                    доп.
                                   </span>
                                 )}
                                 {duplicateJointIds.has(joint.id) && (

@@ -111,7 +111,7 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
               title="Удалить выделенные сварные стыки"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Удалить ({selectedJointIds.length})</span>
+              <span>Удалить · {selectedJointIds.length}</span>
             </Button>
           ))}
 
@@ -126,7 +126,7 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
             <Radiation className="w-3.5 h-3.5 text-amber-600" />
             <span>
               Направить заявку в ЛНК
-              {selectedJointIds.length > 0 ? ` (${selectedJointIds.length})` : ''}
+              {selectedJointIds.length > 0 ? ` · ${selectedJointIds.length}` : ''}
             </span>
           </Button>
         )}
@@ -142,7 +142,7 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
             <Layers className="w-3.5 h-3.5" />
             <span>
               Массовое редактирование
-              {selectedJointIds.length > 0 ? ` (${selectedJointIds.length})` : ''}
+              {selectedJointIds.length > 0 ? ` · ${selectedJointIds.length}` : ''}
             </span>
           </Button>
         )}
@@ -215,11 +215,12 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
           type="button"
           variant="secondary"
           onClick={onOpenColumnsModal}
-          className="w-8 h-8 p-0 flex items-center justify-center shrink-0"
-          aria-label={`Настройка столбцов (${visibleColumnsCount} из ${totalColumnsCount})`}
-          title={`Настройка столбцов (${visibleColumnsCount} из ${totalColumnsCount})`}
+          className="h-8 px-2.5 flex items-center gap-1.5 shrink-0"
+          aria-label={`Настройка столбцов: ${visibleColumnsCount} из ${totalColumnsCount}`}
+          title={`Настройка столбцов: ${visibleColumnsCount} из ${totalColumnsCount}`}
         >
-          <Columns className="w-4.5 h-4.5 text-[#1e3799]" />
+          <Columns className="w-4 h-4 text-[#1e3799]" />
+          <span className="hidden sm:inline text-xs font-semibold">Столбцы</span>
         </Button>
       </div>
     </div>
