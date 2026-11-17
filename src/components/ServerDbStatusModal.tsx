@@ -197,7 +197,7 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
               </div>
               <div className="p-2.5 rounded-lg bg-white border border-slate-200">
                 <div className="text-[10px] font-mono text-slate-400">project_linelist</div>
-                <div className="font-bold text-slate-900 mt-0.5">Проект (лайнлист)</div>
+                <div className="font-bold text-slate-900 mt-0.5">Лайнлист</div>
                 <div className="font-mono font-bold text-sm text-[#1e3799]">
                   {dbMeta?.counts.projectLineList ?? 0} зап.
                 </div>

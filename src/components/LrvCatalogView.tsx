@@ -545,7 +545,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
             title="Выгрузить каталог ЛРВ в Excel"
           >
             <Download className="w-3.5 h-3.5 text-[#1e3799]" />
-            <span>Выгрузить (.xlsx)</span>
+            <span>Выгрузить в Excel</span>
           </Button>
 
           {canEdit && (

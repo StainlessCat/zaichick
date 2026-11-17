@@ -297,7 +297,7 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
             title="Выгрузить отчёт готовности в Excel"
           >
             <Download className="w-3.5 h-3.5 text-[#1e3799]" />
-            <span>Экспорт (.XLSX)</span>
+            <span>Выгрузить в Excel</span>
           </Button>
 
           <Button
@@ -307,7 +307,7 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
             title="Выгрузить сводку готовности в CSV"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Экспорт (.CSV)</span>
+            <span>Выгрузить в CSV</span>
           </Button>
         </div>
       </div>

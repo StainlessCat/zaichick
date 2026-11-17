@@ -1303,7 +1303,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] text-xs font-semibold hover:bg-sky-100 transition-colors cursor-pointer"
                   title={`Сохранить текущий стык и сразу перейти к следующему стыку № ${nextJoint.jointNumber}`}
                 >
-                  <span>Сохранить и след. (№ {nextJoint.jointNumber})</span>
+                  <span>Сохранить и перейти далее</span>
                   <ChevronRight className="w-4 h-4" />
                 </button>
               )}

@@ -96,7 +96,7 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
               title="Выгрузить дефицитную ведомость в CSV"
             >
               <Download className="w-3.5 h-3.5 text-[#1e3799]" />
-              <span>Экспорт ведомости (.CSV)</span>
+              <span>Выгрузить в CSV</span>
             </Button>
           </div>
         </div>
@@ -117,7 +117,7 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
 
           <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200">
             <div className="text-[11px] text-amber-900 font-medium">
-              Дефицит РК (по квоте %)
+              Дефицит РК по квоте
             </div>
             <div className="mt-1 text-xl font-bold font-mono tabular-nums text-amber-800">
               {deficitStatement.totals.rkDeficit}

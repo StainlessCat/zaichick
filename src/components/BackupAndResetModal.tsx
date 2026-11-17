@@ -394,7 +394,7 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
                   }`}
                 >
                   <Lock className="w-3 h-3" />
-                  <span>Чистый лист (Консоль Автора)</span>
+                  <span>Консоль разработчика</span>
                 </button>
               </div>
             </div>
@@ -407,7 +407,7 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
                 </div>
               </div>
               <div className="p-2 rounded-lg bg-white border border-slate-200">
-                <div className="text-[10px] text-slate-500">Линии (лайнлист)</div>
+                <div className="text-[10px] text-slate-500">Линии лайнлиста</div>
                 <div className="font-mono font-bold text-sm text-[#1e3799]">
                   {currentPayload.projectLineList.length}
                 </div>
@@ -459,7 +459,7 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
                       <Download className="w-4 h-4 text-[#1e3799]" />
-                      <span>1. Создать файл резервной копии (.JSON)</span>
+                      <span>1. Создать файл резервной копии</span>
                     </div>
                     <p className="text-slate-500 leading-relaxed">
                       Выгружает полный слепок базы данных (все стыки, лайнлист, объекты, шифры РД, каталог ЛРВ, сварщиков, техкарты, сварочные материалы, пользователей, шаблоны столбцов и журнал аудита) в единый файл на ваш компьютер.
@@ -485,7 +485,7 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
                       className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1e3799] text-white font-semibold hover:bg-[#15276e] transition-colors shadow-xs"
                     >
                       <HardDriveDownload className="w-4 h-4" />
-                      <span>Скачать полный бэкап данных (.JSON)</span>
+                      <span>Скачать полный бэкап данных</span>
                     </button>
                   </div>
                 </div>
@@ -552,7 +552,7 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
                       className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[#1e3799] bg-[#f4f8fe] text-[#1e3799] font-semibold hover:bg-sky-100 transition-colors"
                     >
                       <Upload className="w-4 h-4" />
-                      <span>Выбрать файл бэкапа (.JSON)</span>
+                      <span>Выбрать файл бэкапа</span>
                     </button>
 
                     {parsedBackup && (
@@ -575,7 +575,7 @@ export const BackupAndResetModal: React.FC<BackupAndResetModalProps> = ({
                   <div>
                     <div className="font-bold text-slate-900 flex items-center gap-2">
                       <Clock className="w-4 h-4 text-[#1e3799]" />
-                      <span>3. Быстрые точки восстановления в памяти браузера (до 8 снимков)</span>
+                      <span>3. Точки восстановления в браузере</span>
                     </div>
                     <p className="text-[11px] text-slate-500">
                       Мгновенное сохранение контрольной точки перед массовым импортом или удалением данных

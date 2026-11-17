@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZAYCHICK — Руководство пользователя системы</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐇</text></svg>">
+  <style>
+    :root {
+      --primary: #1e3799;
+      --primary-hover: #15276e;
+      --primary-light: #e8f1fc;
+      --primary-accent: #005eb8;
+      --slate-900: #0f172a;
+      --slate-800: #1e293b;
+      --slate-700: #334155;
+      --slate-600: #475569;
+      --slate-500: #64748b;
+      --slate-200: #e2e8f0;
+      --slate-100: #f1f5f9;
+      --slate-50: #f8fafc;
+      --emerald-600: #059669;
+      --emerald-50: #ecfdf5;
+      --emerald-200: #a7f3d0;
+      --amber-600: #d97706;
+      --amber-50: #fffbeb;
+      --amber-200: #fde68a;
+      --rose-600: #e11d48;
+      --rose-50: #fff1f2;
+      --rose-200: #fecdd3;
+      --sidebar-width: 290px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      font-size: 15px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: var(--slate-800);
+      background-color: var(--slate-50);
+      line-height: 1.6;
+    }
+
+    /* Верхняя панель (Header) */
+    header.top-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: #ffffff;
+      border-bottom: 1px solid var(--slate-200);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #1e3799, #005eb8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 18px;
+      box-shadow: 0 2px 4px rgba(30, 55, 153, 0.25);
+    }
+
+    .brand-text h1 {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    .brand-text p {
+      font-size: 0.72rem;
+      color: var(--slate-500);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .version-tag {
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 4px 10px;
+      border-radius: 9999px;
+      border: 1px solid rgba(30, 55, 153, 0.15);
+    }
+
+    .btn-print {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--primary);
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      text-decoration: none;
+    }
+
+    .btn-print:hover {
+      background: var(--primary-hover);
+    }
+
+    /* Основной макет страницы */
+    .layout-wrapper {
+      display: flex;
+      max-width: 1440px;
+      margin: 0 auto;
+      min-height: calc(100vh - 64px);
+    }
+
+    /* Боковая панель навигации (Sidebar) */
+    aside.sidebar {
+      width: var(--sidebar-width);
+      flex-shrink: 0;
+      position: sticky;
+      top: 64px;
+      height: calc(100vh - 64px);
+      overflow-y: auto;
+      padding: 24px 16px 40px 24px;
+      border-right: 1px solid var(--slate-200);
+      background: #ffffff;
+    }
+
+    .sidebar-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 800;
+      color: var(--slate-500);
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+      padding-left: 8px;
+    }
+
+    .nav-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      color: var(--slate-700);
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 500;
+      transition: all 0.15s ease;
+      line-height: 1.35;
+    }
+
+    .nav-link:hover {
+      background: var(--slate-100);
+      color: var(--slate-900);
+    }
+
+    .nav-link.active {
+      background: var(--primary-light);
+      color: var(--primary);
+      font-weight: 700;
+      border-left: 3px solid var(--primary);
+    }
+
+    .nav-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      border-radius: 4px;
+      background: var(--slate-100);
+      color: var(--slate-600);
+      flex-shrink: 0;
+    }
+
+    .nav-link.active .nav-num {
+      background: var(--primary);
+      color: #ffffff;
+    }
+
+    /* Основное содержимое */
+    main.content {
+      flex: 1;
+      min-width: 0;
+      padding: 32px 48px 80px 48px;
+      max-width: 1000px;
+    }
+
+    section.guide-section {
+      margin-bottom: 56px;
+      scroll-margin-top: 80px;
+    }
+
+    .section-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--primary);
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+
+    h2.section-heading {
+      font-size: 1.65rem;
+      font-weight: 800;
+      color: var(--slate-900);
+      line-height: 1.3;
+      margin-bottom: 16px;
+      border-bottom: 2px solid var(--slate-200);
+      padding-bottom: 12px;
+    }
+
+    h3.sub-heading {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--slate-800);
+      margin-top: 24px;
+      margin-bottom: 10px;
+    }
+
+    p {
+      margin-bottom: 14px;
+      color: var(--slate-700);
+    }
+
+    ul, ol {
+      margin-bottom: 16px;
+      padding-left: 24px;
+      color: var(--slate-700);
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    /* Карточки и выноски */
+    .callout {
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin: 18px 0;
+      border-left: 4px solid;
+      background: #ffffff;
+    }
+
+    .callout-info {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      color: var(--slate-800);
+    }
+
+    .callout-warning {
+      border-color: var(--amber-600);
+      background: var(--amber-50);
+      color: #92400e;
+    }
+
+    .callout-danger {
+      border-color: var(--rose-600);
+      background: var(--rose-50);
+      color: #9f1239;
+    }
+
+    .callout-success {
+      border-color: var(--emerald-600);
+      background: var(--emerald-50);
+      color: #065f46;
+    }
+
+    .callout-title {
+      font-weight: 800;
+      font-size: 0.92rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    /* Таблицы */
+    .table-container {
+      overflow-x: auto;
+      margin: 20px 0;
+      border: 1px solid var(--slate-200);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      text-align: left;
+    }
+
+    thead th {
+      background: var(--slate-100);
+      color: var(--slate-800);
+      font-weight: 700;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--slate-200);
+      white-space: nowrap;
+    }
+
+    tbody td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--slate-200);
+      color: var(--slate-700);
+      vertical-align: top;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: var(--slate-50);
+    }
+
+    .badge-role {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: monospace;
+    }
+
+    .badge-pto { background: #e0f2fe; color: #0369a1; }
+    .badge-ogs { background: #fef3c7; color: #92400e; }
+    .badge-pil { background: #f3e8ff; color: #6b21a8; }
+    .badge-viewer { background: #f1f5f9; color: #475569; }
+    .badge-admin { background: #fee2e2; color: #b91c1c; }
+
+    .tag-mono {
+      font-family: Consolas, Monaco, 'Courier New', monospace;
+      font-size: 0.82rem;
+      background: var(--slate-100);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--slate-200);
+      color: var(--primary);
+    }
+
+    /* Карточки ограничений */
+    .limits-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+
+    .limit-card {
+      background: #ffffff;
+      border: 1px solid var(--slate-200);
+      border-top: 3px solid var(--rose-600);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .limit-card h4 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--slate-900);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .limit-card p {
+      font-size: 0.85rem;
+      color: var(--slate-600);
+      margin-bottom: 0;
+    }
+
+    /* Стили для печати */
+    @media print {
+      header.top-header,
+      aside.sidebar,
+      .btn-print {
+        display: none !important;
+      }
+
+      .layout-wrapper {
+        display: block;
+        max-width: 100%;
+        margin: 0;
+      }
+
+      main.content {
+        padding: 0;
+        max-width: 100%;
+      }
+
+      section.guide-section {
+        page-break-inside: avoid;
+        margin-bottom: 32px;
+      }
+
+      h2.section-heading {
+        page-break-after: avoid;
+      }
+
+      body {
+        background: #ffffff;
+        font-size: 11pt;
+        color: #000000;
+      }
+
+      .callout {
+        border: 1px solid #ccc;
+        page-break-inside: avoid;
+      }
+
+      .table-container {
+        border: 1px solid #ccc;
+        page-break-inside: avoid;
+      }
+    }
+
+    /* Адаптивность для мобильных */
+    @media (max-width: 900px) {
+      aside.sidebar {
+        display: none;
+      }
+      main.content {
+        padding: 24px 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Верхняя шапка -->
+  <header class="top-header">
+    <div class="brand">
+      <div class="brand-logo">Z</div>
+      <div class="brand-text">
+        <h1>ZAYCHICK · Руководство пользователя</h1>
+        <p>Учёт сварочных работ и неразрушающего контроля (НК)</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="version-tag">Версия 2.4.0</span>
+      <button class="btn-print" onclick="window.print()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 6 2 18 2 18 9"></polyline>
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+          <rect x="6" y="14" width="12" height="8"></rect>
+        </svg>
+        Печать документа
+      </button>
+    </div>
+  </header>
+
+  <div class="layout-wrapper">
+    <!-- Боковая навигация -->
+    <aside class="sidebar">
+      <div class="sidebar-title">Содержание руководства</div>
+      <nav>
+        <ul class="nav-list">
+          <li>
+            <a href="#sec-overview" class="nav-link active">
+              <span class="nav-num">1</span>
+              <span>Обзор и архитектура</span>
+            </a>
+          </li>
+          <li>
+            <a href="#sec-rbac" class="nav-link">
+              <span class="nav-num">2</span>
+              <span>Ролевая модель (RBAC)</span>
+            </a>
+          </li>
+          <li>
+            <a href="#sec-joints" class="nav-link">
+              <span class="nav-num">3</span>
+              <span>Реестр и паспорт стыка</span>
+            </a>
+          </li>
+          <li>
+            <a href="#sec-linelist" class="nav-link">
+              <span class="nav-num">4</span>
+              <span>Лайнлист и линии</span>
+            </a>
+          </li>
+          <li>
+            <a href="#sec-journals" class="nav-link">
+              <span class="nav-num">5</span>
+              <span>Журналы сварки</span>
+            </a>
+          </li>
+          <li>
+            <a href="#sec-laboratory" class="nav-link">
+              <span class="nav-num">6</span>
+              <span>Лаборатория НК (ЛНК)</span>
+            </a>
+          </li>
+          <li>
+            <a href="#sec-ogs" class="nav-link">
+              <span class="nav-num">7</span>
+              <span>Технология сварки (ОГС)</span>
+            </a>
+          </li>
+          <li>
+            <a href="#sec-weather" class="nav-link">
+              <span class="nav-num">8</span>
+              <span>Метеослужба</span>
+            </a>
+          </li>
+          <li>
+            <a href="#sec-audit" class="nav-link">
+              <span class="nav-num">9</span>
+              <span>Безопасность и аудит</span>
+            </a>
+          </li>
+          <li>
+            <a href="#sec-limits" class="nav-link" style="color: var(--rose-600); font-weight: 700;">
+              <span class="nav-num" style="background: var(--rose-50); color: var(--rose-600);">10</span>
+              <span>Ограничения системы</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- Основной контент руководства -->
+    <main class="content">
+
+      <!-- Раздел 1: Обзор и архитектура -->
+      <section id="sec-overview" class="guide-section">
+        <span class="section-badge">Раздел 1</span>
+        <h2 class="section-heading">Назначение и архитектура системы</h2>
+        <p>
+          Программный комплекс <strong>ZAYCHICK</strong> («Зайчик») предназначен для сквозного производственного учёта сварочно-монтажных работ, формирования паспортов сварных соединений, управления неразрушающим контролем (НК) и автоматической генерации исполнительной производственной документации по нормативным стандартам Российской Федерации (ПАО «Газпром» и ГОСТ).
+        </p>
+        
+        <h3 class="sub-heading">Ключевые технологические основы:</h3>
+        <ul>
+          <li><strong>Клиентская часть (Frontend):</strong> React 19, TypeScript, модульная компонентная архитектура Tailwind CSS, бандлер Vite. Полная автономность и оптимизация загрузки.</li>
+          <li><strong>Серверная часть (Backend):</strong> FastAPI (Python 3.10+), SQLAlchemy 2.x, Pydantic v2, асинхронные обработчики, строгая валидация типов.</li>
+          <li><strong>База данных:</strong> PostgreSQL 12+ с внешними ключами, каскадными ограничениями и транзакционной целостностью.</li>
+          <li><strong>Контроль параллельных правок (OCC):</strong> Механизм Optimistic Concurrency Control на базе версионирования (<span class="tag-mono">revision</span>). При конфликте одновременного сохранения двумя инженерами сервер возвращает статус <span class="tag-mono">HTTP 409 Conflict</span>, предотвращая потерю данных.</li>
+          <li><strong>Событийная шина:</strong> Server-Sent Events (SSE) для мгновенного оповещения клиентов об изменении статусов и завершении синхронизации.</li>
+        </ul>
+
+        <div class="callout callout-info">
+          <div class="callout-title">💡 Производственная направленность</div>
+          Комплекс оптимизирован для работы на удаленных промышленных объектах (включая объекты Крайнего Севера: Харасавэй, Бованенково, Ямбург).
+        </div>
+      </section>
+
+      <!-- Раздел 2: Ролевая модель (RBAC) -->
+      <section id="sec-rbac" class="guide-section">
+        <span class="section-badge">Раздел 2</span>
+        <h2 class="section-heading">Ролевая модель и матрица доступа (RBAC)</h2>
+        <p>
+          В системе реализована строгая ролевая модель разграничения прав доступа. Доступ к интерфейсным элементам и API-эндпоинтам бэкенда разделен между 5 функциональными профилями:
+        </p>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Код роли</th>
+                <th>Наименование роли</th>
+                <th>Основные функциональные обязанности</th>
+                <th>Права на изменение</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge-role badge-pto">PTO</span></td>
+                <td><strong>Инженер ПТО</strong></td>
+                <td>Ведение лайнлиста, заведение сварных стыков, формирование заявок на контроль в ЛНК, формирование журналов сварки.</td>
+                <td>Полные на стыки, линии и заявки ЛНК.</td>
+              </tr>
+              <tr>
+                <td><span class="badge-role badge-ogs">OGS</span></td>
+                <td><strong>Инженер ОГС (Технолог)</strong></td>
+                <td>Учёт сварщиков, проверка удостоверений НАКС, реестр сварочных материалов и входного контроля (ВК), технологические карты (ТК).</td>
+                <td>Полные на справочники сварщиков, НАКС, материалы и ТК.</td>
+              </tr>
+              <tr>
+                <td><span class="badge-role badge-pil">PIL</span></td>
+                <td><strong>Дефектоскопист (ЛНК)</strong></td>
+                <td>Приёмка заявок на контроль, внесение фактических заключений НК (ВИК, РК, УЗК, ПВК, МПК) с обязательным указанием официального номера бланка.</td>
+                <td>Принятие/выполнение заявок, регистрация заключений.</td>
+              </tr>
+              <tr>
+                <td><span class="badge-role badge-viewer">VIEWER</span></td>
+                <td><strong>Наблюдатель (Гость)</strong></td>
+                <td>Ознакомление с реестрами, просмотр статистики, аналитики, экспорт отчётов и журналов в Microsoft Excel.</td>
+                <td><strong>Строго Read-Only.</strong> Все кнопки создания/редактирования/удаления заблокированы.</td>
+              </tr>
+              <tr>
+                <td><span class="badge-role badge-admin">ADMIN</span></td>
+                <td><strong>Администратор</strong></td>
+                <td>Управление конфигурацией системы, полный аудит операций, создание и восстановление резервных копий (бэкапов).</td>
+                <td>Полный административный доступ.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Раздел 3: Реестр и паспорт стыка -->
+      <section id="sec-joints" class="guide-section">
+        <span class="section-badge">Раздел 3</span>
+        <h2 class="section-heading">Реестр сварных стыков и электронный паспорт</h2>
+        <p>
+          Реестр стыков — центральное операционное ядро системы, отражающее статус каждого соединения от момента заведения в проект до сдачи исполнительной документации.
+        </p>
+
+        <h3 class="sub-heading">Структура электронного паспорта стыка:</h3>
+        <p>Электронный паспорт содержит 4 вкладки детальной информации:</p>
+        <ol>
+          <li><strong>Общие сведения:</strong> Наименование объекта, шифр рабочей документации (РД), технологическая линия из лайнлиста, номер стыка, категория трубопровода, диаметры (мм) и толщины стенок (мм) свариваемых деталей, марка стали, тип соединения по ГОСТ 16037-80 (стыковое С17, угловое У16 и др.), пространственное положение при сварке (В1, Н1, Г, Н45).</li>
+          <li><strong>Параметры сварки:</strong> Дата сварки, температура окружающего воздуха (с подневной автосинхронизацией от метеостанции), температура подогрева и термообработки, шифр ТК (с автоподбором по диаметру и марке стали), способ сварки (РАД, РД, РАД+РД, МП, АФ, АПГ), клейма сварщиков (до 4 исполнителей) с проверкой квалификации НАКС, номер партии сварочных материалов и сертификата, ответственное лицо.</li>
+          <li><strong>Неразрушающий контроль (НК):</strong> Сводная ведомость контроля методами ВИК, РК, УЗК, ПВК, МПК. Фиксация даты контроля, дефектоскописта, официального номера заключения ЛНК и оценки качества («Годен», «Брак», «Ремонт»).</li>
+          <li><strong>История и аудит:</strong> Неизменяемый журнал версий, дата и автор последнего изменения стыка, текущий номер ревизии.</li>
+        </ol>
+
+        <h3 class="sub-heading">Инструменты работы с реестром:</h3>
+        <ul>
+          <li><strong>Excel-style фильтрация:</strong> Индивидуальный фильтр и сортировка по каждому столбцу реестра с поддержкой поиска значений и мультиселекта.</li>
+          <li><strong>Экспорт данных:</strong> Выгрузка полного реестра или отфильтрованной выборки в формат <strong>Microsoft Excel (.xlsx)</strong>.</li>
+          <li><strong>Массовые операции:</strong> Групповое назначение параметров (для пользователей с соответствующей ролью).</li>
+        </ul>
+      </section>
+
+      <!-- Раздел 4: Лайнлист -->
+      <section id="sec-linelist" class="guide-section">
+        <span class="section-badge">Раздел 4</span>
+        <h2 class="section-heading">Лайнлист (Технологические линии и объекты)</h2>
+        <p>
+          Раздел «Лайнлист» обеспечивает структурирование соединений по технологическим линиям и строительным объектам, а также контроль выполнения проектных нормативов неразрушающего контроля.
+        </p>
+
+        <h3 class="sub-heading">Функциональные возможности:</h3>
+        <ul>
+          <li><strong>Иерархическая структура:</strong> Строительная площадка (Объект) → Комплект рабочей документации (РД) → Технологическая линия → Сварные стыки.</li>
+          <li><strong>Проектные проценты контроля:</strong> Фиксация проектных требований к объемам физического контроля по методам (например: 100% ВИК, 20% РК, 10% УЗК, 5% ПВК).</li>
+          <li><strong>Единая привязка метеостанции:</strong> Опорная или локальная метеостанция назначается объекту строительства в меню программы и автоматически распространяется на все связанные линии, журналы и стыки. При отсутствии данных в архиве доступен ручной ввод температуры в паспорте стыка.</li>
+          <li><strong>Мониторинг дефицита:</strong> Расчёт фактического процента выполнения контроля в реальном времени с подсветкой отстающих линий.</li>
+          <li><strong>Экспорт:</strong> Выгрузка перечня линий и сводного баланса контроля в Excel.</li>
+        </ul>
+      </section>
+
+      <!-- Раздел 5: Журналы сварки -->
+      <section id="sec-journals" class="guide-section">
+        <span class="section-badge">Раздел 5</span>
+        <h2 class="section-heading">Сварочные работы и формирование журналов</h2>
+        <p>
+          Система обеспечивает автоматизированное ведение и формирование регламентных журналов сварочных работ строго по государственным и корпоративным стандартам.
+        </p>
+
+        <h3 class="sub-heading">Поддерживаемые нормативные формы:</h3>
+        <ol>
+          <li><strong>СТО Газпром 15-1.1-002-2023 (Форма 2.5):</strong> 49 нормативных граф, включающих подробные сведения о подготовке кромок, подогреве, прихватке, послойной сварке, клеймах, сварочных материалах и результатах НК.</li>
+          <li><strong>ГОСТ 32569-2013 (Форма 5):</strong> 17 нормативных граф для технологических стальных трубопроводов.</li>
+        </ol>
+
+        <h3 class="sub-heading">Автоматизация производственных параметров:</h3>
+        <ul>
+          <li><strong>Подневная привязка температуры:</strong> Температура окружающего воздуха подтягивается из архива метеостанции строго по дате выполнения сварного шва конкретного стыка (<span class="tag-mono">weldingDate</span>). Исключена ситуация, когда одной датой перезаписываются стыки, сваренные в разные дни.</li>
+          <li><strong>Расчет температуры подогрева:</strong> Автоматический расчет минимальной необходимой температуры предварительного подогрева стали по толщине стенки и химическому эквиваленту углерода.</li>
+          <li><strong>Контроль полноты перед выгрузкой:</strong> Алгоритм валидации предупреждает инженера о незаполненных графах (отсутствие номера сертификата, температуры, ответственного лица).</li>
+          <li><strong>Выгрузка в Microsoft Excel (.xlsx):</strong> Генерация официальной книги Excel со стандартной шапкой, номерами граф и форматированием ячеек, готовой к распечатке и передаче технадзору.</li>
+        </ul>
+      </section>
+
+      <!-- Раздел 6: Лаборатория НК (ЛНК) -->
+      <section id="sec-laboratory" class="guide-section">
+        <span class="section-badge">Раздел 6</span>
+        <h2 class="section-heading">Лаборатория неразрушающего контроля (ЛНК)</h2>
+        <p>
+          Модуль ЛНК автоматизирует взаимодействие между инженерно-техническим персоналом площадки (ПТО) и дефектоскопистами лаборатории, обеспечивая прозрачный жизненный цикл заявок и исключая фальсификацию заключений.
+        </p>
+
+        <h3 class="sub-heading">Конечный автомат жизненного цикла заявки (FSM):</h3>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Статус заявки</th>
+                <th>Кто устанавливает</th>
+                <th>Условия и валидации</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="tag-mono">НОВАЯ</span></td>
+                <td>Инженер ПТО</td>
+                <td>Выбираются стыки из дефицитной ведомости. Сервер валидирует, что все стыки принадлежат одной линии и <strong>не включены ни в одну другую активную заявку</strong>.</td>
+              </tr>
+              <tr>
+                <td><span class="tag-mono">ПРИНЯТА ЛНК</span></td>
+                <td>Дефектоскопист</td>
+                <td>Лаборатория подтверждает получение задания на площадке.</td>
+              </tr>
+              <tr>
+                <td><span class="tag-mono">В РАБОТЕ</span></td>
+                <td>Дефектоскопист</td>
+                <td>Проводятся замеры, дефектоскопия, проявка радиографических пленок.</td>
+              </tr>
+              <tr>
+                <td><span class="tag-mono">ВЫПОЛНЕНА</span></td>
+                <td>Дефектоскопист</td>
+                <td><strong>Строгая проверка:</strong> перевод в статус «Выполнена» невозможен без внесения в базу данных фактических официальных заключений по каждому стыку заявки.</td>
+              </tr>
+              <tr>
+                <td><span class="tag-mono">ОТКЛОНЕНА</span></td>
+                <td>ЛНК / ПТО</td>
+                <td>Заявка аннулируется с обязательным указанием причины (неготовность стыка, отсутствие доступа). Стыки освобождаются.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="sub-heading">Оформление заключений НК:</h3>
+        <ul>
+          <li><strong>Официальный номер заключения:</strong> Скрытая автогенерация номеров отключена. Оператор обязан ввести точный номер заключения из официального бумажного протокола/бланка ЛНК.</li>
+          <li><strong>Оценка качества:</strong> При выявлении недопустимых дефектов стык переводится в статус «Ремонт» или «Брак». При оформлении ремонта создается ремонтный шов (с индексом «Р1»), требующий повторного 100% контроля.</li>
+        </ul>
+      </section>
+
+      <!-- Раздел 7: Технология сварки (ОГС) -->
+      <section id="sec-ogs" class="guide-section">
+        <span class="section-badge">Раздел 7</span>
+        <h2 class="section-heading">Технология сварки (Отдел главного сварщика)</h2>
+        <p>
+          Раздел предназначен для технологов сварочного производства и содержит справочники, регламентирующие качество и допуск персонала:
+        </p>
+        <ul>
+          <li><strong>Реестр сварщиков:</strong> Учёт персонала, персональных клейм, шифров бригад и истории выполненных швов.</li>
+          <li><strong>Аттестация НАКС:</strong> Номера удостоверений, даты окончания действия, разрешенные способы сварки (РАД, РД, МП и др.), группы свариваемых материалов и области распространения по диаметрам и толщинам. Система контролирует действительность удостоверения на дату выполнения сварки.</li>
+          <li><strong>Сварочные материалы:</strong> Марки покрытых электродов, сварочной проволоки, флюсов и защитных газов. Фиксация номеров сертификатов завода-изготовителя и актов входного контроля (ВК) с датами проведения.</li>
+          <li><strong>Технологические карты (ТК):</strong> Регламентированные режимы сварки, геометрия разделки кромок, параметры предварительного подогрева и последующей термообработки.</li>
+        </ul>
+      </section>
+
+      <!-- Раздел 8: Метеослужба -->
+      <section id="sec-weather" class="guide-section">
+        <span class="section-badge">Раздел 8</span>
+        <h2 class="section-heading">Метеорологическое обеспечение</h2>
+        <p>
+          Метеомодуль обеспечивает нормативное подтверждение климатических условий при производстве сварочных работ на открытом воздухе.
+        </p>
+        <ul>
+          <li><strong>12 опорных метеостанций РФ:</strong> При старте сервер автоматически сидирует ключевые опорные станции с детерминированными UUID: Харасавэй (20946), Бованенково (20948), Ямбург (23078), Новый Уренгой (23330), Сабетта (20744), Надым (23445), Ухта (23412), Тюмень (28367), Сургут (23849), Ноябрьск (23662), Воркута (23219), Череповец (27113).</li>
+          <li><strong>Синхронизация архива:</strong> Загрузка данных синоптических наблюдений (SYNOP/GSOD) о суточных минимальных, средних и максимальных температурах, а также скорости ветра.</li>
+          <li><strong>Синхронизация с журналом сварки:</strong> Мгновенная подстановка зарегистрированной температуры в паспорт стыка по дате сварки.</li>
+        </ul>
+      </section>
+
+      <!-- Раздел 9: Безопасность и аудит -->
+      <section id="sec-audit" class="guide-section">
+        <span class="section-badge">Раздел 9</span>
+        <h2 class="section-heading">Безопасность, аудит и резервное копирование</h2>
+        <ul>
+          <li><strong>Неизменяемый журнал аудита:</strong> Каждое действие пользователя (создание, редактирование реквизитов, удаление стыка, изменение статуса заявки ЛНК) автоматически регистрируется в таблице аудита с фиксацией логина автора, IP-адреса, даты, времени и старого/нового значения.</li>
+          <li><strong>Оптимистические блокировки версий (OCC):</strong> Предотвращают перезапись данных при одновременной работе нескольких специалистов с одним и тем же стыком.</li>
+          <li><strong>Резервное копирование:</strong> Администратор системы может в любой момент выгрузить полный дамп базы данных (в формате JSON/SQL) и восстановить состояние системы в случае сбоя оборудования на площадке.</li>
+        </ul>
+      </section>
+
+      <!-- Раздел 10: ФАКТИЧЕСКИЕ ОГРАНИЧЕНИЯ СИСТЕМЫ -->
+      <section id="sec-limits" class="guide-section">
+        <span class="section-badge" style="color: var(--rose-600);">Раздел 10 · ВАЖНО</span>
+        <h2 class="section-heading" style="color: var(--rose-600); border-bottom-color: var(--rose-200);">Фактические ограничения функционала системы</h2>
+        <p>
+          В данном разделе перечислены строгие архитектурные и бизнес-правила, регламентирующие работу системы. Ограничения заложены на уровне программного кода и не подлежат отключению в пользовательском интерфейсе:
+        </p>
+
+        <div class="limits-grid">
+          <!-- Ограничение 1 -->
+          <div class="limit-card">
+            <h4>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+              1. Исключение формата PDF
+            </h4>
+            <p>
+              Внутренняя генерация документов в PDF полностью удалена из системы. Все регламентные журналы и реестры выгружаются исключительно в редактируемом формате <strong>Microsoft Excel (.xlsx)</strong>, либо выводятся на печать встроенными средствами браузера (<span class="tag-mono">Ctrl+P</span>).
+            </p>
+          </div>
+
+          <!-- Ограничение 2 -->
+          <div class="limit-card">
+            <h4>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+              2. Режим Наблюдателя (Гость)
+            </h4>
+            <p>
+              Пользователь с ролью <span class="badge-role badge-viewer">VIEWER</span> находится в режиме строгого чтения. Попытки вызвать изменяющие API-методы блокируются сервером со статусом <span class="tag-mono">HTTP 403 Forbidden</span>.
+            </p>
+          </div>
+
+          <!-- Ограничение 3 -->
+          <div class="limit-card">
+            <h4>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+              3. Запрет закрытия пустых заявок
+            </h4>
+            <p>
+              Заявку ЛНК технически невозможно перевести в статус «Выполнена» (<span class="tag-mono">COMPLETED</span>), пока в базе данных отсутствуют зарегистрированные заключения по каждому включенному в заявку стыку. Сервер отклоняет такой запрос с кодом <span class="tag-mono">HTTP 400</span>.
+            </p>
+          </div>
+
+          <!-- Ограничение 4 -->
+          <div class="limit-card">
+            <h4>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+              4. Защита от задвоения в заявках
+            </h4>
+            <p>
+              Один и тот же сварной стык не может быть включен одновременно в две разные активные заявки. Серверная проверка возвращает статус <span class="tag-mono">HTTP 409 Conflict</span> при попытке повторного добавления стыка.
+            </p>
+          </div>
+
+          <!-- Ограничение 5 -->
+          <div class="limit-card">
+            <h4>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+              5. Однородность линий в заявке
+            </h4>
+            <p>
+              Все сварные стыки в рамках одной заявки в лабораторию должны принадлежать строго одной технологической линии. Формирование межсегментных заявок запрещено.
+            </p>
+          </div>
+
+          <!-- Ограничение 6 -->
+          <div class="limit-card">
+            <h4>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+              6. Номера заключений ЛНК
+            </h4>
+            <p>
+              В системе исключена скрытая автогенерация вымышленных номеров заключений дефектоскопии. Требуется обязательный явный ввод регистрационного номера из бланка ЛНК.
+            </p>
+          </div>
+
+          <!-- Ограничение 7 -->
+          <div class="limit-card">
+            <h4>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+              7. Доступность метеоданных
+            </h4>
+            <p>
+              При отсутствии фактических наблюдений на опорной метеостанции на конкретную дату сварки автоматическое заполнение температуры невозможно — требуется ручной ввод инженером.
+            </p>
+          </div>
+
+          <!-- Ограничение 8 -->
+          <div class="limit-card">
+            <h4>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e11d48" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+              8. Контроль геометрии и НАКС
+            </h4>
+            <p>
+              Назначение сварщика на стык, параметры которого (диаметр, толщина, марка стали, метод сварки) выходят за пределы аттестации НАКС, сопровождается предупреждением и блокировкой заварки в строгом режиме.
+            </p>
+          </div>
+        </div>
+
+        <div class="callout callout-warning">
+          <div class="callout-title">⚠️ Обратите внимание</div>
+          Данный перечень ограничений гарантирует юридическую чистоту и техническую достоверность выпускаемой исполнительной документации для приёмки инспекцией Заказчика и органами Ростехнадзора.
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    // Подсветка активного пункта навигации при прокрутке
+    document.addEventListener('DOMContentLoaded', () => {
+      const links = document.querySelectorAll('.nav-link');
+      const sections = document.querySelectorAll('section.guide-section');
+
+      function updateActiveNav() {
+        const scrollPosition = window.scrollY + 100;
+        let currentSectionId = '';
+
+        sections.forEach(section => {
+          const sectionTop = section.offsetTop;
+          const sectionHeight = section.offsetHeight;
+          if (scrollPosition >= sectionTop && scrollPosition < sectionTop + sectionHeight) {
+            currentSectionId = section.getAttribute('id');
+          }
+        });
+
+        if (currentSectionId) {
+          links.forEach(link => {
+            if (link.getAttribute('href') === '#' + currentSectionId) {
+              link.classList.add('active');
+            } else {
+              link.classList.remove('active');
+            }
+          });
+        }
+      }
+
+      window.addEventListener('scroll', updateActiveNav, { passive: true });
+      updateActiveNav();
+    });
+  </script>
+</body>
+</html>

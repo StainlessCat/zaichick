@@ -141,7 +141,7 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
           >
             <Layers className="w-3.5 h-3.5" />
             <span>
-              Массовое ред.
+              Массовое редактирование
               {selectedJointIds.length > 0 ? ` (${selectedJointIds.length})` : ''}
             </span>
           </Button>
@@ -156,7 +156,7 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
               title="Добавить дополнительный стык с нумерацией 011, 012..."
             >
               <FilePlus2 className="w-3.5 h-3.5 text-[#1e3799]" />
-              <span>Доп. стык</span>
+              <span>Доборный стык</span>
             </Button>
 
             <Button

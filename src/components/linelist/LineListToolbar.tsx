@@ -185,7 +185,7 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
             >
               <Layers className="w-3.5 h-3.5" />
               <span>
-                Групповое ред.
+                Групповое редактирование
                 {selectedLineIds.length > 0 ? ` (${selectedLineIds.length})` : ''}
               </span>
             </Button>
@@ -210,7 +210,7 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
             title="Выгрузить строки лайнлиста в файл Excel"
           >
             <Download className="w-3.5 h-3.5 text-[#1e3799]" />
-            <span>Экспорт (.xlsx)</span>
+            <span>Выгрузить в Excel</span>
           </Button>
 
           {canEdit && (

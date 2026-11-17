@@ -101,7 +101,7 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
                   : 'text-slate-700 hover:text-slate-900'
               }`}
             >
-              СТО Газпром (49 граф)
+              СТО Газпром
             </button>
             <button
               type="button"
@@ -112,7 +112,7 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
                   : 'text-slate-700 hover:text-slate-900'
               }`}
             >
-              ГОСТ 32569 (17 граф)
+              ГОСТ 32569
             </button>
           </div>
         </FormField>

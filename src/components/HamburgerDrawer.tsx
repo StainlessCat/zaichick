@@ -125,7 +125,7 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = (props) => {
     },
     {
       id: 'project_linelist',
-      title: 'Проект (лайнлист)',
+      title: 'Лайнлист',
       badge: `${projectLineListCount}`,
       icon: <FolderKanban className="w-4 h-4" />,
     },
@@ -155,7 +155,7 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = (props) => {
     },
     {
       id: 'audit_log',
-      title: 'Журнал изменений (Аудит)',
+      title: 'Журнал аудита',
       icon: <History className="w-4 h-4" />,
     },
     {
@@ -482,7 +482,7 @@ export const HamburgerDrawer: React.FC<HamburgerDrawerProps> = (props) => {
                     className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-[#e8f1fc] border border-[#1e3799]/40 text-[#1e3799] hover:bg-sky-100 text-xs font-semibold transition-colors cursor-pointer"
                   >
                     <HardDriveDownload className="w-3.5 h-3.5" />
-                    <span>Бэкап и восстановление базы (.JSON)</span>
+                    <span>Бэкап и восстановление базы</span>
                   </button>
                 </div>
               </div>
