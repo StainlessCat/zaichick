@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
   canUserEditJointField,
+  canUserMutateRecord,
+  canUserTransitionRecordStatus,
   detectRbacRoleCategory,
   enforceFieldLevelRbacOnJointSave,
   filterBulkPatchByRole,
@@ -10,6 +12,9 @@ import {
   NDT_EDITABLE_JOINT_FIELDS,
   PTO_EDITABLE_JOINT_FIELDS,
   RbacUserPayload,
+  resolveUserDepartment,
+  resolveUserSystemRole,
+  validateRoleDepartmentPair,
 } from './rbac';
 import { InspectorProfile, UserAccount, WeldJoint } from '../types/welding';
 
@@ -285,3 +290,180 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
     expect(perms.canEditWeldingTech).toBe(false);
   });
 });
+
+describe('Stage 1: Hierarchical RBAC (SystemRole × Department) & Record Locking', () => {
+  const superAdmin: RbacUserPayload = {
+    id: 'u-super',
+    login: 'admin',
+    fullName: 'Суперадминистратор',
+    systemRole: 'SUPERADMIN',
+    departmentCode: 'ALL',
+    isActive: true,
+  };
+
+  const ptoDeptAdmin: RbacUserPayload = {
+    id: 'u-pto-adm',
+    login: 'sokolov_av',
+    fullName: 'Соколов А.В.',
+    systemRole: 'DEPT_ADMIN',
+    departmentCode: 'PTO',
+    isActive: true,
+  };
+
+  const ogsDeptAdmin: RbacUserPayload = {
+    id: 'u-ogs-adm',
+    login: 'morozov_iv',
+    fullName: 'Морозов И.В.',
+    systemRole: 'DEPT_ADMIN',
+    departmentCode: 'OGS',
+    isActive: true,
+  };
+
+  const ptoOperatorA: RbacUserPayload = {
+    id: 'u-pto-op-a',
+    login: 'gromov_ia',
+    fullName: 'Громов И.А.',
+    systemRole: 'OPERATOR',
+    departmentCode: 'PTO',
+    isActive: true,
+  };
+
+  const ptoOperatorB: RbacUserPayload = {
+    id: 'u-pto-op-b',
+    login: 'petrov_aa',
+    fullName: 'Петров А.А.',
+    systemRole: 'OPERATOR',
+    departmentCode: 'PTO',
+    isActive: true,
+  };
+
+  const ogsOperator: RbacUserPayload = {
+    id: 'u-ogs-op',
+    login: 'ogs_eng',
+    fullName: 'Инженер ОГС',
+    systemRole: 'OPERATOR',
+    departmentCode: 'OGS',
+    isActive: true,
+  };
+
+  const inactiveAdmin: RbacUserPayload = {
+    id: 'u-disabled',
+    login: 'old_admin',
+    fullName: 'Отключённый админ',
+    systemRole: 'SUPERADMIN',
+    departmentCode: 'ALL',
+    isActive: false,
+  };
+
+  test('9. validateRoleDepartmentPair запрещает отдел ALL для любых ролей кроме SUPERADMIN', () => {
+    expect(validateRoleDepartmentPair('SUPERADMIN', 'ALL')).toBeNull();
+    expect(validateRoleDepartmentPair('DEPT_ADMIN', 'ALL')).toBeTruthy();
+    expect(validateRoleDepartmentPair('OPERATOR', 'ALL')).toBeTruthy();
+    expect(validateRoleDepartmentPair('VIEWER', 'ALL')).toBeTruthy();
+    expect(validateRoleDepartmentPair('DEPT_ADMIN', 'PTO')).toBeNull();
+    expect(validateRoleDepartmentPair('OPERATOR', 'PIL')).toBeNull();
+  });
+
+  test('10. Иерархические права отделов: OPERATOR не может редактировать справочники и управлять пользователями', () => {
+    const superPerms = getUserRolePermissions(superAdmin);
+    expect(superPerms.isSuperAdmin).toBe(true);
+    expect(superPerms.canManageAllUsers).toBe(true);
+    expect(superPerms.canPurgeProject).toBe(true);
+    expect(superPerms.canUnlockRecords).toBe(true);
+
+    const ptoAdmPerms = getUserRolePermissions(ptoDeptAdmin);
+    expect(ptoAdmPerms.isDeptAdmin).toBe(true);
+    expect(ptoAdmPerms.canManageUsers).toBe(true);
+    expect(ptoAdmPerms.canManageAllUsers).toBe(false);
+    expect(ptoAdmPerms.canPurgeProject).toBe(false);
+    expect(ptoAdmPerms.canApproveRecords).toBe(true);
+    expect(ptoAdmPerms.canUnlockRecords).toBe(false);
+    expect(ptoAdmPerms.canEditLrvCatalog).toBe(true);
+    expect(ptoAdmPerms.canEditWeldingTech).toBe(false);
+
+    const ogsAdmPerms = getUserRolePermissions(ogsDeptAdmin);
+    expect(ogsAdmPerms.canEditWeldingTech).toBe(true);
+    expect(ogsAdmPerms.canEditLrvCatalog).toBe(false);
+
+    const ogsOpPerms = getUserRolePermissions(ogsOperator);
+    expect(ogsOpPerms.canEditWeldingTech).toBe(false);
+    expect(ogsOpPerms.canEditDirectories).toBe(false);
+    expect(ogsOpPerms.canManageUsers).toBe(false);
+
+    const ptoOpPerms = getUserRolePermissions(ptoOperatorA);
+    expect(ptoOpPerms.canEditLrvCatalog).toBe(false);
+    expect(ptoOpPerms.canEditLineList).toBe(true);
+    expect(ptoOpPerms.canApproveRecords).toBe(false);
+
+    // Деактивированный пользователь полностью лишён прав
+    expect(resolveUserSystemRole(inactiveAdmin)).toBe('VIEWER');
+    expect(resolveUserDepartment(inactiveAdmin)).toBe('SK');
+    const disabledPerms = getUserRolePermissions(inactiveAdmin);
+    expect(disabledPerms.isActive).toBe(false);
+    expect(disabledPerms.canManageUsers).toBe(false);
+    expect(disabledPerms.canEditPrepAndWeldingFields).toBe(false);
+  });
+
+  test('11. canUserMutateRecord: защита DRAFT/VERIFIED/LOCKED, авторство при удалении и справочники', () => {
+    const draftByA = { recordStatus: 'DRAFT' as const, createdById: 'u-pto-op-a' };
+    const verifiedByA = { recordStatus: 'VERIFIED' as const, createdById: 'u-pto-op-a' };
+    const lockedByA = { recordStatus: 'LOCKED' as const, createdById: 'u-pto-op-a' };
+
+    // OPERATOR A может редактировать и удалять свой DRAFT
+    expect(canUserMutateRecord(ptoOperatorA, draftByA, ['PTO'], 'edit').allowed).toBe(true);
+    expect(canUserMutateRecord(ptoOperatorA, draftByA, ['PTO'], 'delete').allowed).toBe(true);
+
+    // OPERATOR B НЕ может удалять чужой DRAFT
+    expect(canUserMutateRecord(ptoOperatorB, draftByA, ['PTO'], 'delete').allowed).toBe(false);
+
+    // OPERATOR A НЕ может редактировать или удалять VERIFIED и LOCKED
+    expect(canUserMutateRecord(ptoOperatorA, verifiedByA, ['PTO'], 'edit').allowed).toBe(false);
+    expect(canUserMutateRecord(ptoOperatorA, verifiedByA, ['PTO'], 'delete').allowed).toBe(false);
+    expect(canUserMutateRecord(ptoOperatorA, lockedByA, ['PTO'], 'edit').allowed).toBe(false);
+
+    // OPERATOR НЕ может изменять справочники
+    expect(canUserMutateRecord(ptoOperatorA, draftByA, ['PTO'], 'edit', true).allowed).toBe(false);
+
+    // DEPT_ADMIN ПТО может редактировать и удалять DRAFT и VERIFIED, но НЕ LOCKED и НЕ чужой отдел
+    expect(canUserMutateRecord(ptoDeptAdmin, verifiedByA, ['PTO'], 'edit').allowed).toBe(true);
+    expect(canUserMutateRecord(ptoDeptAdmin, verifiedByA, ['PTO'], 'delete').allowed).toBe(true);
+    expect(canUserMutateRecord(ptoDeptAdmin, lockedByA, ['PTO'], 'edit').allowed).toBe(false);
+    expect(canUserMutateRecord(ogsDeptAdmin, draftByA, ['PTO'], 'edit').allowed).toBe(false);
+
+    // SUPERADMIN также не может редактировать LOCKED запись до её явной разблокировки
+    expect(canUserMutateRecord(superAdmin, lockedByA, ['PTO'], 'edit').allowed).toBe(false);
+    expect(canUserMutateRecord(superAdmin, verifiedByA, ['PTO'], 'edit').allowed).toBe(true);
+  });
+
+  test('12. canUserTransitionRecordStatus: матрица переходов DRAFT ↔ VERIFIED → LOCKED и разблокировка SUPERADMIN', () => {
+    // OPERATOR не может менять статусы
+    expect(canUserTransitionRecordStatus(ptoOperatorA, 'DRAFT', 'VERIFIED', ['PTO']).allowed).toBe(false);
+    expect(canUserTransitionRecordStatus(ptoOperatorA, 'VERIFIED', 'LOCKED', ['PTO']).allowed).toBe(false);
+
+    // DEPT_ADMIN своего отдела может DRAFT <-> VERIFIED -> LOCKED, но не может разблокировать LOCKED
+    expect(canUserTransitionRecordStatus(ptoDeptAdmin, 'DRAFT', 'VERIFIED', ['PTO']).allowed).toBe(true);
+    expect(canUserTransitionRecordStatus(ptoDeptAdmin, 'VERIFIED', 'DRAFT', ['PTO']).allowed).toBe(true);
+    expect(canUserTransitionRecordStatus(ptoDeptAdmin, 'VERIFIED', 'LOCKED', ['PTO']).allowed).toBe(true);
+    expect(canUserTransitionRecordStatus(ptoDeptAdmin, 'DRAFT', 'LOCKED', ['PTO']).allowed).toBe(false);
+    expect(canUserTransitionRecordStatus(ptoDeptAdmin, 'LOCKED', 'VERIFIED', ['PTO']).allowed).toBe(false);
+
+    // DEPT_ADMIN чужого отдела не может утверждать записи ПТО
+    expect(canUserTransitionRecordStatus(ogsDeptAdmin, 'DRAFT', 'VERIFIED', ['PTO']).allowed).toBe(false);
+
+    // SUPERADMIN может разблокировать LOCKED с обязательным указанием причины
+    const unlockCheck = canUserTransitionRecordStatus(superAdmin, 'LOCKED', 'VERIFIED', ['PTO']);
+    expect(unlockCheck.allowed).toBe(true);
+    expect(unlockCheck.requiresReason).toBe(true);
+  });
+
+  test('13. canUserEditJointField учитывает статус записи LOCKED и VERIFIED', () => {
+    const lockedJoint = { recordStatus: 'LOCKED' } as WeldJoint;
+    const verifiedJoint = { recordStatus: 'VERIFIED' } as WeldJoint;
+
+    expect(canUserEditJointField(superAdmin, 'welderStamp', lockedJoint)).toBe(false);
+    expect(canUserEditJointField(ptoDeptAdmin, 'welderStamp', lockedJoint)).toBe(false);
+    expect(canUserEditJointField(ptoOperatorA, 'welderStamp', verifiedJoint)).toBe(false);
+    expect(canUserEditJointField(ptoDeptAdmin, 'welderStamp', verifiedJoint)).toBe(true);
+  });
+});
+

@@ -9,7 +9,13 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
+from app.api.deps import (
+    get_client_ip,
+    get_current_user,
+    get_db_session,
+    require_dept_access,
+)
+from app.models.enums import DepartmentEnum, RecordStatusEnum, SystemRoleEnum
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
 from app.models.user import User
@@ -41,9 +47,11 @@ from app.services.crud_helpers import (
 )
 from app.services.domain_validation import normalize_stamp, parse_stamps
 from app.services.event_bus import event_bus
+from app.services.rbac import assert_can_mutate_record
 from app.services.readiness_service import calculate_welder_ndt_quotas
 
 router = APIRouter(prefix="/api/naks", tags=["naks"])
+NAKS_ALLOWED_DEPTS = (DepartmentEnum.OGS,)
 
 
 # ---------------------------------------------------------------------------
@@ -101,9 +109,16 @@ async def get_welder_ndt_quotas(
 async def create_welder(
     payload: WelderCreate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(require_dept_access(NAKS_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> WelderOut:
+    assert_can_mutate_record(
+        user=current_user,
+        record=None,
+        allowed_departments=NAKS_ALLOWED_DEPTS,
+        operation="create",
+        is_directory=True,
+    )
     existing = (
         await session.execute(select(Welder).where(Welder.stamp == payload.stamp.strip()))
     ).scalar_one_or_none()
@@ -136,6 +151,8 @@ async def create_welder(
         min_wall_thickness_mm=payload.min_wall_thickness_mm,
         max_wall_thickness_mm=payload.max_wall_thickness_mm,
         sort_order=payload.sort_order,
+        record_status=RecordStatusEnum.DRAFT,
+        created_by_id=current_user.id,
         version=1,
         created_at=now,
         updated_at=now,
@@ -189,7 +206,7 @@ async def update_welder(
     welder_id: uuid.UUID,
     payload: WelderUpdate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(require_dept_access(NAKS_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> WelderOut:
     welder = (
@@ -199,6 +216,14 @@ async def update_welder(
     ).scalar_one_or_none()
     if welder is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сварщик не найден.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=welder,
+        allowed_departments=NAKS_ALLOWED_DEPTS,
+        operation="update",
+        is_directory=True,
+    )
 
     patch_data = payload.model_dump(exclude_unset=True)
     enforce_optimistic_lock(
@@ -262,12 +287,20 @@ async def update_welder(
 async def delete_welder(
     welder_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(require_dept_access(NAKS_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     welder = (await session.execute(select(Welder).where(Welder.id == welder_id))).scalar_one_or_none()
     if welder is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сварщик не найден.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=welder,
+        allowed_departments=NAKS_ALLOWED_DEPTS,
+        operation="delete",
+        is_directory=True,
+    )
 
     target_norm = normalize_stamp(welder.stamp)
     all_joints = list((await session.execute(select(WeldJoint))).scalars().all())
@@ -347,9 +380,16 @@ async def list_materials(
 async def create_material(
     payload: WeldingMaterialCreate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(require_dept_access(NAKS_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> WeldingMaterialOut:
+    assert_can_mutate_record(
+        user=current_user,
+        record=None,
+        allowed_departments=NAKS_ALLOWED_DEPTS,
+        operation="create",
+        is_directory=True,
+    )
     now = datetime.now(timezone.utc)
     mat = WeldingMaterial(
         id=uuid.uuid4(),
@@ -363,6 +403,8 @@ async def create_material(
         incoming_control_date=payload.incoming_control_date,
         status=payload.status,
         sort_order=payload.sort_order,
+        record_status=RecordStatusEnum.DRAFT,
+        created_by_id=current_user.id,
         version=1,
         created_at=now,
         updated_at=now,
@@ -398,7 +440,7 @@ async def update_material(
     material_id: uuid.UUID,
     payload: WeldingMaterialUpdate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(require_dept_access(NAKS_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> WeldingMaterialOut:
     mat = (
@@ -406,6 +448,14 @@ async def update_material(
     ).scalar_one_or_none()
     if mat is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сварочный материал не найден.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=mat,
+        allowed_departments=NAKS_ALLOWED_DEPTS,
+        operation="update",
+        is_directory=True,
+    )
 
     patch_data = payload.model_dump(exclude_unset=True)
     enforce_optimistic_lock(
@@ -450,7 +500,7 @@ async def update_material(
 async def delete_material(
     material_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(require_dept_access(NAKS_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     mat = (
@@ -458,6 +508,14 @@ async def delete_material(
     ).scalar_one_or_none()
     if mat is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сварочный материал не найден.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=mat,
+        allowed_departments=NAKS_ALLOWED_DEPTS,
+        operation="delete",
+        is_directory=True,
+    )
 
     all_joints = list((await session.execute(select(WeldJoint))).scalars().all())
     brand_lower = mat.brand_and_diameter.strip().lower()
@@ -499,7 +557,9 @@ async def list_inspectors(
 async def create_inspector(
     payload: InspectorCreate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(
+        require_dept_access((DepartmentEnum.OGS, DepartmentEnum.PIL), SystemRoleEnum.DEPT_ADMIN)
+    ),
     session: AsyncSession = Depends(get_db_session),
 ) -> InspectorOut:
     existing = (

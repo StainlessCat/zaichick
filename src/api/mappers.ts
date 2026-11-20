@@ -3,6 +3,7 @@ import type {
   ColumnTemplate,
   ControlResult,
   CustomWeatherStation,
+  DepartmentCode,
   ElementCombination,
   FacilityObject,
   InspectorProfile,
@@ -16,6 +17,8 @@ import type {
   NdtMethod,
   OptimisticLockConflictPayload,
   ProjectLineItem,
+  RecordStatus,
+  SystemRole,
   TechCardItem,
   UserAccount,
   WelderNaksCert,
@@ -25,30 +28,66 @@ import type {
   WeldJoint,
   WeldJointFieldKey,
 } from '../types/welding';
+import {
+  DEPARTMENT_LABELS_RU,
+  SYSTEM_ROLE_LABELS_RU,
+} from '../utils/rbac';
 import { FIELD_LABELS_MAP } from '../utils/weldingLogic';
 import type { OptimisticConflictDto } from './client';
 
-export type BackendRole = 'ADMIN' | 'PTO' | 'OGS' | 'PIL' | 'VIEWER';
+export type BackendRole = SystemRole | 'ADMIN' | 'PTO' | 'OGS' | 'PIL' | 'VIEWER';
 
-const ROLE_LABELS_RU: Record<BackendRole, string> = {
-  ADMIN: 'Системный администратор (Полный доступ)',
-  PTO: 'Инженер ПТО / СМР',
-  OGS: 'Технолог ОГС / Главный сварщик',
-  PIL: 'Дефектоскопист / Начальник ЛНК (ПИЛ)',
-  VIEWER: 'Представитель Заказчика / СК (Только чтение)',
-};
-
-export function toBackendRole(input: string | BackendRole | undefined): BackendRole {
+export function toSystemRole(input: string | BackendRole | undefined): SystemRole {
   const raw = String(input || '').trim().toUpperCase();
-  if (raw === 'ADMIN' || raw === 'PTO' || raw === 'OGS' || raw === 'PIL' || raw === 'VIEWER') {
+  if (raw === 'SUPERADMIN' || raw === 'ADMIN') return 'SUPERADMIN';
+  if (raw === 'DEPT_ADMIN') return 'DEPT_ADMIN';
+  if (raw === 'OPERATOR' || raw === 'PTO' || raw === 'OGS' || raw === 'PIL') return 'OPERATOR';
+  if (raw === 'VIEWER') return 'VIEWER';
+
+  const low = String(input || '').toLowerCase();
+  if (low.includes('суперадмин') || low.includes('администратор системы') || low.includes('полный')) {
+    return 'SUPERADMIN';
+  }
+  if (low.includes('администратор отдела') || low.includes('начальник')) {
+    return 'DEPT_ADMIN';
+  }
+  if (low.includes('заказчик') || low.includes('стройконтрол') || low.includes('наблюдатель') || low.includes('чтение')) {
+    return 'VIEWER';
+  }
+  return 'OPERATOR';
+}
+
+export function toDepartmentCode(
+  input: string | DepartmentCode | undefined,
+  roleHint?: SystemRole | string
+): DepartmentCode {
+  const raw = String(input || '').trim().toUpperCase();
+  if (raw === 'PTO' || raw === 'OGS' || raw === 'PIL' || raw === 'SK' || raw === 'ALL') {
     return raw;
   }
   const low = String(input || '').toLowerCase();
-  if (low.includes('админ') || low.includes('полный')) return 'ADMIN';
-  if (low.includes('технолог') || low.includes('сварщ') || low.includes('огс')) return 'OGS';
-  if (low.includes('лнк') || low.includes('дефект') || low.includes('пил') || low.includes('вик')) return 'PIL';
-  if (low.includes('заказчик') || low.includes('стройконтрол') || low.includes('чтение')) return 'VIEWER';
+  if (low.includes('все отделы') || low.includes('администрац')) return 'ALL';
+  if (low.includes('огс') || low.includes('сварщик') || low.includes('технолог')) return 'OGS';
+  if (low.includes('пил') || low.includes('лнк') || low.includes('лаборатор') || low.includes('дефект')) return 'PIL';
+  if (low.includes('ск') || low.includes('стройконтрол') || low.includes('заказчик')) return 'SK';
+  if (low.includes('пто') || low.includes('смр') || low.includes('участок')) return 'PTO';
+
+  const roleUpper = String(roleHint || '').toUpperCase();
+  if (roleUpper === 'SUPERADMIN' || roleUpper === 'ADMIN') return 'ALL';
+  if (roleUpper === 'OGS') return 'OGS';
+  if (roleUpper === 'PIL') return 'PIL';
+  if (roleUpper === 'VIEWER') return 'SK';
   return 'PTO';
+}
+
+export function toBackendRole(input: string | BackendRole | undefined): SystemRole {
+  return toSystemRole(input);
+}
+
+function asRecordStatus(val: unknown): RecordStatus {
+  const raw = String(val || 'DRAFT').trim().toUpperCase();
+  if (raw === 'VERIFIED' || raw === 'LOCKED') return raw;
+  return 'DRAFT';
 }
 
 function asIsoDateOrNull(val: string | undefined | null): string | null {
@@ -78,19 +117,29 @@ function asNullableStr(val: string | undefined | null): string | null {
 }
 
 export function mapUserDtoToAccount(dto: Record<string, unknown>): UserAccount {
-  const backendRole = toBackendRole(String(dto.role || 'VIEWER'));
+  const systemRole = toSystemRole(String(dto.role || 'VIEWER'));
+  const departmentCode = toDepartmentCode(
+    dto.department ? String(dto.department) : undefined,
+    systemRole
+  );
+  const roleLabel =
+    systemRole === 'SUPERADMIN'
+      ? SYSTEM_ROLE_LABELS_RU.SUPERADMIN
+      : `${SYSTEM_ROLE_LABELS_RU[systemRole]} · ${DEPARTMENT_LABELS_RU[departmentCode]}`;
   return {
     id: String(dto.id || ''),
     login: String(dto.login || ''),
     fullName: String(dto.full_name || dto.login || ''),
-    role: ROLE_LABELS_RU[backendRole],
-    backendRole,
-    department: String(dto.department || ''),
+    role: roleLabel,
+    systemRole,
+    departmentCode,
+    backendRole: systemRole,
+    department: DEPARTMENT_LABELS_RU[departmentCode],
     positionTitle: String(dto.position_title || ''),
     isActive: dto.is_active !== false,
     sessionNumber: Number(dto.session_number ?? 1),
     version: Number(dto.version ?? 1),
-    isAdmin: backendRole === 'ADMIN',
+    isAdmin: systemRole === 'SUPERADMIN',
     mustChangePassword: Boolean(dto.must_change_password),
   };
 }
@@ -180,6 +229,8 @@ export function mapLineDto(dto: Record<string, unknown>): ProjectLineItem {
     pvkPercent: Number(dto.pvk_percent ?? 0),
     manualStatus: dto.manual_status ? String(dto.manual_status) : undefined,
     testDate: dto.test_date ? String(dto.test_date) : '',
+    recordStatus: asRecordStatus(dto.record_status),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : null,
     version: Number(dto.version ?? 1),
   };
 }
@@ -260,6 +311,8 @@ export function mapLrvDto(dto: Record<string, unknown>): LRVItem {
     status: (dto.status === 'superseded' || dto.status === 'archived' ? dto.status : 'active'),
     replacementLetter: dto.replacement_letter ? String(dto.replacement_letter) : undefined,
     replacementDate: dto.replacement_date ? String(dto.replacement_date) : undefined,
+    recordStatus: asRecordStatus(dto.record_status),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : null,
     version: Number(dto.version ?? 1),
   };
 }
@@ -372,6 +425,8 @@ export function mapWelderDto(dto: Record<string, unknown>): WelderProfile {
       dto.min_wall_thickness_mm != null ? Number(dto.min_wall_thickness_mm) : undefined,
     maxWallThicknessMm:
       dto.max_wall_thickness_mm != null ? Number(dto.max_wall_thickness_mm) : undefined,
+    recordStatus: asRecordStatus(dto.record_status),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : null,
   };
 }
 
@@ -440,6 +495,8 @@ export function mapTechCardDto(dto: Record<string, unknown>): TechCardItem {
         conditionLabel: String(rec.condition_label || ''),
       };
     }),
+    recordStatus: asRecordStatus(dto.record_status),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : null,
   };
 }
 
@@ -487,6 +544,8 @@ export function mapMaterialDto(dto: Record<string, unknown>): WeldingMaterialCer
       dto.status === 'На испытании'
         ? 'На испытании'
         : 'Допущен в производство',
+    recordStatus: asRecordStatus(dto.record_status),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : null,
   };
 }
 
@@ -644,6 +703,8 @@ export function mapJointDto(dto: Record<string, unknown>): WeldJoint {
     repairDupNdtInspector: dto.repair_dup_ndt_inspector
       ? String(dto.repair_dup_ndt_inspector)
       : undefined,
+    recordStatus: asRecordStatus(dto.record_status),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : null,
     version: Number(dto.version ?? 1),
     updatedAt: dto.updated_at ? String(dto.updated_at) : new Date().toISOString(),
     updatedBy: String(dto.updated_by || ''),
@@ -925,6 +986,8 @@ export function mapLabRequestDto(dto: Record<string, unknown>): NdtLabRequest {
     acceptedBy: dto.accepted_by ? String(dto.accepted_by) : undefined,
     completedAt: dto.completed_at ? String(dto.completed_at) : undefined,
     notes: dto.notes ? String(dto.notes) : undefined,
+    recordStatus: asRecordStatus(dto.record_status),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : null,
     version: typeof dto.version === 'number' ? dto.version : 1,
   };
 }
@@ -986,6 +1049,9 @@ export function mapAuditLogDto(dto: Record<string, unknown>): AuditLogEntry {
   if (action === 'CREATE' && entityType === 'joint') operationType = 'create_joint';
   else if (action === 'DELETE' && entityType === 'joint') operationType = 'delete_joint';
   else if (action === 'BULK_UPDATE') operationType = 'bulk_edit';
+  else if (action === 'PROJECT_PURGED') operationType = 'project_purged';
+  else if (action === 'RECORD_UNLOCKED') operationType = 'record_unlocked';
+  else if (action === 'RECORD_STATUS_CHANGED') operationType = 'record_status_changed';
   else if (entityType === 'lrv' && action === 'SUPERSEDE') operationType = 'lrv_superseded';
   else if (entityType === 'line') operationType = 'linelist_change';
   else if (entityType === 'user' && action === 'CREATE') operationType = 'user_created';

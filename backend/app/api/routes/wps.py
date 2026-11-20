@@ -8,10 +8,17 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
+from app.api.deps import (
+    get_client_ip,
+    get_current_user,
+    get_db_session,
+    require_dept_access,
+)
+from app.models.enums import DepartmentEnum, RecordStatusEnum, SystemRoleEnum
 from app.models.joint import WeldJoint
 from app.models.user import User
 from app.models.welding_tech import TechCard, TechCardPreheatRule
+from app.schemas.auth import RecordStatusChangeRequest
 from app.schemas.domain import PaginatedResponse, TechCardCreate, TechCardOut, TechCardUpdate
 from app.services.audit_service import extract_changed_fields, record_audit_log
 from app.services.crud_helpers import (
@@ -22,8 +29,13 @@ from app.services.crud_helpers import (
     raise_referential_integrity_error,
 )
 from app.services.event_bus import event_bus
+from app.services.rbac import (
+    assert_can_mutate_record,
+    assert_can_transition_record_status,
+)
 
 router = APIRouter(prefix="/api/wps", tags=["wps"])
+WPS_ALLOWED_DEPTS = (DepartmentEnum.OGS,)
 
 
 @router.get("", response_model=PaginatedResponse[TechCardOut])
@@ -63,9 +75,16 @@ async def list_tech_cards(
 async def create_tech_card(
     payload: TechCardCreate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(require_dept_access(WPS_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> TechCardOut:
+    assert_can_mutate_record(
+        user=current_user,
+        record=None,
+        allowed_departments=WPS_ALLOWED_DEPTS,
+        operation="create",
+        is_directory=True,
+    )
     existing = (
         await session.execute(select(TechCard).where(TechCard.number == payload.number.strip()))
     ).scalar_one_or_none()
@@ -93,6 +112,8 @@ async def create_tech_card(
         max_wall_thickness_mm=payload.max_wall_thickness_mm,
         recommended_materials=payload.recommended_materials,
         sort_order=payload.sort_order,
+        record_status=RecordStatusEnum.DRAFT,
+        created_by_id=current_user.id,
         version=1,
         created_at=now,
         updated_at=now,
@@ -139,7 +160,7 @@ async def update_tech_card(
     tech_card_id: uuid.UUID,
     payload: TechCardUpdate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(require_dept_access(WPS_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> TechCardOut:
     tc = (
@@ -151,6 +172,14 @@ async def update_tech_card(
     ).scalar_one_or_none()
     if tc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Техкарта не найдена.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=tc,
+        allowed_departments=WPS_ALLOWED_DEPTS,
+        operation="update",
+        is_directory=True,
+    )
 
     patch_data = payload.model_dump(exclude_unset=True)
     enforce_optimistic_lock(
@@ -203,11 +232,63 @@ async def update_tech_card(
     return TechCardOut.model_validate(tc)
 
 
+@router.patch("/{tech_card_id}/status", response_model=TechCardOut)
+async def change_tech_card_status(
+    tech_card_id: uuid.UUID,
+    payload: RecordStatusChangeRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> TechCardOut:
+    tc = (
+        await session.execute(
+            select(TechCard)
+            .options(selectinload(TechCard.preheat_rules))
+            .where(TechCard.id == tech_card_id)
+        )
+    ).scalar_one_or_none()
+    if tc is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Техкарта не найдена.")
+
+    assert_can_transition_record_status(
+        user=current_user,
+        record=tc,
+        target_status=payload.record_status,
+        allowed_departments=WPS_ALLOWED_DEPTS,
+        reason=payload.reason,
+    )
+    old_status = tc.record_status.value
+    is_unlock = (
+        tc.record_status == RecordStatusEnum.LOCKED
+        and payload.record_status != RecordStatusEnum.LOCKED
+    )
+    tc.record_status = payload.record_status
+    tc.version += 1
+    tc.updated_at = datetime.now(timezone.utc)
+    await session.flush()
+
+    await record_audit_log(
+        session,
+        action="RECORD_UNLOCKED" if is_unlock else "RECORD_STATUS_CHANGED",
+        entity_type="tech_card",
+        entity_id=str(tc.id),
+        user=current_user,
+        old_data={"record_status": old_status},
+        new_data={
+            "record_status": tc.record_status.value,
+            **({"reason": payload.reason.strip()} if payload.reason and payload.reason.strip() else {}),
+        },
+        ip_address=get_client_ip(request),
+        summary=f"Изменён статус техкарты «{tc.number}»: {old_status} -> {tc.record_status.value}",
+    )
+    return TechCardOut.model_validate(tc)
+
+
 @router.delete("/{tech_card_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_tech_card(
     tech_card_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_welding_tech")),
+    current_user: User = Depends(require_dept_access(WPS_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     tc = (
@@ -215,6 +296,14 @@ async def delete_tech_card(
     ).scalar_one_or_none()
     if tc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Техкарта не найдена.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=tc,
+        allowed_departments=WPS_ALLOWED_DEPTS,
+        operation="delete",
+        is_directory=True,
+    )
 
     linked_joints = list(
         (

@@ -5,6 +5,7 @@ import {
   ColumnTemplate,
   NdtLabRequest,
   ProjectLineItem,
+  RecordStatus,
   WelderProfile,
   WeldJoint,
   WeldJointFieldKey,
@@ -51,6 +52,11 @@ export interface JointsRegistryViewProps {
   onOpenImportExcel: () => void;
   onOpenCreatePassport: () => void;
   onOpenEditPassport: (joint: WeldJoint) => void;
+  onChangeJointStatus?: (
+    joint: WeldJoint,
+    targetStatus: RecordStatus,
+    reason?: string
+  ) => Promise<{ ok: boolean; message?: string }>;
 
   // Шаблоны и настройка столбцов
   activeTemplateId: string;
@@ -136,6 +142,7 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
     onColumnAutoFit,
     onMoveColumnInline,
     onHideColumnInline,
+    onChangeJointStatus,
   } = props;
   // Состояние модального окна подачи заявки на НК из Реестра стыков
   const [isLabReqModalOpen, setIsLabReqModalOpen] = useState(false);
@@ -265,6 +272,7 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
         welders={welders}
         duplicateJointIds={duplicateJointIds}
         canCreateLabRequest={Boolean(onCreateLabRequest)}
+        onChangeJointStatus={onChangeJointStatus}
       />
 
       {/* Подвал таблицы со статистикой и подсказками */}

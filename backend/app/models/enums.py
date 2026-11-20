@@ -16,14 +16,35 @@ def pg_enum(enum_cls: Type[enum.Enum], pg_type_name: str) -> SAEnum:
     )
 
 
-class RoleEnum(str, enum.Enum):
-    """Strict RBAC roles replacing substring matching and PTO default."""
+class SystemRoleEnum(str, enum.Enum):
+    """Hierarchical system role level for RBAC."""
 
-    ADMIN = "ADMIN"
+    SUPERADMIN = "SUPERADMIN"
+    DEPT_ADMIN = "DEPT_ADMIN"
+    OPERATOR = "OPERATOR"
+    VIEWER = "VIEWER"
+
+
+class DepartmentEnum(str, enum.Enum):
+    """Production departments / functional domains."""
+
     PTO = "PTO"
     OGS = "OGS"
     PIL = "PIL"
-    VIEWER = "VIEWER"
+    SK = "SK"
+    ALL = "ALL"  # Strictly reserved for SUPERADMIN
+
+
+class RecordStatusEnum(str, enum.Enum):
+    """Record lifecycle lock status protecting verified and act-closed records."""
+
+    DRAFT = "DRAFT"
+    VERIFIED = "VERIFIED"
+    LOCKED = "LOCKED"
+
+
+# Backward-compatible alias for legacy imports
+RoleEnum = SystemRoleEnum
 
 
 class JointTypeEnum(str, enum.Enum):

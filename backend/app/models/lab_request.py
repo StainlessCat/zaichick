@@ -5,6 +5,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     DateTime,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -15,6 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+from app.models.enums import RecordStatusEnum, pg_enum
 
 
 class NdtLabRequestModel(Base):
@@ -55,6 +57,18 @@ class NdtLabRequestModel(Base):
         DateTime(timezone=True), nullable=True
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    record_status: Mapped[RecordStatusEnum] = mapped_column(
+        pg_enum(RecordStatusEnum, "record_status_enum"),
+        nullable=False,
+        default=RecordStatusEnum.DRAFT,
+        index=True,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

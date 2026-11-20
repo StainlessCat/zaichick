@@ -3,6 +3,7 @@ import {
   JournalStandard,
   LRVItem,
   ProjectLineItem,
+  RecordStatus,
   WeldingMaterialCertificate,
   WeldJoint,
 } from '../../types/welding';
@@ -17,6 +18,11 @@ export interface WeldingJournalsViewProps {
   selectedObjectName?: string;
   selectedRdCode?: string;
   onEditJoint: (joint: WeldJoint) => void;
+  onChangeJointStatus?: (
+    joint: WeldJoint,
+    targetStatus: RecordStatus,
+    reason?: string
+  ) => Promise<{ ok: boolean; message?: string }>;
   onSelectObjectName?: (name: string) => void;
   onSelectRdCode?: (rd: string) => void;
   isDbConnected?: boolean;

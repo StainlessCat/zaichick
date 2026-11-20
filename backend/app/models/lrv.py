@@ -23,6 +23,7 @@ from app.models.enums import (
     LrvElementCategoryEnum,
     LrvStatusEnum,
     LrvUnitEnum,
+    RecordStatusEnum,
     pg_enum,
 )
 
@@ -84,6 +85,18 @@ class LrvItem(Base):
     replacement_letter: Mapped[str | None] = mapped_column(String(512), nullable=True)
     replacement_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    record_status: Mapped[RecordStatusEnum] = mapped_column(
+        pg_enum(RecordStatusEnum, "record_status_enum"),
+        nullable=False,
+        default=RecordStatusEnum.DRAFT,
+        index=True,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(

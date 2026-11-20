@@ -3,16 +3,21 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.models.enums import RoleEnum
+from app.models.enums import DepartmentEnum, RecordStatusEnum, SystemRoleEnum
 
 
 class RolePermissionsSchema(BaseModel):
-    role: RoleEnum
+    role: SystemRoleEnum
+    department: DepartmentEnum
     label: str
     description: str
     can_manage_users: bool
+    can_manage_all_users: bool
+    can_purge_project: bool
+    can_approve_records: bool
+    can_unlock_records: bool
     can_edit_welding_tech: bool
     can_edit_line_list: bool
     can_edit_lrv_catalog: bool
@@ -29,8 +34,8 @@ class UserPublicSchema(BaseModel):
     id: uuid.UUID
     login: str
     full_name: str
-    role: RoleEnum
-    department: str
+    role: SystemRoleEnum
+    department: DepartmentEnum
     position_title: str
     is_active: bool
     must_change_password: bool
@@ -70,9 +75,10 @@ class CreateUserRequest(BaseModel):
     login: str = Field(..., min_length=2, max_length=64)
     password: str = Field(..., min_length=6, max_length=256)
     full_name: str = Field(..., min_length=2, max_length=255)
-    role: RoleEnum  # Explicit assignment by ADMIN; never defaults to PTO
-    department: str = Field(default="", max_length=255)
+    role: SystemRoleEnum = SystemRoleEnum.OPERATOR
+    department: DepartmentEnum
     position_title: str = Field(default="", max_length=255)
+    is_active: bool = True
     must_change_password: bool = True
 
     @field_validator("login", "full_name")
@@ -83,18 +89,50 @@ class CreateUserRequest(BaseModel):
             raise ValueError("Поле не может состоять только из пробелов.")
         return cleaned
 
+    @model_validator(mode="after")
+    def validate_department_for_role(self) -> CreateUserRequest:
+        if self.role != SystemRoleEnum.SUPERADMIN and self.department == DepartmentEnum.ALL:
+            raise ValueError(
+                "Отдел ALL допустим только для роли SUPERADMIN. Укажите конкретный отдел (PTO, OGS, PIL, SK)."
+            )
+        return self
+
 
 class UpdateUserRequest(BaseModel):
-    version: int = Field(..., ge=1)
+    version: int | None = Field(default=None, ge=1)
     full_name: str | None = Field(default=None, min_length=2, max_length=255)
-    role: RoleEnum | None = None
-    department: str | None = Field(default=None, max_length=255)
+    role: SystemRoleEnum | None = None
+    department: DepartmentEnum | None = None
     position_title: str | None = Field(default=None, max_length=255)
     is_active: bool | None = None
     must_change_password: bool | None = None
     new_password: str | None = Field(default=None, min_length=6, max_length=256)
+    password: str | None = Field(default=None, min_length=6, max_length=256)
+
+    @property
+    def resolved_password(self) -> str | None:
+        return self.new_password or self.password
 
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1, max_length=256)
     new_password: str = Field(..., min_length=6, max_length=256)
+
+
+class ProjectPurgeRequest(BaseModel):
+    password: str = Field(..., min_length=1, max_length=256)
+    confirm_name: str = Field(..., min_length=1, max_length=255)
+
+
+class ProjectPurgeResponse(BaseModel):
+    status: str = "ok"
+    project_id: str
+    project_name: str
+    deleted_counts: dict[str, int]
+    total_deleted: int
+
+
+class RecordStatusChangeRequest(BaseModel):
+    record_status: RecordStatusEnum
+    reason: str | None = Field(default=None, max_length=512)
+    version: int | None = Field(default=None, ge=1)

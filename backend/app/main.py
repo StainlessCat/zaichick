@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.admin import router as admin_router
 from app.api.routes.audit import router as audit_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.events import router as events_router
@@ -67,6 +68,7 @@ app.add_middleware(
 app.add_exception_handler(IntegrityError, integrity_error_handler)
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(users_router)
 app.include_router(audit_router)
 app.include_router(facilities_router)

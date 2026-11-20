@@ -18,6 +18,12 @@ export type ControlResult = 'Годен' | 'Ремонт' | 'Вырезать' |
 
 export type NdtMethod = 'РК' | 'УЗК' | 'ПВК' | 'МК' | 'РК+УЗК' | 'Не требуется';
 
+export type SystemRole = 'SUPERADMIN' | 'DEPT_ADMIN' | 'OPERATOR' | 'VIEWER';
+
+export type DepartmentCode = 'PTO' | 'OGS' | 'PIL' | 'SK' | 'ALL';
+
+export type RecordStatus = 'DRAFT' | 'VERIFIED' | 'LOCKED';
+
 export type AppSection =
   | 'registry'
   | 'laboratory'
@@ -62,6 +68,8 @@ export interface NdtLabRequest {
   acceptedBy?: string; // ФИО дефектоскописта
   completedAt?: string;
   notes?: string;
+  recordStatus?: RecordStatus;
+  createdById?: string | null;
   version?: number;
 }
 
@@ -180,6 +188,8 @@ export interface LRVItem {
   status?: 'active' | 'superseded' | 'archived'; // Статус позиции: активная / аннулирована (заменена) / архивная
   replacementLetter?: string; // № и дата официального письма согласования замены от института/Заказчика
   replacementDate?: string; // Дата согласования замены (YYYY-MM-DD)
+  recordStatus?: RecordStatus;
+  createdById?: string | null;
   version?: number;
 }
 
@@ -222,6 +232,8 @@ export interface WelderProfile {
   maxDiameterMm?: number; // Макс. аттестованный диаметр, мм
   minWallThicknessMm?: number; // Мин. аттестованная толщина стенки, мм
   maxWallThicknessMm?: number; // Макс. аттестованная толщина стенки, мм
+  recordStatus?: RecordStatus;
+  createdById?: string | null;
 }
 
 /**
@@ -261,6 +273,8 @@ export interface TechCardItem {
   maxWallThicknessMm: number; // Макс. толщина стенки, мм
   recommendedMaterials: string; // Применяемые сварочные материалы
   preheatRules: PreheatRegimeRule[]; // Режимы подогрева при разных T окр. среды
+  recordStatus?: RecordStatus;
+  createdById?: string | null;
 }
 
 /**
@@ -277,6 +291,8 @@ export interface WeldingMaterialCertificate {
   incomingControlAct: string; // № акта входного контроля
   incomingControlDate: string; // Дата проведения входного контроля (YYYY-MM-DD / ДД.ММ.ГГ)
   status: 'Допущен в производство' | 'На испытании';
+  recordStatus?: RecordStatus;
+  createdById?: string | null;
 }
 
 export interface InspectorProfile {
@@ -414,7 +430,9 @@ export interface WeldJoint {
   repairDupNdtResult?: ControlResult; // Графа 48: Результат дубл. НК после ремонта
   repairDupNdtInspector?: string; // Дефектоскопист дубл. НК после ремонта
 
-  // Метаданные и оптимистическая блокировка (OCC)
+  // Метаданные, жизненный цикл и оптимистическая блокировка (OCC)
+  recordStatus?: RecordStatus;
+  createdById?: string | null;
   version?: number;
   updatedAt: string;
   updatedBy: string;
@@ -424,6 +442,8 @@ export type WeldJointFieldKey = keyof Omit<
   WeldJoint,
   | 'id'
   | 'version'
+  | 'recordStatus'
+  | 'createdById'
   | 'isSupplementary'
   | 'elem1DiameterMm'
   | 'elem1WallThickness'
@@ -538,7 +558,10 @@ export interface AuditLogEntry {
     | 'linelist_change'
     | 'user_created'
     | 'user_modified'
-    | 'user_deleted';
+    | 'user_deleted'
+    | 'project_purged'
+    | 'record_status_changed'
+    | 'record_unlocked';
 }
 
 export interface UserAccount {
@@ -547,7 +570,9 @@ export interface UserAccount {
   password?: string;
   fullName: string;
   role: string;
-  backendRole?: 'ADMIN' | 'PTO' | 'OGS' | 'PIL' | 'VIEWER';
+  systemRole?: SystemRole;
+  departmentCode?: DepartmentCode;
+  backendRole?: SystemRole | 'ADMIN' | 'PTO' | 'OGS' | 'PIL' | 'VIEWER';
   department: string;
   positionTitle?: string;
   isActive?: boolean;
@@ -562,9 +587,12 @@ export interface UserAccount {
 export const ANONYMOUS_USER: UserAccount = {
   login: '',
   fullName: 'Неавторизованный пользователь',
-  role: 'Гость (Только чтение)',
+  role: 'Гость',
+  systemRole: 'VIEWER',
+  departmentCode: 'SK',
   backendRole: 'VIEWER',
-  department: 'Авторизация не выполнена',
+  department: 'Строительный контроль',
+  isActive: true,
   sessionNumber: 0,
 };
 
@@ -595,6 +623,8 @@ export interface ProjectLineItem {
   testDate: string; // 17. Дата испытания (хранится YYYY-MM-DD или ДД.ММ.ГГ, отображается ДД.ММ.ГГ)
   weatherStationId?: string; // Привязка к метеостанции РФ (weather_stations.id)
   weatherStationName?: string; // Название метеостанции (WMO)
+  recordStatus?: RecordStatus;
+  createdById?: string | null;
   version?: number;
 }
 

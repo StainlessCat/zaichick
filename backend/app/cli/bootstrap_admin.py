@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory, verify_postgres_connection
 from app.core.security import hash_password
-from app.models.enums import RoleEnum
+from app.models.enums import DepartmentEnum, SystemRoleEnum
 from app.models.user import User
 
 FORBIDDEN_PASSWORDS = frozenset(
@@ -47,10 +47,10 @@ async def _execute_bootstrap(
     department: str,
     interactive: bool = False,
 ) -> tuple[User, str, bool]:
-    # 1. Idempotency check: see if an ADMIN user or matching login already exists
+    # 1. Idempotency check: see if a SUPERADMIN user or matching login already exists
     existing_admin = (
         await session.execute(
-            select(User).where(User.role == RoleEnum.ADMIN)
+            select(User).where(User.role == SystemRoleEnum.SUPERADMIN)
         )
     ).scalars().first()
 
@@ -100,9 +100,9 @@ async def _execute_bootstrap(
         login=login.strip().lower(),
         password_hash=hash_password(final_password),
         full_name=full_name.strip(),
-        role=RoleEnum.ADMIN,
-        department=department.strip(),
-        position_title="Администратор системы",
+        role=SystemRoleEnum.SUPERADMIN,
+        department=DepartmentEnum.ALL,
+        position_title=(department.strip() or "Администратор системы"),
         session_number=1,
         is_active=True,
         must_change_password=False,

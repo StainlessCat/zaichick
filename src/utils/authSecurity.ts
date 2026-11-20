@@ -205,9 +205,13 @@ export function generateSessionToken(): string {
 
 export interface AuthenticatedSession {
   token: string;
+  userId?: string;
   login: string;
   fullName: string;
   role: string;
+  systemRole?: UserAccount['systemRole'];
+  departmentCode?: UserAccount['departmentCode'];
+  isActive?: boolean;
   isAdmin: boolean;
   department: string;
   createdAt: string;
@@ -225,10 +229,14 @@ export function createAuthenticatedSession(
   const expires = new Date(now.getTime() + lifetimeHours * 3600 * 1000);
   return {
     token: generateSessionToken(),
+    userId: user.id,
     login: user.login,
     fullName: user.fullName,
     role: user.role,
-    isAdmin: Boolean(user.isAdmin),
+    systemRole: user.systemRole,
+    departmentCode: user.departmentCode,
+    isActive: user.isActive !== false,
+    isAdmin: Boolean(user.isAdmin || user.systemRole === 'SUPERADMIN'),
     department: user.department || '',
     createdAt: now.toISOString(),
     expiresAt: expires.toISOString(),

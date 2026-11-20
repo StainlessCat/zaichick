@@ -22,6 +22,7 @@ import {
   suggestNextJointNumber,
 } from '../utils/weldingLogic';
 import {
+  canUserMutateRecord,
   enforceFieldLevelRbacOnJointSave,
   filterBulkPatchByRole,
   getUserRolePermissions,
@@ -298,6 +299,19 @@ export function useJointActions(params: UseJointActionsParams) {
       if (!existing && !userPermissions.canCreateOrDeleteJoints) {
         return;
       }
+      if (existing) {
+        const editCheck = canUserMutateRecord(
+          currentUser,
+          existing,
+          ['PTO', 'PIL'],
+          'edit',
+          false
+        );
+        if (!editCheck.allowed) {
+          notifyError(editCheck.reason || 'Редактирование данного стыка запрещено.');
+          return;
+        }
+      }
       const savedJoint = enforceFieldLevelRbacOnJointSave(
         existing,
         rawSavedJoint,
@@ -566,6 +580,17 @@ export function useJointActions(params: UseJointActionsParams) {
         notifyError('Удаление невозможно: требуется авторизация на сервере FastAPI.');
         return;
       }
+      const deleteCheck = canUserMutateRecord(
+        currentUser,
+        jointToDelete,
+        ['PTO'],
+        'delete',
+        false
+      );
+      if (!deleteCheck.allowed) {
+        notifyError(deleteCheck.reason || 'Удаление данного стыка запрещено.');
+        return;
+      }
       recordUndoSnapshot(`Удаление стыка № ${jointToDelete.jointNumber}`);
       try {
         if (UUID_RE.test(jointToDelete.id)) {
@@ -718,7 +743,30 @@ export function useJointActions(params: UseJointActionsParams) {
       const patch = filterBulkPatchByRole(rawPatch, currentUser);
       if (Object.keys(patch).length === 0 || selectedJointIds.length === 0) return;
 
-      const selectedRecords = joints.filter((j) => selectedJointIds.includes(j.id));
+      const allSelected = joints.filter((j) => selectedJointIds.includes(j.id));
+      const blockedRecords = allSelected.filter(
+        (j) => !canUserMutateRecord(currentUser, j, ['PTO', 'PIL'], 'edit', false).allowed
+      );
+      const selectedRecords = allSelected.filter(
+        (j) => canUserMutateRecord(currentUser, j, ['PTO', 'PIL'], 'edit', false).allowed
+      );
+      if (selectedRecords.length === 0) {
+        const firstReason =
+          blockedRecords.length > 0
+            ? canUserMutateRecord(currentUser, blockedRecords[0], ['PTO', 'PIL'], 'edit', false).reason
+            : undefined;
+        notifyError(
+          firstReason ||
+            'Выбранные стыки недоступны для массового редактирования (проверены или закрыты).'
+        );
+        return;
+      }
+      if (blockedRecords.length > 0) {
+        notifyError(
+          `Пропущено защищённых записей: ${blockedRecords.length}. Обновлено: ${selectedRecords.length}.`
+        );
+      }
+      const allowedSelectedIds = selectedRecords.map((j) => j.id);
       recordUndoSnapshot(
         `Массовое редактирование (${selectedRecords.length} ст.)`
       );
@@ -754,7 +802,7 @@ export function useJointActions(params: UseJointActionsParams) {
 
       const { updatedJoints, auditEntries } = applyBulkUpdateToJoints(
         joints,
-        selectedJointIds,
+        allowedSelectedIds,
         patch,
         currentUser,
         FIELD_LABELS_MAP
@@ -791,8 +839,29 @@ export function useJointActions(params: UseJointActionsParams) {
     }
     if (selectedJointIds.length === 0) return;
     const idSet = new Set(selectedJointIds);
-    const removedJoints = joints.filter((j) => idSet.has(j.id));
-    if (removedJoints.length === 0) return;
+    const candidateJoints = joints.filter((j) => idSet.has(j.id));
+    if (candidateJoints.length === 0) return;
+
+    const forbidden = candidateJoints.filter(
+      (j) => !canUserMutateRecord(currentUser, j, ['PTO'], 'delete', false).allowed
+    );
+    const removedJoints = candidateJoints.filter(
+      (j) => canUserMutateRecord(currentUser, j, ['PTO'], 'delete', false).allowed
+    );
+    if (removedJoints.length === 0) {
+      const reason =
+        canUserMutateRecord(currentUser, forbidden[0], ['PTO'], 'delete', false).reason ||
+        'Удаление выбранных стыков запрещено правами доступа или статусом записи.';
+      notifyError(reason);
+      setConfirmBulkDeleteJoints(false);
+      return;
+    }
+    if (forbidden.length > 0) {
+      notifyError(
+        `Пропущено ${forbidden.length} защищённых или чужих стыков. Удалено: ${removedJoints.length}.`
+      );
+    }
+    const removableIdSet = new Set(removedJoints.map((j) => j.id));
 
     recordUndoSnapshot(`Массовое удаление стыков (${removedJoints.length} шт.)`);
     try {
@@ -802,7 +871,7 @@ export function useJointActions(params: UseJointActionsParams) {
           await zaychickApi.deleteJoint(j.id);
         }
       }
-      setJoints((prev) => prev.filter((j) => !idSet.has(j.id)));
+      setJoints((prev) => prev.filter((j) => !removableIdSet.has(j.id)));
       setSelectedJointIds([]);
       setConfirmBulkDeleteJoints(false);
       bumpRevisionMeta(`Удалено стыков: ${removedJoints.length}`);

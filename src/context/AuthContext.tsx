@@ -71,9 +71,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
       Boolean(currentUser.login) &&
       currentUser.login !== 'anonymous' &&
       currentUser.login !== ANONYMOUS_USER.login &&
-      userPermissions.category !== 'customer'
+      currentUser.isActive !== false
     );
-  }, [currentUser.login, userPermissions.category]);
+  }, [currentUser.login, currentUser.isActive]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

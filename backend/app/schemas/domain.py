@@ -15,6 +15,7 @@ from app.models.enums import (
     LrvStatusEnum,
     LrvUnitEnum,
     NdtMethodEnum,
+    RecordStatusEnum,
     WeldingMaterialStatusEnum,
     WeldingMaterialTypeEnum,
     WeldingTypeEnum,
@@ -243,6 +244,8 @@ class ProjectLineOut(BaseModel):
     manual_status: str | None = None
     test_date: date | None = None
     sort_order: int
+    record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
+    created_by_id: uuid.UUID | None = None
     version: int
     updated_by_id: uuid.UUID | None = None
     weather_station_id: uuid.UUID | None = None
@@ -352,6 +355,8 @@ class LrvItemOut(BaseModel):
     replacement_letter: str | None = None
     replacement_date: date | None = None
     sort_order: int
+    record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
+    created_by_id: uuid.UUID | None = None
     version: int
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -448,6 +453,8 @@ class WelderOut(BaseModel):
     min_wall_thickness_mm: float | None = None
     max_wall_thickness_mm: float | None = None
     sort_order: int
+    record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
+    created_by_id: uuid.UUID | None = None
     version: int
     naks_certs: list[WelderNaksCertOut] = Field(default_factory=list)
     created_at: datetime | None = None
@@ -536,6 +543,8 @@ class TechCardOut(BaseModel):
     max_wall_thickness_mm: float
     recommended_materials: str
     sort_order: int
+    record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
+    created_by_id: uuid.UUID | None = None
     version: int
     preheat_rules: list[PreheatRuleOut] = Field(default_factory=list)
     created_at: datetime | None = None
@@ -581,6 +590,8 @@ class WeldingMaterialOut(BaseModel):
     incoming_control_date: date | None = None
     status: WeldingMaterialStatusEnum
     sort_order: int
+    record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
+    created_by_id: uuid.UUID | None = None
     version: int
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -971,6 +982,8 @@ class WeldJointOut(BaseModel):
     repair_dup_ndt_inspector: str | None = None
 
     sort_order: int
+    record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
+    created_by_id: uuid.UUID | None = None
     version: int
     updated_by: str
     created_at: datetime | None = None
@@ -1016,6 +1029,7 @@ class JournalPreviewRowOut(BaseModel):
     cells: list[str]
     is_fully_accepted: bool
     is_in_repair: bool
+    record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
 
 
 class JournalPreviewResponse(BaseModel):
@@ -1120,6 +1134,8 @@ class NdtLabRequestOut(BaseModel):
     accepted_by: str | None = None
     completed_at: datetime | None = None
     notes: str | None = None
+    record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
+    created_by_id: uuid.UUID | None = None
     version: int
     updated_at: datetime
 

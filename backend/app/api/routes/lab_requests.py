@@ -7,11 +7,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
-from app.models.enums import ControlResultEnum, RoleEnum
+from app.api.deps import (
+    get_client_ip,
+    get_current_user,
+    get_db_session,
+    require_dept_access,
+)
+from app.models.enums import ControlResultEnum, DepartmentEnum, RecordStatusEnum, SystemRoleEnum
 from app.models.joint import WeldJoint
 from app.models.lab_request import NdtLabRequestModel
 from app.models.user import User
+from app.schemas.auth import RecordStatusChangeRequest
 from app.schemas.domain import (
     NdtLabRequestCreate,
     NdtLabRequestOut,
@@ -26,19 +32,27 @@ from app.services.crud_helpers import (
     raise_duplicate_error,
 )
 from app.services.event_bus import event_bus
+from app.services.rbac import (
+    assert_can_mutate_record,
+    assert_can_transition_record_status,
+)
 
 router = APIRouter(prefix="/api/lab-requests", tags=["lab-requests"])
+LAB_REQ_ALLOWED_DEPTS = (DepartmentEnum.PTO, DepartmentEnum.PIL)
 
 VALID_STATUS_TRANSITIONS: dict[str, set[str]] = {
     "Подана ПТО": {"Подана ПТО", "В работе ЛНК", "Отклонена"},
     "Новая": {"Новая", "В работе ЛНК", "Отклонена"},
     "В работе ЛНК": {"В работе ЛНК", "Выполнена", "Отклонена", "Подана ПТО"},
     "Отклонена": {"Отклонена", "Подана ПТО"},
-    "Выполнена": {"Выполнена"},  # Terminal status; reopen requires ADMIN
+    "Выполнена": {"Выполнена"},  # Terminal status; reopen requires SUPERADMIN
 }
 
 
-def _build_lab_request(payload: NdtLabRequestCreate) -> NdtLabRequestModel:
+def _build_lab_request(
+    payload: NdtLabRequestCreate,
+    created_by_id: uuid.UUID | None = None,
+) -> NdtLabRequestModel:
     now = datetime.now(timezone.utc)
     return NdtLabRequestModel(
         id=payload.id or uuid.uuid4(),
@@ -59,6 +73,8 @@ def _build_lab_request(payload: NdtLabRequestCreate) -> NdtLabRequestModel:
         accepted_by=None,
         completed_at=None,
         notes=payload.notes.strip() if payload.notes else None,
+        record_status=RecordStatusEnum.DRAFT,
+        created_by_id=created_by_id,
         version=1,
         updated_at=now,
     )
@@ -126,20 +142,21 @@ async def get_lab_request(
 async def create_lab_request(
     payload: NdtLabRequestCreate,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_dept_access(LAB_REQ_ALLOWED_DEPTS, SystemRoleEnum.OPERATOR)),
     session: AsyncSession = Depends(get_db_session),
 ) -> NdtLabRequestOut:
     """
-    Create a new NDT laboratory request (PTO or PIL or ADMIN).
+    Create a new NDT laboratory request (PTO or PIL or SUPERADMIN).
     Validates joint existence, line attribution, prevents duplicates,
     and initializes status to 'Подана ПТО'.
     Dispatches SSE event `lab_request.created`.
     """
-    if current_user.role not in (RoleEnum.ADMIN, RoleEnum.PTO, RoleEnum.PIL):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недостаточно прав для создания заявки на НК.",
-        )
+    assert_can_mutate_record(
+        user=current_user,
+        record=None,
+        allowed_departments=LAB_REQ_ALLOWED_DEPTS,
+        operation="create",
+    )
 
     req_num = payload.request_number.strip()
     existing = (
@@ -233,7 +250,7 @@ async def create_lab_request(
                     ),
                 )
 
-    lab_req = _build_lab_request(payload)
+    lab_req = _build_lab_request(payload, created_by_id=current_user.id)
     session.add(lab_req)
     await session.flush()
     await session.refresh(lab_req)
@@ -271,20 +288,14 @@ async def update_lab_request(
     payload: NdtLabRequestUpdate,
     request: Request,
     expected_version: int | None = Query(default=None, alias="version"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_dept_access(LAB_REQ_ALLOWED_DEPTS, SystemRoleEnum.OPERATOR)),
     session: AsyncSession = Depends(get_db_session),
 ) -> NdtLabRequestOut:
     """
     Update an NDT lab request (status update, accept, conclusion, notes).
-    Guarded with row-level OCC versioning and FSM transitions.
+    Guarded with row-level OCC versioning, record_status lock, and FSM transitions.
     Dispatches SSE event `lab_request.updated`.
     """
-    if current_user.role not in (RoleEnum.ADMIN, RoleEnum.PTO, RoleEnum.PIL):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Недостаточно прав для изменения заявки на НК.",
-        )
-
     lab_req = (
         await session.execute(
             select(NdtLabRequestModel).where(NdtLabRequestModel.id == request_id)
@@ -296,11 +307,20 @@ async def update_lab_request(
             detail=f"Заявка на НК {request_id} не найдена.",
         )
 
+    assert_can_mutate_record(
+        user=current_user,
+        record=lab_req,
+        allowed_departments=LAB_REQ_ALLOWED_DEPTS,
+        operation="update",
+    )
+
+    is_superadmin = current_user.role == SystemRoleEnum.SUPERADMIN
+    is_pil_or_superadmin = is_superadmin or current_user.department == DepartmentEnum.PIL
     patch_data = payload.model_dump(exclude_unset=True)
 
     # 1. Protection against changing joint_ids in in-progress or completed requests
     if "joint_ids" in patch_data and patch_data["joint_ids"] != lab_req.joint_ids:
-        if lab_req.status in ("В работе ЛНК", "Выполнена") and current_user.role != RoleEnum.ADMIN:
+        if lab_req.status in ("В работе ЛНК", "Выполнена") and not is_superadmin:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Изменение состава стыков в заявке, находящейся в работе или выполненной, запрещено.",
@@ -310,7 +330,7 @@ async def update_lab_request(
     if "status" in patch_data and patch_data["status"] != lab_req.status:
         new_status = patch_data["status"]
         allowed = VALID_STATUS_TRANSITIONS.get(lab_req.status, set())
-        if new_status not in allowed and current_user.role != RoleEnum.ADMIN:
+        if new_status not in allowed and not is_superadmin:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Недопустимый переход статуса заявки: из «{lab_req.status}» в «{new_status}».",
@@ -318,19 +338,19 @@ async def update_lab_request(
 
         now = datetime.now(timezone.utc)
         if new_status == "В работе ЛНК":
-            if current_user.role not in (RoleEnum.ADMIN, RoleEnum.PIL):
+            if not is_pil_or_superadmin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Принять заявку в работу может только сотрудник ЛНК (PIL) или Администратор.",
+                    detail="Принять заявку в работу может только сотрудник ЛНК (PIL) или Суперадмин.",
                 )
             patch_data.setdefault("accepted_at", now)
             patch_data.setdefault("accepted_by", current_user.full_name or current_user.login)
 
         elif new_status == "Выполнена":
-            if current_user.role not in (RoleEnum.ADMIN, RoleEnum.PIL):
+            if not is_pil_or_superadmin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Завершить заявку может только сотрудник ЛНК (PIL) или Администратор.",
+                    detail="Завершить заявку может только сотрудник ЛНК (PIL) или Суперадмин.",
                 )
 
             # Check joints completion in database
@@ -364,7 +384,7 @@ async def update_lab_request(
                             if not j.ndt_result or j.ndt_result == ControlResultEnum.NOT_CONDUCTED:
                                 unverified.append(f"{j.joint_number} (нет заключения НК)")
 
-                    if unverified and current_user.role != RoleEnum.ADMIN:
+                    if unverified and not is_superadmin:
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST,
                             detail=(
@@ -418,15 +438,95 @@ async def update_lab_request(
     return out
 
 
+@router.patch("/{request_id}/status", response_model=NdtLabRequestOut)
+async def change_lab_request_record_status(
+    request_id: uuid.UUID,
+    payload: RecordStatusChangeRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> NdtLabRequestOut:
+    lab_req = (
+        await session.execute(
+            select(NdtLabRequestModel).where(NdtLabRequestModel.id == request_id)
+        )
+    ).scalar_one_or_none()
+    if lab_req is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Заявка на НК {request_id} не найдена.",
+        )
+
+    assert_can_transition_record_status(
+        user=current_user,
+        record=lab_req,
+        target_status=payload.record_status,
+        allowed_departments=LAB_REQ_ALLOWED_DEPTS,
+        reason=payload.reason,
+    )
+    if payload.version is not None:
+        enforce_optimistic_lock(
+            entity_type="lab_request",
+            entity_obj=lab_req,
+            expected_version=payload.version,
+            patch_data={"record_status": payload.record_status.value},
+            schema_cls=NdtLabRequestOut,
+        )
+
+    old_status = lab_req.record_status.value
+    is_unlock = (
+        lab_req.record_status == RecordStatusEnum.LOCKED
+        and payload.record_status != RecordStatusEnum.LOCKED
+    )
+    lab_req.record_status = payload.record_status
+    lab_req.version += 1
+    lab_req.updated_at = datetime.now(timezone.utc)
+    await session.flush()
+    await session.refresh(lab_req)
+
+    await record_audit_log(
+        session,
+        user=current_user,
+        entity_type="lab_request",
+        entity_id=lab_req.id,
+        action="RECORD_UNLOCKED" if is_unlock else "RECORD_STATUS_CHANGED",
+        old_data={"record_status": old_status},
+        new_data={
+            "record_status": lab_req.record_status.value,
+            **({"reason": payload.reason.strip()} if payload.reason and payload.reason.strip() else {}),
+        },
+        ip_address=get_client_ip(request),
+        unique_line_id=lab_req.unique_line_id,
+        rd_code=lab_req.rd_code,
+        summary=(
+            f"Снята блокировка заявки НК {lab_req.request_number} ({old_status} -> {lab_req.record_status.value}): {payload.reason}"
+            if is_unlock
+            else f"Изменён статус заявки НК {lab_req.request_number}: {old_status} -> {lab_req.record_status.value}"
+        ),
+    )
+
+    out = NdtLabRequestOut.model_validate(lab_req)
+    await event_bus.emit_delta(
+        session,
+        event="lab_request.updated",
+        entity_type="lab_request",
+        entity_id=str(lab_req.id),
+        version=lab_req.version,
+        updated_by=current_user.full_name or current_user.login,
+        data=out.model_dump(mode="json"),
+    )
+    return out
+
+
 @router.delete("/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_lab_request(
     request_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(require_permission("can_manage_users")),
+    current_user: User = Depends(require_dept_access(LAB_REQ_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     """
-    Delete an NDT lab request. Strictly restricted to ADMIN.
+    Delete an NDT lab request (DEPT_ADMIN of PTO/PIL or SUPERADMIN; blocked if LOCKED).
     Dispatches SSE event `lab_request.deleted`.
     """
     lab_req = (
@@ -439,6 +539,13 @@ async def delete_lab_request(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Заявка на НК {request_id} не найдена.",
         )
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=lab_req,
+        allowed_departments=LAB_REQ_ALLOWED_DEPTS,
+        operation="delete",
+    )
 
     old_snap = orm_snapshot(lab_req)
     await session.delete(lab_req)

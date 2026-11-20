@@ -16,6 +16,7 @@ from app.core.security import hash_password
 from app.models.audit import AuditLog
 from app.models.enums import (
     ControlResultEnum,
+    DepartmentEnum,
     ElementCombinationEnum,
     JointKindEnum,
     JointTypeEnum,
@@ -23,7 +24,7 @@ from app.models.enums import (
     LrvStatusEnum,
     LrvUnitEnum,
     NdtMethodEnum,
-    RoleEnum,
+    SystemRoleEnum,
     WeldingMaterialStatusEnum,
     WeldingMaterialTypeEnum,
     WeldingTypeEnum,
@@ -187,42 +188,43 @@ def _parse_enum(enum_cls: type, val: Any, fallback: Any) -> Any:
     return fallback
 
 
-def _map_legacy_role(raw_role: Any, is_admin: bool = False) -> RoleEnum:
+def _map_legacy_role(raw_role: Any, is_admin: bool = False) -> tuple[SystemRoleEnum, DepartmentEnum]:
     if is_admin:
-        return RoleEnum.ADMIN
+        return SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL
     s = str(raw_role or "").strip().upper()
-    mapping = {
-        "ADMIN": RoleEnum.ADMIN,
-        "АДМИНИСТРАТОР": RoleEnum.ADMIN,
-        "АДМИНИСТРАТОР СИСТЕМЫ": RoleEnum.ADMIN,
-        "СИСТЕМНЫЙ АДМИНИСТРАТОР (ПОЛНЫЙ ДОСТУП)": RoleEnum.ADMIN,
-        "PTO": RoleEnum.PTO,
-        "ПТО": RoleEnum.PTO,
-        "ИНЖЕНЕР ПТО": RoleEnum.PTO,
-        "OGS": RoleEnum.OGS,
-        "ОГС": RoleEnum.OGS,
-        "ТЕХНОЛОГ ПО СВАРКЕ (ОГС)": RoleEnum.OGS,
-        "ТЕХНОЛОГ ПО СВАРКЕ (СЛУЖБА ГС)": RoleEnum.OGS,
-        "PIL": RoleEnum.PIL,
-        "ПИЛ": RoleEnum.PIL,
-        "ЛНК": RoleEnum.PIL,
-        "СПЕЦИАЛИСТ ЛНК": RoleEnum.PIL,
-        "СПЕЦИАЛИСТ ЛНК / ПИЛ": RoleEnum.PIL,
-        "VIEWER": RoleEnum.VIEWER,
-        "НАБЛЮДАТЕЛЬ": RoleEnum.VIEWER,
-        "ПРЕДСТАВИТЕЛЬ ЗАКАЗЧИКА": RoleEnum.VIEWER,
+    mapping: dict[str, tuple[SystemRoleEnum, DepartmentEnum]] = {
+        "SUPERADMIN": (SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL),
+        "ADMIN": (SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL),
+        "АДМИНИСТРАТОР": (SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL),
+        "АДМИНИСТРАТОР СИСТЕМЫ": (SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL),
+        "СИСТЕМНЫЙ АДМИНИСТРАТОР (ПОЛНЫЙ ДОСТУП)": (SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL),
+        "PTO": (SystemRoleEnum.OPERATOR, DepartmentEnum.PTO),
+        "ПТО": (SystemRoleEnum.OPERATOR, DepartmentEnum.PTO),
+        "ИНЖЕНЕР ПТО": (SystemRoleEnum.OPERATOR, DepartmentEnum.PTO),
+        "OGS": (SystemRoleEnum.OPERATOR, DepartmentEnum.OGS),
+        "ОГС": (SystemRoleEnum.OPERATOR, DepartmentEnum.OGS),
+        "ТЕХНОЛОГ ПО СВАРКЕ (ОГС)": (SystemRoleEnum.OPERATOR, DepartmentEnum.OGS),
+        "ТЕХНОЛОГ ПО СВАРКЕ (СЛУЖБА ГС)": (SystemRoleEnum.OPERATOR, DepartmentEnum.OGS),
+        "PIL": (SystemRoleEnum.OPERATOR, DepartmentEnum.PIL),
+        "ПИЛ": (SystemRoleEnum.OPERATOR, DepartmentEnum.PIL),
+        "ЛНК": (SystemRoleEnum.OPERATOR, DepartmentEnum.PIL),
+        "СПЕЦИАЛИСТ ЛНК": (SystemRoleEnum.OPERATOR, DepartmentEnum.PIL),
+        "СПЕЦИАЛИСТ ЛНК / ПИЛ": (SystemRoleEnum.OPERATOR, DepartmentEnum.PIL),
+        "VIEWER": (SystemRoleEnum.VIEWER, DepartmentEnum.SK),
+        "НАБЛЮДАТЕЛЬ": (SystemRoleEnum.VIEWER, DepartmentEnum.SK),
+        "ПРЕДСТАВИТЕЛЬ ЗАКАЗЧИКА": (SystemRoleEnum.VIEWER, DepartmentEnum.SK),
     }
     if s in mapping:
         return mapping[s]
     if "АДМИНИСТРАТОР" in s or "ADMIN" in s:
-        return RoleEnum.ADMIN
+        return SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL
     if "ТЕХНОЛОГ" in s or "ОГС" in s or "СЛУЖБА ГС" in s:
-        return RoleEnum.OGS
+        return SystemRoleEnum.OPERATOR, DepartmentEnum.OGS
     if "ЛНК" in s or "ПИЛ" in s:
-        return RoleEnum.PIL
+        return SystemRoleEnum.OPERATOR, DepartmentEnum.PIL
     if "ПТО" in s:
-        return RoleEnum.PTO
-    return RoleEnum.VIEWER
+        return SystemRoleEnum.OPERATOR, DepartmentEnum.PTO
+    return SystemRoleEnum.VIEWER, DepartmentEnum.SK
 
 
 def _deterministic_uuid(namespace_key: str) -> uuid.UUID:
@@ -253,7 +255,7 @@ def _migrate_users(
             report.users_skipped += 1
             continue
 
-        role = _map_legacy_role(data.get("role"), bool(data.get("isAdmin")))
+        role, department = _map_legacy_role(data.get("role"), bool(data.get("isAdmin")))
         raw_pw = data.get("password") or ""
         raw_hash = data.get("passwordHash") or ""
 
@@ -278,6 +280,7 @@ def _migrate_users(
                     "login": login,
                     "full_name": str(data.get("fullName") or login).strip(),
                     "role": role.value,
+                    "department": department.value,
                     "temporary_password": temp_pw,
                     "must_change_password": True,
                 })
@@ -285,6 +288,7 @@ def _migrate_users(
         report.migrated_users_info.append({
             "login": login,
             "role": role.value,
+            "department": department.value,
             "must_change_password": must_change,
         })
 
@@ -294,8 +298,8 @@ def _migrate_users(
             password_hash=pw_hash,
             full_name=str(data.get("fullName") or login).strip(),
             role=role,
-            department=str(data.get("department") or "").strip(),
-            position_title=str(data.get("position") or role.value).strip(),
+            department=department,
+            position_title=str(data.get("position") or data.get("department") or role.value).strip(),
             session_number=max(1, int(data.get("sessionNumber") or 1)),
             is_active=True,
             must_change_password=must_change,
@@ -1466,7 +1470,8 @@ async def zero_reset_postgres(
     current_user: User,
 ) -> dict[str, Any]:
     """
-    Clear all domain tables («Чистый лист») in PostgreSQL and optionally deactivate demo users.
+    Internal CLI-only helper to clear domain tables in PostgreSQL.
+    Note: Web HTTP exposure has been intentionally removed.
     """
     await _clear_domain_tables(session)
 
@@ -1474,7 +1479,7 @@ async def zero_reset_postgres(
     if keep_only_admin:
         all_users = (await session.execute(select(User))).scalars().all()
         for u in all_users:
-            if u.id != current_user.id and u.role != RoleEnum.ADMIN and u.is_active:
+            if u.id != current_user.id and u.role != SystemRoleEnum.SUPERADMIN and u.is_active:
                 u.is_active = False
                 u.version += 1
                 deactivated_users += 1

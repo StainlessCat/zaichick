@@ -7,11 +7,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
-from app.models.enums import LrvStatusEnum
+from app.api.deps import (
+    get_client_ip,
+    get_current_user,
+    get_db_session,
+    require_dept_access,
+)
+from app.models.enums import DepartmentEnum, LrvStatusEnum, RecordStatusEnum, SystemRoleEnum
 from app.models.joint import WeldJoint
 from app.models.lrv import LrvItem
 from app.models.user import User
+from app.schemas.auth import RecordStatusChangeRequest
 from app.schemas.domain import (
     LrvItemCreate,
     LrvItemOut,
@@ -28,11 +34,16 @@ from app.services.crud_helpers import (
     raise_referential_integrity_error,
 )
 from app.services.event_bus import event_bus
+from app.services.rbac import (
+    assert_can_mutate_record,
+    assert_can_transition_record_status,
+)
 
 router = APIRouter(prefix="/api/lrv", tags=["lrv"])
+LRV_ALLOWED_DEPTS = (DepartmentEnum.PTO,)
 
 
-def _build_lrv_item(payload: LrvItemCreate) -> LrvItem:
+def _build_lrv_item(payload: LrvItemCreate, created_by_id: uuid.UUID | None = None) -> LrvItem:
     now = datetime.now(timezone.utc)
     return LrvItem(
         id=uuid.uuid4(),
@@ -59,6 +70,8 @@ def _build_lrv_item(payload: LrvItemCreate) -> LrvItem:
         replacement_letter=payload.replacement_letter,
         replacement_date=payload.replacement_date,
         sort_order=payload.sort_order,
+        record_status=RecordStatusEnum.DRAFT,
+        created_by_id=created_by_id,
         version=1,
         created_at=now,
         updated_at=now,
@@ -112,9 +125,16 @@ async def list_lrv_items(
 async def create_lrv_item(
     payload: LrvItemCreate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_lrv_catalog")),
+    current_user: User = Depends(require_dept_access(LRV_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> LrvItemOut:
+    assert_can_mutate_record(
+        user=current_user,
+        record=None,
+        allowed_departments=LRV_ALLOWED_DEPTS,
+        operation="create",
+        is_directory=True,
+    )
     existing = (
         await session.execute(
             select(LrvItem).where(
@@ -131,7 +151,7 @@ async def create_lrv_item(
             f"Позиция ЛРВ «{payload.lrv_code.strip()}» уже зарегистрирована в шифре РД «{payload.rd_code.strip()}».",
         )
 
-    item = _build_lrv_item(payload)
+    item = _build_lrv_item(payload, created_by_id=current_user.id)
     session.add(item)
     await session.flush()
 
@@ -164,12 +184,20 @@ async def update_lrv_item(
     item_id: uuid.UUID,
     payload: LrvItemUpdate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_lrv_catalog")),
+    current_user: User = Depends(require_dept_access(LRV_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> LrvItemOut:
     item = (await session.execute(select(LrvItem).where(LrvItem.id == item_id))).scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Позиция ЛРВ не найдена.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=item,
+        allowed_departments=LRV_ALLOWED_DEPTS,
+        operation="update",
+        is_directory=True,
+    )
 
     patch_data = payload.model_dump(exclude_unset=True)
     enforce_optimistic_lock(
@@ -216,13 +244,21 @@ async def supersede_lrv_item(
     item_id: uuid.UUID,
     payload: LrvSupersedeRequest,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_lrv_catalog")),
+    current_user: User = Depends(require_dept_access(LRV_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> LrvItemOut:
     """Mark an LRV catalog item as superseded (РД/письмо об изменении) and optionally create replacement."""
     item = (await session.execute(select(LrvItem).where(LrvItem.id == item_id))).scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Позиция ЛРВ не найдена.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=item,
+        allowed_departments=LRV_ALLOWED_DEPTS,
+        operation="update",
+        is_directory=True,
+    )
 
     patch_data = payload.model_dump(exclude_unset=True)
     enforce_optimistic_lock(
@@ -242,7 +278,7 @@ async def supersede_lrv_item(
 
     replacement_created: LrvItem | None = None
     if payload.new_item is not None:
-        replacement_created = _build_lrv_item(payload.new_item)
+        replacement_created = _build_lrv_item(payload.new_item, created_by_id=current_user.id)
         session.add(replacement_created)
 
     await session.flush()
@@ -276,16 +312,94 @@ async def supersede_lrv_item(
     return LrvItemOut.model_validate(item)
 
 
+@router.patch("/{item_id}/status", response_model=LrvItemOut)
+async def change_lrv_record_status(
+    item_id: uuid.UUID,
+    payload: RecordStatusChangeRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> LrvItemOut:
+    item = (await session.execute(select(LrvItem).where(LrvItem.id == item_id))).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Позиция ЛРВ не найдена.")
+
+    assert_can_transition_record_status(
+        user=current_user,
+        record=item,
+        target_status=payload.record_status,
+        allowed_departments=LRV_ALLOWED_DEPTS,
+        reason=payload.reason,
+    )
+    if payload.version is not None:
+        enforce_optimistic_lock(
+            entity_type="lrv_item",
+            entity_obj=item,
+            expected_version=payload.version,
+            patch_data={"record_status": payload.record_status.value},
+            schema_cls=LrvItemOut,
+        )
+
+    old_status = item.record_status.value
+    is_unlock = (
+        item.record_status == RecordStatusEnum.LOCKED
+        and payload.record_status != RecordStatusEnum.LOCKED
+    )
+    item.record_status = payload.record_status
+    item.version += 1
+    item.updated_at = datetime.now(timezone.utc)
+    await session.flush()
+
+    new_snap = orm_snapshot(item, LrvItemOut)
+    await record_audit_log(
+        session,
+        action="RECORD_UNLOCKED" if is_unlock else "RECORD_STATUS_CHANGED",
+        entity_type="lrv_item",
+        entity_id=str(item.id),
+        user=current_user,
+        old_data={"record_status": old_status},
+        new_data={
+            "record_status": item.record_status.value,
+            **({"reason": payload.reason.strip()} if payload.reason and payload.reason.strip() else {}),
+        },
+        ip_address=get_client_ip(request),
+        rd_code=item.rd_code,
+        summary=(
+            f"Снята блокировка позиции ЛРВ «{item.lrv_code}» ({old_status} -> {item.record_status.value}): {payload.reason}"
+            if is_unlock
+            else f"Изменён статус позиции ЛРВ «{item.lrv_code}»: {old_status} -> {item.record_status.value}"
+        ),
+    )
+    await event_bus.emit_delta(
+        session,
+        event="lrv.updated",
+        entity_type="lrv_item",
+        entity_id=item.id,
+        version=item.version,
+        updated_by=current_user.login,
+        data=new_snap,
+    )
+    return LrvItemOut.model_validate(item)
+
+
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_lrv_item(
     item_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_lrv_catalog")),
+    current_user: User = Depends(require_dept_access(LRV_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     item = (await session.execute(select(LrvItem).where(LrvItem.id == item_id))).scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Позиция ЛРВ не найдена.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=item,
+        allowed_departments=LRV_ALLOWED_DEPTS,
+        operation="delete",
+        is_directory=True,
+    )
 
     linked_joints = list(
         (

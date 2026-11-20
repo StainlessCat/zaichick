@@ -2,12 +2,16 @@ import React from 'react';
 import {
   AuditLogEntry,
   ColumnTemplate,
+  DepartmentCode,
   FacilityObject,
   InspectorProfile,
   LRVItem,
+  NdtLabRequest,
   OptimisticLockConflictPayload,
   ProjectLineItem,
+  RecordStatus,
   ServerDbMetadata,
+  SystemRole,
   TechCardItem,
   UserAccount,
   WelderProfile,
@@ -80,6 +84,11 @@ export interface AppModalsContainerProps {
   ) => void | Promise<void>;
   onNavigateJoint: (target: WeldJoint) => void;
   onDeleteJointFromPassport: (joint: WeldJoint) => void | Promise<void>;
+  onChangeJointStatus?: (
+    joint: WeldJoint,
+    targetStatus: RecordStatus,
+    reason?: string
+  ) => Promise<{ ok: boolean; message?: string }>;
   onOpenFacilityLocation: (objName: string) => void;
 
   // Import Excel Modal
@@ -125,16 +134,15 @@ export interface AppModalsContainerProps {
   // Backup and Reset Modal
   backupModalState: {
     isOpen: boolean;
-    initialTab: 'backup' | 'author_reset';
+    initialTab: 'backup';
   };
   onCloseBackupModal: () => void;
   currentPayload: FullSystemBackupPayload['data'];
   onRestoreBackup: (payload: FullSystemBackupPayload) => void;
-  onAuthorZeroReset: (backupConfirm: boolean) => Promise<boolean>;
   onAuthorRestoreDemoSeed: () => Promise<boolean>;
   onLoadKharasaveyDemo: () => Promise<void>;
 
-  // Server DB Status Modal
+  // Server DB Status & Admin Console Modal
   isServerDbModalOpen: boolean;
   onCloseServerDbModal: () => void;
   serverDbMeta?: ServerDbMetadata | null;
@@ -144,8 +152,26 @@ export interface AppModalsContainerProps {
   lastSyncError?: string | null;
   onRetrySync?: () => Promise<boolean>;
   scopedJoints: WeldJoint[];
+  labRequests?: NdtLabRequest[];
   onRefreshFromServer: () => Promise<void>;
   onTriggerSimulatedConflict: (jointId: string) => Promise<void>;
+  onSaveManagedUser?: (payload: {
+    mode: 'create' | 'edit';
+    userId?: string;
+    login: string;
+    fullName: string;
+    password?: string;
+    systemRole: SystemRole;
+    departmentCode: DepartmentCode;
+    positionTitle?: string;
+    isActive: boolean;
+    version?: number;
+  }) => Promise<{ ok: boolean; message?: string }>;
+  onPurgeProject?: (params: {
+    facility: FacilityObject;
+    confirmProjectName: string;
+    password: string;
+  }) => Promise<{ ok: boolean; message: string; deletedCounts?: Record<string, number> }>;
 
   // Optimistic Conflict Modal
   activeConflict: OptimisticLockConflictPayload | null;
@@ -183,6 +209,7 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => 
   const pendingSyncCount = props.pendingSyncCount ?? app.pendingSyncCount;
   const lastSyncError = props.lastSyncError ?? app.lastSyncError;
   const onRetrySync = props.onRetrySync ?? app.onTriggerSync;
+  const labRequests = props.labRequests ?? app.labRequests;
 
   const {
     isColumnsModalOpen,
@@ -208,6 +235,7 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => 
     onSaveJointFromPassport,
     onNavigateJoint,
     onDeleteJointFromPassport,
+    onChangeJointStatus,
     onOpenFacilityLocation,
     isImportExcelOpen,
     onCloseImportExcel,
@@ -227,7 +255,6 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => 
     onCloseBackupModal,
     currentPayload,
     onRestoreBackup,
-    onAuthorZeroReset,
     onAuthorRestoreDemoSeed,
     onLoadKharasaveyDemo,
     isServerDbModalOpen,
@@ -235,6 +262,8 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => 
     scopedJoints,
     onRefreshFromServer,
     onTriggerSimulatedConflict,
+    onSaveManagedUser,
+    onPurgeProject,
     activeConflict,
     onCloseConflictModal,
     onAcceptServerVersion,
@@ -308,6 +337,7 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => 
         onSave={onSaveJointFromPassport}
         onNavigateJoint={onNavigateJoint}
         onDeleteJoint={onDeleteJointFromPassport}
+        onChangeJointStatus={onChangeJointStatus}
         onOpenFacilityLocation={onOpenFacilityLocation}
         onClose={onClosePassportModal}
       />
@@ -366,7 +396,6 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => 
         currentUser={currentUser}
         currentPayload={currentPayload}
         onRestoreBackup={onRestoreBackup}
-        onAuthorZeroReset={onAuthorZeroReset}
         onAuthorRestoreDemoSeed={onAuthorRestoreDemoSeed}
         onLoadKharasaveyDemo={onLoadKharasaveyDemo}
       />
@@ -380,9 +409,18 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => 
         pendingSyncCount={pendingSyncCount}
         lastSyncError={lastSyncError}
         onRetrySync={onRetrySync}
-        joints={scopedJoints.length > 0 ? scopedJoints : allJoints}
+        joints={allJoints}
+        sampleJoints={scopedJoints.length > 0 ? scopedJoints : allJoints}
+        projectLineList={projectLineList}
+        lrvCatalog={lrvCatalog}
+        labRequests={labRequests}
+        facilities={derivedFacilities}
+        userAccounts={userAccounts}
+        currentUser={currentUser}
         onRefreshFromServer={onRefreshFromServer}
         onTriggerSimulatedConflict={onTriggerSimulatedConflict}
+        onSaveManagedUser={onSaveManagedUser}
+        onPurgeProject={onPurgeProject}
       />
 
       <OptimisticConflictModal

@@ -12,6 +12,7 @@ import {
   Gost32569ColumnKey,
 } from '../../utils/weldingLogic';
 import { TableColumnFilterHeader } from '../TableColumnFilterPopover';
+import { RecordStatusBadge } from '../RecordStatusControls';
 
 interface JournalGostTableProps {
   chronologicalJoints: WeldJoint[];
@@ -161,15 +162,24 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
                   }}
                   className="py-2.5 px-2.5 border-r border-slate-200 font-mono text-center text-slate-900 whitespace-nowrap"
                 >
-                  <button
-                    type="button"
-                    onClick={() => onEditJoint(j)}
-                    className="font-bold text-[#1e3799] hover:underline"
-                    title="Открыть паспорт стыка"
-                  >
-                    {j.jointNumber}
-                  </button>
-                  , {gostType}
+                  <div className="inline-flex flex-col items-center gap-0.5">
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => onEditJoint(j)}
+                        className="font-bold text-[#1e3799] hover:underline cursor-pointer"
+                        title="Открыть паспорт стыка"
+                      >
+                        {j.jointNumber}
+                      </button>
+                      , {gostType}
+                    </div>
+                    {j.recordStatus && j.recordStatus !== 'DRAFT' && (
+                      <span className="no-print">
+                        <RecordStatusBadge status={j.recordStatus} compact />
+                      </span>
+                    )}
+                  </div>
                 </td>
 
                 {/* Графа 3: Ф.И.О. сварщика, личное клеймо */}

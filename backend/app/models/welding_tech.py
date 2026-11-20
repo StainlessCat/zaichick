@@ -23,6 +23,7 @@ from app.core.database import Base
 from app.models.enums import (
     ElementCombinationEnum,
     JointKindEnum,
+    RecordStatusEnum,
     WeldingMaterialStatusEnum,
     WeldingMaterialTypeEnum,
     WeldingTypeEnum,
@@ -62,6 +63,18 @@ class Welder(Base):
     min_wall_thickness_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_wall_thickness_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    record_status: Mapped[RecordStatusEnum] = mapped_column(
+        pg_enum(RecordStatusEnum, "record_status_enum"),
+        nullable=False,
+        default=RecordStatusEnum.DRAFT,
+        index=True,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
@@ -145,6 +158,18 @@ class TechCard(Base):
     max_wall_thickness_mm: Mapped[float] = mapped_column(Float, nullable=False, default=999.0)
     recommended_materials: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
+    record_status: Mapped[RecordStatusEnum] = mapped_column(
+        pg_enum(RecordStatusEnum, "record_status_enum"),
+        nullable=False,
+        default=RecordStatusEnum.DRAFT,
+        index=True,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
@@ -213,6 +238,18 @@ class WeldingMaterial(Base):
         default=WeldingMaterialStatusEnum.ADMITTED,
     )
 
+    record_status: Mapped[RecordStatusEnum] = mapped_column(
+        pg_enum(RecordStatusEnum, "record_status_enum"),
+        nullable=False,
+        default=RecordStatusEnum.DRAFT,
+        index=True,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(

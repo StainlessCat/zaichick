@@ -7,10 +7,13 @@ import { validateWeldJointComprehensive, ValidationIssue } from '../utils/dataIn
 import {
   AuditLogEntry,
   ColumnTemplate,
+  DepartmentCode,
   LRVItem,
   OptimisticLockConflictPayload,
   ProjectLineItem,
+  RecordStatus,
   ServerDbMetadata,
+  SystemRole,
   TechCardItem,
   UserAccount,
   WelderProfile,
@@ -34,8 +37,16 @@ import {
   computeJointOptimisticConflict,
 } from '../utils/optimisticLocking';
 import {
+  canUserMutateRecord,
+  canUserTransitionRecordStatus,
+  DEPARTMENT_LABELS_RU,
   enforceFieldLevelRbacOnJointSave,
   getUserRolePermissions,
+  RbacUserPayload,
+  resolveUserDepartment,
+  resolveUserSystemRole,
+  SYSTEM_ROLE_LABELS_RU,
+  validateRoleDepartmentPair,
 } from '../utils/rbac';
 import { ALL_COLUMNS } from '../utils/weldingLogic';
 import {
@@ -393,10 +404,15 @@ export class UnifiedServerDatabase {
    */
   private createStartupBackup(): void {
     if (this.disableStartupBackup) return;
-    try {
-      this.createBackup('startup');
-    } catch (err) {
-      console.warn('[ZAYCHICK] Автоматический бэкап при старте пропущен:', err);
+    const timer = setTimeout(() => {
+      try {
+        this.createBackup('startup');
+      } catch (err) {
+        console.warn('[ZAYCHICK] Автоматический бэкап при старте пропущен:', err);
+      }
+    }, 1500);
+    if (typeof timer.unref === 'function') {
+      timer.unref();
     }
   }
 
@@ -1359,6 +1375,7 @@ export class UnifiedServerDatabase {
     password: string
   ): {
     success: boolean;
+    statusCode?: number;
     session?: AuthenticatedSession;
     user?: UserAccount;
     error?: string;
@@ -1367,7 +1384,15 @@ export class UnifiedServerDatabase {
     const account = this.getRawUserAccountByLogin(cleanLogin);
 
     if (!account) {
-      return { success: false, error: 'Пользователь с таким логином не найден' };
+      return { success: false, statusCode: 401, error: 'Пользователь с таким логином не найден' };
+    }
+
+    if (account.isActive === false) {
+      return {
+        success: false,
+        statusCode: 403,
+        error: 'Учётная запись заблокирована администратором',
+      };
     }
 
     const isValid = verifyPassword(
@@ -1377,7 +1402,7 @@ export class UnifiedServerDatabase {
     );
 
     if (!isValid) {
-      return { success: false, error: 'Неверный пароль пользователя' };
+      return { success: false, statusCode: 401, error: 'Неверный пароль пользователя' };
     }
 
     // Проверяем, требует ли пароль миграции на современный scrypt KDF или очистки открытого пароля
@@ -1497,6 +1522,18 @@ export class UnifiedServerDatabase {
         } catch {}
       }
       return null;
+    }
+    const freshAccount = this.getRawUserAccountByLogin(session.login);
+    if (freshAccount && freshAccount.isActive === false) {
+      this.logoutUser(token);
+      return null;
+    }
+    if (freshAccount) {
+      session.userId = freshAccount.id;
+      session.systemRole = resolveUserSystemRole(freshAccount);
+      session.departmentCode = resolveUserDepartment(freshAccount);
+      session.isActive = true;
+      session.isAdmin = session.systemRole === 'SUPERADMIN';
     }
     return session;
   }
@@ -1738,18 +1775,23 @@ export class UnifiedServerDatabase {
     const { meta, data } = this.readInternalFullState();
 
     const verifiedSession = this.validateSessionToken(params.sessionToken);
-    const effectiveUser = verifiedSession
-      ? {
-          login: verifiedSession.login,
-          fullName: verifiedSession.fullName,
-          role: verifiedSession.role,
-          isAdmin: verifiedSession.isAdmin,
-        }
-      : params.user || {
-          login: 'engineer_pto',
-          fullName: 'Инженер ПТО',
-          role: 'Инженер ПТО',
-        };
+    const effectiveUser: RbacUserPayload & { login: string; fullName: string; role: string } =
+      verifiedSession
+        ? {
+            id: verifiedSession.userId,
+            login: verifiedSession.login,
+            fullName: verifiedSession.fullName,
+            role: verifiedSession.role,
+            systemRole: verifiedSession.systemRole,
+            departmentCode: verifiedSession.departmentCode,
+            isActive: verifiedSession.isActive !== false,
+            isAdmin: verifiedSession.isAdmin,
+          }
+        : params.user || {
+            login: 'engineer_pto',
+            fullName: 'Инженер ПТО',
+            role: 'Инженер ПТО',
+          };
 
     const perms = getUserRolePermissions(effectiveUser);
     const existingOnServer = data.joints.find((j) => j.id === params.joint.id);
@@ -1761,6 +1803,23 @@ export class UnifiedServerDatabase {
         error: 'У вашей роли отсутствуют полномочия на заведение новых сварных стыков в систему',
         meta,
       };
+    }
+
+    if (existingOnServer && !params.forceOverwrite) {
+      const mutationCheck = canUserMutateRecord(
+        effectiveUser,
+        existingOnServer,
+        ['PTO', 'PIL'],
+        'edit',
+        false
+      );
+      if (!mutationCheck.allowed) {
+        return {
+          status: 'forbidden',
+          error: mutationCheck.reason || 'Редактирование записи запрещено',
+          meta,
+        };
+      }
     }
 
     const sanitizedIncomingJoint = !params.forceOverwrite
@@ -2246,6 +2305,488 @@ export class UnifiedServerDatabase {
       newVersion,
       meta: updated.meta,
     };
+  }
+
+  /**
+   * Иерархический список пользователей (SUPERADMIN — все; DEPT_ADMIN — строго свой отдел).
+   */
+  public listManagedUsers(actor: RbacUserPayload):
+    | { status: 'ok'; users: UserAccount[] }
+    | { status: 'forbidden'; error: string } {
+    const perms = getUserRolePermissions(actor);
+    if (!perms.canManageUsers) {
+      return { status: 'forbidden', error: 'Недостаточно прав для просмотра пользователей' };
+    }
+    const { data } = this.readInternalFullState();
+    const visible = perms.isSuperAdmin
+      ? data.userAccounts
+      : data.userAccounts.filter((u) => resolveUserDepartment(u) === perms.department);
+    return { status: 'ok', users: visible.map(sanitizeUserAccountForClient) };
+  }
+
+  /**
+   * Создание пользователя с соблюдением границ отдела и запрета эскалации прав.
+   */
+  public createManagedUser(
+    actor: RbacUserPayload,
+    payload: {
+      login: string;
+      password: string;
+      fullName: string;
+      systemRole: SystemRole;
+      departmentCode: DepartmentCode;
+      positionTitle?: string;
+    }
+  ):
+    | { status: 'ok'; user: UserAccount; meta: ServerDbMetadata }
+    | { status: 'forbidden' | 'validation_error' | 'duplicate'; error: string } {
+    const perms = getUserRolePermissions(actor);
+    if (!perms.canManageUsers) {
+      return { status: 'forbidden', error: 'Нет прав на создание пользователей' };
+    }
+
+    const pairError = validateRoleDepartmentPair(payload.systemRole, payload.departmentCode);
+    if (pairError) {
+      return { status: 'validation_error', error: pairError };
+    }
+
+    if (!perms.isSuperAdmin) {
+      if (payload.departmentCode !== perms.department) {
+        return {
+          status: 'forbidden',
+          error: 'Администратор отдела может создавать пользователей только своего отдела',
+        };
+      }
+      if (payload.systemRole !== 'OPERATOR' && payload.systemRole !== 'VIEWER') {
+        return {
+          status: 'forbidden',
+          error: 'Администратор отдела может назначать только роли Пользователь или Наблюдатель',
+        };
+      }
+    }
+
+    const cleanLogin = payload.login.trim().toLowerCase();
+    if (!cleanLogin || payload.password.trim().length < 4) {
+      return { status: 'validation_error', error: 'Укажите логин и пароль не менее 4 символов' };
+    }
+
+    const current = this.readInternalFullState();
+    if (current.data.userAccounts.some((u) => u.login.toLowerCase() === cleanLogin)) {
+      return { status: 'duplicate', error: `Пользователь с логином «${cleanLogin}» уже существует` };
+    }
+
+    const { hash, salt } = hashPasswordWithSalt(payload.password);
+    const maxSession = current.data.userAccounts.reduce(
+      (max, u) => Math.max(max, Number(u.sessionNumber || 0)),
+      0
+    );
+    const roleLabel =
+      payload.systemRole === 'SUPERADMIN'
+        ? SYSTEM_ROLE_LABELS_RU.SUPERADMIN
+        : `${SYSTEM_ROLE_LABELS_RU[payload.systemRole]} · ${DEPARTMENT_LABELS_RU[payload.departmentCode]}`;
+
+    const created: UserAccount = {
+      id: `u-${crypto.randomUUID().slice(0, 8)}`,
+      login: cleanLogin,
+      fullName: payload.fullName.trim(),
+      role: roleLabel,
+      systemRole: payload.systemRole,
+      departmentCode: payload.departmentCode,
+      backendRole: payload.systemRole,
+      department: DEPARTMENT_LABELS_RU[payload.departmentCode],
+      positionTitle: payload.positionTitle?.trim() || '',
+      isActive: true,
+      isAdmin: payload.systemRole === 'SUPERADMIN',
+      sessionNumber: maxSession + 1,
+      version: 1,
+      passwordHash: hash,
+      passwordSalt: salt,
+    };
+
+    const auditEntry: AuditLogEntry = {
+      id: `aud-usr-create-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      userLogin: actor.login || 'system',
+      userFullName: actor.fullName || actor.login || 'Администратор',
+      userRole: perms.categoryLabel,
+      jointId: created.id || created.login,
+      jointNumber: created.login,
+      uniqueLineId: 'USER_ADMIN',
+      rdCode: 'СИСТЕМА',
+      fieldKey: 'user_created',
+      fieldLabel: `Создание пользователя ${created.login}`,
+      oldValue: '—',
+      newValue: `${created.systemRole} / ${created.departmentCode}`,
+      operationType: 'user_created',
+    };
+
+    this.writeFullStateToSqlite(
+      {
+        ...current.data,
+        userAccounts: [...current.data.userAccounts, created],
+        auditLogs: [auditEntry, ...current.data.auditLogs],
+      },
+      current.meta.globalRevision + 1,
+      `Создан пользователь ${created.login}`,
+      actor.fullName || actor.login || 'Администратор'
+    );
+
+    const updated = this.readFullState();
+    return { status: 'ok', user: sanitizeUserAccountForClient(created), meta: updated.meta };
+  }
+
+  /**
+   * Обновление роли, отдела, статуса активности или пароля пользователя.
+   */
+  public updateManagedUser(
+    actor: RbacUserPayload,
+    targetLoginOrId: string,
+    patch: {
+      fullName?: string;
+      systemRole?: SystemRole;
+      departmentCode?: DepartmentCode;
+      positionTitle?: string;
+      isActive?: boolean;
+      newPassword?: string;
+    }
+  ):
+    | { status: 'ok'; user: UserAccount; meta: ServerDbMetadata }
+    | { status: 'forbidden' | 'validation_error' | 'not_found'; error: string } {
+    const perms = getUserRolePermissions(actor);
+    if (!perms.canManageUsers) {
+      return { status: 'forbidden', error: 'Нет прав на редактирование пользователей' };
+    }
+
+    const current = this.readInternalFullState();
+    const target = current.data.userAccounts.find(
+      (u) =>
+        (u.id && u.id === targetLoginOrId) ||
+        u.login.toLowerCase() === targetLoginOrId.toLowerCase()
+    );
+    if (!target) {
+      return { status: 'not_found', error: 'Пользователь не найден' };
+    }
+
+    const targetRole = resolveUserSystemRole(target);
+    const targetDept = resolveUserDepartment(target);
+    const nextRole = patch.systemRole ?? targetRole;
+    const nextDept = patch.departmentCode ?? targetDept;
+
+    const pairError = validateRoleDepartmentPair(nextRole, nextDept);
+    if (pairError) {
+      return { status: 'validation_error', error: pairError };
+    }
+
+    if (!perms.isSuperAdmin) {
+      if (targetDept !== perms.department || nextDept !== perms.department) {
+        return {
+          status: 'forbidden',
+          error: 'Администратор отдела может редактировать только пользователей своего отдела',
+        };
+      }
+      if (targetRole === 'SUPERADMIN' || targetRole === 'DEPT_ADMIN') {
+        return {
+          status: 'forbidden',
+          error: 'Нельзя изменять администраторов и суперадминов',
+        };
+      }
+      if (nextRole !== 'OPERATOR' && nextRole !== 'VIEWER') {
+        return {
+          status: 'forbidden',
+          error: 'Администратор отдела может назначать только роли Пользователь или Наблюдатель',
+        };
+      }
+    }
+
+    if (
+      patch.isActive === false &&
+      actor.login &&
+      target.login.toLowerCase() === actor.login.toLowerCase()
+    ) {
+      return { status: 'validation_error', error: 'Нельзя деактивировать собственную учётную запись' };
+    }
+
+    let nextHash = target.passwordHash;
+    let nextSalt = target.passwordSalt;
+    if (patch.newPassword && patch.newPassword.trim().length >= 4) {
+      const hashed = hashPasswordWithSalt(patch.newPassword.trim());
+      nextHash = hashed.hash;
+      nextSalt = hashed.salt;
+    }
+
+    const roleLabel =
+      nextRole === 'SUPERADMIN'
+        ? SYSTEM_ROLE_LABELS_RU.SUPERADMIN
+        : `${SYSTEM_ROLE_LABELS_RU[nextRole]} · ${DEPARTMENT_LABELS_RU[nextDept]}`;
+
+    const updatedUser: UserAccount = {
+      ...target,
+      fullName: patch.fullName?.trim() || target.fullName,
+      role: roleLabel,
+      systemRole: nextRole,
+      departmentCode: nextDept,
+      backendRole: nextRole,
+      department: DEPARTMENT_LABELS_RU[nextDept],
+      positionTitle: patch.positionTitle !== undefined ? patch.positionTitle : target.positionTitle,
+      isActive: patch.isActive !== undefined ? patch.isActive : target.isActive !== false,
+      isAdmin: nextRole === 'SUPERADMIN',
+      version: (target.version ?? 1) + 1,
+      passwordHash: nextHash,
+      passwordSalt: nextSalt,
+    };
+
+    const auditEntry: AuditLogEntry = {
+      id: `aud-usr-upd-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      userLogin: actor.login || 'system',
+      userFullName: actor.fullName || actor.login || 'Администратор',
+      userRole: perms.categoryLabel,
+      jointId: updatedUser.id || updatedUser.login,
+      jointNumber: updatedUser.login,
+      uniqueLineId: 'USER_ADMIN',
+      rdCode: 'СИСТЕМА',
+      fieldKey: 'user_modified',
+      fieldLabel: `Изменение пользователя ${updatedUser.login}`,
+      oldValue: `${targetRole} / ${targetDept} / active=${target.isActive !== false}`,
+      newValue: `${nextRole} / ${nextDept} / active=${updatedUser.isActive}`,
+      operationType: 'user_modified',
+    };
+
+    this.writeFullStateToSqlite(
+      {
+        ...current.data,
+        userAccounts: current.data.userAccounts.map((u) =>
+          u.login.toLowerCase() === target.login.toLowerCase() ? updatedUser : u
+        ),
+        auditLogs: [auditEntry, ...current.data.auditLogs],
+      },
+      current.meta.globalRevision + 1,
+      `Обновлён пользователь ${updatedUser.login}`,
+      actor.fullName || actor.login || 'Администратор'
+    );
+
+    const updated = this.readFullState();
+    return { status: 'ok', user: sanitizeUserAccountForClient(updatedUser), meta: updated.meta };
+  }
+
+  /**
+   * Изменение статуса жизненного цикла записи (DRAFT / VERIFIED / LOCKED) с аудитом разблокировки.
+   */
+  public changeRecordStatus(
+    actor: RbacUserPayload,
+    entityType: 'joint' | 'line' | 'lrv' | 'tech_card',
+    entityId: string,
+    targetStatus: RecordStatus,
+    reason?: string
+  ):
+    | { status: 'ok'; recordStatus: RecordStatus; meta: ServerDbMetadata }
+    | { status: 'forbidden' | 'validation_error' | 'not_found'; error: string } {
+    const allowedDepts: DepartmentCode[] =
+      entityType === 'tech_card'
+        ? ['OGS']
+        : entityType === 'joint'
+          ? ['PTO', 'PIL']
+          : ['PTO'];
+
+    const current = this.readInternalFullState();
+    let currentStatus: RecordStatus = 'DRAFT';
+    let label = entityId;
+    let found = false;
+
+    const nextData = { ...current.data };
+    if (entityType === 'joint') {
+      const rec = current.data.joints.find((j) => j.id === entityId);
+      if (rec) {
+        found = true;
+        currentStatus = rec.recordStatus || 'DRAFT';
+        label = `Стык №${rec.jointNumber}`;
+      }
+    } else if (entityType === 'line') {
+      const rec = current.data.projectLineList.find((l) => l.id === entityId);
+      if (rec) {
+        found = true;
+        currentStatus = rec.recordStatus || 'DRAFT';
+        label = `Линия ${rec.uniqueLineId}`;
+      }
+    } else if (entityType === 'lrv') {
+      const rec = current.data.lrvCatalog.find((l) => l.id === entityId);
+      if (rec) {
+        found = true;
+        currentStatus = rec.recordStatus || 'DRAFT';
+        label = `ЛРВ ${rec.lrvCode}`;
+      }
+    } else if (entityType === 'tech_card') {
+      const rec = current.data.techCards.find((t) => t.id === entityId);
+      if (rec) {
+        found = true;
+        currentStatus = rec.recordStatus || 'DRAFT';
+        label = `ТК ${rec.number}`;
+      }
+    }
+
+    if (!found) {
+      return { status: 'not_found', error: 'Запись не найдена' };
+    }
+
+    const transition = canUserTransitionRecordStatus(
+      actor,
+      currentStatus,
+      targetStatus,
+      allowedDepts
+    );
+    if (!transition.allowed) {
+      return { status: 'forbidden', error: transition.reason || 'Переход статуса запрещён' };
+    }
+    if (transition.requiresReason && (!reason || reason.trim().length < 5)) {
+      return {
+        status: 'validation_error',
+        error: 'Укажите причину разблокировки записи (не менее 5 символов)',
+      };
+    }
+
+    if (entityType === 'joint') {
+      nextData.joints = current.data.joints.map((j) =>
+        j.id === entityId
+          ? { ...j, recordStatus: targetStatus, version: (j.version ?? 1) + 1 }
+          : j
+      );
+    } else if (entityType === 'line') {
+      nextData.projectLineList = current.data.projectLineList.map((l) =>
+        l.id === entityId
+          ? { ...l, recordStatus: targetStatus, version: (l.version ?? 1) + 1 }
+          : l
+      );
+    } else if (entityType === 'lrv') {
+      nextData.lrvCatalog = current.data.lrvCatalog.map((l) =>
+        l.id === entityId
+          ? { ...l, recordStatus: targetStatus, version: (l.version ?? 1) + 1 }
+          : l
+      );
+    } else if (entityType === 'tech_card') {
+      nextData.techCards = current.data.techCards.map((t) =>
+        t.id === entityId
+          ? { ...t, recordStatus: targetStatus, version: (t.version ?? 1) + 1 }
+          : t
+      );
+    }
+
+    const isUnlock = currentStatus === 'LOCKED';
+    const perms = getUserRolePermissions(actor);
+    const auditEntry: AuditLogEntry = {
+      id: `aud-status-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      userLogin: actor.login || 'system',
+      userFullName: actor.fullName || actor.login || 'Администратор',
+      userRole: perms.categoryLabel,
+      jointId: entityId,
+      jointNumber: label,
+      uniqueLineId: entityType.toUpperCase(),
+      rdCode: 'СИСТЕМА',
+      fieldKey: 'recordStatus',
+      fieldLabel: isUnlock
+        ? `Разблокировка записи (${label}): ${reason?.trim()}`
+        : `Смена статуса записи (${label})`,
+      oldValue: currentStatus,
+      newValue: targetStatus,
+      operationType: isUnlock ? 'record_unlocked' : 'record_status_changed',
+    };
+
+    nextData.auditLogs = [auditEntry, ...current.data.auditLogs];
+    this.writeFullStateToSqlite(
+      nextData,
+      current.meta.globalRevision + 1,
+      `${isUnlock ? 'Разблокировка' : 'Статус'} ${label}: ${currentStatus} -> ${targetStatus}`,
+      actor.fullName || actor.login || 'Администратор'
+    );
+
+    const updated = this.readFullState();
+    return { status: 'ok', recordStatus: targetStatus, meta: updated.meta };
+  }
+
+  /**
+   * Безопасная очистка оперативных данных конкретного проекта (строго SUPERADMIN + двойное подтверждение).
+   */
+  public purgeProjectData(
+    actor: RbacUserPayload,
+    params: {
+      projectName: string;
+      confirmProjectName: string;
+      password: string;
+    }
+  ):
+    | {
+        status: 'ok';
+        deletedCounts: { joints: number; lines: number; lrv: number };
+        meta: ServerDbMetadata;
+      }
+    | { status: 'forbidden' | 'validation_error'; error: string } {
+    const perms = getUserRolePermissions(actor);
+    if (!perms.isSuperAdmin) {
+      return { status: 'forbidden', error: 'Очистка данных проекта доступна только Суперадмину' };
+    }
+    if (params.projectName.trim() !== params.confirmProjectName.trim()) {
+      return {
+        status: 'validation_error',
+        error: 'Введённое название проекта не совпадает с выбранным объектом',
+      };
+    }
+
+    const account = actor.login ? this.getRawUserAccountByLogin(actor.login) : null;
+    if (
+      !account ||
+      !verifyPassword(
+        params.password,
+        account.passwordHash || account.password || '',
+        account.passwordSalt
+      )
+    ) {
+      return { status: 'forbidden', error: 'Неверный пароль суперадмина' };
+    }
+
+    const current = this.readInternalFullState();
+    const targetName = params.projectName.trim();
+    const remainingJoints = current.data.joints.filter((j) => j.objectName !== targetName);
+    const remainingLines = current.data.projectLineList.filter((l) => l.objectName !== targetName);
+    const remainingLrv = current.data.lrvCatalog.filter((i) => i.objectName !== targetName);
+
+    const deletedCounts = {
+      joints: current.data.joints.length - remainingJoints.length,
+      lines: current.data.projectLineList.length - remainingLines.length,
+      lrv: current.data.lrvCatalog.length - remainingLrv.length,
+    };
+
+    const auditEntry: AuditLogEntry = {
+      id: `aud-purge-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      userLogin: account.login,
+      userFullName: account.fullName,
+      userRole: perms.categoryLabel,
+      jointId: targetName,
+      jointNumber: targetName,
+      uniqueLineId: 'PROJECT_PURGE',
+      rdCode: 'СИСТЕМА',
+      fieldKey: 'project_purged',
+      fieldLabel: `Очистка оперативных данных проекта «${targetName}»`,
+      oldValue: `Стыков: ${deletedCounts.joints}, Линий: ${deletedCounts.lines}, ЛРВ: ${deletedCounts.lrv}`,
+      newValue: 'Очищено',
+      operationType: 'project_purged',
+    };
+
+    this.writeFullStateToSqlite(
+      {
+        ...current.data,
+        joints: remainingJoints,
+        projectLineList: remainingLines,
+        lrvCatalog: remainingLrv,
+        auditLogs: [auditEntry, ...current.data.auditLogs],
+      },
+      current.meta.globalRevision + 1,
+      `Очистка проекта «${targetName}»`,
+      account.fullName
+    );
+
+    const updated = this.readFullState();
+    return { status: 'ok', deletedCounts, meta: updated.meta };
   }
 }
 

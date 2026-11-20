@@ -86,6 +86,7 @@ async def get_welding_journal_preview(
             ),
             is_fully_accepted=is_joint_fully_accepted(j),
             is_in_repair=is_joint_currently_in_repair(j),
+            record_status=j.record_status,
         )
         for idx, j in enumerate(page)
     ]

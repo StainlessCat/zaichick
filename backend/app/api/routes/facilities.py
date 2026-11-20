@@ -8,7 +8,13 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
+from app.api.deps import (
+    get_client_ip,
+    get_current_user,
+    get_db_session,
+    require_dept_access,
+)
+from app.models.enums import DepartmentEnum, SystemRoleEnum
 from app.models.facility import CustomWeatherStation, Facility, FacilityRdCode
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
@@ -92,7 +98,7 @@ async def get_facility(
 async def create_facility(
     payload: FacilityCreate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_line_list")),
+    current_user: User = Depends(require_dept_access((DepartmentEnum.PTO,), SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> FacilityOut:
     existing = (
@@ -167,7 +173,7 @@ async def update_facility(
     facility_id: uuid.UUID,
     payload: FacilityUpdate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_line_list")),
+    current_user: User = Depends(require_dept_access((DepartmentEnum.PTO,), SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> FacilityOut:
     facility = (
@@ -242,7 +248,7 @@ async def add_custom_weather_station(
     facility_id: uuid.UUID,
     payload: CustomWeatherStationIn,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_line_list")),
+    current_user: User = Depends(require_dept_access((DepartmentEnum.PTO,), SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> CustomWeatherStationOut:
     facility = (
@@ -288,7 +294,7 @@ async def add_custom_weather_station(
 async def delete_facility(
     facility_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_line_list")),
+    current_user: User = Depends(require_dept_access((DepartmentEnum.PTO,), SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     facility = (

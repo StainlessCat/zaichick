@@ -72,6 +72,9 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
     user_created: 'Создание пользователя',
     user_modified: 'Изменение прав / пользователя',
     user_deleted: 'Удаление пользователя',
+    project_purged: 'Очистка данных проекта',
+    record_status_changed: 'Изменение статуса записи',
+    record_unlocked: 'Разблокировка записи',
   };
 
   const baseFiltered = useMemo(() => {

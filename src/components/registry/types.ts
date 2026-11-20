@@ -3,6 +3,7 @@ import {
   ColumnTemplate,
   NdtLabRequest,
   ProjectLineItem,
+  RecordStatus,
   WelderProfile,
   WeldJoint,
   WeldJointFieldKey,
@@ -82,6 +83,11 @@ export interface RegistryTableProps {
   welders: WelderProfile[];
   duplicateJointIds: Set<string>;
   canCreateLabRequest: boolean;
+  onChangeJointStatus?: (
+    joint: WeldJoint,
+    targetStatus: RecordStatus,
+    reason?: string
+  ) => Promise<{ ok: boolean; message?: string }>;
 }
 
 export interface RegistryFooterProps {

@@ -23,6 +23,7 @@ import {
   validateJointForLabRequestSubmission,
 } from '../../utils/laboratoryLogic';
 import { ExcelColumnFilter } from '../ExcelColumnFilter';
+import { RecordStatusBadge } from '../RecordStatusControls';
 import { RegistryTableProps } from './types';
 
 export const RegistryTable: React.FC<RegistryTableProps> = ({
@@ -437,6 +438,11 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                                     title="Критическая ошибка: номер этого стыка дублируется на данной линии!"
                                   >
                                     ДУБЛЬ
+                                  </span>
+                                )}
+                                {joint.recordStatus && joint.recordStatus !== 'DRAFT' && (
+                                  <span className="ml-1.5 shrink-0">
+                                    <RecordStatusBadge status={joint.recordStatus} compact />
                                   </span>
                                 )}
                                 {isIncomplete && (

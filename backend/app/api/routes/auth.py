@@ -77,7 +77,26 @@ async def _authenticate_user(
         )
     ).scalar_one_or_none()
 
-    if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
+    if user is not None and not user.is_active:
+        await login_rate_limiter.record_failure(ip_key, payload.login)
+        await record_audit_log(
+            session,
+            action="login_failed",
+            entity_type="auth",
+            entity_id=str(user.id),
+            user=user,
+            user_login_override=normalized_login,
+            new_data={"reason": "user_inactive"},
+            ip_address=ip_address,
+            summary=f"Попытка входа в деактивированную учётную запись «{normalized_login}»",
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Учётная запись деактивирована. Обратитесь к администратору.",
+        )
+
+    if user is None or not verify_password(payload.password, user.password_hash):
         await login_rate_limiter.record_failure(ip_key, payload.login)
         await record_audit_log(
             session,
@@ -86,14 +105,14 @@ async def _authenticate_user(
             entity_id=str(user.id) if user is not None else normalized_login,
             user=user,
             user_login_override=normalized_login,
-            new_data={"reason": "invalid_credentials_or_inactive"},
+            new_data={"reason": "invalid_credentials"},
             ip_address=ip_address,
             summary=f"Неудачная попытка входа под логином «{normalized_login}»",
         )
         await session.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Неверный логин или пароль, либо учётная запись деактивирована.",
+            detail="Неверный логин или пароль.",
         )
 
     await login_rate_limiter.reset_for_login(ip_key, payload.login)
@@ -109,9 +128,13 @@ async def _authenticate_user(
         entity_type="auth",
         entity_id=str(user.id),
         user=user,
-        new_data={"role": user.role.value, "session_number": user.session_number},
+        new_data={
+            "role": user.role.value,
+            "department": user.department.value,
+            "session_number": user.session_number,
+        },
         ip_address=ip_address,
-        summary=f"Вход в систему: {user.full_name} ({user.role.value})",
+        summary=f"Вход в систему: {user.full_name} ({user.role.value}/{user.department.value})",
     )
     await session.commit()
     return user, token, expires_at
@@ -129,7 +152,7 @@ async def login_with_cookie(
         payload=payload, request=request, session=session
     )
     _set_auth_cookie(response, token)
-    perms = RolePermissionsSchema(**asdict(get_role_permissions(user.role)))
+    perms = RolePermissionsSchema(**asdict(get_role_permissions(user.role, user.department)))
     return SessionResponse(
         user=UserPublicSchema.model_validate(user),
         permissions=perms,
@@ -147,7 +170,7 @@ async def login_for_bearer_token(
     user, token, expires_at = await _authenticate_user(
         payload=payload, request=request, session=session
     )
-    perms = RolePermissionsSchema(**asdict(get_role_permissions(user.role)))
+    perms = RolePermissionsSchema(**asdict(get_role_permissions(user.role, user.department)))
     return BearerTokenResponse(
         access_token=token,
         expires_at=expires_at,
@@ -181,9 +204,12 @@ async def logout(
 
 
 @router.get("/session", response_model=SessionResponse)
+@router.get("/me", response_model=SessionResponse)
 async def get_session(current_user: User = Depends(get_current_user)) -> SessionResponse:
-    """Return authenticated user profile and RBAC matrix (401 when unauthenticated)."""
-    perms = RolePermissionsSchema(**asdict(get_role_permissions(current_user.role)))
+    """Return authenticated user profile and RBAC matrix (401 unauthenticated, 403 inactive)."""
+    perms = RolePermissionsSchema(
+        **asdict(get_role_permissions(current_user.role, current_user.department))
+    )
     return SessionResponse(
         user=UserPublicSchema.model_validate(current_user),
         permissions=perms,
@@ -230,7 +256,9 @@ async def change_own_password(
         session_number=current_user.session_number,
     )
     _set_auth_cookie(response, token)
-    perms = RolePermissionsSchema(**asdict(get_role_permissions(current_user.role)))
+    perms = RolePermissionsSchema(
+        **asdict(get_role_permissions(current_user.role, current_user.department))
+    )
     return SessionResponse(
         user=UserPublicSchema.model_validate(current_user),
         permissions=perms,

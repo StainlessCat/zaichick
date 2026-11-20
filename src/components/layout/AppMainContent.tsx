@@ -11,6 +11,7 @@ import {
   NdtLabRequest,
   ProjectLineItem,
   ReadinessGroupCondition,
+  RecordStatus,
   TechCardItem,
   UserAccount,
   WelderProfile,
@@ -119,6 +120,16 @@ export interface AppMainContentProps {
   onOpenFacilityLocation: (objName: string) => void;
   onOpenAdminPasswordModal: () => void;
   onEditJointInPassport: (j: WeldJoint) => void;
+  onChangeJointStatus?: (
+    joint: WeldJoint,
+    targetStatus: RecordStatus,
+    reason?: string
+  ) => Promise<{ ok: boolean; message?: string }>;
+  onChangeLineStatus?: (
+    line: ProjectLineItem,
+    targetStatus: RecordStatus,
+    reason?: string
+  ) => Promise<{ ok: boolean; message?: string }>;
   dirActions: {
     handleAddLineItems: (items: ProjectLineItem[]) => Promise<void>;
     handleUpdateLineItem: (
@@ -222,6 +233,8 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
     onOpenFacilityLocation,
     onOpenAdminPasswordModal,
     onEditJointInPassport,
+    onChangeJointStatus,
+    onChangeLineStatus,
     dirActions,
   } = props;
   return (
@@ -305,6 +318,7 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
           onColumnAutoFit={onColumnAutoFit}
           onMoveColumnInline={onMoveColumnInline}
           onHideColumnInline={onHideColumnInline}
+          onChangeJointStatus={onChangeJointStatus}
         />
       )}
 
@@ -338,6 +352,7 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
           onDeleteLineItems={dirActions.handleDeleteLineItems}
           onDeleteObject={dirActions.handleDeleteObject}
           onDeleteRdCode={dirActions.handleDeleteRdCode}
+          onChangeLineStatus={onChangeLineStatus}
         />
       )}
 
@@ -355,6 +370,7 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
       {activeSection === 'journals' && (
         <WeldingJournalsView
           onEditJoint={onEditJointInPassport}
+          onChangeJointStatus={onChangeJointStatus}
         />
       )}
 

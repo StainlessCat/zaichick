@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.enums import RecordStatusEnum, pg_enum
 
 if TYPE_CHECKING:
     from app.models.facility import Facility
@@ -74,6 +75,18 @@ class ProjectLine(Base):
     test_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    record_status: Mapped[RecordStatusEnum] = mapped_column(
+        pg_enum(RecordStatusEnum, "record_status_enum"),
+        nullable=False,
+        default=RecordStatusEnum.DRAFT,
+        index=True,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

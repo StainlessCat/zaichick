@@ -47,13 +47,17 @@ export default defineConfig(() => {
       },
     },
     server: {
-      // Proxy API & SSE requests to FastAPI (Python 3.12 + PostgreSQL) backend
-      proxy: {
-        '/api': {
-          target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8000',
-          changeOrigin: true,
-        },
-      },
+      // Proxy API & SSE requests to external FastAPI backend when VITE_API_TARGET is explicitly set
+      ...(process.env.VITE_API_TARGET
+        ? {
+            proxy: {
+              '/api': {
+                target: process.env.VITE_API_TARGET,
+                changeOrigin: true,
+              },
+            },
+          }
+        : {}),
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

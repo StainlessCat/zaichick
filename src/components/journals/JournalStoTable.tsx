@@ -9,6 +9,7 @@ import {
   StoGazpromJournalColumnDef,
 } from '../../utils/weldingLogic';
 import { TableColumnFilterHeader } from '../TableColumnFilterPopover';
+import { RecordStatusBadge } from '../RecordStatusControls';
 
 interface JournalStoTableProps {
   chronologicalJoints: WeldJoint[];
@@ -310,14 +311,21 @@ export const JournalStoTable: React.FC<JournalStoTableProps> = ({
                         style={{ width: colWidth, minWidth: colWidth }}
                         className="py-2.5 px-2.5 border-r border-slate-200 font-mono text-center whitespace-nowrap"
                       >
-                        <button
-                          type="button"
-                          onClick={() => onEditJoint(j)}
-                          className="font-bold text-[#1e3799] hover:underline"
-                          title="Открыть паспорт стыка"
-                        >
-                          {j.jointNumber}
-                        </button>
+                        <div className="inline-flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => onEditJoint(j)}
+                            className="font-bold text-[#1e3799] hover:underline cursor-pointer"
+                            title="Открыть паспорт стыка"
+                          >
+                            {j.jointNumber}
+                          </button>
+                          {j.recordStatus && j.recordStatus !== 'DRAFT' && (
+                            <span className="no-print">
+                              <RecordStatusBadge status={j.recordStatus} compact />
+                            </span>
+                          )}
+                        </div>
                       </td>
                     );
                   }

@@ -27,6 +27,7 @@ from app.models.enums import (
     JointKindEnum,
     JointTypeEnum,
     NdtMethodEnum,
+    RecordStatusEnum,
     pg_enum,
 )
 
@@ -83,6 +84,12 @@ class WeldJoint(Base):
         UUID(as_uuid=True),
         ForeignKey("tech_cards.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     updated_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -246,7 +253,13 @@ class WeldJoint(Base):
     )
     repair_dup_ndt_inspector: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    # 9. Metadata & Row-Level Optimistic Locking
+    # 9. Metadata, Record Lock Status & Row-Level Optimistic Locking
+    record_status: Mapped[RecordStatusEnum] = mapped_column(
+        pg_enum(RecordStatusEnum, "record_status_enum"),
+        nullable=False,
+        default=RecordStatusEnum.DRAFT,
+        index=True,
+    )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_by: Mapped[str] = mapped_column(String(255), nullable=False, default="")

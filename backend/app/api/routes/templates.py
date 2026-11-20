@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_client_ip, get_current_user, get_db_session
-from app.models.enums import RoleEnum
+from app.models.enums import SystemRoleEnum
 from app.models.settings import ColumnTemplate
 from app.models.user import User
 from app.schemas.domain import ColumnTemplateCreate, ColumnTemplateOut, ColumnTemplateUpdate
@@ -34,7 +34,7 @@ async def create_template(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ColumnTemplateOut:
-    if current_user.role == RoleEnum.VIEWER:
+    if current_user.role == SystemRoleEnum.VIEWER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Наблюдатель не может создавать шаблоны.",
@@ -46,7 +46,7 @@ async def create_template(
         id=tpl_id,
         name=payload.name.strip(),
         description=payload.description.strip(),
-        is_system=payload.is_system and current_user.role == RoleEnum.ADMIN,
+        is_system=payload.is_system and current_user.role == SystemRoleEnum.SUPERADMIN,
         column_order=list(payload.column_order),
         visible_columns=list(payload.visible_columns),
         custom_widths=dict(payload.custom_widths) if payload.custom_widths is not None else None,
@@ -79,7 +79,7 @@ async def update_template(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> ColumnTemplateOut:
-    if current_user.role == RoleEnum.VIEWER:
+    if current_user.role == SystemRoleEnum.VIEWER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Наблюдатель не может изменять шаблоны.",
@@ -91,10 +91,10 @@ async def update_template(
     if tpl is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден.")
 
-    if tpl.is_system and current_user.role != RoleEnum.ADMIN:
+    if tpl.is_system and current_user.role != SystemRoleEnum.SUPERADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Системные шаблоны может изменять только администратор.",
+            detail="Системные шаблоны может изменять только суперадмин.",
         )
 
     old_snap = orm_snapshot(tpl, ColumnTemplateOut)
@@ -126,7 +126,7 @@ async def delete_template(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
-    if current_user.role == RoleEnum.VIEWER:
+    if current_user.role == SystemRoleEnum.VIEWER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Наблюдатель не может удалять шаблоны.",
@@ -138,10 +138,10 @@ async def delete_template(
     if tpl is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден.")
 
-    if tpl.is_system and current_user.role != RoleEnum.ADMIN:
+    if tpl.is_system and current_user.role != SystemRoleEnum.SUPERADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Системные шаблоны может удалять только администратор.",
+            detail="Системные шаблоны может удалять только суперадмин.",
         )
 
     old_snap = orm_snapshot(tpl, ColumnTemplateOut)

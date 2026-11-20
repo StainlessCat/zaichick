@@ -1,6 +1,7 @@
 import type {
   AuditLogEntry,
   ColumnTemplate,
+  DepartmentCode,
   FacilityObject,
   InspectorProfile,
   JournalStandard,
@@ -8,6 +9,8 @@ import type {
   NdtLabRequest,
   ProjectLineItem,
   ReadinessGroupCondition,
+  RecordStatus,
+  SystemRole,
   TechCardItem,
   UserAccount,
   WelderProfile,
@@ -45,6 +48,7 @@ import {
   mapWelderDto,
   mapWelderToPayload,
   toBackendRole,
+  toDepartmentCode,
 } from './mappers';
 
 interface PaginatedEnvelope<T> {
@@ -125,6 +129,19 @@ export const zaychickApi = {
     };
   },
 
+  async getMe(): Promise<SessionInfoResponse> {
+    const res = await apiRequest<{
+      user: Record<string, unknown>;
+      permissions: Record<string, unknown>;
+      expires_at?: string | null;
+    }>('/api/auth/me');
+    return {
+      user: mapUserDtoToAccount(res.user),
+      permissions: res.permissions,
+      expiresAt: res.expires_at,
+    };
+  },
+
   async changeOwnPassword(
     currentPassword: string,
     newPassword: string
@@ -148,11 +165,104 @@ export const zaychickApi = {
   },
 
   // ---------------------------------------------------------------------------
-  // Users (ADMIN only)
+  // Admin Users & Project Purge (SUPERADMIN & DEPT_ADMIN)
   // ---------------------------------------------------------------------------
-  async listUsers(): Promise<UserAccount[]> {
-    const rows = await apiRequest<Record<string, unknown>[]>('/api/users');
+  async listAdminUsers(filters?: {
+    department?: DepartmentCode;
+    role?: SystemRole;
+    isActive?: boolean;
+  }): Promise<UserAccount[]> {
+    const q = new URLSearchParams();
+    if (filters?.department) q.set('department', filters.department);
+    if (filters?.role) q.set('role', filters.role);
+    if (filters?.isActive !== undefined) q.set('is_active', String(filters.isActive));
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    const rows = await apiRequest<Record<string, unknown>[]>(`/api/admin/users${suffix}`);
     return rows.map(mapUserDtoToAccount);
+  },
+
+  async createAdminUser(payload: {
+    login: string;
+    password: string;
+    fullName: string;
+    role: SystemRole | string;
+    department?: DepartmentCode | string;
+    positionTitle?: string;
+    mustChangePassword?: boolean;
+  }): Promise<UserAccount> {
+    const role = toBackendRole(payload.role);
+    const department = toDepartmentCode(payload.department, role);
+    const dto = await apiRequest<Record<string, unknown>>('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({
+        login: payload.login,
+        password: payload.password,
+        full_name: payload.fullName,
+        role,
+        department,
+        position_title: payload.positionTitle || '',
+        must_change_password: payload.mustChangePassword ?? true,
+      }),
+    });
+    return mapUserDtoToAccount(dto);
+  },
+
+  async updateAdminUser(
+    userId: string,
+    payload: {
+      version: number;
+      fullName?: string;
+      role?: BackendRole | string;
+      department?: DepartmentCode | string;
+      positionTitle?: string;
+      isActive?: boolean;
+      mustChangePassword?: boolean;
+      newPassword?: string;
+    }
+  ): Promise<UserAccount> {
+    const mappedRole = payload.role ? toBackendRole(payload.role) : undefined;
+    const mappedDept = payload.department
+      ? toDepartmentCode(payload.department, mappedRole)
+      : undefined;
+    const dto = await apiRequest<Record<string, unknown>>(`/api/admin/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        version: payload.version,
+        full_name: payload.fullName,
+        role: mappedRole,
+        department: mappedDept,
+        position_title: payload.positionTitle,
+        is_active: payload.isActive,
+        must_change_password: payload.mustChangePassword,
+        new_password: payload.newPassword,
+      }),
+    });
+    return mapUserDtoToAccount(dto);
+  },
+
+  async purgeProject(
+    projectId: string,
+    confirmProjectName: string,
+    password: string
+  ): Promise<{
+    status: string;
+    project_id: string;
+    project_name: string;
+    deleted_counts: Record<string, number>;
+    purged_by: string;
+    purged_at: string;
+  }> {
+    return apiRequest(`/api/admin/projects/${projectId}/purge`, {
+      method: 'POST',
+      body: JSON.stringify({
+        confirm_project_name: confirmProjectName,
+        password,
+      }),
+    });
+  },
+
+  async listUsers(): Promise<UserAccount[]> {
+    return this.listAdminUsers();
   },
 
   async createUser(payload: {
@@ -164,19 +274,7 @@ export const zaychickApi = {
     positionTitle?: string;
     mustChangePassword?: boolean;
   }): Promise<UserAccount> {
-    const dto = await apiRequest<Record<string, unknown>>('/api/users', {
-      method: 'POST',
-      body: JSON.stringify({
-        login: payload.login,
-        password: payload.password,
-        full_name: payload.fullName,
-        role: toBackendRole(payload.role),
-        department: payload.department || '',
-        position_title: payload.positionTitle || '',
-        must_change_password: payload.mustChangePassword ?? true,
-      }),
-    });
-    return mapUserDtoToAccount(dto);
+    return this.createAdminUser(payload);
   },
 
   async updateUser(
@@ -192,20 +290,7 @@ export const zaychickApi = {
       newPassword?: string;
     }
   ): Promise<UserAccount> {
-    const dto = await apiRequest<Record<string, unknown>>(`/api/users/${userId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        version: payload.version,
-        full_name: payload.fullName,
-        role: payload.role ? toBackendRole(payload.role) : undefined,
-        department: payload.department,
-        position_title: payload.positionTitle,
-        is_active: payload.isActive,
-        must_change_password: payload.mustChangePassword,
-        new_password: payload.newPassword,
-      }),
-    });
-    return mapUserDtoToAccount(dto);
+    return this.updateAdminUser(userId, payload);
   },
 
   // ---------------------------------------------------------------------------
@@ -303,6 +388,23 @@ export const zaychickApi = {
     await apiRequest(`/api/lines/${lineId}`, { method: 'DELETE' });
   },
 
+  async changeLineStatus(
+    lineId: string,
+    recordStatus: RecordStatus,
+    version: number,
+    reason?: string
+  ): Promise<ProjectLineItem> {
+    const dto = await apiRequest<Record<string, unknown>>(`/api/lines/${lineId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        record_status: recordStatus,
+        version,
+        reason: reason || null,
+      }),
+    });
+    return mapLineDto(dto);
+  },
+
   // ---------------------------------------------------------------------------
   // Weld Joints (Granular REST + OCC + Server Validation)
   // ---------------------------------------------------------------------------
@@ -354,6 +456,23 @@ export const zaychickApi = {
     await apiRequest(`/api/joints/${jointId}`, { method: 'DELETE' });
   },
 
+  async changeJointStatus(
+    jointId: string,
+    recordStatus: RecordStatus,
+    version: number,
+    reason?: string
+  ): Promise<WeldJoint> {
+    const dto = await apiRequest<Record<string, unknown>>(`/api/joints/${jointId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        record_status: recordStatus,
+        version,
+        reason: reason || null,
+      }),
+    });
+    return mapJointDto(dto);
+  },
+
   // ---------------------------------------------------------------------------
   // LRV Catalog
   // ---------------------------------------------------------------------------
@@ -396,6 +515,23 @@ export const zaychickApi = {
 
   async deleteLrv(itemId: string): Promise<void> {
     await apiRequest(`/api/lrv/${itemId}`, { method: 'DELETE' });
+  },
+
+  async changeLrvStatus(
+    itemId: string,
+    recordStatus: RecordStatus,
+    version: number,
+    reason?: string
+  ): Promise<LRVItem> {
+    const dto = await apiRequest<Record<string, unknown>>(`/api/lrv/${itemId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        record_status: recordStatus,
+        version,
+        reason: reason || null,
+      }),
+    });
+    return mapLrvDto(dto);
   },
 
   // ---------------------------------------------------------------------------
@@ -447,6 +583,23 @@ export const zaychickApi = {
 
   async deleteTechCard(techCardId: string): Promise<void> {
     await apiRequest(`/api/wps/${techCardId}`, { method: 'DELETE' });
+  },
+
+  async changeTechCardStatus(
+    techCardId: string,
+    recordStatus: RecordStatus,
+    version: number,
+    reason?: string
+  ): Promise<TechCardItem> {
+    const dto = await apiRequest<Record<string, unknown>>(`/api/wps/${techCardId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        record_status: recordStatus,
+        version,
+        reason: reason || null,
+      }),
+    });
+    return mapTechCardDto(dto);
   },
 
   async listMaterials(): Promise<WeldingMaterialCertificate[]> {
@@ -562,6 +715,23 @@ export const zaychickApi = {
     await apiRequest(`/api/lab-requests/${requestId}`, { method: 'DELETE' });
   },
 
+  async changeLabRequestStatus(
+    requestId: string,
+    recordStatus: RecordStatus,
+    version: number,
+    reason?: string
+  ): Promise<NdtLabRequest> {
+    const dto = await apiRequest<Record<string, unknown>>(`/api/lab-requests/${requestId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        record_status: recordStatus,
+        version,
+        reason: reason || null,
+      }),
+    });
+    return mapLabRequestDto(dto);
+  },
+
   // ---------------------------------------------------------------------------
   // Server-Side Excel Exports & Imports (openpyxl)
   // ---------------------------------------------------------------------------
@@ -658,15 +828,6 @@ export const zaychickApi = {
     return apiRequest('/api/imports/restore-backup', {
       method: 'POST',
       body: JSON.stringify(payload),
-    });
-  },
-
-  async zeroResetDatabase(
-    keepOnlyAdmin = true
-  ): Promise<{ status: string; deactivated_users?: number }> {
-    return apiRequest('/api/imports/zero-reset', {
-      method: 'POST',
-      body: JSON.stringify({ keep_only_admin: keepOnlyAdmin }),
     });
   },
 };

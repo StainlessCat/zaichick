@@ -10,13 +10,19 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
-from app.models.enums import ControlResultEnum, RoleEnum
+from app.api.deps import (
+    get_client_ip,
+    get_current_user,
+    get_db_session,
+    require_dept_access,
+)
+from app.models.enums import ControlResultEnum, DepartmentEnum, RecordStatusEnum, SystemRoleEnum
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
 from app.models.user import User
 from app.models.welding_tech import TechCard, Welder, WeldingMaterial
+from app.schemas.auth import RecordStatusChangeRequest
 from app.schemas.domain import (
     JointValidationResultOut,
     PaginatedResponse,
@@ -43,11 +49,17 @@ from app.services.domain_validation import (
 )
 from app.services.event_bus import event_bus
 from app.services.pipe_calc import calculate_equivalent_dia_inch, mm_to_inch_diameter
-from app.services.rbac import find_forbidden_joint_fields
+from app.services.rbac import (
+    assert_can_mutate_record,
+    assert_can_transition_record_status,
+    find_forbidden_joint_fields,
+)
 
 router = APIRouter(prefix="/api/joints", tags=["joints"])
 
-JOINT_EDIT_ROLES = {RoleEnum.ADMIN, RoleEnum.PTO, RoleEnum.PIL}
+JOINT_CREATE_DELETE_DEPTS = (DepartmentEnum.PTO,)
+JOINT_EDIT_DEPTS = (DepartmentEnum.PTO, DepartmentEnum.PIL)
+JOINT_STATUS_DEPTS = (DepartmentEnum.PTO, DepartmentEnum.PIL, DepartmentEnum.SK)
 
 
 async def _load_validation_context(
@@ -271,7 +283,9 @@ def _build_joint_orm(
         lrv1_item_id=payload.lrv1_item_id,
         lrv2_item_id=payload.lrv2_item_id,
         tech_card_id=payload.tech_card_id,
+        created_by_id=user.id,
         updated_by_id=user.id,
+        record_status=RecordStatusEnum.DRAFT,
         object_name=payload.object_name.strip() or matched_line.object_name,
         rd_code=rd_code,
         contour=payload.contour.strip() or matched_line.test_contour,
@@ -548,9 +562,15 @@ async def validate_joint_payload(
 async def create_joint(
     payload: WeldJointCreate,
     request: Request,
-    current_user: User = Depends(require_permission("can_create_or_delete_joints")),
+    current_user: User = Depends(require_dept_access(JOINT_CREATE_DELETE_DEPTS, SystemRoleEnum.OPERATOR)),
     session: AsyncSession = Depends(get_db_session),
 ) -> WeldJointOut:
+    assert_can_mutate_record(
+        user=current_user,
+        record=None,
+        allowed_departments=JOINT_CREATE_DELETE_DEPTS,
+        operation="create",
+    )
     ctx = await _load_validation_context(session, target_joints=[payload])
     matched_line = _find_matching_line(payload, ctx["lines"])
     if matched_line is None:
@@ -615,12 +635,19 @@ def _apply_joint_patch_and_validate(
     user: User,
     ctx: dict[str, Any],
 ) -> tuple[dict[str, Any], JointValidationSummary]:
+    assert_can_mutate_record(
+        user=user,
+        record=joint,
+        allowed_departments=JOINT_EDIT_DEPTS,
+        operation="update",
+    )
     existing_raw = {
         col.key: getattr(joint, col.key)
         for col in joint.__class__.__mapper__.column_attrs
     }
     forbidden = find_forbidden_joint_fields(
         user.role,
+        user.department,
         patch_data,
         existing_values=existing_raw,
         is_create=False,
@@ -631,7 +658,8 @@ def _apply_joint_patch_and_validate(
             detail={
                 "code": "FIELD_RBAC_FORBIDDEN",
                 "message": (
-                    f"Роль {user.role.value} не имеет права изменять поля: {', '.join(forbidden)}."
+                    f"Роль {user.role.value}/{user.department.value} не имеет права изменять поля: "
+                    f"{', '.join(forbidden)}."
                 ),
                 "forbidden_fields": forbidden,
             },
@@ -684,15 +712,9 @@ async def update_joint(
     joint_id: uuid.UUID,
     payload: WeldJointUpdate,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_dept_access(JOINT_EDIT_DEPTS, SystemRoleEnum.OPERATOR)),
     session: AsyncSession = Depends(get_db_session),
 ) -> WeldJointOut:
-    if current_user.role not in JOINT_EDIT_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Роль {current_user.role.value} не имеет права редактировать стыки.",
-        )
-
     joint = (await session.execute(select(WeldJoint).where(WeldJoint.id == joint_id))).scalar_one_or_none()
     if joint is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стык не найден.")
@@ -741,15 +763,9 @@ async def update_joint(
 async def bulk_update_joints(
     payload: WeldJointBulkUpdateRequest,
     request: Request,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_dept_access(JOINT_EDIT_DEPTS, SystemRoleEnum.OPERATOR)),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[WeldJointOut]:
-    if current_user.role not in JOINT_EDIT_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Роль {current_user.role.value} не имеет права массово редактировать стыки.",
-        )
-
     req_ids = [item.id for item in payload.items]
     existing_targets = (
         list(
@@ -835,17 +851,100 @@ async def bulk_update_joints(
     return out_items
 
 
+@router.patch("/{joint_id}/status", response_model=WeldJointOut)
+async def change_joint_record_status(
+    joint_id: uuid.UUID,
+    payload: RecordStatusChangeRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> WeldJointOut:
+    joint = (
+        await session.execute(select(WeldJoint).where(WeldJoint.id == joint_id))
+    ).scalar_one_or_none()
+    if joint is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стык не найден.")
+
+    assert_can_transition_record_status(
+        user=current_user,
+        record=joint,
+        target_status=payload.record_status,
+        allowed_departments=JOINT_STATUS_DEPTS,
+        reason=payload.reason,
+    )
+    if payload.version is not None:
+        enforce_optimistic_lock(
+            entity_type="weld_joint",
+            entity_obj=joint,
+            expected_version=payload.version,
+            patch_data={"record_status": payload.record_status.value},
+            schema_cls=WeldJointOut,
+        )
+
+    old_status = joint.record_status.value
+    is_unlock = (
+        joint.record_status == RecordStatusEnum.LOCKED
+        and payload.record_status != RecordStatusEnum.LOCKED
+    )
+    joint.record_status = payload.record_status
+    joint.version += 1
+    joint.updated_by = current_user.login
+    joint.updated_by_id = current_user.id
+    joint.updated_at = datetime.now(timezone.utc)
+    await session.flush()
+
+    new_snap = orm_snapshot(joint, WeldJointOut)
+    await record_audit_log(
+        session,
+        action="RECORD_UNLOCKED" if is_unlock else "RECORD_STATUS_CHANGED",
+        entity_type="weld_joint",
+        entity_id=str(joint.id),
+        user=current_user,
+        old_data={"record_status": old_status},
+        new_data={
+            "record_status": joint.record_status.value,
+            **({"reason": payload.reason.strip()} if payload.reason and payload.reason.strip() else {}),
+        },
+        ip_address=get_client_ip(request),
+        joint_number=joint.joint_number,
+        unique_line_id=joint.unique_line_id,
+        rd_code=joint.rd_code,
+        summary=(
+            f"Снята блокировка стыка № {joint.joint_number} ({old_status} -> {joint.record_status.value}): {payload.reason}"
+            if is_unlock
+            else f"Изменён статус стыка № {joint.joint_number}: {old_status} -> {joint.record_status.value}"
+        ),
+    )
+    await event_bus.emit_delta(
+        session,
+        event="joint.updated",
+        entity_type="weld_joint",
+        entity_id=joint.id,
+        version=joint.version,
+        updated_by=current_user.login,
+        data=new_snap,
+    )
+    return WeldJointOut.model_validate(joint)
+
+
 @router.delete("/{joint_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_joint(
     joint_id: uuid.UUID,
     request: Request,
     expected_version: int | None = Query(default=None, alias="version"),
-    current_user: User = Depends(require_permission("can_create_or_delete_joints")),
+    current_user: User = Depends(require_dept_access(JOINT_CREATE_DELETE_DEPTS, SystemRoleEnum.OPERATOR)),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     joint = (await session.execute(select(WeldJoint).where(WeldJoint.id == joint_id))).scalar_one_or_none()
     if joint is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стык не найден.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=joint,
+        allowed_departments=JOINT_CREATE_DELETE_DEPTS,
+        operation="delete",
+    )
 
     if expected_version is not None:
         enforce_optimistic_lock(

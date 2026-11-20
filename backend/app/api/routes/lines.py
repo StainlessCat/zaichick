@@ -8,10 +8,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_client_ip, get_current_user, get_db_session, require_permission
+from app.api.deps import (
+    get_client_ip,
+    get_current_user,
+    get_db_session,
+    require_dept_access,
+)
+from app.models.enums import DepartmentEnum, RecordStatusEnum, SystemRoleEnum
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
 from app.models.user import User
+from app.schemas.auth import RecordStatusChangeRequest
 from app.schemas.domain import (
     LineCompletionStatusOut,
     LineNdtProgressOut,
@@ -30,12 +37,17 @@ from app.services.crud_helpers import (
 )
 from app.services.domain_validation import build_unique_line_id
 from app.services.event_bus import event_bus
+from app.services.rbac import (
+    assert_can_mutate_record,
+    assert_can_transition_record_status,
+)
 from app.services.readiness_service import (
     calculate_line_ndt_progress,
     compute_line_list_item_status,
 )
 
 router = APIRouter(prefix="/api/lines", tags=["lines"])
+LINE_ALLOWED_DEPTS = (DepartmentEnum.PTO,)
 
 
 def _line_to_out(line: ProjectLine, line_joints: list[WeldJoint]) -> ProjectLineOut:
@@ -174,9 +186,15 @@ async def get_line_ndt_progress(
 async def create_line(
     payload: ProjectLineCreate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_line_list")),
+    current_user: User = Depends(require_dept_access(LINE_ALLOWED_DEPTS, SystemRoleEnum.OPERATOR)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ProjectLineOut:
+    assert_can_mutate_record(
+        user=current_user,
+        record=None,
+        allowed_departments=LINE_ALLOWED_DEPTS,
+        operation="create",
+    )
     uid_str = (
         payload.unique_line_id.strip()
         if payload.unique_line_id and payload.unique_line_id.strip()
@@ -216,6 +234,8 @@ async def create_line(
         manual_status=payload.manual_status,
         test_date=payload.test_date,
         sort_order=payload.sort_order,
+        record_status=RecordStatusEnum.DRAFT,
+        created_by_id=current_user.id,
         version=1,
         updated_by_id=current_user.id,
         created_at=now,
@@ -254,7 +274,7 @@ async def update_line(
     line_id: uuid.UUID,
     payload: ProjectLineUpdate,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_line_list")),
+    current_user: User = Depends(require_dept_access(LINE_ALLOWED_DEPTS, SystemRoleEnum.OPERATOR)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ProjectLineOut:
     line = (
@@ -262,6 +282,13 @@ async def update_line(
     ).scalar_one_or_none()
     if line is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Линия не найдена.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=line,
+        allowed_departments=LINE_ALLOWED_DEPTS,
+        operation="update",
+    )
 
     patch_data = payload.model_dump(exclude_unset=True)
     enforce_optimistic_lock(
@@ -324,11 +351,96 @@ async def update_line(
     return _line_to_out(line, all_joints)
 
 
+@router.patch("/{line_id}/status", response_model=ProjectLineOut)
+async def change_line_record_status(
+    line_id: uuid.UUID,
+    payload: RecordStatusChangeRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ProjectLineOut:
+    line = (
+        await session.execute(select(ProjectLine).where(ProjectLine.id == line_id))
+    ).scalar_one_or_none()
+    if line is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Линия не найдена.")
+
+    assert_can_transition_record_status(
+        user=current_user,
+        record=line,
+        target_status=payload.record_status,
+        allowed_departments=LINE_ALLOWED_DEPTS,
+        reason=payload.reason,
+    )
+    if payload.version is not None:
+        enforce_optimistic_lock(
+            entity_type="project_line",
+            entity_obj=line,
+            expected_version=payload.version,
+            patch_data={"record_status": payload.record_status.value},
+            schema_cls=ProjectLineOut,
+        )
+
+    old_status = line.record_status.value
+    is_unlock = line.record_status == RecordStatusEnum.LOCKED and payload.record_status != RecordStatusEnum.LOCKED
+    line.record_status = payload.record_status
+    line.version += 1
+    line.updated_by_id = current_user.id
+    line.updated_at = datetime.now(timezone.utc)
+    await session.flush()
+
+    all_joints = list(
+        (
+            await session.execute(
+                select(WeldJoint).where(
+                    or_(
+                        WeldJoint.line_id == line.id,
+                        WeldJoint.unique_line_id == line.unique_line_id,
+                    )
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    new_snap = orm_snapshot(line, ProjectLineOut)
+    await record_audit_log(
+        session,
+        action="RECORD_UNLOCKED" if is_unlock else "RECORD_STATUS_CHANGED",
+        entity_type="project_line",
+        entity_id=str(line.id),
+        user=current_user,
+        old_data={"record_status": old_status},
+        new_data={
+            "record_status": line.record_status.value,
+            **({"reason": payload.reason.strip()} if payload.reason and payload.reason.strip() else {}),
+        },
+        ip_address=get_client_ip(request),
+        unique_line_id=line.unique_line_id,
+        rd_code=line.rd_code,
+        summary=(
+            f"Снята блокировка линии «{line.unique_line_id}» ({old_status} -> {line.record_status.value}): {payload.reason}"
+            if is_unlock
+            else f"Изменён статус линии «{line.unique_line_id}»: {old_status} -> {line.record_status.value}"
+        ),
+    )
+    await event_bus.emit_delta(
+        session,
+        event="line.updated",
+        entity_type="project_line",
+        entity_id=line.id,
+        version=line.version,
+        updated_by=current_user.login,
+        data=new_snap,
+    )
+    return _line_to_out(line, all_joints)
+
+
 @router.delete("/{line_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_line(
     line_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(require_permission("can_edit_line_list")),
+    current_user: User = Depends(require_dept_access(LINE_ALLOWED_DEPTS, SystemRoleEnum.OPERATOR)),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     line = (
@@ -336,6 +448,13 @@ async def delete_line(
     ).scalar_one_or_none()
     if line is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Линия не найдена.")
+
+    assert_can_mutate_record(
+        user=current_user,
+        record=line,
+        allowed_departments=LINE_ALLOWED_DEPTS,
+        operation="delete",
+    )
 
     linked_count = int(
         (

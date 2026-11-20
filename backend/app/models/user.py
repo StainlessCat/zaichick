@@ -3,20 +3,24 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, func, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, Integer, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.models.enums import RoleEnum, pg_enum
+from app.models.enums import DepartmentEnum, SystemRoleEnum, pg_enum
 
 
 class User(Base):
-    """System user account with explicit RoleEnum assigned by administrator."""
+    """System user account with hierarchical SystemRoleEnum and DepartmentEnum."""
 
     __tablename__ = "users"
     __table_args__ = (
         Index("ix_users_login_lower", text("lower(btrim(login))"), unique=True),
+        CheckConstraint(
+            "(role = 'SUPERADMIN') OR (department != 'ALL')",
+            name="ck_users_department_all_superadmin_only",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -25,8 +29,16 @@ class User(Base):
     login: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[RoleEnum] = mapped_column(pg_enum(RoleEnum, "user_role_enum"), nullable=False)
-    department: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    role: Mapped[SystemRoleEnum] = mapped_column(
+        pg_enum(SystemRoleEnum, "system_role_enum"),
+        nullable=False,
+        default=SystemRoleEnum.OPERATOR,
+    )
+    department: Mapped[DepartmentEnum] = mapped_column(
+        pg_enum(DepartmentEnum, "department_enum"),
+        nullable=False,
+        default=DepartmentEnum.PTO,
+    )
     position_title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     session_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

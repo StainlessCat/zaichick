@@ -3,6 +3,7 @@ import {
   FacilityObject,
   LineListColumnKey,
   ProjectLineItem,
+  RecordStatus,
   WeldJoint,
 } from '../types/welding';
 import {
@@ -50,6 +51,11 @@ export interface ProjectLineListViewProps {
   onDeleteRdCode: (rdCode: string) => void;
   onOpenLineInRegistry?: (uniqueLineId: string) => void;
   onOpenFacilityLocation?: (objectName: string) => void;
+  onChangeLineStatus?: (
+    line: ProjectLineItem,
+    targetStatus: RecordStatus,
+    reason?: string
+  ) => Promise<{ ok: boolean; message?: string }>;
   canEdit?: boolean;
   currentUserRoleLabel?: string;
 }
@@ -77,6 +83,7 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = (props) =
     onDeleteRdCode,
     onOpenLineInRegistry,
     onOpenFacilityLocation,
+    onChangeLineStatus,
   } = props;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -663,6 +670,8 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = (props) =
         totalLinesCount={lineList.length}
         hasCustomWidths={hasCustomWidths}
         onResetWidths={handleResetWidths}
+        currentUser={auth.currentUser}
+        onChangeLineStatus={onChangeLineStatus}
       />
 
       {/* Модальное окно создания и редактирования строки лайнлиста */}

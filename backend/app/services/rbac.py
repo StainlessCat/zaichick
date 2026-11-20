@@ -1,19 +1,49 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Any
 
-from app.models.enums import RoleEnum
+from fastapi import HTTPException, status
+
+from app.models.enums import DepartmentEnum, RecordStatusEnum, SystemRoleEnum
+
+ROLE_RANK: dict[SystemRoleEnum, int] = {
+    SystemRoleEnum.VIEWER: 0,
+    SystemRoleEnum.OPERATOR: 1,
+    SystemRoleEnum.DEPT_ADMIN: 2,
+    SystemRoleEnum.SUPERADMIN: 3,
+}
+
+ROLE_LABELS_RU: dict[SystemRoleEnum, str] = {
+    SystemRoleEnum.SUPERADMIN: "Суперадмин",
+    SystemRoleEnum.DEPT_ADMIN: "Админ отдела",
+    SystemRoleEnum.OPERATOR: "Пользователь",
+    SystemRoleEnum.VIEWER: "Наблюдатель",
+}
+
+DEPARTMENT_LABELS_RU: dict[DepartmentEnum, str] = {
+    DepartmentEnum.PTO: "ПТО",
+    DepartmentEnum.OGS: "ОГС",
+    DepartmentEnum.PIL: "ПИЛ",
+    DepartmentEnum.SK: "СК",
+    DepartmentEnum.ALL: "Все отделы",
+}
 
 
 @dataclass(frozen=True, slots=True)
 class RolePermissions:
-    """Explicit permission matrix derived strictly from RoleEnum (no substring heuristics)."""
+    """Explicit permission matrix derived from (SystemRoleEnum, DepartmentEnum)."""
 
-    role: RoleEnum
+    role: SystemRoleEnum
+    department: DepartmentEnum
     label: str
     description: str
     can_manage_users: bool
+    can_manage_all_users: bool
+    can_purge_project: bool
+    can_approve_records: bool
+    can_unlock_records: bool
     can_edit_welding_tech: bool
     can_edit_line_list: bool
     can_edit_lrv_catalog: bool
@@ -23,94 +53,6 @@ class RolePermissions:
     can_export_documents: bool
     can_view_audit_logs: bool
 
-
-ROLE_PERMISSIONS: dict[RoleEnum, RolePermissions] = {
-    RoleEnum.ADMIN: RolePermissions(
-        role=RoleEnum.ADMIN,
-        label="Администратор",
-        description=(
-            "Полный доступ: управление пользователями и ролями, редактирование всех "
-            "справочников («Технология сварки», «Лайнлист», «Каталог ЛРВ») и всех полей стыков."
-        ),
-        can_manage_users=True,
-        can_edit_welding_tech=True,
-        can_edit_line_list=True,
-        can_edit_lrv_catalog=True,
-        can_create_or_delete_joints=True,
-        can_edit_prep_and_welding_fields=True,
-        can_edit_ndt_fields=True,
-        can_export_documents=True,
-        can_view_audit_logs=True,
-    ),
-    RoleEnum.PTO: RolePermissions(
-        role=RoleEnum.PTO,
-        label="Инженер ПТО",
-        description=(
-            "Редактирование раздела «Проект (лайнлист)», создание/удаление стыков, "
-            "редактирование полей подготовки, сварки и ремонта сваркой."
-        ),
-        can_manage_users=False,
-        can_edit_welding_tech=False,
-        can_edit_line_list=True,
-        can_edit_lrv_catalog=False,
-        can_create_or_delete_joints=True,
-        can_edit_prep_and_welding_fields=True,
-        can_edit_ndt_fields=False,
-        can_export_documents=True,
-        can_view_audit_logs=True,
-    ),
-    RoleEnum.OGS: RolePermissions(
-        role=RoleEnum.OGS,
-        label="Технолог по сварке (ОГС)",
-        description=(
-            "Редактирование вкладки «Технология сварки» (сварщики, НАКС, техкарты, "
-            "сварочные материалы). Стыки и лайнлист — только чтение."
-        ),
-        can_manage_users=False,
-        can_edit_welding_tech=True,
-        can_edit_line_list=False,
-        can_edit_lrv_catalog=False,
-        can_create_or_delete_joints=False,
-        can_edit_prep_and_welding_fields=False,
-        can_edit_ndt_fields=False,
-        can_export_documents=True,
-        can_view_audit_logs=True,
-    ),
-    RoleEnum.PIL: RolePermissions(
-        role=RoleEnum.PIL,
-        label="Специалист ЛНК / ПИЛ",
-        description=(
-            "Редактирование только полей ВИК, первичного НК (РК/УЗК/ПВК), дублирующего НК "
-            "и послеремонтного контроля стыков."
-        ),
-        can_manage_users=False,
-        can_edit_welding_tech=False,
-        can_edit_line_list=False,
-        can_edit_lrv_catalog=False,
-        can_create_or_delete_joints=False,
-        can_edit_prep_and_welding_fields=False,
-        can_edit_ndt_fields=True,
-        can_export_documents=True,
-        can_view_audit_logs=True,
-    ),
-    RoleEnum.VIEWER: RolePermissions(
-        role=RoleEnum.VIEWER,
-        label="Представитель Заказчика / Наблюдатель",
-        description=(
-            "Режим инспекционного просмотра: просмотр реестра, журналов, аудита и выгрузка "
-            "исполнительной документации без права внесения изменений."
-        ),
-        can_manage_users=False,
-        can_edit_welding_tech=False,
-        can_edit_line_list=False,
-        can_edit_lrv_catalog=False,
-        can_create_or_delete_joints=False,
-        can_edit_prep_and_welding_fields=False,
-        can_edit_ndt_fields=False,
-        can_export_documents=True,
-        can_view_audit_logs=True,
-    ),
-}
 
 # Field-level RBAC sets on WeldJoint (snake_case DB/API column names)
 PIL_EDITABLE_JOINT_FIELDS: frozenset[str] = frozenset(
@@ -230,24 +172,132 @@ PTO_EDITABLE_JOINT_FIELDS: frozenset[str] = frozenset(
 )
 
 
-def get_role_permissions(role: RoleEnum) -> RolePermissions:
-    """Return strict permissions for the given RoleEnum; never defaults to PTO."""
-    if role not in ROLE_PERMISSIONS:
+def validate_role_department_pair(role: SystemRoleEnum, department: DepartmentEnum) -> None:
+    """Enforce invariant: DepartmentEnum.ALL is strictly reserved for SUPERADMIN."""
+    if role != SystemRoleEnum.SUPERADMIN and department == DepartmentEnum.ALL:
+        raise ValueError(
+            "Отдел ALL допустим исключительно для роли SUPERADMIN. "
+            "Для остальных ролей укажите конкретный отдел (PTO, OGS, PIL, SK)."
+        )
+
+
+def get_role_permissions(
+    role: SystemRoleEnum,
+    department: DepartmentEnum = DepartmentEnum.PTO,
+) -> RolePermissions:
+    """Compute strict permission matrix from (SystemRoleEnum, DepartmentEnum)."""
+    if role not in ROLE_RANK:
         raise ValueError(f"Неизвестная роль пользователя: {role!r}")
-    return ROLE_PERMISSIONS[role]
+
+    if role == SystemRoleEnum.SUPERADMIN:
+        return RolePermissions(
+            role=role,
+            department=department,
+            label="Суперадмин",
+            description=(
+                "Полный доступ ко всем проектам, отделам, системным настройкам, "
+                "управлению пользователями, разблокировке записей и очистке данных проекта."
+            ),
+            can_manage_users=True,
+            can_manage_all_users=True,
+            can_purge_project=True,
+            can_approve_records=True,
+            can_unlock_records=True,
+            can_edit_welding_tech=True,
+            can_edit_line_list=True,
+            can_edit_lrv_catalog=True,
+            can_create_or_delete_joints=True,
+            can_edit_prep_and_welding_fields=True,
+            can_edit_ndt_fields=True,
+            can_export_documents=True,
+            can_view_audit_logs=True,
+        )
+
+    if role == SystemRoleEnum.VIEWER:
+        dept_label = DEPARTMENT_LABELS_RU.get(department, department.value)
+        return RolePermissions(
+            role=role,
+            department=department,
+            label=f"Наблюдатель · {dept_label}",
+            description=(
+                "Режим инспекционного просмотра: просмотр реестров, журналов, аудита и выгрузка "
+                "исполнительной документации без права внесения изменений."
+            ),
+            can_manage_users=False,
+            can_manage_all_users=False,
+            can_purge_project=False,
+            can_approve_records=False,
+            can_unlock_records=False,
+            can_edit_welding_tech=False,
+            can_edit_line_list=False,
+            can_edit_lrv_catalog=False,
+            can_create_or_delete_joints=False,
+            can_edit_prep_and_welding_fields=False,
+            can_edit_ndt_fields=False,
+            can_export_documents=True,
+            can_view_audit_logs=True,
+        )
+
+    is_dept_admin = role == SystemRoleEnum.DEPT_ADMIN
+    role_label = ROLE_LABELS_RU[role]
+    dept_label = DEPARTMENT_LABELS_RU.get(department, department.value)
+
+    can_edit_line_list = department == DepartmentEnum.PTO
+    can_edit_lrv_catalog = department == DepartmentEnum.PTO and is_dept_admin
+    can_create_or_delete_joints = department == DepartmentEnum.PTO
+    can_edit_prep_and_welding = department == DepartmentEnum.PTO
+    can_edit_welding_tech = department == DepartmentEnum.OGS and is_dept_admin
+    can_edit_ndt = department == DepartmentEnum.PIL
+
+    if is_dept_admin:
+        description = (
+            f"Администратор отдела {dept_label}: полный доступ в своём домене, "
+            "утверждение и фиксация записей, управление справочниками отдела и учётными записями сотрудников."
+        )
+    else:
+        description = (
+            f"Пользователь отдела {dept_label}: создание и редактирование черновиков в своём домене. "
+            "Редактирование справочников, чужих записей при удалении и проверенных/закрытых записей запрещено."
+        )
+
+    return RolePermissions(
+        role=role,
+        department=department,
+        label=f"{role_label} · {dept_label}",
+        description=description,
+        can_manage_users=is_dept_admin,
+        can_manage_all_users=False,
+        can_purge_project=False,
+        can_approve_records=is_dept_admin,
+        can_unlock_records=False,
+        can_edit_welding_tech=can_edit_welding_tech,
+        can_edit_line_list=can_edit_line_list,
+        can_edit_lrv_catalog=can_edit_lrv_catalog,
+        can_create_or_delete_joints=can_create_or_delete_joints,
+        can_edit_prep_and_welding_fields=can_edit_prep_and_welding,
+        can_edit_ndt_fields=can_edit_ndt,
+        can_export_documents=True,
+        can_view_audit_logs=True,
+    )
 
 
-def can_edit_joint_field(role: RoleEnum, field_name: str, *, is_create: bool = False) -> bool:
-    """Check whether a role may modify a specific WeldJoint field."""
+def can_edit_joint_field(
+    role: SystemRoleEnum,
+    department: DepartmentEnum,
+    field_name: str,
+    *,
+    is_create: bool = False,
+) -> bool:
+    """Check whether (role, department) may modify a specific WeldJoint field."""
     if field_name == "joint_number" and not is_create:
         return False
-    if role == RoleEnum.ADMIN:
+    if role == SystemRoleEnum.SUPERADMIN:
         return True
-    if role in (RoleEnum.OGS, RoleEnum.VIEWER):
+    if role == SystemRoleEnum.VIEWER:
         return False
-    if role == RoleEnum.PIL:
+    if department == DepartmentEnum.PIL:
         return field_name in PIL_EDITABLE_JOINT_FIELDS
-    if role == RoleEnum.PTO:
+    if department == DepartmentEnum.PTO:
         if is_create and field_name == "joint_number":
             return True
         return field_name in PTO_EDITABLE_JOINT_FIELDS
@@ -255,20 +305,175 @@ def can_edit_joint_field(role: RoleEnum, field_name: str, *, is_create: bool = F
 
 
 def find_forbidden_joint_fields(
-    role: RoleEnum,
+    role: SystemRoleEnum,
+    department: DepartmentEnum,
     patch_fields: dict[str, Any],
     existing_values: dict[str, Any] | None = None,
     *,
     is_create: bool = False,
 ) -> list[str]:
-    """Return list of field names in patch that the role is not allowed to change."""
+    """Return list of field names in patch that (role, department) is not allowed to change."""
     forbidden: list[str] = []
     for field_name, new_val in patch_fields.items():
-        if field_name in ("id", "version", "created_at", "updated_at", "updated_by", "updated_by_id"):
+        if field_name in (
+            "id",
+            "version",
+            "created_at",
+            "updated_at",
+            "updated_by",
+            "updated_by_id",
+            "created_by_id",
+        ):
             continue
         if not is_create and existing_values is not None:
             if field_name in existing_values and existing_values[field_name] == new_val:
                 continue
-        if not can_edit_joint_field(role, field_name, is_create=is_create):
+        if not can_edit_joint_field(role, department, field_name, is_create=is_create):
             forbidden.append(field_name)
     return sorted(forbidden)
+
+
+def _get_record_status(record: Any) -> RecordStatusEnum:
+    raw = getattr(record, "record_status", RecordStatusEnum.DRAFT)
+    if isinstance(raw, RecordStatusEnum):
+        return raw
+    try:
+        return RecordStatusEnum(str(raw))
+    except ValueError:
+        return RecordStatusEnum.DRAFT
+
+
+def assert_can_mutate_record(
+    *,
+    user: Any,
+    record: Any | None,
+    allowed_departments: Collection[DepartmentEnum],
+    operation: str,
+    is_directory: bool = False,
+) -> None:
+    """
+    Enforce department + role + record_status + ownership policy for create/update/delete.
+
+    Rules:
+    - VIEWER: always 403.
+    - SUPERADMIN: allowed for create; for update/delete on LOCKED records, must unlock first!
+    - DEPT_ADMIN: allowed if user.department in allowed_departments; forbidden on LOCKED records.
+    - OPERATOR:
+      * Forbidden on reference directories (is_directory=True).
+      * Allowed in own department for create and update ONLY when record_status == DRAFT.
+      * Forbidden to edit/delete VERIFIED or LOCKED records.
+      * Allowed to delete ONLY own records (created_by_id == user.id) in DRAFT status.
+    """
+    role: SystemRoleEnum = user.role
+    department: DepartmentEnum = user.department
+
+    if role == SystemRoleEnum.VIEWER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Наблюдателю (VIEWER) запрещено вносить изменения.",
+        )
+
+    if record is not None:
+        rec_status = _get_record_status(record)
+        if rec_status == RecordStatusEnum.LOCKED:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Запись закрыта (LOCKED) в составе подписанного акта. "
+                    "Изменение и удаление запрещены до снятия блокировки суперадмином."
+                ),
+            )
+
+    if role == SystemRoleEnum.SUPERADMIN:
+        return
+
+    if department not in allowed_departments:
+        allowed_labels = ", ".join(DEPARTMENT_LABELS_RU.get(d, d.value) for d in allowed_departments)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Операция доступна только для отделов: {allowed_labels}. "
+                f"Ваш отдел: {DEPARTMENT_LABELS_RU.get(department, department.value)}."
+            ),
+        )
+
+    if role == SystemRoleEnum.DEPT_ADMIN:
+        return
+
+    # OPERATOR rules
+    if is_directory:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Пользователю с ролью OPERATOR запрещено изменять справочники. Обратитесь к администратору отдела.",
+        )
+
+    if operation == "create":
+        return
+
+    if record is not None:
+        rec_status = _get_record_status(record)
+        if rec_status != RecordStatusEnum.DRAFT:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Запись находится в статусе {rec_status.value}. "
+                    "Пользователь (OPERATOR) может изменять и удалять только записи в статусе DRAFT."
+                ),
+            )
+
+        if operation == "delete":
+            created_by_id = getattr(record, "created_by_id", None)
+            if created_by_id is None or str(created_by_id) != str(user.id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Пользователь (OPERATOR) не может удалять чужие записи.",
+                )
+
+
+def assert_can_transition_record_status(
+    *,
+    user: Any,
+    record: Any,
+    target_status: RecordStatusEnum,
+    allowed_departments: Collection[DepartmentEnum],
+    reason: str | None = None,
+) -> None:
+    """
+    Validate status transition DRAFT <-> VERIFIED <-> LOCKED:
+    - Unlocking from LOCKED -> DRAFT/VERIFIED: strictly SUPERADMIN with non-empty reason.
+    - Locking/verifying/reverting between DRAFT/VERIFIED/LOCKED: SUPERADMIN or DEPT_ADMIN in allowed_departments.
+    - OPERATOR and VIEWER cannot change record_status.
+    """
+    role: SystemRoleEnum = user.role
+    department: DepartmentEnum = user.department
+    current_status = _get_record_status(record)
+
+    if current_status == target_status:
+        return
+
+    if current_status == RecordStatusEnum.LOCKED:
+        if role != SystemRoleEnum.SUPERADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Снять блокировку закрытой записи (LOCKED) может только SUPERADMIN.",
+            )
+        if not reason or not reason.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Для снятия блокировки закрытой записи (LOCKED) обязательно укажите причину.",
+            )
+        return
+
+    if role == SystemRoleEnum.SUPERADMIN:
+        return
+
+    if role == SystemRoleEnum.DEPT_ADMIN and department in allowed_departments:
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=(
+            "Изменять статус фиксации записи (Черновик / Проверено / Закрыто) "
+            "может только администратор профильного отдела или суперадмин."
+        ),
+    )

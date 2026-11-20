@@ -14,12 +14,16 @@ import {
 import {
   LineListColumnKey,
   ProjectLineItem,
+  RecordStatus,
+  UserAccount,
 } from '../../types/welding';
 import {
   computeLineListItemStatus,
   formatDateDDMMYY,
   LINELIST_COLUMNS,
 } from '../../utils/weldingLogic';
+import { canUserMutateRecord } from '../../utils/rbac';
+import { RecordStatusActions, RecordStatusBadge } from '../RecordStatusControls';
 import { LineListExcelFilterPopover } from './LineListExcelFilterPopover';
 import { SortConfig } from './types';
 
@@ -60,6 +64,12 @@ interface LineListTableProps {
   totalLinesCount: number;
   hasCustomWidths: boolean;
   onResetWidths: () => void;
+  currentUser?: UserAccount;
+  onChangeLineStatus?: (
+    line: ProjectLineItem,
+    targetStatus: RecordStatus,
+    reason?: string
+  ) => Promise<{ ok: boolean; message?: string }>;
 }
 
 export const LineListTable: React.FC<LineListTableProps> = ({
@@ -87,6 +97,8 @@ export const LineListTable: React.FC<LineListTableProps> = ({
   totalLinesCount,
   hasCustomWidths,
   onResetWidths,
+  currentUser,
+  onChangeLineStatus,
 }) => {
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
@@ -215,11 +227,19 @@ export const LineListTable: React.FC<LineListTableProps> = ({
             ) : (
               filteredAndSortedList.map(({ item, status }) => {
                 const isSelected = selectedLineIds.includes(item.id);
+                const rowEditCheck = currentUser
+                  ? canUserMutateRecord(currentUser, item, ['PTO'], 'edit', false)
+                  : { allowed: canEdit };
+                const rowDeleteCheck = currentUser
+                  ? canUserMutateRecord(currentUser, item, ['PTO'], 'delete', false)
+                  : { allowed: canEdit };
+                const canEditRow = canEdit && rowEditCheck.allowed;
+                const canDeleteRow = canEdit && rowDeleteCheck.allowed;
                 return (
                   <tr
                     key={item.id}
                     onDoubleClick={() => {
-                      if (canEdit) onOpenEditLineModal(item);
+                      if (canEditRow) onOpenEditLineModal(item);
                     }}
                     className={`transition-colors ${
                       isSelected
@@ -233,7 +253,7 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                         aria-label={`Выбрать линию ${item.uniqueLineId}`}
                         checked={isSelected}
                         onChange={() => onToggleSelectRow(item.id)}
-                        disabled={!canEdit}
+                        disabled={!canEditRow}
                         className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799] cursor-pointer disabled:opacity-40"
                       />
                     </td>
@@ -275,7 +295,7 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                       className="py-2.5 px-2.5 border-r border-slate-200 font-mono font-bold text-[#1e3799] whitespace-nowrap"
                     >
                       <div className="flex items-center justify-between gap-1">
-                        {canEdit ? (
+                        {canEditRow ? (
                           <button
                             type="button"
                             onClick={() => onOpenEditLineModal(item)}
@@ -284,9 +304,12 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                             className="text-left hover:underline cursor-pointer flex items-center gap-1 text-[#1e3799]"
                           >
                             <div>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1.5">
                                 <span>{item.lineNumber}</span>
                                 <Edit3 className="w-3 h-3 text-slate-400" />
+                                {item.recordStatus && item.recordStatus !== 'DRAFT' && (
+                                  <RecordStatusBadge status={item.recordStatus} compact />
+                                )}
                               </div>
                               <div className="text-[10px] font-normal text-slate-400">
                                 {item.uniqueLineId}
@@ -295,8 +318,11 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                           </button>
                         ) : (
                           <div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5">
                               <span>{item.lineNumber}</span>
+                              {item.recordStatus && item.recordStatus !== 'DRAFT' && (
+                                <RecordStatusBadge status={item.recordStatus} compact />
+                              )}
                             </div>
                             <div className="text-[10px] font-normal text-slate-400">
                               {item.uniqueLineId}
@@ -315,7 +341,7 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                               <ExternalLink className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          {canEdit &&
+                          {canDeleteRow &&
                             (confirmDeleteLineId !== item.id ? (
                               <button
                                 type="button"
@@ -476,30 +502,45 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                       }}
                       className="py-2.5 px-3 border-r border-slate-200"
                     >
-                      {status.ndtStatus === 'sufficient' ? (
-                        <span
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
-                          title={status.statusLabel}
-                        >
-                          <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-700" />
-                          <span>НК ✓</span>
-                        </span>
-                      ) : status.ndtStatus === 'insufficient' ? (
-                        <span
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs"
-                          title={status.statusLabel}
-                        >
-                          <AlertTriangle className="w-3 h-3 shrink-0 text-amber-700" />
-                          <span>НК !</span>
-                        </span>
-                      ) : (
-                        <span
-                          className="text-slate-400 font-mono text-[11px] px-2"
-                          title={status.statusLabel}
-                        >
-                          —
-                        </span>
-                      )}
+                      <div className="flex flex-col gap-1">
+                        <div>
+                          {status.ndtStatus === 'sufficient' ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs"
+                              title={status.statusLabel}
+                            >
+                              <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-700" />
+                              <span>НК ✓</span>
+                            </span>
+                          ) : status.ndtStatus === 'insufficient' ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs"
+                              title={status.statusLabel}
+                            >
+                              <AlertTriangle className="w-3 h-3 shrink-0 text-amber-700" />
+                              <span>НК !</span>
+                            </span>
+                          ) : (
+                            <span
+                              className="text-slate-400 font-mono text-[11px] px-2"
+                              title={status.statusLabel}
+                            >
+                              —
+                            </span>
+                          )}
+                        </div>
+                        {onChangeLineStatus && (
+                          <RecordStatusActions
+                            status={item.recordStatus}
+                            recordLabel={`Линия ${item.uniqueLineId}`}
+                            allowedDepartments={['PTO']}
+                            compact
+                            onChangeStatus={async (targetStatus, reason) => {
+                              await onChangeLineStatus(item, targetStatus, reason);
+                            }}
+                          />
+                        )}
+                      </div>
                     </td>
                     <td
                       style={{
@@ -508,7 +549,7 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                       }}
                       className="py-2.5 px-2.5 text-center font-mono font-semibold text-slate-800 whitespace-nowrap"
                     >
-                      {canEdit ? (
+                      {canEditRow ? (
                         <button
                           type="button"
                           onClick={() => onOpenEditLineModal(item)}

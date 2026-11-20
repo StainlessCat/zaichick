@@ -33,6 +33,7 @@ import {
   LRVItem,
   NdtMethod,
   ProjectLineItem,
+  RecordStatus,
   TechCardItem,
   UserAccount,
   WelderProfile,
@@ -41,6 +42,7 @@ import {
   WeldJoint,
 } from '../types/welding';
 import {
+  canUserMutateRecord,
   enforceFieldLevelRbacOnJointSave,
   formatInspectorShortName,
   getUserRolePermissions,
@@ -125,6 +127,11 @@ interface JointPassportModalProps {
   onSave: (joint: WeldJoint, isSupplementary: boolean, usedCrossRdLrv: boolean) => void;
   onNavigateJoint?: (targetJoint: WeldJoint) => void;
   onDeleteJoint?: (joint: WeldJoint) => void;
+  onChangeJointStatus?: (
+    joint: WeldJoint,
+    targetStatus: RecordStatus,
+    reason?: string
+  ) => Promise<{ ok: boolean; message?: string }>;
   onOpenFacilityLocation?: (objectName: string) => void;
   onClose: () => void;
 }
@@ -156,14 +163,37 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
   onSave,
   onNavigateJoint,
   onDeleteJoint,
+  onChangeJointStatus,
   onOpenFacilityLocation,
   onClose,
 }) => {
   const rbac = getUserRolePermissions(currentUser);
+  const recordEditCheck =
+    mode === 'edit' && initialJoint
+      ? canUserMutateRecord(currentUser, initialJoint, ['PTO', 'PIL'], 'edit', false)
+      : { allowed: rbac.canCreateOrDeleteJoints };
+  const recordDeleteCheck =
+    mode === 'edit' && initialJoint
+      ? canUserMutateRecord(currentUser, initialJoint, ['PTO'], 'delete', false)
+      : { allowed: false };
+  const effectiveRbac =
+    mode === 'edit' && !recordEditCheck.allowed
+      ? {
+          ...rbac,
+          canEditPrepAndWeldingFields: false,
+          canEditNdtFields: false,
+          canCreateOrDeleteJoints: false,
+        }
+      : {
+          ...rbac,
+          canCreateOrDeleteJoints:
+            mode === 'edit' ? recordDeleteCheck.allowed : rbac.canCreateOrDeleteJoints,
+        };
   const canSaveAnyField =
     mode === 'create'
       ? rbac.canCreateOrDeleteJoints
-      : rbac.canEditPrepAndWeldingFields || rbac.canEditNdtFields;
+      : recordEditCheck.allowed &&
+        (rbac.canEditPrepAndWeldingFields || rbac.canEditNdtFields);
   const weldingMaterialsList = weldingMaterials || weldingMaterialsListProp || [];
   const fallbackEmptyFac: FacilityObject = {
     id: 'fac-empty',
@@ -731,6 +761,35 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       ? lineJoints[currentLineIndex + 1]
       : null;
 
+  const handleSafeClose = () => {
+    const currentSnapshot = JSON.stringify(form);
+    const isDirty =
+      initialSnapshotRef.current !== '' &&
+      currentSnapshot !== initialSnapshotRef.current;
+
+    if (isDirty) {
+      const confirmDiscard = window.confirm(
+        'В паспорте стыка есть несохранённые изменения. Закрыть без сохранения?'
+      );
+      if (!confirmDiscard) {
+        return;
+      }
+    }
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleSafeClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, form]);
+
   if (!isOpen) return null;
 
   const selectedTechCard = techCards.find(
@@ -1114,35 +1173,6 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     form.ndtResult === 'Ремонт' ||
     form.ndtResult === 'Вырезать';
 
-  const handleSafeClose = () => {
-    const currentSnapshot = JSON.stringify(form);
-    const isDirty =
-      initialSnapshotRef.current !== '' &&
-      currentSnapshot !== initialSnapshotRef.current;
-
-    if (isDirty) {
-      const confirmDiscard = window.confirm(
-        'В паспорте стыка есть несохранённые изменения. Закрыть без сохранения?'
-      );
-      if (!confirmDiscard) {
-        return;
-      }
-    }
-    onClose();
-  };
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        handleSafeClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, form]);
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
@@ -1168,12 +1198,20 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
           prevJoint={prevJoint}
           nextJoint={nextJoint}
           onNavigateToJoint={handleNavigateToJoint}
+          onChangeJointStatus={onChangeJointStatus}
           onClose={handleSafeClose}
         />
 
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Прокручиваемое содержимое формы */}
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+          {mode === 'edit' && !recordEditCheck.allowed && recordEditCheck.reason && (
+            <div className="p-3 rounded-lg bg-slate-100 border border-slate-300 text-slate-800 text-xs font-semibold flex items-center gap-2">
+              <Lock className="w-4 h-4 text-slate-600 shrink-0" />
+              <span>{recordEditCheck.reason}</span>
+            </div>
+          )}
 
           <PassportValidationBanner
             validationError={validationError}
@@ -1185,7 +1223,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
               mode={mode}
               form={form}
               setForm={setForm}
-              rbac={rbac}
+              rbac={effectiveRbac}
               facilities={facilities}
               currentFacility={currentFacility}
               projectLineList={projectLineList}
@@ -1221,7 +1259,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 <PassportWeldingTab
                   form={form}
                   setForm={setForm}
-                  rbac={rbac}
+                  rbac={effectiveRbac}
                   techCards={techCards}
                   weldingMaterialsList={weldingMaterialsList}
                   welder1Stamp={welder1Stamp}
@@ -1249,7 +1287,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 <PassportElementsTab
                   form={form}
                   setForm={setForm}
-                  rbac={rbac}
+                  rbac={effectiveRbac}
                   filterLrvBySameDiameter={filterLrvBySameDiameter}
                   setFilterLrvBySameDiameter={setFilterLrvBySameDiameter}
                   allowCrossRdLrv={allowCrossRdLrv}
@@ -1289,7 +1327,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 <PassportControlTab
                   form={form}
                   setForm={setForm}
-                  rbac={rbac}
+                  rbac={effectiveRbac}
                   currentUser={currentUser}
                   inspectors={inspectors}
                 />
@@ -1300,7 +1338,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 <PassportRepairTab
                   form={form}
                   setForm={setForm}
-                  rbac={rbac}
+                  rbac={effectiveRbac}
                   inspectors={inspectors}
                   welders={welders}
                   techCards={techCards}
@@ -1356,7 +1394,9 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                 )}
                 <span>
                   {!canSaveAnyField
-                    ? `Только чтение (${rbac.categoryLabel})`
+                    ? form.recordStatus === 'LOCKED'
+                      ? 'Запись закрыта'
+                      : 'Только чтение'
                     : mode === 'create'
                     ? 'Добавить стык в реестр'
                     : 'Сохранить паспорт стыка'}
