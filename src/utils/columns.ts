@@ -647,6 +647,9 @@ export const LINELIST_COLUMNS: LineListColumnDef[] = [
   { key: 'rkPercent', label: '% контроля РК', shortLabel: '% РК', minWidth: 95, isNumeric: true },
   { key: 'uzkPercent', label: '% контроля УЗК', shortLabel: '% УЗК', minWidth: 95, isNumeric: true },
   { key: 'pvkPercent', label: '% контроля ПВК', shortLabel: '% ПВК', minWidth: 95, isNumeric: true },
-  { key: 'computedStatus', label: 'Статус (сварка и контроль стыков)', shortLabel: 'Статус линии', minWidth: 245 },
+  { key: 'readinessProgress', label: 'Готовность', minWidth: 195, isNumeric: true },
+  { key: 'computedStatus', label: 'Статус сварки и контроля стыков', shortLabel: 'Статус линии', minWidth: 155 },
+  { key: 'idStatus', label: 'Статус ИД', minWidth: 130 },
+  { key: 'responsiblePto', label: 'Ответственный ПТО', minWidth: 185 },
   { key: 'testDate', label: 'Дата испытания', minWidth: 125, isNumeric: true },
 ];

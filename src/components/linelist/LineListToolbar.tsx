@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Download,
+  Gauge,
   Layers,
   Lock,
   Plus,
@@ -28,11 +29,14 @@ export interface LineListToolbarProps {
   uniqueObjectNames: string[];
   uniqueRdCodes: string[];
   uniqueContours: string[];
+  ptoEngineerOptions: string[];
 
   // Фильтр по шифру РД в рамках выбранного в меню объекта
   selectedRdCode?: string;
   availableRdCodes?: string[];
   onSelectRdCode?: (code: string) => void;
+  canManageCircuits?: boolean;
+  onOpenAssignCircuitModal?: () => void;
 }
 
 export const LineListToolbar: React.FC<LineListToolbarProps> = ({
@@ -54,9 +58,12 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
   uniqueObjectNames,
   uniqueRdCodes,
   uniqueContours,
+  ptoEngineerOptions,
   selectedRdCode,
   availableRdCodes,
   onSelectRdCode,
+  canManageCircuits,
+  onOpenAssignCircuitModal,
 }) => {
   return (
     <>
@@ -73,6 +80,11 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
       <datalist id="ll-contours-list">
         {uniqueContours.map((c) => (
           <option key={c} value={c} />
+        ))}
+      </datalist>
+      <datalist id="ll-pto-engineers-list">
+        {ptoEngineerOptions.map((name) => (
+          <option key={name} value={name} />
         ))}
       </datalist>
 
@@ -175,6 +187,20 @@ export const LineListToolbar: React.FC<LineListToolbarProps> = ({
               </div>
             )
           )}
+
+          {canManageCircuits &&
+            onOpenAssignCircuitModal &&
+            selectedLineIds.length > 0 && (
+              <Button
+                type="button"
+                variant="primary"
+                onClick={onOpenAssignCircuitModal}
+                title="Назначить все стыки выбранных линий в испытательный контур"
+              >
+                <Gauge className="w-3.5 h-3.5" />
+                <span>В контур · {selectedLineIds.length}</span>
+              </Button>
+            )}
 
           {canEdit && (
             <Button

@@ -125,7 +125,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
 
   const canCreateRequest =
     auth.isAuthenticated &&
-    (userPermissions.canEditLineList ||
+    (userPermissions.canCreateOrDeleteJoints ||
       userPermissions.category === 'admin' ||
       userPermissions.category === 'pto');
 
@@ -890,7 +890,12 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           setSelectedInspectorForAccept={setSelectedInspectorForAccept}
           inspectors={inspectors}
           jointsById={jointsById}
-          canDeleteRequest={userPermissions.category === 'admin' || userPermissions.canEditLineList}
+          canDeleteRequest={
+            auth.isAuthenticated &&
+            (userPermissions.category === 'admin' ||
+              userPermissions.canCreateOrDeleteJoints ||
+              userPermissions.category === 'pto')
+          }
           canAcceptRequest={canProcessNdt}
           onOpenCreateRequestModal={() => handleOpenCreateRequestModal()}
           onAcceptRequestClick={handleAcceptRequestClick}

@@ -11,6 +11,7 @@ import {
   applyBulkUpdateToLineList,
   buildUniqueLineId,
 } from '../../utils/weldingLogic';
+import { getUserRolePermissions } from '../../utils/rbac';
 import type { FacilityGeoOverride } from '../useServerSync';
 import { UUID_RE } from './common';
 
@@ -69,11 +70,19 @@ export function useLineListActions(params: UseLineListActionsParams) {
     handleCreateStandaloneObjectLocal,
   } = params;
 
+  const canEditLineList = getUserRolePermissions(currentUser).canEditLineList;
+  const lineListPermissionError =
+    'Доступ запрещён: изменение объектов, шифров РД и лайнлиста доступно только администратору отдела ПТО.';
+
   const handleAddLineItems = useCallback(
     async (newItems: ProjectLineItem[]) => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
         notifyError('Действие запрещено: требуется авторизация на сервере FastAPI.');
+        return;
+      }
+      if (!canEditLineList) {
+        notifyError(lineListPermissionError);
         return;
       }
       recordUndoSnapshot(`Добавление линий в лайнлист (${newItems.length} шт.)`);
@@ -95,6 +104,7 @@ export function useLineListActions(params: UseLineListActionsParams) {
     },
     [
       bumpRevisionMeta,
+      canEditLineList,
       currentUser.fullName,
       currentUser.login,
       ensureFacilityId,
@@ -117,6 +127,10 @@ export function useLineListActions(params: UseLineListActionsParams) {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
         notifyError('Редактирование запрещено: требуется авторизация на сервере FastAPI.');
+        return;
+      }
+      if (!canEditLineList) {
+        notifyError(lineListPermissionError);
         return;
       }
       recordUndoSnapshot(`Редактирование линии ${updated.lineNumber}`);
@@ -285,6 +299,7 @@ export function useLineListActions(params: UseLineListActionsParams) {
     },
     [
       bumpRevisionMeta,
+      canEditLineList,
       currentUser.fullName,
       currentUser.login,
       isAuthenticated,
@@ -311,6 +326,10 @@ export function useLineListActions(params: UseLineListActionsParams) {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
         notifyError('Групповое редактирование запрещено: требуется авторизация на сервере FastAPI.');
+        return;
+      }
+      if (!canEditLineList) {
+        notifyError(lineListPermissionError);
         return;
       }
       recordUndoSnapshot(`Групповое ред. лайнлиста (${selectedIds.length} стр.)`);
@@ -340,6 +359,7 @@ export function useLineListActions(params: UseLineListActionsParams) {
     },
     [
       bumpRevisionMeta,
+      canEditLineList,
       currentUser.fullName,
       currentUser.login,
       isAuthenticated,
@@ -358,6 +378,10 @@ export function useLineListActions(params: UseLineListActionsParams) {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
         notifyError('Удаление запрещено: требуется авторизация на сервере FastAPI.');
+        return;
+      }
+      if (!canEditLineList) {
+        notifyError(lineListPermissionError);
         return;
       }
       if (lineIds.length === 0) return;
@@ -390,6 +414,7 @@ export function useLineListActions(params: UseLineListActionsParams) {
     },
     [
       bumpRevisionMeta,
+      canEditLineList,
       currentUser.fullName,
       currentUser.login,
       isAuthenticated,
@@ -410,6 +435,10 @@ export function useLineListActions(params: UseLineListActionsParams) {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
         notifyError('Удаление объекта запрещено: требуется авторизация на сервере FastAPI.');
+        return;
+      }
+      if (!canEditLineList) {
+        notifyError(lineListPermissionError);
         return;
       }
       recordUndoSnapshot(`Удаление объекта «${objectName}»`);
@@ -454,13 +483,18 @@ export function useLineListActions(params: UseLineListActionsParams) {
     },
     [
       bumpRevisionMeta,
+      canEditLineList,
       currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      notifyError,
       projectLineList,
       recordUndoSnapshot,
       reportError,
       selectedObjectName,
       serverFacilities,
       setIsDbSyncing,
+      setIsLoginModalOpen,
       setJoints,
       setLrvCatalog,
       setProjectLineList,
@@ -476,6 +510,10 @@ export function useLineListActions(params: UseLineListActionsParams) {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
         notifyError('[Ошибка доступа] Удаление шифра РД запрещено: требуется авторизация на сервере FastAPI.');
+        return;
+      }
+      if (!canEditLineList) {
+        notifyError(lineListPermissionError);
         return;
       }
       recordUndoSnapshot(`Удаление шифра РД «${rdCode}»`);
@@ -504,6 +542,7 @@ export function useLineListActions(params: UseLineListActionsParams) {
     },
     [
       bumpRevisionMeta,
+      canEditLineList,
       currentUser.fullName,
       currentUser.login,
       isAuthenticated,
@@ -530,6 +569,10 @@ export function useLineListActions(params: UseLineListActionsParams) {
         notifyError('[Ошибка доступа] Сохранение геолокации запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
+      if (!canEditLineList) {
+        notifyError(lineListPermissionError);
+        return;
+      }
       handleSaveFacilityLocationLocal(facilityName, loc);
       const serverFac = serverFacilities.find((f) => f.name === facilityName);
       if (serverFac && UUID_RE.test(serverFac.id)) {
@@ -553,9 +596,11 @@ export function useLineListActions(params: UseLineListActionsParams) {
       }
     },
     [
+      canEditLineList,
       currentUser.login,
       handleSaveFacilityLocationLocal,
       isAuthenticated,
+      lineListPermissionError,
       notifyError,
       reportError,
       serverFacilities,
@@ -571,6 +616,10 @@ export function useLineListActions(params: UseLineListActionsParams) {
         notifyError('[Ошибка доступа] Создание объекта запрещено: требуется авторизация на сервере FastAPI.');
         return;
       }
+      if (!canEditLineList) {
+        notifyError(lineListPermissionError);
+        return;
+      }
       handleCreateStandaloneObjectLocal(objectName);
       const clean = objectName.trim();
       if (!clean) return;
@@ -581,6 +630,7 @@ export function useLineListActions(params: UseLineListActionsParams) {
       }
     },
     [
+      canEditLineList,
       currentUser.login,
       ensureFacilityId,
       handleCreateStandaloneObjectLocal,

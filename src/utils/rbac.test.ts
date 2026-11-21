@@ -88,14 +88,16 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
     expect(adminPerms.canCreateOrDeleteJoints).toBe(true);
     expect(adminPerms.canEditPrepAndWeldingFields).toBe(true);
     expect(adminPerms.canEditNdtFields).toBe(true);
+    expect(adminPerms.canViewAuditLogs).toBe(true);
 
     const ptoPerms = getUserRolePermissions(ptoUser);
     expect(ptoPerms.canEditWeldingTech).toBe(false);
-    expect(ptoPerms.canEditLineList).toBe(true);
+    expect(ptoPerms.canEditLineList).toBe(false);
     expect(ptoPerms.canEditLrvCatalog).toBe(false);
     expect(ptoPerms.canCreateOrDeleteJoints).toBe(true);
     expect(ptoPerms.canEditPrepAndWeldingFields).toBe(true);
     expect(ptoPerms.canEditNdtFields).toBe(false);
+    expect(ptoPerms.canViewAuditLogs).toBe(false);
 
     const ndtPerms = getUserRolePermissions(ndtUser);
     expect(ndtPerms.canEditWeldingTech).toBe(false);
@@ -104,6 +106,7 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
     expect(ndtPerms.canCreateOrDeleteJoints).toBe(false);
     expect(ndtPerms.canEditPrepAndWeldingFields).toBe(false);
     expect(ndtPerms.canEditNdtFields).toBe(true);
+    expect(ndtPerms.canViewAuditLogs).toBe(false);
 
     const techPerms = getUserRolePermissions(techUser);
     expect(techPerms.canEditWeldingTech).toBe(true);
@@ -112,6 +115,7 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
     expect(techPerms.canCreateOrDeleteJoints).toBe(false);
     expect(techPerms.canEditPrepAndWeldingFields).toBe(false);
     expect(techPerms.canEditNdtFields).toBe(false);
+    expect(techPerms.canViewAuditLogs).toBe(true);
 
     const custPerms = getUserRolePermissions(customerUser);
     expect(custPerms.canEditWeldingTech).toBe(false);
@@ -120,6 +124,7 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
     expect(custPerms.canCreateOrDeleteJoints).toBe(false);
     expect(custPerms.canEditPrepAndWeldingFields).toBe(false);
     expect(custPerms.canEditNdtFields).toBe(false);
+    expect(custPerms.canViewAuditLogs).toBe(false);
   });
 
   test('3. canUserEditJointField строго разграничивает доступ к отдельным полям стыка', () => {
@@ -288,6 +293,7 @@ describe('RBAC & Role-Based Permissions (src/utils/rbac.ts)', () => {
     expect(perms.canCreateOrDeleteJoints).toBe(false);
     expect(perms.canEditPrepAndWeldingFields).toBe(false);
     expect(perms.canEditWeldingTech).toBe(false);
+    expect(perms.canViewAuditLogs).toBe(false);
   });
 });
 
@@ -370,6 +376,8 @@ describe('Stage 1: Hierarchical RBAC (SystemRole × Department) & Record Locking
     expect(superPerms.canManageAllUsers).toBe(true);
     expect(superPerms.canPurgeProject).toBe(true);
     expect(superPerms.canUnlockRecords).toBe(true);
+    expect(superPerms.canEditLineList).toBe(true);
+    expect(superPerms.canViewAuditLogs).toBe(true);
 
     const ptoAdmPerms = getUserRolePermissions(ptoDeptAdmin);
     expect(ptoAdmPerms.isDeptAdmin).toBe(true);
@@ -378,22 +386,29 @@ describe('Stage 1: Hierarchical RBAC (SystemRole × Department) & Record Locking
     expect(ptoAdmPerms.canPurgeProject).toBe(false);
     expect(ptoAdmPerms.canApproveRecords).toBe(true);
     expect(ptoAdmPerms.canUnlockRecords).toBe(false);
+    expect(ptoAdmPerms.canEditLineList).toBe(true);
     expect(ptoAdmPerms.canEditLrvCatalog).toBe(true);
     expect(ptoAdmPerms.canEditWeldingTech).toBe(false);
+    expect(ptoAdmPerms.canViewAuditLogs).toBe(true);
 
     const ogsAdmPerms = getUserRolePermissions(ogsDeptAdmin);
     expect(ogsAdmPerms.canEditWeldingTech).toBe(true);
+    expect(ogsAdmPerms.canEditLineList).toBe(false);
     expect(ogsAdmPerms.canEditLrvCatalog).toBe(false);
+    expect(ogsAdmPerms.canViewAuditLogs).toBe(true);
 
     const ogsOpPerms = getUserRolePermissions(ogsOperator);
     expect(ogsOpPerms.canEditWeldingTech).toBe(false);
     expect(ogsOpPerms.canEditDirectories).toBe(false);
     expect(ogsOpPerms.canManageUsers).toBe(false);
+    expect(ogsOpPerms.canViewAuditLogs).toBe(false);
 
     const ptoOpPerms = getUserRolePermissions(ptoOperatorA);
     expect(ptoOpPerms.canEditLrvCatalog).toBe(false);
-    expect(ptoOpPerms.canEditLineList).toBe(true);
+    expect(ptoOpPerms.canEditLineList).toBe(false);
     expect(ptoOpPerms.canApproveRecords).toBe(false);
+    expect(ptoOpPerms.canCreateOrDeleteJoints).toBe(true);
+    expect(ptoOpPerms.canViewAuditLogs).toBe(false);
 
     // Деактивированный пользователь полностью лишён прав
     expect(resolveUserSystemRole(inactiveAdmin)).toBe('VIEWER');
@@ -402,6 +417,7 @@ describe('Stage 1: Hierarchical RBAC (SystemRole × Department) & Record Locking
     expect(disabledPerms.isActive).toBe(false);
     expect(disabledPerms.canManageUsers).toBe(false);
     expect(disabledPerms.canEditPrepAndWeldingFields).toBe(false);
+    expect(disabledPerms.canViewAuditLogs).toBe(false);
   });
 
   test('11. canUserMutateRecord: защита DRAFT/VERIFIED/LOCKED, авторство при удалении и справочники', () => {

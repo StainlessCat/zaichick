@@ -12,6 +12,7 @@ import {
   ProjectLineItem,
   ServerDbMetadata,
   TechCardItem,
+  TestCircuit,
   UserAccount,
   WelderProfile,
   WeldingMaterialCertificate,
@@ -50,6 +51,7 @@ export interface UseServerSyncParams {
   setAuditLogs: React.Dispatch<React.SetStateAction<AuditLogEntry[]>>;
   setTemplates?: React.Dispatch<React.SetStateAction<ColumnTemplate[]>>;
   setLabRequests?: React.Dispatch<React.SetStateAction<NdtLabRequest[]>>;
+  setTestCircuits?: React.Dispatch<React.SetStateAction<TestCircuit[]>>;
   setFacilityGeoOverrides: React.Dispatch<
     React.SetStateAction<Record<string, FacilityGeoOverride>>
   >;
@@ -79,6 +81,7 @@ const DELTA_EVENTS = [
   'lab_request.created',
   'lab_request.updated',
   'lab_request.deleted',
+  'circuit_updated',
   'welder.created',
   'welder.updated',
   'welder.deleted',
@@ -115,6 +118,7 @@ export function useServerSync({
   setAuditLogs,
   setTemplates,
   setLabRequests,
+  setTestCircuits,
   setFacilityGeoOverrides,
 }: UseServerSyncParams) {
   const [serverDbMeta, setServerDbMeta] = useState<ServerDbMetadata | null>(null);
@@ -189,6 +193,7 @@ export function useServerSync({
           auditLogs,
           users,
           labRequests,
+          testCircuits,
         ] = await Promise.all([
           zaychickApi.listFacilities(),
           zaychickApi.listLines(),
@@ -198,11 +203,14 @@ export function useServerSync({
           zaychickApi.listTechCards(),
           zaychickApi.listMaterials(),
           zaychickApi.listTemplates().catch(() => [] as ColumnTemplate[]),
-          zaychickApi.listAuditLogs(1, 200).catch(() => [] as AuditLogEntry[]),
+          perms.canViewAuditLogs
+            ? zaychickApi.listAuditLogs(1, 200).catch(() => [] as AuditLogEntry[])
+            : Promise.resolve([] as AuditLogEntry[]),
           perms.category === 'admin'
             ? zaychickApi.listUsers().catch(() => [] as UserAccount[])
             : Promise.resolve([session.user]),
           zaychickApi.listLabRequests().catch(() => [] as NdtLabRequest[]),
+          zaychickApi.listTestCircuits().catch(() => [] as TestCircuit[]),
         ]);
 
         isApplyingServerStateRef.current = true;
@@ -218,6 +226,9 @@ export function useServerSync({
         }
         if (setLabRequests && labRequests) {
           setLabRequests(labRequests);
+        }
+        if (setTestCircuits) {
+          setTestCircuits(testCircuits);
         }
         setAuditLogs(auditLogs);
         if (users.length > 0) {
@@ -291,6 +302,7 @@ export function useServerSync({
       setTechCards,
       setTemplates,
       setLabRequests,
+      setTestCircuits,
       setUserAccounts,
       setWeldingMaterials,
       setWelders,
@@ -331,6 +343,19 @@ export function useServerSync({
                 ? prev.map((j) => (j.id === fresh.id ? fresh : j))
                 : [fresh, ...prev]
             );
+          }
+          if (setTestCircuits) {
+            const circuits = await zaychickApi.listTestCircuits().catch(() => null);
+            if (circuits) setTestCircuits(circuits);
+          }
+        } else if (eventName === 'circuit_updated' || entityType === 'test_circuit') {
+          if (setTestCircuits) {
+            const [circuits, freshJoints] = await Promise.all([
+              zaychickApi.listTestCircuits().catch(() => null),
+              zaychickApi.listJoints().catch(() => null),
+            ]);
+            if (circuits) setTestCircuits(circuits);
+            if (freshJoints) setJoints(freshJoints);
           }
         } else if (entityType === 'line') {
           const lines = await zaychickApi.listLines();
@@ -377,8 +402,10 @@ export function useServerSync({
           await fetchServerDbState(true);
           return;
         }
-        const logs = await zaychickApi.listAuditLogs(1, 200).catch(() => null);
-        if (logs) setAuditLogs(logs);
+        if (getUserRolePermissions(currentUser).canViewAuditLogs) {
+          const logs = await zaychickApi.listAuditLogs(1, 200).catch(() => null);
+          if (logs) setAuditLogs(logs);
+        }
       } catch {
         // Ignore transient SSE delta fetch failure
       }
@@ -394,6 +421,7 @@ export function useServerSync({
       setTechCards,
       setTemplates,
       setLabRequests,
+      setTestCircuits,
       setUserAccounts,
       setWeldingMaterials,
       setWelders,

@@ -441,7 +441,7 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
                   className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${
                     isConnected
                       ? 'bg-emerald-400/20 text-emerald-200 border border-emerald-400/40'
-                      : 'bg-amber-400/20 text-amber-200 border border-amber-400/40'
+                      : 'bg-white/15 text-sky-100 border border-white/25'
                   }`}
                 >
                   {isConnected ? 'ONLINE · POSTGRESQL' : 'ЛОКАЛЬНЫЙ РЕЖИМ'}
@@ -1142,7 +1142,7 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
                     disabled={isSimulating || joints.length === 0}
                     className="h-8 px-3.5 rounded-lg bg-[#1e3799] text-white hover:bg-[#15276e] font-semibold text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    <GitCompare className="w-4 h-4 text-amber-300" />
+                    <GitCompare className="w-4 h-4 text-sky-200" />
                     <span>
                       {isSimulating ? 'Моделирование...' : 'Смоделировать конфликт версий'}
                     </span>

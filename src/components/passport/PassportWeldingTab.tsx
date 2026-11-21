@@ -2,10 +2,9 @@ import React, { useMemo } from 'react';
 import {
   Flame,
   Lock,
-  CheckCircle2,
   AlertTriangle,
   CloudSun,
-  Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 import type {
   WeldJoint,
@@ -21,14 +20,19 @@ import {
   normalizeDecimalInput,
   findWelderByStamp,
   checkNaksCertStatus,
-  findMatchingTechCard,
-  classifyJointElements,
   getWelderCertForMethod,
   validateWelderNaksAttestation,
   GOST_16037_JOINT_TYPES,
   NAKS_WELDING_POSITIONS,
 } from '../../utils/weldingLogic';
-import { Button, FormField, Input, Select } from '../ui';
+import {
+  Button,
+  FieldActionIcon,
+  FieldStatusIcon,
+  FormField,
+  Input,
+  Select,
+} from '../ui';
 import { WelderStampCombobox } from './WelderStampCombobox';
 
 export const WELDING_TYPE_OPTIONS: WeldingType[] = [
@@ -79,9 +83,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
   setBrigadeStamp,
   personalWelders,
   brigadeProfiles,
-  currentWeatherStationName,
   archivedStationTemp,
-  selectedTechCard,
   weldingTypeValidation,
   preheatValidation,
   handleSelectTechCard,
@@ -89,39 +91,20 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
   handleWelder2Change,
   handleBrigadeStampChange,
 }) => {
-  const currentJointDiam = form.elem1DiameterMm ?? form.diameterMm;
-  const currentJointWall = form.elem1WallThickness ?? form.wallThickness;
-  const autoMatchedTechCard = useMemo(() => {
-    const combination = classifyJointElements(
-      undefined,
-      form.elem1Name,
-      undefined,
-      form.elem2Name
-    );
-    const jointKind =
-      form.jointKind ||
-      (form.gostJointType?.startsWith('У') || form.gostJointType?.startsWith('Т')
-        ? 'Угловое'
-        : 'Стыковое');
-    return findMatchingTechCard(techCards, {
-      diameterMm: currentJointDiam,
-      wallThicknessMm: currentJointWall,
-      weldingType: form.weldingType,
-      steelGrade: form.elem1Material,
-      jointKind,
-      elementCombination: combination,
-    });
-  }, [
-    techCards,
-    currentJointDiam,
-    currentJointWall,
-    form.weldingType,
-    form.elem1Material,
-    form.jointKind,
-    form.gostJointType,
-    form.elem1Name,
-    form.elem2Name,
-  ]);
+  const formattedArchivedTemp = useMemo(() => {
+    if (!archivedStationTemp) return '';
+    const raw = String(archivedStationTemp).trim();
+    const num = Number(raw);
+    return !raw.startsWith('+') && !raw.startsWith('-') && !Number.isNaN(num) && num > 0
+      ? `+${num}`
+      : raw;
+  }, [archivedStationTemp]);
+
+  const showArchiveTempAction =
+    Boolean(archivedStationTemp) &&
+    form.ambientTemp !== archivedStationTemp &&
+    form.ambientTemp !== formattedArchivedTemp &&
+    rbac.canEditPrepAndWeldingFields;
 
   const filteredGostOptions = useMemo(() => {
     const isAng = form.jointKind === 'Угловое';
@@ -197,7 +180,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
         </div>
 
         {/* Строка 1: Дата сварки, Технологическая карта, Вид сварки (с проверкой по ТК), Авто-температура воздуха */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-start">
           <div className="lg:col-span-3">
             <FormField label="Дата сварки *">
               <Input
@@ -216,7 +199,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
 
           <div className="lg:col-span-4">
-            <FormField label="Техкарта (ТК) *">
+            <FormField label="Техкарта *">
               <Select
                 value={form.techCardNumber}
                 onChange={(e) => handleSelectTechCard(e.target.value)}
@@ -239,7 +222,15 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
           </div>
 
           <div className="lg:col-span-3">
-            <FormField label="Вид сварки *">
+            <FormField
+              label="Вид сварки *"
+              labelAdornment={
+                <FieldStatusIcon
+                  status={weldingTypeValidation.isValid ? 'ok' : 'error'}
+                  message={weldingTypeValidation.message}
+                />
+              }
+            >
               <Select
                 value={form.weldingType}
                 onChange={(e) => {
@@ -271,26 +262,27 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 ))}
               </Select>
             </FormField>
-            <div
-              className={`mt-1 px-2 py-1 rounded text-[10px] flex items-center gap-1 ${
-                weldingTypeValidation.isValid
-                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                  : 'bg-red-50 text-red-800 border border-red-300 font-semibold'
-              }`}
-            >
-              {weldingTypeValidation.isValid ? (
-                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-              ) : (
-                <AlertTriangle className="w-3 h-3 text-red-600 shrink-0" />
-              )}
-              <span className="truncate" title={weldingTypeValidation.message}>
-                {weldingTypeValidation.message}
-              </span>
-            </div>
           </div>
 
           <div className="lg:col-span-2">
-            <FormField label="T возд., °C">
+            <FormField
+              label="T возд., °C"
+              labelAdornment={
+                showArchiveTempAction ? (
+                  <FieldActionIcon
+                    icon={<RotateCcw className="w-3 h-3" />}
+                    tooltip={`Подставить из архива: ${formattedArchivedTemp} °C`}
+                    align="right"
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        ambientTemp: formattedArchivedTemp,
+                      }))
+                    }
+                  />
+                ) : undefined
+              }
+            >
               {rbac.canEditPrepAndWeldingFields ? (
                 <div className="relative">
                   <Input
@@ -303,7 +295,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                       }))
                     }
                     placeholder="нет данных"
-                    title="Температура воздуха"
+                    aria-label="Температура воздуха"
                     className="w-full pl-7 pr-2 font-mono font-bold"
                   />
                   <CloudSun
@@ -318,33 +310,6 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 </div>
               )}
             </FormField>
-
-            <div className="mt-1 flex items-center justify-between text-[10px]">
-              <span
-                className="truncate text-slate-500"
-                title={currentWeatherStationName}
-              >
-                {currentWeatherStationName}
-              </span>
-              {archivedStationTemp && form.ambientTemp !== archivedStationTemp && form.ambientTemp !== '+' + archivedStationTemp && rbac.canEditPrepAndWeldingFields && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const raw = String(archivedStationTemp).trim();
-                    const num = Number(raw);
-                    const fmt =
-                      !raw.startsWith('+') && !raw.startsWith('-') && !Number.isNaN(num) && num > 0
-                        ? `+${num}`
-                        : raw;
-                    setForm((prev) => ({ ...prev, ambientTemp: fmt }));
-                  }}
-                  className="text-sky-700 hover:text-sky-900 font-semibold underline shrink-0 cursor-pointer ml-1"
-                  title={`Подставить значение метеостанции (${archivedStationTemp} °C)`}
-                >
-                  Из архива (${archivedStationTemp}°)
-                </button>
-              )}
-            </div>
           </div>
         </div>
 
@@ -363,6 +328,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 form.weldingType === 'РАД+РД' ? 'РАД' : form.weldingType
               }
               referenceDate={form.weldingDate}
+              tooltipAlign="left"
               onChange={handleWelder1Change}
             />
 
@@ -378,6 +344,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 form.weldingType === 'РАД+РД' ? 'РД' : form.weldingType
               }
               referenceDate={form.weldingDate}
+              tooltipAlign="center"
               onChange={handleWelder2Change}
             />
 
@@ -391,6 +358,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
               isBrigade
               requiredWeldingMethod={form.weldingType}
               referenceDate={form.weldingDate}
+              tooltipAlign="right"
               onChange={handleBrigadeStampChange}
             />
           </div>
@@ -517,9 +485,18 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
         </div>
 
         {/* Строка 3: Температура подогрева и Сварочные материалы */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
           <div className="lg:col-span-5">
-            <FormField label="Температура подогрева, °C *">
+            <FormField
+              label="Температура подогрева, °C *"
+              labelAdornment={
+                <FieldStatusIcon
+                  status={preheatValidation.isValid ? 'ok' : 'error'}
+                  message={preheatValidation.message}
+                  align="left"
+                />
+              }
+            >
               <div className="flex items-center gap-2">
                 <Input
                   type="text"
@@ -557,20 +534,6 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 )}
               </div>
             </FormField>
-            <div
-              className={`mt-1.5 px-2.5 py-1.5 rounded text-[11px] flex items-start gap-1.5 ${
-                preheatValidation.isValid
-                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                  : 'bg-red-50 text-red-800 border border-red-300 font-semibold'
-              }`}
-            >
-              {preheatValidation.isValid ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0 mt-0.5" />
-              )}
-              <span>{preheatValidation.message}</span>
-            </div>
           </div>
 
           <div className="lg:col-span-4">
@@ -667,8 +630,8 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-            <FormField label="Тип стыка (место) *">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+            <FormField label="Тип стыка *">
               <Select
                 value={form.jointType || 'Монтажный'}
                 onChange={(e) =>

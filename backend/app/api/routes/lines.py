@@ -58,6 +58,10 @@ def _line_to_out(line: ProjectLine, line_joints: list[WeldJoint]) -> ProjectLine
         total_joints=status_dc.total_joints,
         welded_joints=status_dc.welded_joints,
         controlled_joints=status_dc.controlled_joints,
+        joints_readiness_pct=status_dc.joints_readiness_pct,
+        total_edi=status_dc.total_edi,
+        welded_edi=status_dc.welded_edi,
+        edi_readiness_pct=status_dc.edi_readiness_pct,
         status_label=status_dc.status_label,
         ndt_status=status_dc.ndt_status,
         ndt_status_badge=status_dc.ndt_status_badge,
@@ -93,6 +97,7 @@ async def list_lines(
                 ProjectLine.unique_line_id.ilike(pat),
                 ProjectLine.line_name.ilike(pat),
                 ProjectLine.rd_code.ilike(pat),
+                ProjectLine.responsible_pto.ilike(pat),
             )
         )
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -186,7 +191,7 @@ async def get_line_ndt_progress(
 async def create_line(
     payload: ProjectLineCreate,
     request: Request,
-    current_user: User = Depends(require_dept_access(LINE_ALLOWED_DEPTS, SystemRoleEnum.OPERATOR)),
+    current_user: User = Depends(require_dept_access(LINE_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ProjectLineOut:
     assert_can_mutate_record(
@@ -194,6 +199,7 @@ async def create_line(
         record=None,
         allowed_departments=LINE_ALLOWED_DEPTS,
         operation="create",
+        is_directory=True,
     )
     uid_str = (
         payload.unique_line_id.strip()
@@ -233,6 +239,8 @@ async def create_line(
         pvk_percent=payload.pvk_percent,
         manual_status=payload.manual_status,
         test_date=payload.test_date,
+        id_status=payload.id_status,
+        responsible_pto=payload.responsible_pto.strip() if payload.responsible_pto and payload.responsible_pto.strip() else None,
         sort_order=payload.sort_order,
         record_status=RecordStatusEnum.DRAFT,
         created_by_id=current_user.id,
@@ -274,7 +282,7 @@ async def update_line(
     line_id: uuid.UUID,
     payload: ProjectLineUpdate,
     request: Request,
-    current_user: User = Depends(require_dept_access(LINE_ALLOWED_DEPTS, SystemRoleEnum.OPERATOR)),
+    current_user: User = Depends(require_dept_access(LINE_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ProjectLineOut:
     line = (
@@ -288,6 +296,7 @@ async def update_line(
         record=line,
         allowed_departments=LINE_ALLOWED_DEPTS,
         operation="update",
+        is_directory=True,
     )
 
     patch_data = payload.model_dump(exclude_unset=True)
@@ -298,6 +307,10 @@ async def update_line(
         patch_data=patch_data,
         schema_cls=ProjectLineOut,
     )
+
+    if "responsible_pto" in patch_data and isinstance(patch_data["responsible_pto"], str):
+        stripped_pto = patch_data["responsible_pto"].strip()
+        patch_data["responsible_pto"] = stripped_pto or None
 
     old_snap = orm_snapshot(line, ProjectLineOut)
     apply_patch_fields(line, patch_data)
@@ -440,7 +453,7 @@ async def change_line_record_status(
 async def delete_line(
     line_id: uuid.UUID,
     request: Request,
-    current_user: User = Depends(require_dept_access(LINE_ALLOWED_DEPTS, SystemRoleEnum.OPERATOR)),
+    current_user: User = Depends(require_dept_access(LINE_ALLOWED_DEPTS, SystemRoleEnum.DEPT_ADMIN)),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     line = (
@@ -454,6 +467,7 @@ async def delete_line(
         record=line,
         allowed_departments=LINE_ALLOWED_DEPTS,
         operation="delete",
+        is_directory=True,
     )
 
     linked_count = int(

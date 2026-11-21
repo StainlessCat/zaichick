@@ -24,6 +24,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.line import ProjectLine
     from app.models.lrv import LrvItem
+    from app.models.test_circuit import TestCircuit
 
 
 class Facility(Base):
@@ -72,6 +73,9 @@ class Facility(Base):
     )
     lines: Mapped[list[ProjectLine]] = relationship(back_populates="facility")
     lrv_items: Mapped[list[LrvItem]] = relationship(back_populates="facility")
+    test_circuits: Mapped[list[TestCircuit]] = relationship(
+        back_populates="facility", cascade="all, delete-orphan"
+    )
 
 
 class FacilityRdCode(Base):

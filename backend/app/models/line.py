@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.enums import RecordStatusEnum, pg_enum
+from app.models.enums import ExecutiveDocStatusEnum, RecordStatusEnum, pg_enum
 
 if TYPE_CHECKING:
     from app.models.facility import Facility
@@ -73,6 +73,13 @@ class ProjectLine(Base):
 
     manual_status: Mapped[str | None] = mapped_column(String(255), nullable=True)
     test_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    id_status: Mapped[ExecutiveDocStatusEnum] = mapped_column(
+        pg_enum(ExecutiveDocStatusEnum, "executive_doc_status_enum"),
+        nullable=False,
+        default=ExecutiveDocStatusEnum.IN_WORK,
+        server_default=ExecutiveDocStatusEnum.IN_WORK.value,
+    )
+    responsible_pto: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     record_status: Mapped[RecordStatusEnum] = mapped_column(

@@ -133,6 +133,12 @@ export function useJointActions(params: UseJointActionsParams) {
         return existingLine.id;
       }
 
+      if (!userPermissions.canEditLineList) {
+        throw new Error(
+          'Добавление новых объектов, шифров РД и линий доступно только администратору отдела ПТО.'
+        );
+      }
+
       const objectName =
         joint.objectName ||
         existingLine?.objectName ||
@@ -356,7 +362,9 @@ export function useJointActions(params: UseJointActionsParams) {
           `Сохранение стыка № ${committed.jointNumber}`
         );
 
-        const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
+        const logs = userPermissions.canViewAuditLogs
+          ? await zaychickApi.listAuditLogs(1, 150).catch(() => null)
+          : null;
         if (logs) {
           setAuditLogs(logs);
         } else if (!existing && usedCrossRdLrv) {
@@ -651,8 +659,10 @@ export function useJointActions(params: UseJointActionsParams) {
             `Импорт из «${sourceFileName}» (${createdJoints.length} шт.)`,
             currentUser.fullName
           );
-          const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
-          if (logs) setAuditLogs(logs);
+          if (userPermissions.canViewAuditLogs) {
+            const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
+            if (logs) setAuditLogs(logs);
+          }
           window.setTimeout(() => {
             isApplyingServerStateRef.current = false;
           }, 60);
@@ -787,8 +797,10 @@ export function useJointActions(params: UseJointActionsParams) {
           setJoints((prev) => prev.map((j) => updatedMap.get(j.id) || j));
           setSelectedJointIds([]);
           bumpRevisionMeta(`Массовое редактирование (${updatedFromServer.length} ст.)`);
-          const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
-          if (logs) setAuditLogs(logs);
+          if (userPermissions.canViewAuditLogs) {
+            const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
+            if (logs) setAuditLogs(logs);
+          }
           window.setTimeout(() => {
             isApplyingServerStateRef.current = false;
           }, 60);
@@ -875,8 +887,10 @@ export function useJointActions(params: UseJointActionsParams) {
       setSelectedJointIds([]);
       setConfirmBulkDeleteJoints(false);
       bumpRevisionMeta(`Удалено стыков: ${removedJoints.length}`);
-      const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
-      if (logs) setAuditLogs(logs);
+      if (userPermissions.canViewAuditLogs) {
+        const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
+        if (logs) setAuditLogs(logs);
+      }
     } catch (err) {
       handleApiFailure(err);
     } finally {
@@ -991,8 +1005,10 @@ export function useJointActions(params: UseJointActionsParams) {
             const updatedMap = new Map(updatedFromServer.map((u) => [u.id, u]));
             isApplyingServerStateRef.current = true;
             setJoints((prev) => prev.map((j) => updatedMap.get(j.id) || j));
-            const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
-            if (logs) setAuditLogs(logs);
+            if (userPermissions.canViewAuditLogs) {
+              const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
+              if (logs) setAuditLogs(logs);
+            }
             window.setTimeout(() => {
               isApplyingServerStateRef.current = false;
             }, 60);

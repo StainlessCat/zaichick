@@ -16,6 +16,12 @@ import {
   searchWeldersByStampOrName,
 } from '../../utils/weldingLogic';
 
+import {
+  FieldStatusIcon,
+  type FieldStatusVariant,
+  type TooltipAlign,
+} from '../ui';
+
 export interface WelderStampComboboxProps {
   label: string;
   ariaLabel: string;
@@ -28,6 +34,7 @@ export interface WelderStampComboboxProps {
   isBrigade?: boolean;
   referenceDate?: string;
   requiredWeldingMethod?: string;
+  tooltipAlign?: TooltipAlign;
   onChange: (newStamp: string) => void;
 }
 
@@ -43,6 +50,7 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
   isBrigade = false,
   referenceDate,
   requiredWeldingMethod,
+  tooltipAlign = 'center',
   onChange,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -104,6 +112,70 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
     [matchedProfile, requiredWeldingMethod]
   );
 
+  const statusSummary = useMemo<{
+    status: FieldStatusVariant;
+    lines: string[];
+  } | null>(() => {
+    if (matchedProfile) {
+      const naksStatus = matchedProfile.certExpiryDate
+        ? checkNaksCertStatus(matchedProfile.certExpiryDate, referenceDate)
+        : null;
+
+      let status: FieldStatusVariant = 'ok';
+      if (!matchedMethodCheck.isAllowed || naksStatus?.badgeVariant === 'expired') {
+        status = 'error';
+      } else if (naksStatus?.badgeVariant === 'expiring') {
+        status = 'warning';
+      }
+
+      const lines: string[] = [];
+      if (!matchedMethodCheck.isAllowed) {
+        lines.push(
+          matchedMethodCheck.reason ||
+            `Нет допуска к способу ${requiredWeldingMethod}`
+        );
+      } else if (requiredWeldingMethod) {
+        lines.push(`Клеймо ${matchedProfile.stamp} · допуск к ${requiredWeldingMethod}`);
+      } else {
+        lines.push(`Клеймо ${matchedProfile.stamp}`);
+      }
+
+      if (matchedProfile.certExpiryDate && naksStatus) {
+        const expDate = formatDateDDMMYY(matchedProfile.certExpiryDate);
+        if (naksStatus.badgeVariant === 'expired') {
+          lines.push(`НАКС просрочен · до ${expDate}`);
+        } else if (naksStatus.badgeVariant === 'expiring') {
+          lines.push(
+            `НАКС истекает через ${naksStatus.daysRemaining} дн. · до ${expDate}`
+          );
+        } else {
+          lines.push(`НАКС действителен до ${expDate}`);
+        }
+      }
+
+      return { status, lines };
+    }
+
+    if (inputText.trim()) {
+      return {
+        status: 'warning',
+        lines: [
+          `Клеймо «${inputText.trim()}» не найдено в справочнике`,
+          `Совпадений: ${filteredOptions.length}`,
+        ],
+      };
+    }
+
+    return null;
+  }, [
+    matchedProfile,
+    matchedMethodCheck,
+    referenceDate,
+    requiredWeldingMethod,
+    inputText,
+    filteredOptions.length,
+  ]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextVal = e.target.value;
     setInputText(nextVal);
@@ -158,51 +230,24 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="relative flex flex-col justify-end">
-      <label className="flex items-center justify-between gap-1.5 h-4 leading-4 text-xs font-semibold text-slate-800 mb-1 select-none">
-        <span className="inline-flex items-center gap-1.5">
+    <div ref={containerRef} className="relative flex flex-col justify-start">
+      <div className="flex items-center gap-1.5 h-4 leading-4 mb-1 min-w-0">
+        <label className="inline-flex items-center gap-1.5 min-w-0 text-xs font-semibold text-slate-800 whitespace-nowrap select-none">
           <Users
-            className={`w-3.5 h-3.5 ${
+            className={`w-3.5 h-3.5 shrink-0 ${
               isPrimary ? 'text-[#1e3799]' : 'text-slate-600'
             }`}
           />
-          <span>{label}</span>
-        </span>
-        {matchedProfile && (
-          <div className="flex items-center gap-1 flex-wrap">
-            {!matchedMethodCheck.isAllowed && (
-              <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded">
-                {matchedMethodCheck.reason}
-              </span>
-            )}
-            <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-              {matchedProfile.stamp}
-            </span>
-            {matchedProfile.certExpiryDate && (() => {
-              const status = checkNaksCertStatus(matchedProfile.certExpiryDate, referenceDate);
-              if (status.badgeVariant === 'expired') {
-                return (
-                  <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-300 px-1.5 py-0.5 rounded animate-pulse">
-                    НАКС просрочен!
-                  </span>
-                );
-              }
-              if (status.badgeVariant === 'expiring') {
-                return (
-                  <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-300 px-1.5 py-0.5 rounded">
-                    НАКС ≤{status.daysRemaining}дн
-                  </span>
-                );
-              }
-              return (
-                <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                  НАКС ок
-                </span>
-              );
-            })()}
-          </div>
+          <span className="truncate">{label}</span>
+        </label>
+        {statusSummary && (
+          <FieldStatusIcon
+            status={statusSummary.status}
+            message={statusSummary.lines}
+            align={tooltipAlign}
+          />
         )}
-      </label>
+      </div>
 
       <div className="relative flex items-center">
         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
@@ -250,25 +295,11 @@ export const WelderStampCombobox: React.FC<WelderStampComboboxProps> = ({
         </div>
       </div>
 
-      <div className="mt-1 min-h-[16px] text-[10px] truncate">
-        {matchedProfile ? (
-          <span className="text-slate-600 font-medium">
-            {isBrigade
-              ? `Состав бригады: ${(matchedProfile.brigadeMembers || []).join(', ')}`
-              : `${matchedProfile.fullName} · ${matchedProfile.certNumber}`}
-          </span>
-        ) : inputText.trim() ? (
-          <span className="text-amber-700 font-medium">
-            Поиск клейма «{inputText.trim()}» (совпадений: {filteredOptions.length})
-          </span>
-        ) : null}
-      </div>
-
       {isOpen && (
         <div
           role="listbox"
           aria-label={`Результаты поиска: ${ariaLabel}`}
-          className="absolute z-30 left-0 right-0 mt-1 max-h-52 overflow-y-auto rounded-lg bg-white border border-slate-200 shadow-xl divide-y divide-slate-100"
+          className="absolute top-full z-30 left-0 right-0 mt-1 max-h-52 overflow-y-auto rounded-lg bg-white border border-slate-200 shadow-xl divide-y divide-slate-100"
         >
           <button
             type="button"

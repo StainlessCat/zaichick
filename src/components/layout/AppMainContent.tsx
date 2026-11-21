@@ -29,6 +29,8 @@ import { ReadinessReportView } from '../ReadinessReportView';
 import { LrvCatalogView } from '../LrvCatalogView';
 import { AuditHistoryView } from '../AuditHistoryView';
 import { UserGuideBookletView } from '../UserGuideBookletView';
+import { TestCircuitsView } from '../TestCircuitsView';
+import type { useTestCircuitActions } from '../../hooks/useTestCircuitActions';
 import { useAuth, useAppContext } from '../../context';
 
 export interface AppMainContentProps {
@@ -156,6 +158,7 @@ export interface AppMainContentProps {
     handleDeleteLrvItems: (ids: string[]) => Promise<void>;
     handleClearAuditLogs: () => void;
   };
+  testCircuitActions: ReturnType<typeof useTestCircuitActions>;
 }
 
 export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
@@ -236,6 +239,7 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
     onChangeJointStatus,
     onChangeLineStatus,
     dirActions,
+    testCircuitActions,
   } = props;
   return (
     <main className="flex-1 max-w-[1920px] w-full mx-auto p-3 sm:p-4 space-y-3">
@@ -333,6 +337,20 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
         />
       )}
 
+      {activeSection === 'testing_circuits' && (
+        <TestCircuitsView
+          onLoadCircuitDetail={testCircuitActions.handleLoadCircuitDetail}
+          onCreateCircuit={testCircuitActions.handleCreateCircuit}
+          onUpdateCircuit={testCircuitActions.handleUpdateCircuit}
+          onChangeCircuitStatus={testCircuitActions.handleChangeCircuitStatus}
+          onDeleteCircuit={testCircuitActions.handleDeleteCircuit}
+          onAssignLinesToCircuit={testCircuitActions.handleAssignLinesToCircuit}
+          onAssignJointsToCircuit={testCircuitActions.handleAssignJointsToCircuit}
+          onUnassignJointsFromCircuit={testCircuitActions.handleUnassignJointsFromCircuit}
+          onOpenJointPassport={onOpenEditPassport}
+        />
+      )}
+
       {activeSection === 'project_linelist' && (
         <ProjectLineListView
           selectedObjectName={selectedObjectName}
@@ -353,6 +371,8 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
           onDeleteObject={dirActions.handleDeleteObject}
           onDeleteRdCode={dirActions.handleDeleteRdCode}
           onChangeLineStatus={onChangeLineStatus}
+          onAssignLinesToCircuit={testCircuitActions.handleAssignLinesToCircuit}
+          onOpenTestingCircuits={() => setActiveSection('testing_circuits')}
         />
       )}
 
@@ -399,12 +419,22 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
         />
       )}
 
-      {activeSection === 'audit_log' && (
-        <AuditHistoryView
-          onClearAuditLog={dirActions.handleClearAuditLogs}
-          onOpenAdminPasswordModal={onOpenAdminPasswordModal}
-        />
-      )}
+      {activeSection === 'audit_log' &&
+        (auth.isAuthenticated && userPermissions.canViewAuditLogs ? (
+          <AuditHistoryView
+            onClearAuditLog={dirActions.handleClearAuditLogs}
+            onOpenAdminPasswordModal={onOpenAdminPasswordModal}
+          />
+        ) : (
+          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center shadow-2xs space-y-2">
+            <h2 className="text-sm font-bold text-slate-900">
+              Раздел «Аудит» доступен только администраторам
+            </h2>
+            <p className="text-xs text-slate-500">
+              Для просмотра журнала операций обратитесь к администратору отдела или суперадмину.
+            </p>
+          </div>
+        ))}
 
       {activeSection === 'user_guide' && <UserGuideBookletView />}
     </main>

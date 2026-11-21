@@ -1,17 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertTriangle,
-  BarChart3,
-  BookOpen,
-  ClipboardList,
-  Database,
-  FolderKanban,
-  History,
-  Radiation,
-  ShieldAlert,
-  Wrench,
-  X,
-} from 'lucide-react';
+import { AlertTriangle, ShieldAlert, X } from 'lucide-react';
 import {
   ANONYMOUS_USER,
   AppSection,
@@ -37,7 +25,6 @@ import {
 } from './utils/rbac';
 import { hashPasswordWithSalt, verifyPassword } from './utils/authSecurity';
 import { exportAllJointsToFile } from './utils/excelUtils';
-import { HamburgerDrawer } from './components/HamburgerDrawer';
 import {
   isJointConclusionCompletedForRequest,
   syncLabRequestStatusWithJoints,
@@ -49,7 +36,9 @@ import {
   useDirectoryActions,
   useJointActions,
   useServerSync,
+  useTestCircuitActions,
 } from './hooks';
+import { buildSeedTestCircuitsFromJoints } from './utils/testCircuitCalc';
 import { useRegistryFilters } from './hooks/useRegistryFilters';
 import {
   AppHeader,
@@ -76,8 +65,6 @@ export const App: React.FC = () => {
     setIsLoginModalOpen,
     loginModalInitialMode,
     setLoginModalInitialMode,
-    isDrawerOpen,
-    setIsDrawerOpen,
     activeSection,
     setActiveSection,
     selectedObjectName,
@@ -88,6 +75,8 @@ export const App: React.FC = () => {
     setJoints,
     projectLineList,
     setProjectLineList,
+    testCircuits,
+    setTestCircuits,
     lrvCatalog,
     setLrvCatalog,
     auditLogs,
@@ -185,6 +174,7 @@ export const App: React.FC = () => {
     setTemplates,
     setLabRequests,
     setFacilityGeoOverrides,
+    setTestCircuits,
   });
 
   const [backupModalState, setBackupModalState] = useState<{
@@ -198,6 +188,14 @@ export const App: React.FC = () => {
   const handleHeaderLogoClick = useCallback(() => {
     setActiveSection('readiness');
   }, [setActiveSection]);
+
+  useEffect(() => {
+    const canViewAudit =
+      isAuthenticated && getUserRolePermissions(currentUser).canViewAuditLogs;
+    if (activeSection === 'audit_log' && !canViewAudit) {
+      setActiveSection('readiness');
+    }
+  }, [activeSection, currentUser, isAuthenticated, setActiveSection]);
 
   const [confirmBulkDeleteJoints, setConfirmBulkDeleteJoints] = useState(false);
 
@@ -365,6 +363,20 @@ export const App: React.FC = () => {
     setIsServerDbModalOpen,
     isApplyingServerStateRef,
     bumpRevisionMeta,
+  });
+
+  const testCircuitActions = useTestCircuitActions({
+    currentUser,
+    isDbConnected,
+    isAuthenticated,
+    serverFacilities,
+    testCircuits,
+    setTestCircuits,
+    joints,
+    setJoints,
+    projectLineList,
+    bumpRevisionMeta,
+    appendSystemAuditEntry,
   });
 
   const userPermissions = getUserRolePermissions(currentUser);
@@ -753,10 +765,12 @@ export const App: React.FC = () => {
       const linesToDelete = projectLineList.filter((l) => l.objectName === targetObjName).length;
       const lrvToDelete = lrvCatalog.filter((l) => l.objectName === targetObjName).length;
       const labToDelete = labRequests.filter((r) => r.objectName === targetObjName).length;
+      const circuitsToDelete = testCircuits.filter((c) => c.objectName === targetObjName).length;
 
       recordUndoSnapshot(`Очистка данных проекта «${targetObjName}»`);
       setJoints((prev) => prev.filter((j) => j.objectName !== targetObjName));
       setProjectLineList((prev) => prev.filter((l) => l.objectName !== targetObjName));
+      setTestCircuits((prev) => prev.filter((c) => c.objectName !== targetObjName));
       setLrvCatalog((prev) => prev.filter((l) => l.objectName !== targetObjName));
       setLabRequests((prev) => prev.filter((r) => r.objectName !== targetObjName));
       filters.setSelectedJointIds([]);
@@ -764,6 +778,7 @@ export const App: React.FC = () => {
       const deletedCounts = {
         joints: jointsToDelete,
         lines: linesToDelete,
+        test_circuits: circuitsToDelete,
         lrv_items: lrvToDelete,
         lab_requests: labToDelete,
       };
@@ -773,7 +788,7 @@ export const App: React.FC = () => {
         targetObjName,
         `${jointsToDelete} ст.`,
         'Очистка проекта',
-        `Стыки: ${jointsToDelete}, Линии: ${linesToDelete}, ЛРВ: ${lrvToDelete}, Заявки НК: ${labToDelete}`,
+        `Стыки: ${jointsToDelete}, Линии: ${linesToDelete}, Контуры: ${circuitsToDelete}, ЛРВ: ${lrvToDelete}, Заявки НК: ${labToDelete}`,
         'Данные проекта очищены (справочники и пользователи сохранены)',
         params.facility.id,
         'project_purged'
@@ -802,6 +817,8 @@ export const App: React.FC = () => {
       setJoints,
       setLrvCatalog,
       setProjectLineList,
+      setTestCircuits,
+      testCircuits,
       userAccounts,
     ]
   );
@@ -845,8 +862,10 @@ export const App: React.FC = () => {
               ? { ...prev, joint: updated }
               : prev
           );
-          const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
-          if (logs) setAuditLogs(logs);
+          if (getUserRolePermissions(currentUser).canViewAuditLogs) {
+            const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
+            if (logs) setAuditLogs(logs);
+          }
           bumpRevisionMeta(
             `Статус стыка № ${updated.jointNumber}: ${RECORD_STATUS_LABELS_RU[targetStatus]}`,
             currentUser.fullName
@@ -946,8 +965,10 @@ export const App: React.FC = () => {
           setProjectLineList((prev) =>
             prev.map((l) => (l.id === updated.id ? updated : l))
           );
-          const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
-          if (logs) setAuditLogs(logs);
+          if (getUserRolePermissions(currentUser).canViewAuditLogs) {
+            const logs = await zaychickApi.listAuditLogs(1, 150).catch(() => null);
+            if (logs) setAuditLogs(logs);
+          }
           bumpRevisionMeta(
             `Статус линии ${updated.uniqueLineId}: ${RECORD_STATUS_LABELS_RU[targetStatus]}`,
             currentUser.fullName
@@ -1009,6 +1030,12 @@ export const App: React.FC = () => {
       const demoData = await import('./data/seedData');
       setJoints(demoData.INITIAL_JOINTS);
       setProjectLineList(demoData.INITIAL_PROJECT_LINELIST);
+      setTestCircuits(
+        buildSeedTestCircuitsFromJoints(
+          demoData.INITIAL_JOINTS,
+          demoData.INITIAL_PROJECT_LINELIST
+        )
+      );
       setLrvCatalog(demoData.INITIAL_LRV_CATALOG);
       setWelders(demoData.WELDERS_DIRECTORY);
       setTechCards(demoData.INITIAL_TECH_CARDS);
@@ -1046,6 +1073,7 @@ export const App: React.FC = () => {
     setJoints,
     setLrvCatalog,
     setProjectLineList,
+    setTestCircuits,
     setRedoStack,
     setTechCards,
     setTemplates,
@@ -1268,36 +1296,6 @@ export const App: React.FC = () => {
     ]
   );
 
-  const sectionLabels: Record<AppSection, string> = useMemo(
-    () => ({
-      registry: 'Реестр стыков и ввод данных',
-      laboratory: 'Лаборатория НК',
-      project_linelist: 'Лайнлист',
-      welding_tech: 'Технология сварочного производства',
-      journals: 'Журналы сварочных работ',
-      readiness: 'Отчётность по готовности',
-      lrv_catalog: 'База материалов',
-      audit_log: 'Журнал аудита',
-      user_guide: 'Руководство пользователя',
-    }),
-    []
-  );
-
-  const sectionIcons: Record<AppSection, React.ReactNode> = useMemo(
-    () => ({
-      registry: <ClipboardList className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
-      laboratory: <Radiation className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
-      project_linelist: <FolderKanban className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
-      welding_tech: <Wrench className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
-      journals: <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
-      readiness: <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
-      lrv_catalog: <Database className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
-      audit_log: <History className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
-      user_guide: <BookOpen className="w-4 h-4 sm:w-5 sm:h-5 text-sky-300 shrink-0" />,
-    }),
-    []
-  );
-
   const handleLogout = useCallback(async () => {
     await zaychickApi.logout().catch(() => {});
     setIsAuthenticated(false);
@@ -1334,8 +1332,6 @@ export const App: React.FC = () => {
         setSelectedObjectName={setSelectedObjectName}
         selectedRdCode={selectedRdCode}
         setSelectedRdCode={setSelectedRdCode}
-        isDrawerOpen={isDrawerOpen}
-        setIsDrawerOpen={setIsDrawerOpen}
         joints={joints}
         setJoints={setJoints}
         projectLineList={projectLineList}
@@ -1354,6 +1350,8 @@ export const App: React.FC = () => {
         setAuditLogs={setAuditLogs}
         labRequests={labRequests}
         setLabRequests={setLabRequests}
+        testCircuits={testCircuits}
+        setTestCircuits={setTestCircuits}
         derivedFacilities={derivedFacilities}
         isDbConnected={isDbConnected}
         isDbSyncing={isDbSyncing}
@@ -1372,21 +1370,44 @@ export const App: React.FC = () => {
       >
         <div className="min-h-screen flex flex-col bg-[#f4f7fb] text-slate-900">
       <AppHeader
-        sectionIcons={sectionIcons}
-        sectionLabels={sectionLabels}
         onLogoClick={handleHeaderLogoClick}
         isAuthenticated={isAuthenticated}
         onOpenServerDbModal={() => setIsServerDbModalOpen(true)}
+        onOpenAdminPasswordModal={() => {
+          setLoginModalInitialMode('admin_password');
+          setIsLoginModalOpen(true);
+        }}
+        onExportAllJoints={(fmt) => {
+          if (!isDbConnected || pendingSyncCount > 0) {
+            const proceed = window.confirm(
+              `ВНИМАНИЕ: Имеются несинхронизированные данные (${pendingSyncCount} изм.) или отсутствует подключение к серверу PostgreSQL.\n\nФайл будет выгружен с префиксом ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО. Продолжить?`
+            );
+            if (!proceed) return;
+          }
+          void exportAllJointsToFile(joints, fmt, {
+            isDraftUnsynced: !isDbConnected || pendingSyncCount > 0,
+            unsyncedCount: pendingSyncCount,
+            rdCode: selectedRdCode,
+          });
+        }}
+        onOpenFacilityLocation={(objName: string) => setLocationModalFacilityName(objName)}
+        onOpenBackupModal={() =>
+          setBackupModalState({ isOpen: true, initialTab: 'backup' })
+        }
+        onDeleteObject={dirActions.handleDeleteObject}
+        onCreateObject={(objName: string) => {
+          void dirActions.handleCreateStandaloneObject(objName);
+        }}
       />
 
       {!isAuthenticated && (
-        <div className="bg-amber-500 text-slate-950 px-4 py-2 text-xs font-semibold flex items-center justify-between shadow-xs no-print">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 shrink-0 text-slate-950" />
-            <span>
+        <div className="bg-slate-100 border-b border-slate-200 text-slate-800 px-4 py-2 text-xs font-medium flex items-center justify-between gap-3 no-print">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldAlert className="w-4 h-4 shrink-0 text-[#1e3799]" />
+            <span className="truncate sm:whitespace-normal">
               {isDbConnected
-                ? 'Режим инспекционного просмотра (гость, только чтение). Для внесения изменений и сохранения в СУБД выполните вход.'
-                : 'Сервер FastAPI недоступен (порт 8000). Проверьте запуск приложения и подключение к PostgreSQL.'}
+                ? 'Режим инспекционного просмотра: только чтение. Для внесения изменений и сохранения в СУБД выполните вход.'
+                : 'Сервер FastAPI недоступен. Проверьте запуск приложения и подключение к PostgreSQL.'}
             </span>
           </div>
           <button
@@ -1395,7 +1416,7 @@ export const App: React.FC = () => {
               setLoginModalInitialMode('login');
               setIsLoginModalOpen(true);
             }}
-            className="px-3 py-1 rounded bg-slate-950 text-white hover:bg-slate-800 text-xs font-bold transition-colors cursor-pointer shrink-0 ml-4"
+            className="h-7 px-3 rounded-md bg-[#1e3799] text-white hover:bg-[#15276e] text-xs font-semibold transition-colors cursor-pointer shrink-0 whitespace-nowrap"
           >
             Войти в систему
           </button>
@@ -1421,27 +1442,6 @@ export const App: React.FC = () => {
           </button>
         </div>
       )}
-
-      <HamburgerDrawer
-        onExportAllJoints={(fmt) => {
-          if (!isDbConnected || pendingSyncCount > 0) {
-            const proceed = window.confirm(
-              `ВНИМАНИЕ: Имеются несинхронизированные данные (${pendingSyncCount} изм.) или отсутствует подключение к серверу PostgreSQL.\n\nФайл будет выгружен с префиксом ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО. Продолжить?`
-            );
-            if (!proceed) return;
-          }
-          void exportAllJointsToFile(joints, fmt, {
-            isDraftUnsynced: !isDbConnected || pendingSyncCount > 0,
-            unsyncedCount: pendingSyncCount,
-            rdCode: selectedRdCode,
-          });
-        }}
-        onOpenFacilityLocation={(objName: string) => setLocationModalFacilityName(objName)}
-        onOpenBackupModal={() =>
-          setBackupModalState({ isOpen: true, initialTab: 'backup' })
-        }
-        onDeleteObject={dirActions.handleDeleteObject}
-      />
 
       <AppMainContent
         scopedJoints={filters.scopedJoints}
@@ -1500,6 +1500,7 @@ export const App: React.FC = () => {
         onChangeJointStatus={handleChangeJointStatus}
         onChangeLineStatus={handleChangeLineStatus}
         dirActions={dirActions}
+        testCircuitActions={testCircuitActions}
       />
 
       <AppModalsContainer

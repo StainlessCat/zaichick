@@ -19,6 +19,7 @@ from app.api.routes.lrv import router as lrv_router
 from app.api.routes.naks import router as naks_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.templates import router as templates_router
+from app.api.routes.test_circuits import router as test_circuits_router
 from app.api.routes.users import router as users_router
 from app.api.routes.weather import router as weather_router
 from app.api.routes.welding_journals import router as welding_journals_router
@@ -77,6 +78,7 @@ app.include_router(lrv_router)
 app.include_router(wps_router)
 app.include_router(naks_router)
 app.include_router(joints_router)
+app.include_router(test_circuits_router)
 app.include_router(lab_requests_router)
 app.include_router(welding_journals_router)
 app.include_router(reports_router)

@@ -50,7 +50,7 @@ export const PassportHeader: React.FC<PassportHeaderProps> = ({
                     : isJointFullyAccepted(form)
                     ? 'bg-emerald-500/25 text-emerald-100 border-emerald-300/40'
                     : form.weldingDate
-                    ? 'bg-amber-500/25 text-amber-100 border-amber-300/40'
+                    ? 'bg-sky-400/20 text-sky-100 border-sky-300/40'
                     : 'bg-white/15 text-sky-100 border-white/20'
                 }`}
               >

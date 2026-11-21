@@ -316,9 +316,9 @@ async def test_http_auth_cookie_query_token_ban_rbac_rate_limit_and_audit(
                 )
             ).status_code == 403
 
-            # 6. Audit logs cannot be inserted/updated/deleted by client
+            # 6. Audit logs cannot be inserted/updated/deleted by client and are admin-only to read
             assert (await client.post("/api/audit-logs", json={})).status_code == 405
-            assert (await client.get("/api/audit-logs")).status_code == 200
+            assert (await client.get("/api/audit-logs")).status_code == 403
 
             # 7. Admin Bearer token flow + logout invalidates replayed token
             async with httpx.AsyncClient(
@@ -330,6 +330,12 @@ async def test_http_auth_cookie_query_token_ban_rbac_rate_limit_and_audit(
                 )
                 assert token_resp.status_code == 200
                 admin_jwt = token_resp.json()["access_token"]
+
+                admin_audit_resp = await admin_client.get(
+                    "/api/audit-logs",
+                    headers={"Authorization": f"Bearer {admin_jwt}"},
+                )
+                assert admin_audit_resp.status_code == 200
 
                 admin_create = await admin_client.post(
                     "/api/users",

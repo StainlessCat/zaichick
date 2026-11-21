@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -106,6 +106,7 @@ import {
   PassportRepairTab,
   PassportHistoryTab,
 } from './passport';
+import { AppContext } from '../context/AppContext';
 
 interface JointPassportModalProps {
   isOpen: boolean;
@@ -167,10 +168,13 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
   onOpenFacilityLocation,
   onClose,
 }) => {
+  const appCtx = useContext(AppContext);
+  const testCircuits = appCtx?.testCircuits ?? [];
+
   const rbac = getUserRolePermissions(currentUser);
   const recordEditCheck =
     mode === 'edit' && initialJoint
-      ? canUserMutateRecord(currentUser, initialJoint, ['PTO', 'PIL'], 'edit', false)
+      ? canUserMutateRecord(currentUser, initialJoint, ['PTO', 'PIL', 'SK'], 'edit', false)
       : { allowed: rbac.canCreateOrDeleteJoints };
   const recordDeleteCheck =
     mode === 'edit' && initialJoint
@@ -183,6 +187,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
           canEditPrepAndWeldingFields: false,
           canEditNdtFields: false,
           canCreateOrDeleteJoints: false,
+          canManageTestCircuits: false,
         }
       : {
           ...rbac,
@@ -193,7 +198,9 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     mode === 'create'
       ? rbac.canCreateOrDeleteJoints
       : recordEditCheck.allowed &&
-        (rbac.canEditPrepAndWeldingFields || rbac.canEditNdtFields);
+        (rbac.canEditPrepAndWeldingFields ||
+          rbac.canEditNdtFields ||
+          rbac.canManageTestCircuits);
   const weldingMaterialsList = weldingMaterials || weldingMaterialsListProp || [];
   const fallbackEmptyFac: FacilityObject = {
     id: 'fac-empty',
@@ -1074,7 +1081,10 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       }
     }
 
-    if (!comprehensiveValidation.isValidToSave) {
+    if (
+      (rbac.canEditPrepAndWeldingFields || rbac.canEditNdtFields) &&
+      !comprehensiveValidation.isValidToSave
+    ) {
       setValidationError(
         comprehensiveValidation.errors.map((err) => err.message).join(' | ')
       );
@@ -1228,6 +1238,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
               currentFacility={currentFacility}
               projectLineList={projectLineList}
               availableLinesForRd={availableLinesForRd}
+              testCircuits={testCircuits}
               currentWeatherStationName={currentWeatherStationName}
               elem1Diam={elem1Diam}
               isSupplementaryMode={isSupplementaryMode}

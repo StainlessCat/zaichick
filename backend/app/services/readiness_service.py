@@ -327,6 +327,24 @@ class LineCompletionStatus:
     uzk_required: int
     uzk_controlled: int
     welder_ndt_deficits: list[str]
+    joints_readiness_pct: float = 0.0
+    total_edi: float = 0.0
+    welded_edi: float = 0.0
+    edi_readiness_pct: float = 0.0
+
+
+def _joint_edi_value(joint: Any) -> float:
+    raw = getattr(joint, "equiv_diameter_inch", None)
+    if raw is not None:
+        try:
+            val = float(raw)
+            if not math.isnan(val) and val >= 0:
+                return val
+        except (TypeError, ValueError):
+            pass
+    diam_in = getattr(joint, "diameter_inch", None) or getattr(joint, "diameter_mm", 0)
+    wall = float(getattr(joint, "wall_thickness", 0) or 0)
+    return float(calculate_equivalent_dia_inch(diam_in, wall))
 
 
 def compute_line_list_item_status(line: Any, all_joints: list[Any]) -> LineCompletionStatus:
@@ -348,6 +366,10 @@ def compute_line_list_item_status(line: Any, all_joints: list[Any]) -> LineCompl
             uzk_required=0,
             uzk_controlled=0,
             welder_ndt_deficits=[],
+            joints_readiness_pct=0.0,
+            total_edi=0.0,
+            welded_edi=0.0,
+            edi_readiness_pct=0.0,
         )
 
     total_joints = len(line_joints)
@@ -358,6 +380,13 @@ def compute_line_list_item_status(line: Any, all_joints: list[Any]) -> LineCompl
     ]
     welded_count = len(welded_joints_list)
     controlled_joints = sum(1 for j in welded_joints_list if is_joint_fully_accepted(j))
+
+    total_edi_raw = sum(_joint_edi_value(j) for j in line_joints)
+    welded_edi_raw = sum(_joint_edi_value(j) for j in welded_joints_list)
+    total_edi = round(total_edi_raw, 2)
+    welded_edi = round(welded_edi_raw, 2)
+    joints_readiness_pct = round((welded_count / total_joints) * 100.0, 1) if total_joints > 0 else 0.0
+    edi_readiness_pct = round((welded_edi_raw / total_edi_raw) * 100.0, 1) if total_edi_raw > 0 else 0.0
 
     rk_required = math.ceil((welded_count * rk_plan_pct) / 100.0) if rk_plan_pct > 0 else 0
     uzk_required = math.ceil((welded_count * uzk_plan_pct) / 100.0) if uzk_plan_pct > 0 else 0
@@ -431,6 +460,10 @@ def compute_line_list_item_status(line: Any, all_joints: list[Any]) -> LineCompl
             uzk_required=uzk_required,
             uzk_controlled=0,
             welder_ndt_deficits=[],
+            joints_readiness_pct=0.0,
+            total_edi=total_edi,
+            welded_edi=0.0,
+            edi_readiness_pct=0.0,
         )
 
     is_ndt_sufficient = is_rk_ok and is_uzk_ok and is_welder_ok
@@ -472,6 +505,10 @@ def compute_line_list_item_status(line: Any, all_joints: list[Any]) -> LineCompl
         uzk_required=uzk_required,
         uzk_controlled=uzk_controlled,
         welder_ndt_deficits=welder_deficits,
+        joints_readiness_pct=joints_readiness_pct,
+        total_edi=total_edi,
+        welded_edi=welded_edi,
+        edi_readiness_pct=edi_readiness_pct,
     )
 
 

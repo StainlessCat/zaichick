@@ -729,10 +729,18 @@ async def test_joints_rbac_occ_validation_audit_and_sse() -> None:
             assert [item["version"] for item in res_bulk.json()] == [4, 3]
 
             # 9. Line OCC & Referential integrity + LRV supersede
-            res_line_upd = await client.patch(
+            # PTO OPERATOR is forbidden from modifying lines (DEPT_ADMIN PTO / SUPERADMIN only)
+            res_line_forbidden = await client.patch(
                 f"/api/lines/{seed['line'].id}",
                 json={"version": 1, "manual_status": "В монтаже"},
                 headers=_auth_header(seed["pto"]),
+            )
+            assert res_line_forbidden.status_code == 403
+
+            res_line_upd = await client.patch(
+                f"/api/lines/{seed['line'].id}",
+                json={"version": 1, "manual_status": "В монтаже"},
+                headers=_auth_header(seed["admin"]),
             )
             assert res_line_upd.status_code == 200
             assert res_line_upd.json()["version"] == 2
@@ -740,14 +748,14 @@ async def test_joints_rbac_occ_validation_audit_and_sse() -> None:
             res_line_stale = await client.patch(
                 f"/api/lines/{seed['line'].id}",
                 json={"version": 1, "manual_status": "Другой"},
-                headers=_auth_header(seed["pto"]),
+                headers=_auth_header(seed["admin"]),
             )
             assert res_line_stale.status_code == 409
             assert res_line_stale.json()["detail"]["code"] == "OPTIMISTIC_LOCK_CONFLICT"
 
             # Deleting referenced line or LRV -> 409 REFERENTIAL_INTEGRITY_ERROR
             res_del_line = await client.delete(
-                f"/api/lines/{seed['line'].id}", headers=_auth_header(seed["pto"])
+                f"/api/lines/{seed['line'].id}", headers=_auth_header(seed["admin"])
             )
             assert res_del_line.status_code == 409
             assert res_del_line.json()["detail"]["code"] == "REFERENTIAL_INTEGRITY_ERROR"
@@ -801,8 +809,12 @@ async def test_joints_rbac_occ_validation_audit_and_sse() -> None:
             assert res_readiness.status_code == 200
             assert res_readiness.json()[0]["total_joints"] == 2
 
-            # Audit logs created automatically on server per transaction
-            res_audit = await client.get("/api/audit-logs", headers=_auth_header(seed["viewer"]))
+            # Audit logs created automatically on server per transaction (admin-only access)
+            res_audit_viewer = await client.get(
+                "/api/audit-logs", headers=_auth_header(seed["viewer"])
+            )
+            assert res_audit_viewer.status_code == 403
+            res_audit = await client.get("/api/audit-logs", headers=_auth_header(seed["admin"]))
             assert res_audit.status_code == 200
             assert res_audit.json()["total"] >= 5
 

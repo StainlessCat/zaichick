@@ -1,5 +1,7 @@
 import type {
   AuditLogEntry,
+  CircuitAssignmentResult,
+  CircuitTestStatus,
   ColumnTemplate,
   DepartmentCode,
   FacilityObject,
@@ -10,8 +12,11 @@ import type {
   ProjectLineItem,
   ReadinessGroupCondition,
   RecordStatus,
+  SriStatus,
   SystemRole,
   TechCardItem,
+  TestCircuit,
+  TestCircuitDetail,
   UserAccount,
   WelderProfile,
   WeldingMaterialCertificate,
@@ -25,6 +30,7 @@ import {
 import {
   BackendRole,
   mapAuditLogDto,
+  mapCircuitAssignmentResultDto,
   mapFacilityDto,
   mapInspectorDto,
   mapJointDto,
@@ -44,6 +50,10 @@ import {
   mapTechCardDto,
   mapTechCardToPayload,
   mapTemplateDto,
+  mapTestCircuitDetailDto,
+  mapTestCircuitDto,
+  mapTestCircuitToCreatePayload,
+  mapTestCircuitToUpdatePayload,
   mapUserDtoToAccount,
   mapWelderDto,
   mapWelderToPayload,
@@ -730,6 +740,149 @@ export const zaychickApi = {
       }),
     });
     return mapLabRequestDto(dto);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Test Circuits (Испытательные контуры: CRUD + привязка линий/стыков + СРИ)
+  // ---------------------------------------------------------------------------
+  async listTestCircuits(filters?: {
+    facilityId?: string;
+    objectName?: string;
+    testStatus?: CircuitTestStatus;
+    sriStatus?: SriStatus;
+    search?: string;
+  }): Promise<TestCircuit[]> {
+    const params = new URLSearchParams();
+    if (filters?.facilityId) params.set('facility_id', filters.facilityId);
+    if (filters?.objectName && filters.objectName !== 'ALL') {
+      params.set('object_name', filters.objectName);
+    }
+    if (filters?.testStatus) params.set('test_status', filters.testStatus);
+    if (filters?.sriStatus) params.set('sri_status', filters.sriStatus);
+    if (filters?.search) params.set('search', filters.search);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const rows = await apiRequest<Record<string, unknown>[]>(`/api/test-circuits${qs}`);
+    return (Array.isArray(rows) ? rows : []).map(mapTestCircuitDto);
+  },
+
+  async getTestCircuit(circuitId: string): Promise<TestCircuitDetail> {
+    const dto = await apiRequest<Record<string, unknown>>(`/api/test-circuits/${circuitId}`);
+    return mapTestCircuitDetailDto(dto);
+  },
+
+  async createTestCircuit(payload: {
+    facilityId?: string | null;
+    objectName?: string | null;
+    name: string;
+    sriName?: string | null;
+    sriStatus?: SriStatus;
+    plannedDate?: string | null;
+    actNumber?: string | null;
+    actualTestDate?: string | null;
+  }): Promise<TestCircuit> {
+    const dto = await apiRequest<Record<string, unknown>>('/api/test-circuits', {
+      method: 'POST',
+      body: JSON.stringify(mapTestCircuitToCreatePayload(payload)),
+    });
+    return mapTestCircuitDto(dto);
+  },
+
+  async updateTestCircuit(
+    circuitId: string,
+    payload: {
+      version: number;
+      name?: string;
+      sriName?: string | null;
+      sriStatus?: SriStatus;
+      testStatus?: CircuitTestStatus;
+      plannedDate?: string | null;
+      actNumber?: string | null;
+      actualTestDate?: string | null;
+      force?: boolean;
+    }
+  ): Promise<TestCircuitDetail> {
+    const dto = await apiRequest<Record<string, unknown>>(`/api/test-circuits/${circuitId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(mapTestCircuitToUpdatePayload(payload)),
+    });
+    return mapTestCircuitDetailDto(dto);
+  },
+
+  async changeTestCircuitStatus(
+    circuitId: string,
+    recordStatus: RecordStatus,
+    version: number,
+    reason?: string
+  ): Promise<TestCircuitDetail> {
+    const dto = await apiRequest<Record<string, unknown>>(
+      `/api/test-circuits/${circuitId}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          record_status: recordStatus,
+          version,
+          reason: reason || null,
+        }),
+      }
+    );
+    return mapTestCircuitDetailDto(dto);
+  },
+
+  async deleteTestCircuit(circuitId: string, version?: number): Promise<void> {
+    const qs = version !== undefined ? `?version=${version}` : '';
+    await apiRequest(`/api/test-circuits/${circuitId}${qs}`, { method: 'DELETE' });
+  },
+
+  async assignLinesToCircuit(
+    circuitId: string,
+    lineIds: string[],
+    overwriteExisting = false
+  ): Promise<CircuitAssignmentResult> {
+    const dto = await apiRequest<Record<string, unknown>>(
+      `/api/test-circuits/${circuitId}/assign-lines`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          line_ids: lineIds,
+          overwrite_existing: overwriteExisting,
+        }),
+      }
+    );
+    return mapCircuitAssignmentResultDto(dto);
+  },
+
+  async assignJointsToCircuit(
+    circuitId: string,
+    jointIds: string[],
+    overwriteExisting = false
+  ): Promise<CircuitAssignmentResult> {
+    const dto = await apiRequest<Record<string, unknown>>(
+      `/api/test-circuits/${circuitId}/assign-joints`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          joint_ids: jointIds,
+          overwrite_existing: overwriteExisting,
+        }),
+      }
+    );
+    return mapCircuitAssignmentResultDto(dto);
+  },
+
+  async unassignJointsFromCircuit(
+    circuitId: string,
+    jointIds: string[]
+  ): Promise<CircuitAssignmentResult> {
+    const dto = await apiRequest<Record<string, unknown>>(
+      `/api/test-circuits/${circuitId}/unassign-joints`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          joint_ids: jointIds,
+        }),
+      }
+    );
+    return mapCircuitAssignmentResultDto(dto);
   },
 
   // ---------------------------------------------------------------------------

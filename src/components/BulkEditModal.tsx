@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   Check,
   CloudSun,
+  Gauge,
   Layers,
   Lock,
   ShieldCheck,
@@ -30,6 +31,7 @@ import {
   filterBulkPatchByRole,
   getUserRolePermissions,
 } from '../utils/rbac';
+import { AppContext } from '../context/AppContext';
 
 interface BulkEditModalProps {
   isOpen: boolean;
@@ -57,9 +59,26 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   currentUser,
   onApplyBulkUpdate,
 }) => {
+  const appCtx = useContext(AppContext);
+  const allTestCircuits = appCtx?.testCircuits ?? [];
+
   const rbac = getUserRolePermissions(currentUser);
   const canSaveAnyBulk =
-    rbac.canEditPrepAndWeldingFields || rbac.canEditNdtFields;
+    rbac.canEditPrepAndWeldingFields ||
+    rbac.canEditNdtFields ||
+    rbac.canManageTestCircuits;
+
+  const selectedObjectNames = useMemo(
+    () => Array.from(new Set(selectedJoints.map((j) => j.objectName).filter(Boolean))),
+    [selectedJoints]
+  );
+
+  const availableCircuitsForSelection = useMemo(() => {
+    if (selectedObjectNames.length === 1) {
+      return allTestCircuits.filter((c) => c.objectName === selectedObjectNames[0]);
+    }
+    return allTestCircuits;
+  }, [allTestCircuits, selectedObjectNames]);
 
   // Флаги включения конкретных полей для массовой замены
   const [enableDiameter, setEnableDiameter] = useState(false);
@@ -108,6 +127,13 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     inspectors[0]?.fullName || 'Лебедев К.М.'
   );
 
+  const [enableTestCircuit, setEnableTestCircuit] = useState(
+    !rbac.canEditPrepAndWeldingFields &&
+      !rbac.canEditNdtFields &&
+      rbac.canManageTestCircuits
+  );
+  const [selectedTestCircuitId, setSelectedTestCircuitId] = useState<string>('');
+
   useEffect(() => {
     if (!isOpen) return;
     if (!rbac.canEditPrepAndWeldingFields) {
@@ -118,13 +144,23 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
       setEnableWeldingSpecs(false);
       if (rbac.canEditNdtFields) {
         setEnableVik(true);
+      } else if (rbac.canManageTestCircuits) {
+        setEnableTestCircuit(true);
       }
     }
     if (!rbac.canEditNdtFields) {
       setEnableVik(false);
       setEnableNdt(false);
     }
-  }, [isOpen, rbac.canEditPrepAndWeldingFields, rbac.canEditNdtFields]);
+    if (!rbac.canManageTestCircuits) {
+      setEnableTestCircuit(false);
+    }
+  }, [
+    isOpen,
+    rbac.canEditPrepAndWeldingFields,
+    rbac.canEditNdtFields,
+    rbac.canManageTestCircuits,
+  ]);
 
   if (!isOpen) return null;
 
@@ -206,6 +242,19 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
         rawPatch.ndtResult = ndtResult;
         rawPatch.ndtDate = ndtDate;
         rawPatch.ndtInspector = ndtInspector;
+      }
+    }
+
+    if (rbac.canManageTestCircuits && enableTestCircuit) {
+      if (selectedTestCircuitId === '__CLEAR__') {
+        rawPatch.testCircuitId = null;
+        rawPatch.contour = '';
+      } else if (selectedTestCircuitId) {
+        const matchedCircuit = allTestCircuits.find((c) => c.id === selectedTestCircuitId);
+        rawPatch.testCircuitId = selectedTestCircuitId;
+        if (matchedCircuit) {
+          rawPatch.contour = matchedCircuit.name;
+        }
       }
     }
 
@@ -301,6 +350,20 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
                     <Lock className="w-3 h-3 text-slate-400" />
                   )}
                   <span>ВИК / НК</span>
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border ${
+                    rbac.canManageTestCircuits
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800 font-semibold'
+                      : 'bg-white/80 border-slate-200 text-slate-500'
+                  }`}
+                >
+                  {rbac.canManageTestCircuits ? (
+                    <Unlock className="w-3 h-3 text-emerald-600" />
+                  ) : (
+                    <Lock className="w-3 h-3 text-slate-400" />
+                  )}
+                  <span>Контуры</span>
                 </span>
               </div>
             </div>
@@ -686,6 +749,64 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
               )}
             </div>
           </div>
+          </fieldset>
+
+          {/* 6. Привязка к испытательному контуру (ПТО / СК / Суперадмин) */}
+          <fieldset
+            disabled={!rbac.canManageTestCircuits}
+            className={
+              !rbac.canManageTestCircuits
+                ? 'opacity-70 pointer-events-none select-none'
+                : ''
+            }
+          >
+            <div className="p-4 rounded-lg border border-slate-200 bg-slate-50/60 space-y-3">
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableTestCircuit}
+                  onChange={(e) => setEnableTestCircuit(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
+                />
+                <Gauge className="w-4 h-4 text-[#1e3799]" />
+                <span className="text-sm font-bold text-slate-900">
+                  Назначить испытательный контур
+                </span>
+              </label>
+
+              {enableTestCircuit && (
+                <div className="pl-6 space-y-2">
+                  <select
+                    value={selectedTestCircuitId}
+                    onChange={(e) => setSelectedTestCircuitId(e.target.value)}
+                    aria-label="Выбор испытательного контура"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                  >
+                    <option value="">Выберите испытательный контур…</option>
+                    <option value="__CLEAR__">Отвязать от контура</option>
+                    {availableCircuitsForSelection.map((circuit) => (
+                      <option key={circuit.id} value={circuit.id}>
+                        {circuit.name}
+                        {circuit.sriName ? ` · СРИ: ${circuit.sriName}` : ''}
+                        {selectedObjectNames.length > 1 && circuit.objectName
+                          ? ` · ${circuit.objectName}`
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {availableCircuitsForSelection.length === 0 && (
+                    <div className="text-[11px] text-slate-500">
+                      Для выбранного объекта испытательные контуры ещё не созданы. Создайте контур в разделе «Испытания».
+                    </div>
+                  )}
+                  {selectedObjectNames.length > 1 && (
+                    <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+                      Выбраны стыки разных объектов. Контур может быть назначен только стыкам своего объекта.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </fieldset>
 
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">

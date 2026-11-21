@@ -24,6 +24,15 @@ import { getJointEquivDiaInch, isJointWelded } from './jointDerived';
 
 describe('Сквозной ролевой симуляционный UAT-тест системы ZAYCHICK (5 этапов)', () => {
   // Актёры и роли
+  const ptoAdminUser: RbacUserPayload = {
+    login: 'pto_admin_volkhov',
+    fullName: 'Волхов Алексей Сергеевич',
+    role: 'Начальник ПТО',
+    systemRole: 'DEPT_ADMIN',
+    departmentCode: 'PTO',
+    department: 'Производственно-технический отдел',
+  };
+
   const ptoUser: RbacUserPayload = {
     login: 'pto_volkhov',
     fullName: 'Волхов Алексей Сергеевич',
@@ -76,9 +85,13 @@ describe('Сквозной ролевой симуляционный UAT-тес�
   // =========================================================================
   // ЭТАП 1: РОЛЬ «ИНЖЕНЕР ПТО» — СОЗДАНИЕ НОВОЙ ТЕХНОЛОГИЧЕСКОЙ ЛИНИИ
   // =========================================================================
-  test('Этап 1: Инженер ПТО создаёт технологическую линию с требованием РК 100%', () => {
+  test('Этап 1: Администратор отдела ПТО создаёт технологическую линию с требованием РК 100%', () => {
+    const ptoAdminPerms = getUserRolePermissions(ptoAdminUser);
+    expect(ptoAdminPerms.canEditLineList).toBe(true);
+    expect(ptoAdminPerms.canEditWeldingTech).toBe(false);
+
     const ptoPerms = getUserRolePermissions(ptoUser);
-    expect(ptoPerms.canEditLineList).toBe(true);
+    expect(ptoPerms.canEditLineList).toBe(false);
     expect(ptoPerms.canEditWeldingTech).toBe(false);
 
     createdLine = {

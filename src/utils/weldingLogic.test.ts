@@ -1911,11 +1911,19 @@ test('Field-Level RBAC: ролевое разграничение прав Те�
 
   const ptoPerms = getUserRolePermissions(ptoUser);
   assert.equal(ptoPerms.canEditWeldingTech, false);
-  assert.equal(ptoPerms.canEditLineList, true);
+  assert.equal(ptoPerms.canEditLineList, false);
   assert.equal(ptoPerms.canEditLrvCatalog, false);
   assert.equal(ptoPerms.canCreateOrDeleteJoints, true);
   assert.equal(ptoPerms.canEditPrepAndWeldingFields, true);
   assert.equal(ptoPerms.canEditNdtFields, false);
+
+  const ptoAdminPerms = getUserRolePermissions({
+    ...ptoUser,
+    systemRole: 'DEPT_ADMIN',
+    departmentCode: 'PTO',
+  });
+  assert.equal(ptoAdminPerms.canEditLineList, true);
+  assert.equal(ptoAdminPerms.canViewAuditLogs, true);
 
   const ndtPerms = getUserRolePermissions(ndtUser);
   assert.equal(ndtPerms.canEditWeldingTech, false);

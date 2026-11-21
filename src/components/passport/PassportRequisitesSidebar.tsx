@@ -3,6 +3,7 @@ import { AlertTriangle, Lock, MapPin, Trash2 } from 'lucide-react';
 import type {
   FacilityObject,
   ProjectLineItem,
+  TestCircuit,
   WeldJoint,
 } from '../../types/welding';
 import type { RolePermissions } from '../../utils/rbac';
@@ -23,6 +24,7 @@ export interface PassportRequisitesSidebarProps {
   currentFacility: FacilityObject;
   projectLineList: ProjectLineItem[];
   availableLinesForRd: ProjectLineItem[];
+  testCircuits?: TestCircuit[];
   currentWeatherStationName: string;
   elem1Diam: number;
   isSupplementaryMode: boolean;
@@ -47,6 +49,7 @@ export const PassportRequisitesSidebar: React.FC<PassportRequisitesSidebarProps>
   currentFacility,
   projectLineList,
   availableLinesForRd,
+  testCircuits = [],
   currentWeatherStationName,
   elem1Diam,
   isSupplementaryMode,
@@ -61,6 +64,15 @@ export const PassportRequisitesSidebar: React.FC<PassportRequisitesSidebarProps>
   onClose,
   handleRdCodeChangeInCreate,
 }) => {
+  const circuitsForFacility = testCircuits.filter(
+    (c) => !c.objectName || c.objectName === form.objectName
+  );
+  const boundCircuit =
+    (form.testCircuitId
+      ? testCircuits.find((c) => c.id === form.testCircuitId)
+      : undefined) ||
+    circuitsForFacility.find((c) => c.name === form.contour);
+  const canEditCircuit = rbac.canManageTestCircuits && form.recordStatus !== 'LOCKED';
   return (
     <aside
       aria-label="Справочные реквизиты стыка"
@@ -93,7 +105,7 @@ export const PassportRequisitesSidebar: React.FC<PassportRequisitesSidebarProps>
                 <Lock className="w-3.5 h-3.5" />
               </span>
               {isSupplementaryMode && (
-                <div className="text-[10px] text-amber-300 font-semibold mt-1">
+                <div className="text-[10px] text-sky-200 font-semibold mt-1">
                   Доп. стык
                 </div>
               )}
@@ -147,10 +159,60 @@ export const PassportRequisitesSidebar: React.FC<PassportRequisitesSidebarProps>
             </div>
 
             <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
-              <div className="text-[10px] text-slate-400 mb-0.5">Контур</div>
-              <div className="font-medium text-slate-800 break-words">
-                {form.contour}
+              <div className="flex items-center justify-between gap-1 text-[10px] text-slate-400 mb-1">
+                <span>Испытательный контур</span>
+                {boundCircuit && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded font-semibold ${
+                      boundCircuit.testStatus === 'TESTED'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-sky-50 text-[#1e3799]'
+                    }`}
+                  >
+                    {boundCircuit.testStatus === 'TESTED' ? 'Испытано' : 'Не испытано'}
+                  </span>
+                )}
               </div>
+              {canEditCircuit && circuitsForFacility.length > 0 ? (
+                <select
+                  value={form.testCircuitId ?? boundCircuit?.id ?? ''}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    if (!nextId) {
+                      setForm((prev) => ({
+                        ...prev,
+                        testCircuitId: null,
+                        contour: '',
+                      }));
+                    } else {
+                      const picked = circuitsForFacility.find((c) => c.id === nextId);
+                      setForm((prev) => ({
+                        ...prev,
+                        testCircuitId: nextId,
+                        contour: picked?.name || prev.contour,
+                      }));
+                    }
+                  }}
+                  aria-label="Испытательный контур стыка"
+                  className="w-full px-2 py-1.5 bg-white border border-slate-300 focus:border-[#1e3799] focus:outline-none rounded text-xs font-medium text-slate-800"
+                >
+                  <option value="">Не назначен</option>
+                  {circuitsForFacility.map((circuit) => (
+                    <option key={circuit.id} value={circuit.id}>
+                      {circuit.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="font-medium text-slate-800 break-words">
+                  {boundCircuit?.name || form.contour || 'Не назначен'}
+                </div>
+              )}
+              {boundCircuit?.sriName && (
+                <div className="text-[10px] text-slate-500 mt-1 truncate">
+                  СРИ: {boundCircuit.sriName}
+                </div>
+              )}
             </div>
 
             <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
@@ -357,17 +419,41 @@ export const PassportRequisitesSidebar: React.FC<PassportRequisitesSidebarProps>
 
           <div>
             <label className="block text-[11px] font-medium text-slate-600 mb-1">
-              Контур (из лайнлиста)
+              Испытательный контур
             </label>
-            <input
-              type="text"
-              value={form.contour}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, contour: e.target.value }))
-              }
-              aria-label="Контур испытания (из лайнлиста)"
-              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs"
-            />
+            {circuitsForFacility.length > 0 ? (
+              <select
+                value={form.testCircuitId ?? ''}
+                onChange={(e) => {
+                  const nextId = e.target.value;
+                  const picked = circuitsForFacility.find((c) => c.id === nextId);
+                  setForm((prev) => ({
+                    ...prev,
+                    testCircuitId: nextId || null,
+                    contour: picked?.name || '',
+                  }));
+                }}
+                aria-label="Испытательный контур стыка"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium"
+              >
+                <option value="">Не назначен</option>
+                {circuitsForFacility.map((circuit) => (
+                  <option key={circuit.id} value={circuit.id}>
+                    {circuit.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={form.contour}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, contour: e.target.value }))
+                }
+                aria-label="Контур испытания"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs"
+              />
+            )}
           </div>
 
           <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">

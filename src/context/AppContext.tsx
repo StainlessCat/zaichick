@@ -8,6 +8,7 @@ import {
   ProjectLineItem,
   ServerDbMetadata,
   TechCardItem,
+  TestCircuit,
   WelderProfile,
   WeldingMaterialCertificate,
   WeldJoint,
@@ -25,8 +26,6 @@ export interface AppContextValue {
   setSelectedObjectName: (name: string) => void;
   selectedRdCode: string;
   setSelectedRdCode: (rd: string) => void;
-  isDrawerOpen: boolean;
-  setIsDrawerOpen: (open: boolean) => void;
 
   // Domain Entities
   joints: WeldJoint[];
@@ -47,6 +46,8 @@ export interface AppContextValue {
   setAuditLogs: React.Dispatch<React.SetStateAction<AuditLogEntry[]>>;
   labRequests: NdtLabRequest[];
   setLabRequests: React.Dispatch<React.SetStateAction<NdtLabRequest[]>>;
+  testCircuits: TestCircuit[];
+  setTestCircuits: React.Dispatch<React.SetStateAction<TestCircuit[]>>;
   derivedFacilities: FacilityObject[];
 
   // Server & Sync Status
@@ -94,7 +95,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       valueProps.activeSection,
       valueProps.selectedObjectName,
       valueProps.selectedRdCode,
-      valueProps.isDrawerOpen,
       valueProps.joints,
       valueProps.projectLineList,
       valueProps.lrvCatalog,
@@ -104,6 +104,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       valueProps.facilityGeoOverrides,
       valueProps.auditLogs,
       valueProps.labRequests,
+      valueProps.testCircuits,
       valueProps.derivedFacilities,
       valueProps.isDbConnected,
       valueProps.isDbSyncing,

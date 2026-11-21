@@ -75,6 +75,7 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
     project_purged: 'Очистка данных проекта',
     record_status_changed: 'Изменение статуса записи',
     record_unlocked: 'Разблокировка записи',
+    test_circuit_change: 'Испытательный контур',
   };
 
   const baseFiltered = useMemo(() => {
@@ -229,6 +230,7 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
             <option value="delete_joint">Удаление стыков</option>
             <option value="lrv_superseded">Аннулирование ЛРВ</option>
             <option value="linelist_change">Изменение лайнлиста</option>
+            <option value="test_circuit_change">Испытательные контуры</option>
             <option value="user_created">Создание пользователей</option>
             <option value="user_modified">Изменение прав / ролей</option>
             <option value="user_deleted">Удаление пользователей</option>

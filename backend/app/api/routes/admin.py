@@ -16,6 +16,7 @@ from app.models.joint import WeldJoint
 from app.models.lab_request import NdtLabRequestModel
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
+from app.models.test_circuit import TestCircuit
 from app.models.user import User
 from app.schemas.auth import (
     CreateUserRequest,
@@ -416,6 +417,9 @@ async def purge_project_data(
     deleted_joints = int(
         (await session.execute(delete(WeldJoint).where(or_(*joint_conditions)))).rowcount or 0
     )
+    deleted_circuits = int(
+        (await session.execute(delete(TestCircuit).where(TestCircuit.facility_id == facility.id))).rowcount or 0
+    )
     deleted_lab_requests = int(
         (await session.execute(delete(NdtLabRequestModel).where(or_(*lab_conditions)))).rowcount
         or 0
@@ -429,6 +433,7 @@ async def purge_project_data(
 
     deleted_counts = {
         "weld_joints": deleted_joints,
+        "test_circuits": deleted_circuits,
         "ndt_lab_requests": deleted_lab_requests,
         "project_lines": deleted_lines,
         "lrv_items": deleted_lrv,
@@ -452,7 +457,7 @@ async def purge_project_data(
         ip_address=client_ip,
         summary=(
             f"Очищены производственные данные проекта «{facility.name}»: "
-            f"стыков {deleted_joints}, линий {deleted_lines}, ЛРВ {deleted_lrv}, заявок НК {deleted_lab_requests}"
+            f"стыков {deleted_joints}, контуров {deleted_circuits}, линий {deleted_lines}, ЛРВ {deleted_lrv}, заявок НК {deleted_lab_requests}"
         ),
     )
     await publish_domain_event(

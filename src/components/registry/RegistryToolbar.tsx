@@ -132,7 +132,8 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
         )}
 
         {(userPermissions.canEditPrepAndWeldingFields ||
-          userPermissions.canEditNdtFields) && (
+          userPermissions.canEditNdtFields ||
+          userPermissions.canManageTestCircuits) && (
           <Button
             type="button"
             variant={selectedJointIds.length > 0 ? 'primary' : 'secondary'}

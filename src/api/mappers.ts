@@ -1,5 +1,10 @@
 import type {
   AuditLogEntry,
+  CircuitAssignmentConflictItem,
+  CircuitAssignmentResult,
+  CircuitJointBrief,
+  CircuitLineSummary,
+  CircuitTestStatus,
   ColumnTemplate,
   ControlResult,
   CustomWeatherStation,
@@ -18,8 +23,11 @@ import type {
   OptimisticLockConflictPayload,
   ProjectLineItem,
   RecordStatus,
+  SriStatus,
   SystemRole,
   TechCardItem,
+  TestCircuit,
+  TestCircuitDetail,
   UserAccount,
   WelderNaksCert,
   WelderProfile,
@@ -208,6 +216,7 @@ export function mapFacilityDto(dto: Record<string, unknown>): FacilityObject {
 }
 
 export function mapLineDto(dto: Record<string, unknown>): ProjectLineItem {
+  const rawIdStatus = String(dto.id_status || '').toUpperCase();
   return {
     id: String(dto.id || ''),
     facilityId: dto.facility_id ? String(dto.facility_id) : undefined,
@@ -229,6 +238,8 @@ export function mapLineDto(dto: Record<string, unknown>): ProjectLineItem {
     pvkPercent: Number(dto.pvk_percent ?? 0),
     manualStatus: dto.manual_status ? String(dto.manual_status) : undefined,
     testDate: dto.test_date ? String(dto.test_date) : '',
+    idStatus: rawIdStatus === 'SIGNED' ? 'SIGNED' : 'IN_WORK',
+    responsiblePto: dto.responsible_pto ? String(dto.responsible_pto) : '',
     recordStatus: asRecordStatus(dto.record_status),
     createdById: dto.created_by_id ? String(dto.created_by_id) : null,
     version: Number(dto.version ?? 1),
@@ -260,6 +271,8 @@ export function mapLineToCreatePayload(
     pvk_percent: Number(line.pvkPercent || 0),
     manual_status: asNullableStr(line.manualStatus),
     test_date: asIsoDateOrNull(line.testDate),
+    id_status: line.idStatus === 'SIGNED' ? 'SIGNED' : 'IN_WORK',
+    responsible_pto: asNullableStr(line.responsiblePto),
   };
 }
 
@@ -284,6 +297,8 @@ export function mapLineToUpdatePayload(line: ProjectLineItem): Record<string, un
     pvk_percent: Number(line.pvkPercent || 0),
     manual_status: asNullableStr(line.manualStatus),
     test_date: asIsoDateOrNull(line.testDate),
+    id_status: line.idStatus === 'SIGNED' ? 'SIGNED' : 'IN_WORK',
+    responsible_pto: asNullableStr(line.responsiblePto),
   };
 }
 
@@ -601,6 +616,7 @@ export function mapJointDto(dto: Record<string, unknown>): WeldJoint {
     objectName: String(dto.object_name || ''),
     rdCode: String(dto.rd_code || ''),
     contour: String(dto.contour || ''),
+    testCircuitId: dto.test_circuit_id ? String(dto.test_circuit_id) : null,
     lineNumber: String(dto.line_number || ''),
     uniqueLineId: String(dto.unique_line_id || ''),
     jointNumber: String(dto.joint_number || ''),
@@ -720,6 +736,9 @@ function buildJointBodyCommon(joint: Partial<WeldJoint>): Record<string, unknown
   setIf('object_name', joint.objectName);
   setIf('rd_code', joint.rdCode);
   setIf('contour', joint.contour);
+  if (joint.testCircuitId !== undefined) {
+    map['test_circuit_id'] = joint.testCircuitId || null;
+  }
   setIf('line_number', joint.lineNumber);
   setIf('unique_line_id', joint.uniqueLineId);
   setIf('joint_number', joint.jointNumber);
@@ -860,6 +879,8 @@ export function computeJointDiffPatch(
 }
 
 const SNAKE_TO_CAMEL_FIELD: Record<string, string> = {
+  test_circuit_id: 'testCircuitId',
+  contour: 'contour',
   joint_number: 'jointNumber',
   joint_type: 'jointType',
   joint_kind: 'jointKind',
@@ -1054,6 +1075,7 @@ export function mapAuditLogDto(dto: Record<string, unknown>): AuditLogEntry {
   else if (action === 'RECORD_STATUS_CHANGED') operationType = 'record_status_changed';
   else if (entityType === 'lrv' && action === 'SUPERSEDE') operationType = 'lrv_superseded';
   else if (entityType === 'line') operationType = 'linelist_change';
+  else if (entityType === 'test_circuit') operationType = 'test_circuit_change';
   else if (entityType === 'user' && action === 'CREATE') operationType = 'user_created';
   else if (entityType === 'user' && action === 'UPDATE') operationType = 'user_modified';
   else if (entityType === 'user' && action === 'DELETE') operationType = 'user_deleted';
@@ -1079,4 +1101,172 @@ export function mapAuditLogDto(dto: Record<string, unknown>): AuditLogEntry {
     newValue: newObj ? JSON.stringify(newObj) : '—',
     operationType,
   };
+}
+
+function asSriStatus(val: unknown): SriStatus {
+  const raw = String(val || 'IN_DEVELOPMENT').trim().toUpperCase();
+  if (raw === 'DEVELOPED' || raw === 'APPROVED') return raw;
+  return 'IN_DEVELOPMENT';
+}
+
+function asCircuitTestStatus(val: unknown): CircuitTestStatus {
+  const raw = String(val || 'NOT_TESTED').trim().toUpperCase();
+  if (raw === 'TESTED') return 'TESTED';
+  return 'NOT_TESTED';
+}
+
+export function mapCircuitLineSummaryDto(dto: Record<string, unknown>): CircuitLineSummary {
+  return {
+    lineId: String(dto.line_id || ''),
+    lineNumber: String(dto.line_number || ''),
+    uniqueLineId: String(dto.unique_line_id || ''),
+    rdCode: String(dto.rd_code || ''),
+    assignedJointsCount: Number(dto.assigned_joints_count ?? 0),
+    lineTotalJointsCount: Number(dto.line_total_joints_count ?? 0),
+    isFullLine: Boolean(dto.is_full_line),
+  };
+}
+
+export function mapCircuitJointBriefDto(dto: Record<string, unknown>): CircuitJointBrief {
+  return {
+    id: String(dto.id || ''),
+    lineId: String(dto.line_id || ''),
+    jointNumber: String(dto.joint_number || ''),
+    uniqueLineId: String(dto.unique_line_id || ''),
+    lineNumber: String(dto.line_number || ''),
+    rdCode: String(dto.rd_code || ''),
+    diameterMm: Number(dto.diameter_mm ?? 0),
+    diameterInch: String(dto.diameter_inch || ''),
+    wallThickness: Number(dto.wall_thickness ?? 0),
+    dInch: Number(dto.nominal_d_inch ?? dto.d_inch ?? 0),
+    edi: Number(dto.equiv_diameter_inch ?? dto.edi ?? 0),
+    weldingDate: dto.welding_date ? String(dto.welding_date) : null,
+    isWelded: Boolean(dto.is_welded),
+    vikResult: String(dto.vik_result || 'Не проводился'),
+    ndtResult: String(dto.ndt_result || 'Не проводился'),
+    hasUnresolvedDefect: Boolean(dto.is_defective ?? dto.has_unresolved_defect),
+    recordStatus: asRecordStatus(dto.record_status),
+    version: Number(dto.version ?? 1),
+  };
+}
+
+export function mapTestCircuitDto(dto: Record<string, unknown>): TestCircuit {
+  const linesRaw = Array.isArray(dto.lines_summary) ? dto.lines_summary : [];
+  return {
+    id: String(dto.id || ''),
+    facilityId: String(dto.facility_id || ''),
+    objectName: dto.facility_name ? String(dto.facility_name) : dto.object_name ? String(dto.object_name) : '',
+    name: String(dto.name || ''),
+    sriName: dto.sri_name ? String(dto.sri_name) : null,
+    sriStatus: asSriStatus(dto.sri_status),
+    testStatus: asCircuitTestStatus(dto.test_status),
+    plannedDate: dto.planned_date ? String(dto.planned_date) : null,
+    actualTestDate: dto.actual_test_date ? String(dto.actual_test_date) : null,
+    actNumber: dto.act_number ? String(dto.act_number) : null,
+    recordStatus: asRecordStatus(dto.record_status),
+    version: Number(dto.version ?? 1),
+    createdById: dto.created_by_id ? String(dto.created_by_id) : null,
+    updatedById: dto.updated_by_id ? String(dto.updated_by_id) : null,
+    createdAt: dto.created_at ? String(dto.created_at) : null,
+    updatedAt: dto.updated_at ? String(dto.updated_at) : null,
+    totalJoints: Number(dto.total_joints ?? 0),
+    weldedJoints: Number(dto.welded_joints ?? 0),
+    weldingJointsPercent: Number(dto.welding_joints_percent ?? 0),
+    totalDInch: Number(dto.total_d_inch ?? 0),
+    weldedDInch: Number(dto.welded_d_inch ?? 0),
+    weldingDInchPercent: Number(dto.welding_d_inch_percent ?? 0),
+    totalEdi: Number(dto.total_edi ?? 0),
+    weldedEdi: Number(dto.welded_edi ?? 0),
+    weldingEdiPercent: Number(dto.welding_edi_percent ?? 0),
+    defectiveJointsCount: Number(dto.defective_joints_count ?? 0),
+    linesSummary: linesRaw.map((item) => mapCircuitLineSummaryDto(item as Record<string, unknown>)),
+  };
+}
+
+export function mapTestCircuitDetailDto(dto: Record<string, unknown>): TestCircuitDetail {
+  const base = mapTestCircuitDto(dto);
+  const jointsRaw = Array.isArray(dto.joints) ? dto.joints : [];
+  return {
+    ...base,
+    joints: jointsRaw.map((j) => mapCircuitJointBriefDto(j as Record<string, unknown>)),
+  };
+}
+
+export function mapCircuitAssignmentResultDto(
+  dto: Record<string, unknown>
+): CircuitAssignmentResult {
+  return {
+    circuit: mapTestCircuitDetailDto((dto.circuit || {}) as Record<string, unknown>),
+    affectedJointsCount: Number(dto.affected_joints_count ?? 0),
+  };
+}
+
+export function mapTestCircuitToCreatePayload(payload: {
+  facilityId?: string | null;
+  objectName?: string | null;
+  name: string;
+  sriName?: string | null;
+  sriStatus?: SriStatus;
+  plannedDate?: string | null;
+  actNumber?: string | null;
+  actualTestDate?: string | null;
+}): Record<string, unknown> {
+  const validFacilityId =
+    payload.facilityId && UUID_RE.test(payload.facilityId) ? payload.facilityId : null;
+  return {
+    facility_id: validFacilityId,
+    object_name: validFacilityId ? null : asNullableStr(payload.objectName),
+    name: payload.name.trim(),
+    sri_name: asNullableStr(payload.sriName),
+    sri_status: payload.sriStatus || 'IN_DEVELOPMENT',
+    planned_date: asIsoDateOrNull(payload.plannedDate),
+    act_number: asNullableStr(payload.actNumber),
+    actual_test_date: asIsoDateOrNull(payload.actualTestDate),
+  };
+}
+
+export function mapTestCircuitToUpdatePayload(payload: {
+  version: number;
+  name?: string;
+  sriName?: string | null;
+  sriStatus?: SriStatus;
+  testStatus?: CircuitTestStatus;
+  plannedDate?: string | null;
+  actNumber?: string | null;
+  actualTestDate?: string | null;
+  force?: boolean;
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    version: payload.version,
+    force: Boolean(payload.force),
+  };
+  if (payload.name !== undefined) body.name = payload.name.trim();
+  if (payload.sriName !== undefined) body.sri_name = asNullableStr(payload.sriName);
+  if (payload.sriStatus !== undefined) body.sri_status = payload.sriStatus;
+  if (payload.testStatus !== undefined) body.test_status = payload.testStatus;
+  if (payload.plannedDate !== undefined) body.planned_date = asIsoDateOrNull(payload.plannedDate);
+  if (payload.actNumber !== undefined) body.act_number = asNullableStr(payload.actNumber);
+  if (payload.actualTestDate !== undefined) {
+    body.actual_test_date = asIsoDateOrNull(payload.actualTestDate);
+  }
+  return body;
+}
+
+export function extractCircuitAssignmentConflicts(
+  detail: unknown
+): CircuitAssignmentConflictItem[] {
+  if (!detail || typeof detail !== 'object') return [];
+  const rec = detail as Record<string, unknown>;
+  const raw = Array.isArray(rec.conflicts) ? rec.conflicts : [];
+  return raw.map((item) => {
+    const obj = item as Record<string, unknown>;
+    return {
+      jointId: String(obj.joint_id || ''),
+      jointNumber: String(obj.joint_number || ''),
+      uniqueLineId: String(obj.unique_line_id || ''),
+      lineNumber: obj.line_number ? String(obj.line_number) : undefined,
+      currentCircuitId: String(obj.current_circuit_id || ''),
+      currentCircuitName: String(obj.current_circuit_name || ''),
+    };
+  });
 }

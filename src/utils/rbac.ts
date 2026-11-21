@@ -80,6 +80,9 @@ export interface RolePermissions {
   canCreateOrDeleteJoints: boolean;
   canEditPrepAndWeldingFields: boolean;
   canEditNdtFields: boolean;
+  canManageTestCircuits: boolean;
+  canForceCloseTestCircuit: boolean;
+  canViewAuditLogs: boolean;
 }
 
 /**
@@ -130,6 +133,7 @@ export const PTO_EDITABLE_JOINT_FIELDS = new Set<keyof WeldJoint>([
   'objectName',
   'rdCode',
   'contour',
+  'testCircuitId',
   'lineNumber',
   'uniqueLineId',
   'jointType',
@@ -189,6 +193,11 @@ export const PTO_EDITABLE_JOINT_FIELDS = new Set<keyof WeldJoint>([
   'repairLengthMm',
   'repairDefectType',
   'repairCount',
+]);
+
+export const SK_EDITABLE_JOINT_FIELDS = new Set<keyof WeldJoint>([
+  'contour',
+  'testCircuitId',
 ]);
 
 export function validateRoleDepartmentPair(
@@ -388,12 +397,15 @@ export function getUserRolePermissions(
       canCreateOrDeleteJoints: true,
       canEditPrepAndWeldingFields: true,
       canEditNdtFields: true,
+      canManageTestCircuits: true,
+      canForceCloseTestCircuit: true,
+      canViewAuditLogs: true,
     };
   }
 
-  if (!isActive || sysRole === 'VIEWER' || dept === 'SK') {
+  if (!isActive || sysRole === 'VIEWER') {
     const desc =
-      'Режим наблюдения и аудита: просмотр всех разделов, журналов и экспорт исполнительной документации без права внесения изменений.';
+      'Режим наблюдения: просмотр реестров, журналов и экспорт исполнительной документации без права внесения изменений.';
     return {
       category: 'customer',
       categoryLabel: `${SYSTEM_ROLE_LABELS_RU.VIEWER} · ${DEPARTMENT_LABELS_RU[dept]}`,
@@ -416,6 +428,41 @@ export function getUserRolePermissions(
       canCreateOrDeleteJoints: false,
       canEditPrepAndWeldingFields: false,
       canEditNdtFields: false,
+      canManageTestCircuits: false,
+      canForceCloseTestCircuit: false,
+      canViewAuditLogs: false,
+    };
+  }
+
+  if (dept === 'SK') {
+    const desc = isDeptAdmin
+      ? 'Администратор отдела СК: управление контурами испытаний, утверждение актов, принудительное закрытие и администрирование пользователей СК.'
+      : 'Пользователь отдела СК: формирование и сопровождение контуров испытаний, контроль статусов СРИ и готовности.';
+    return {
+      category: 'customer',
+      categoryLabel: `${SYSTEM_ROLE_LABELS_RU[sysRole]} · СК`,
+      systemRole: sysRole,
+      department: 'SK',
+      isActive: true,
+      isSuperAdmin: false,
+      isDeptAdmin,
+      canManageUsers: isDeptAdmin,
+      canManageAllUsers: false,
+      canPurgeProject: false,
+      canApproveRecords: isDeptAdmin,
+      canUnlockRecords: false,
+      canEditDirectories: false,
+      allowedScopeSummary: desc,
+      roleDescription: desc,
+      canEditWeldingTech: false,
+      canEditLineList: false,
+      canEditLrvCatalog: false,
+      canCreateOrDeleteJoints: false,
+      canEditPrepAndWeldingFields: false,
+      canEditNdtFields: false,
+      canManageTestCircuits: true,
+      canForceCloseTestCircuit: isDeptAdmin,
+      canViewAuditLogs: isDeptAdmin,
     };
   }
 
@@ -445,6 +492,9 @@ export function getUserRolePermissions(
       canCreateOrDeleteJoints: false,
       canEditPrepAndWeldingFields: false,
       canEditNdtFields: false,
+      canManageTestCircuits: false,
+      canForceCloseTestCircuit: false,
+      canViewAuditLogs: isDeptAdmin,
     };
   }
 
@@ -474,13 +524,16 @@ export function getUserRolePermissions(
       canCreateOrDeleteJoints: false,
       canEditPrepAndWeldingFields: false,
       canEditNdtFields: true,
+      canManageTestCircuits: false,
+      canForceCloseTestCircuit: false,
+      canViewAuditLogs: isDeptAdmin,
     };
   }
 
   // PTO (DEPT_ADMIN or OPERATOR)
   const desc = isDeptAdmin
-    ? 'Администратор отдела ПТО: полный CRUD лайнлиста, стыков и каталога ЛРВ, утверждение записей и управление пользователями ПТО.'
-    : 'Пользователь отдела ПТО: создание и редактирование черновиков стыков и линий; изменение справочников, чужих и проверенных записей запрещено.';
+    ? 'Администратор отдела ПТО: управление объектами, шифрами РД, лайнлистом, стыками, контурами испытаний и каталогом ЛРВ, утверждение записей и управление пользователями ПТО.'
+    : 'Пользователь отдела ПТО: создание и редактирование черновиков стыков, заявок НК и контуров испытаний; изменение объектов, шифров РД, лайнлиста и справочников доступно только администратору отдела ПТО.';
   return {
     category: 'pto',
     categoryLabel: `${SYSTEM_ROLE_LABELS_RU[sysRole]} · ПТО`,
@@ -498,12 +551,35 @@ export function getUserRolePermissions(
     allowedScopeSummary: desc,
     roleDescription: desc,
     canEditWeldingTech: false,
-    canEditLineList: true,
+    canEditLineList: isDeptAdmin,
     canEditLrvCatalog: isDeptAdmin,
     canCreateOrDeleteJoints: true,
     canEditPrepAndWeldingFields: true,
     canEditNdtFields: false,
+    canManageTestCircuits: true,
+    canForceCloseTestCircuit: isDeptAdmin,
+    canViewAuditLogs: isDeptAdmin,
   };
+}
+
+/**
+ * Проверяет право пользователя на управление испытательными контурами
+ * (создание, редактирование, привязка линий/стыков): PTO / SK (OPERATOR, DEPT_ADMIN) и SUPERADMIN.
+ */
+export function canManageTestCircuits(
+  user: RbacUserPayload | null | undefined
+): boolean {
+  return getUserRolePermissions(user).canManageTestCircuits;
+}
+
+/**
+ * Проверяет право пользователя на принудительное закрытие контура в статус «Испытано» (force=true):
+ * только SUPERADMIN или DEPT_ADMIN отделов ПТО / СК.
+ */
+export function canForceCloseTestCircuit(
+  user: RbacUserPayload | null | undefined
+): boolean {
+  return getUserRolePermissions(user).canForceCloseTestCircuit;
 }
 
 /**
@@ -678,6 +754,9 @@ export function canUserEditJointField(
   }
   if (perms.isSuperAdmin) {
     return true;
+  }
+  if (perms.department === 'SK' && perms.systemRole !== 'VIEWER') {
+    return SK_EDITABLE_JOINT_FIELDS.has(fieldKey as keyof WeldJoint);
   }
   if (perms.category === 'technologist' || perms.category === 'customer') {
     return false;

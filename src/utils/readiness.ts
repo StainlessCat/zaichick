@@ -263,6 +263,10 @@ export interface LineCompletionStatus {
   uzkRequired: number;
   uzkControlled: number;
   welderNdtDeficits?: string[]; // Список сварщиков с дефицитом контроля на данной линии
+  jointsReadinessPct: number;
+  totalEdi: number;
+  weldedEdi: number;
+  ediReadinessPct: number;
 }
 
 /**
@@ -299,6 +303,10 @@ export function computeLineListItemStatus(
       rkControlled: 0,
       uzkRequired: 0,
       uzkControlled: 0,
+      jointsReadinessPct: 0,
+      totalEdi: 0,
+      weldedEdi: 0,
+      ediReadinessPct: 0,
     };
   }
 
@@ -306,11 +314,17 @@ export function computeLineListItemStatus(
   let controlledJoints = 0;
   let rkControlled = 0;
   let uzkControlled = 0;
+  let totalEdiRaw = 0;
+  let weldedEdiRaw = 0;
 
   for (const j of lineJoints) {
+    const jointEdi = getJointEquivDiaInch(j);
+    totalEdiRaw += jointEdi;
+
     const isWelded = Boolean(j.weldingDate && j.weldingDate.trim() !== '');
     if (isWelded) {
       weldedJoints += 1;
+      weldedEdiRaw += jointEdi;
 
       // Проверка фактического выполнения РК (исключаем «В работе», «Не проводился» и открытый «Ремонт»)
       const hasRk =
@@ -337,6 +351,13 @@ export function computeLineListItemStatus(
       controlledJoints += 1;
     }
   }
+
+  const totalEdi = Math.round(totalEdiRaw * 100) / 100;
+  const weldedEdi = Math.round(weldedEdiRaw * 100) / 100;
+  const jointsReadinessPct =
+    totalJoints > 0 ? Math.round((weldedJoints / totalJoints) * 1000) / 10 : 0;
+  const ediReadinessPct =
+    totalEdiRaw > 0 ? Math.round((weldedEdiRaw / totalEdiRaw) * 1000) / 10 : 0;
 
   // Расчет планового норматива контроля по лайнлисту
   const rkPlanPct =
@@ -457,5 +478,9 @@ export function computeLineListItemStatus(
     uzkRequired,
     uzkControlled,
     welderNdtDeficits,
+    jointsReadinessPct,
+    totalEdi,
+    weldedEdi,
+    ediReadinessPct,
   };
 }

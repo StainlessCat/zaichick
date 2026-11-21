@@ -505,12 +505,24 @@ def build_joints_template_workbook_bytes(
     return _workbook_to_bytes(wb)
 
 
-def build_linelist_workbook_bytes(lines: list[Any], *, is_template: bool = False) -> bytes:
+def _format_id_status_label(value: Any) -> str:
+    raw = value.value if hasattr(value, "value") else str(value or "")
+    return "Подписана" if raw.upper() == "SIGNED" else "В работе"
+
+
+def build_linelist_workbook_bytes(
+    lines: list[Any],
+    *,
+    joints: list[Any] | None = None,
+    is_template: bool = False,
+) -> bytes:
     """Export ProjectLine list or Excel template to XLSX."""
+    from app.services.readiness_service import compute_line_list_item_status
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Проект (лайнлист)"
-    headers = [
+    base_headers = [
         "Объект",
         "Шифр РД",
         "Номер линии",
@@ -527,7 +539,20 @@ def build_linelist_workbook_bytes(lines: list[Any], *, is_template: bool = False
         "УЗК (%)",
         "ПВК (%)",
     ]
-    widths = [26, 36, 16, 28, 18, 20, 24, 24, 16, 18, 16, 18, 10, 10, 10]
+    base_widths = [26, 36, 16, 28, 18, 20, 24, 24, 16, 18, 16, 18, 10, 10, 10]
+    if is_template:
+        headers = [*base_headers, "Статус ИД", "Ответственный ПТО"]
+        widths = [*base_widths, 16, 24]
+    else:
+        headers = [
+            *base_headers,
+            "Готовность по стыкам, %",
+            "Готовность по EDI, %",
+            "Статус ИД",
+            "Ответственный ПТО",
+        ]
+        widths = [*base_widths, 22, 20, 16, 24]
+
     for col, (h, w) in enumerate(zip(headers, widths), start=1):
         ws.cell(row=1, column=col, value=h)
         ws.column_dimensions[get_column_letter(col)].width = w
@@ -552,30 +577,41 @@ def build_linelist_workbook_bytes(lines: list[Any], *, is_template: bool = False
                 100,
                 100,
                 0,
+                "В работе",
+                "Иванов И.И.",
             ]
         ]
+        left_cols = {1, 2, 4, 7, 8, 17}
     else:
-        rows = [
-            [
-                line_item.object_name,
-                line_item.rd_code,
-                line_item.line_number,
-                line_item.line_name,
-                line_item.product,
-                line_item.test_contour,
-                line_item.welding_ntd,
-                line_item.control_ntd,
-                line_item.quality_level,
-                line_item.pipeline_category,
-                line_item.working_pressure,
-                line_item.working_temperature,
-                line_item.rk_percent,
-                line_item.uzk_percent,
-                line_item.pvk_percent,
-            ]
-            for line_item in lines
-        ]
-    _write_table_rows(ws, start_row=2, rows=rows, left_align_cols={1, 2, 4, 7, 8})
+        all_joints = joints or []
+        rows = []
+        for line_item in lines:
+            st = compute_line_list_item_status(line_item, all_joints)
+            rows.append(
+                [
+                    line_item.object_name,
+                    line_item.rd_code,
+                    line_item.line_number,
+                    line_item.line_name,
+                    line_item.product,
+                    line_item.test_contour,
+                    line_item.welding_ntd,
+                    line_item.control_ntd,
+                    line_item.quality_level,
+                    line_item.pipeline_category,
+                    line_item.working_pressure,
+                    line_item.working_temperature,
+                    line_item.rk_percent,
+                    line_item.uzk_percent,
+                    line_item.pvk_percent,
+                    st.joints_readiness_pct if st.total_joints > 0 else "",
+                    st.edi_readiness_pct if st.total_joints > 0 else "",
+                    _format_id_status_label(getattr(line_item, "id_status", None)),
+                    getattr(line_item, "responsible_pto", None) or "",
+                ]
+            )
+        left_cols = {1, 2, 4, 7, 8, 19}
+    _write_table_rows(ws, start_row=2, rows=rows, left_align_cols=left_cols)
     return _workbook_to_bytes(wb)
 
 

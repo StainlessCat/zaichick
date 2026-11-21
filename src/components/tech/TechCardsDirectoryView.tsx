@@ -382,7 +382,7 @@ export const TechCardsDirectoryView: React.FC<TechCardsDirectoryViewProps> = ({
                 <div>
                   <div className="px-4 py-3 bg-[#1e3799] text-white flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                      <Flame className="w-4 h-4 text-amber-300 shrink-0" />
+                      <Flame className="w-4 h-4 text-sky-200 shrink-0" />
                       <span className="font-mono font-bold text-sm truncate">
                         {tc.number}
                       </span>
@@ -392,8 +392,8 @@ export const TechCardsDirectoryView: React.FC<TechCardsDirectoryViewProps> = ({
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           tc.jointKind === 'Угловое'
-                            ? 'bg-amber-400 text-slate-900'
-                            : 'bg-sky-400/30 text-white'
+                            ? 'bg-white text-[#1e3799]'
+                            : 'bg-sky-400/25 text-white'
                         }`}
                       >
                         {tc.jointKind || 'Стыковое'}

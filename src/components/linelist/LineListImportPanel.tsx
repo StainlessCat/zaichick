@@ -7,7 +7,10 @@ import {
   Upload,
 } from 'lucide-react';
 import { ProjectLineItem, WeldJoint } from '../../types/welding';
-import { formatDateDDMMYY } from '../../utils/weldingLogic';
+import {
+  formatDateDDMMYY,
+  formatExecutiveDocStatusLabel,
+} from '../../utils/weldingLogic';
 import { exportProjectLineListToExcel } from '../../utils/excelUtils';
 
 interface LineListImportPanelProps {
@@ -42,11 +45,11 @@ export const LineListImportPanel: React.FC<LineListImportPanelProps> = ({
           <h3 className="font-display text-sm font-bold text-[#1e3799] flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4" />
             <span>
-              Загрузка данных лайнлиста из файла Excel (.xlsx, .xls, .csv) или буфера обмена
+              Загрузка данных лайнлиста из файла Excel или буфера обмена
             </span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Поддерживается прямая загрузка файла Excel с 17 столбцами: Название объекта, Шифр РД, Номер линии, Наименование линии, Продукт, Контур испытания, НТД на сварку, НТД на контроль, Уровень качества, Категория трубопровода, Рабочее давление, Температура, % РК, % УЗК, % ПВК, Статус, Дата испытания.
+            Поддерживается загрузка файла Excel с основными столбцами лайнлиста, а также дополнительными полями: Статус ИД, Ответственный ПТО.
           </p>
         </div>
 
@@ -54,10 +57,10 @@ export const LineListImportPanel: React.FC<LineListImportPanelProps> = ({
           <button
             type="button"
             onClick={() => void exportProjectLineListToExcel([], joints, true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-[#1e3799]" />
-            <span>Скачать шаблон Excel (.xlsx)</span>
+            <span>Скачать шаблон Excel</span>
           </button>
           <button
             type="button"
@@ -150,6 +153,8 @@ export const LineListImportPanel: React.FC<LineListImportPanelProps> = ({
                     <th className="py-1.5 px-2 text-left">Наименование</th>
                     <th className="py-1.5 px-2 text-left">Ур. кач. / Кат.</th>
                     <th className="py-1.5 px-2 text-right">РК/УЗК/ПВК</th>
+                    <th className="py-1.5 px-2 text-left">Статус ИД</th>
+                    <th className="py-1.5 px-2 text-left">Ответственный ПТО</th>
                     <th className="py-1.5 px-2 text-left">Испытание</th>
                   </tr>
                 </thead>
@@ -167,6 +172,12 @@ export const LineListImportPanel: React.FC<LineListImportPanelProps> = ({
                       </td>
                       <td className="py-1.5 px-2 text-right font-mono">
                         {it.rkPercent}/{it.uzkPercent}/{it.pvkPercent}%
+                      </td>
+                      <td className="py-1.5 px-2 whitespace-nowrap">
+                        {formatExecutiveDocStatusLabel(it.idStatus)}
+                      </td>
+                      <td className="py-1.5 px-2 truncate max-w-[140px]">
+                        {it.responsiblePto || '—'}
                       </td>
                       <td className="py-1.5 px-2 font-mono">
                         {formatDateDDMMYY(it.testDate) || '—'}

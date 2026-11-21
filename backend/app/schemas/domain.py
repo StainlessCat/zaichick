@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.enums import (
     ControlResultEnum,
     ElementCombinationEnum,
+    ExecutiveDocStatusEnum,
     JointKindEnum,
     JointTypeEnum,
     LrvElementCategoryEnum,
@@ -161,6 +162,10 @@ class LineCompletionStatusOut(BaseModel):
     total_joints: int
     welded_joints: int
     controlled_joints: int
+    joints_readiness_pct: float = 0.0
+    total_edi: float = 0.0
+    welded_edi: float = 0.0
+    edi_readiness_pct: float = 0.0
     status_label: str
     ndt_status: str
     ndt_status_badge: str
@@ -192,6 +197,8 @@ class ProjectLineCreate(BaseModel):
     pvk_percent: float = Field(default=0.0, ge=0.0, le=100.0)
     manual_status: str | None = None
     test_date: date | None = None
+    id_status: ExecutiveDocStatusEnum = ExecutiveDocStatusEnum.IN_WORK
+    responsible_pto: str | None = Field(default=None, max_length=255)
     weather_station_id: uuid.UUID | None = None
     sort_order: int = 0
 
@@ -216,6 +223,8 @@ class ProjectLineUpdate(BaseModel):
     pvk_percent: float | None = Field(default=None, ge=0.0, le=100.0)
     manual_status: str | None = None
     test_date: date | None = None
+    id_status: ExecutiveDocStatusEnum | None = None
+    responsible_pto: str | None = Field(default=None, max_length=255)
     weather_station_id: uuid.UUID | None = None
     sort_order: int | None = None
 
@@ -243,6 +252,8 @@ class ProjectLineOut(BaseModel):
     pvk_percent: float
     manual_status: str | None = None
     test_date: date | None = None
+    id_status: ExecutiveDocStatusEnum = ExecutiveDocStatusEnum.IN_WORK
+    responsible_pto: str | None = None
     sort_order: int
     record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
     created_by_id: uuid.UUID | None = None
@@ -619,6 +630,7 @@ class WeldJointCreate(BaseModel):
     legacy_id: str | None = None
     line_id: uuid.UUID
     facility_id: uuid.UUID | None = None
+    test_circuit_id: uuid.UUID | None = None
     lrv1_item_id: uuid.UUID | None = None
     lrv2_item_id: uuid.UUID | None = None
     tech_card_id: uuid.UUID | None = None
@@ -736,6 +748,7 @@ class WeldJointCreate(BaseModel):
 class WeldJointUpdate(BaseModel):
     version: int = Field(ge=1)
     facility_id: uuid.UUID | None = None
+    test_circuit_id: uuid.UUID | None = None
     lrv1_item_id: uuid.UUID | None = None
     lrv2_item_id: uuid.UUID | None = None
     tech_card_id: uuid.UUID | None = None
@@ -869,6 +882,7 @@ class WeldJointOut(BaseModel):
     legacy_id: str | None = None
     line_id: uuid.UUID
     facility_id: uuid.UUID | None = None
+    test_circuit_id: uuid.UUID | None = None
     lrv1_item_id: uuid.UUID | None = None
     lrv2_item_id: uuid.UUID | None = None
     tech_card_id: uuid.UUID | None = None

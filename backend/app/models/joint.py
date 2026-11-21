@@ -33,6 +33,7 @@ from app.models.enums import (
 
 if TYPE_CHECKING:
     from app.models.line import ProjectLine
+    from app.models.test_circuit import TestCircuit
 
 
 class WeldJoint(Base):
@@ -67,6 +68,12 @@ class WeldJoint(Base):
     facility_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("facilities.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    test_circuit_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("test_circuits.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -274,3 +281,4 @@ class WeldJoint(Base):
     )
 
     line: Mapped[ProjectLine] = relationship(back_populates="joints")
+    test_circuit: Mapped[TestCircuit | None] = relationship(back_populates="joints")

@@ -3,3 +3,4 @@ export * from './useServerSync';
 export * from './useJointActions';
 export * from './useDirectoryActions';
 export * from './usePermissions';
+export * from './useTestCircuitActions';

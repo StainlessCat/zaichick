@@ -43,6 +43,29 @@ class RecordStatusEnum(str, enum.Enum):
     LOCKED = "LOCKED"
 
 
+class SriStatusEnum(str, enum.Enum):
+    """Special Work Instruction (СРИ) readiness status for a test circuit."""
+
+    IN_DEVELOPMENT = "IN_DEVELOPMENT"
+    DEVELOPED = "DEVELOPED"
+    APPROVED = "APPROVED"
+
+
+class CircuitTestStatusEnum(str, enum.Enum):
+    """Hydraulic / pneumatic test execution status of a test circuit."""
+
+    NOT_TESTED = "NOT_TESTED"
+    TESTED = "TESTED"
+
+
+class ExecutiveDocStatusEnum(str, enum.Enum):
+    """Executive documentation (ИД) status for a pipeline line."""
+
+    IN_WORK = "IN_WORK"
+    SIGNED = "SIGNED"
+
+
+
 # Backward-compatible alias for legacy imports
 RoleEnum = SystemRoleEnum
 

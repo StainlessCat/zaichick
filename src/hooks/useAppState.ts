@@ -6,6 +6,7 @@ import type {
   LRVItem,
   ProjectLineItem,
   TechCardItem,
+  TestCircuit,
   UserAccount,
   WelderProfile,
   WeldingMaterialCertificate,
@@ -28,6 +29,7 @@ import {
   WELDERS_DIRECTORY,
 } from '../data/seedData';
 import { mergeDynamicInspectors } from '../utils/rbac';
+import { buildSeedTestCircuitsFromJoints } from '../utils/testCircuitCalc';
 import type { LoginModalMode } from '../components/LoginModal';
 import {
   AppDataSnapshot,
@@ -60,7 +62,6 @@ export function useAppState() {
     useState<LoginModalMode>('login');
 
   // Выбор объекта и раздела программы
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<AppSection>('registry');
   const [selectedObjectName, setSelectedObjectName] = useState<string>(
     FACILITY_OBJECTS[0].name
@@ -75,6 +76,13 @@ export function useAppState() {
     useState<ProjectLineItem[]>(INITIAL_PROJECT_LINELIST);
   const [lrvCatalog, setLrvCatalog] = useState<LRVItem[]>(INITIAL_LRV_CATALOG);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(INITIAL_AUDIT_LOGS);
+  const [testCircuits, setTestCircuits] = useState<TestCircuit[]>(() => {
+    const facMap: Record<string, string> = {};
+    for (const f of FACILITY_OBJECTS) {
+      facMap[f.name] = f.id;
+    }
+    return buildSeedTestCircuitsFromJoints(INITIAL_JOINTS, INITIAL_PROJECT_LINELIST, facMap);
+  });
 
   // Справочники сварки
   const [welders, setWelders] = useState<WelderProfile[]>(() =>
@@ -148,8 +156,6 @@ export function useAppState() {
     setIsLoginModalOpen,
     loginModalInitialMode,
     setLoginModalInitialMode,
-    isDrawerOpen,
-    setIsDrawerOpen,
     activeSection,
     setActiveSection,
     selectedObjectName,
@@ -162,6 +168,8 @@ export function useAppState() {
     setProjectLineList,
     lrvCatalog,
     setLrvCatalog,
+    testCircuits,
+    setTestCircuits,
     auditLogs,
     setAuditLogs,
     welders,

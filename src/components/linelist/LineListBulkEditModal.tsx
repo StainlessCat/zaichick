@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Check, Layers, Lock, X } from 'lucide-react';
-import { ProjectLineItem } from '../../types/welding';
+import { ExecutiveDocStatus, ProjectLineItem } from '../../types/welding';
 import { formatDateDDMMYY } from '../../utils/weldingLogic';
 
 interface LineListBulkEditModalProps {
@@ -54,6 +54,12 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
     new Date().toISOString().slice(0, 10)
   );
 
+  const [bulkEnableIdStatus, setBulkEnableIdStatus] = useState(false);
+  const [bulkIdStatus, setBulkIdStatus] = useState<ExecutiveDocStatus>('IN_WORK');
+
+  const [bulkEnableResponsiblePto, setBulkEnableResponsiblePto] = useState(false);
+  const [bulkResponsiblePto, setBulkResponsiblePto] = useState('');
+
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -81,6 +87,12 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
     }
     if (bulkEnableTestDate) {
       patch.testDate = bulkTestDate;
+    }
+    if (bulkEnableIdStatus) {
+      patch.idStatus = bulkIdStatus;
+    }
+    if (bulkEnableResponsiblePto) {
+      patch.responsiblePto = bulkResponsiblePto.trim();
     }
 
     onApplyBulk(patch);
@@ -413,6 +425,59 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                     className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono"
                   />
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* 5. Статус ИД и Ответственный инженер ПТО */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/60 space-y-2.5">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={bulkEnableIdStatus}
+                  onChange={(e) => setBulkEnableIdStatus(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-[#1e3799]"
+                />
+                <span className="text-xs font-bold text-slate-900">
+                  Статус ИД
+                </span>
+              </label>
+              {bulkEnableIdStatus && (
+                <select
+                  value={bulkIdStatus}
+                  onChange={(e) => setBulkIdStatus(e.target.value as ExecutiveDocStatus)}
+                  aria-label="Статус ИД для группового изменения"
+                  className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-900 cursor-pointer"
+                >
+                  <option value="IN_WORK">В работе</option>
+                  <option value="SIGNED">Подписана</option>
+                </select>
+              )}
+            </div>
+
+            <div className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/60 space-y-2.5">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={bulkEnableResponsiblePto}
+                  onChange={(e) => setBulkEnableResponsiblePto(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-[#1e3799]"
+                />
+                <span className="text-xs font-bold text-slate-900">
+                  Ответственный ПТО
+                </span>
+              </label>
+              {bulkEnableResponsiblePto && (
+                <input
+                  type="text"
+                  list="ll-pto-engineers-list"
+                  value={bulkResponsiblePto}
+                  onChange={(e) => setBulkResponsiblePto(e.target.value)}
+                  placeholder="Выберите из ПТО, введите ФИО или оставьте пустым"
+                  aria-label="Ответственный ПТО для группового изменения"
+                  className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-xs"
+                />
               )}
             </div>
           </div>

@@ -26,6 +26,7 @@ export type RecordStatus = 'DRAFT' | 'VERIFIED' | 'LOCKED';
 
 export type AppSection =
   | 'registry'
+  | 'testing_circuits'
   | 'laboratory'
   | 'project_linelist'
   | 'welding_tech'
@@ -34,6 +35,92 @@ export type AppSection =
   | 'lrv_catalog'
   | 'audit_log'
   | 'user_guide';
+
+export type SriStatus = 'IN_DEVELOPMENT' | 'DEVELOPED' | 'APPROVED';
+
+export type CircuitTestStatus = 'NOT_TESTED' | 'TESTED';
+
+export interface CircuitLineSummary {
+  lineId: string;
+  lineNumber: string;
+  uniqueLineId: string;
+  rdCode: string;
+  assignedJointsCount: number;
+  lineTotalJointsCount: number;
+  isFullLine: boolean;
+}
+
+export interface CircuitJointBrief {
+  id: string;
+  lineId: string;
+  jointNumber: string;
+  uniqueLineId: string;
+  lineNumber: string;
+  rdCode: string;
+  diameterMm: number;
+  diameterInch: string;
+  wallThickness: number;
+  dInch: number;
+  edi: number;
+  weldingDate?: string | null;
+  welderStamp?: string;
+  isWelded: boolean;
+  vikResult: string;
+  ndtType?: string;
+  ndtResult: string;
+  hasUnresolvedDefect: boolean;
+  recordStatus: RecordStatus;
+  version?: number;
+}
+
+export interface TestCircuit {
+  id: string;
+  facilityId: string;
+  objectName?: string;
+  name: string;
+  sriName?: string | null;
+  sriStatus: SriStatus;
+  testStatus: CircuitTestStatus;
+  plannedDate?: string | null;
+  actualTestDate?: string | null;
+  actNumber?: string | null;
+  recordStatus: RecordStatus;
+  version: number;
+  createdById?: string | null;
+  updatedById?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  // Computed metrics (from PostgreSQL or local calculation)
+  totalJoints: number;
+  weldedJoints: number;
+  weldingJointsPercent: number;
+  totalDInch: number;
+  weldedDInch: number;
+  weldingDInchPercent: number;
+  totalEdi: number;
+  weldedEdi: number;
+  weldingEdiPercent: number;
+  defectiveJointsCount: number;
+  linesSummary: CircuitLineSummary[];
+}
+
+export interface TestCircuitDetail extends TestCircuit {
+  joints: CircuitJointBrief[];
+}
+
+export interface CircuitAssignmentConflictItem {
+  jointId: string;
+  jointNumber: string;
+  uniqueLineId: string;
+  lineNumber?: string;
+  currentCircuitId: string;
+  currentCircuitName: string;
+}
+
+export interface CircuitAssignmentResult {
+  circuit: TestCircuitDetail;
+  affectedJointsCount: number;
+}
 
 export type NdtLabRequestStatus = 'Подана ПТО' | 'В работе ЛНК' | 'Выполнена';
 
@@ -308,6 +395,7 @@ export interface WeldJoint {
   id: string;
   lineId?: string;
   facilityId?: string;
+  testCircuitId?: string | null;
   // Архитектурная привязка (из лайнлиста, нередактируемый справочный блок для созданного стыка)
   objectName: string;
   rdCode: string;
@@ -561,7 +649,8 @@ export interface AuditLogEntry {
     | 'user_deleted'
     | 'project_purged'
     | 'record_status_changed'
-    | 'record_unlocked';
+    | 'record_unlocked'
+    | 'test_circuit_change';
 }
 
 export interface UserAccount {
@@ -596,8 +685,10 @@ export const ANONYMOUS_USER: UserAccount = {
   sessionNumber: 0,
 };
 
+export type ExecutiveDocStatus = 'IN_WORK' | 'SIGNED';
+
 /**
- * Строка раздела «Проект (лайнлист)» (17 полей по ТЗ, включая «Уровень качества»).
+ * Строка раздела «Проект (лайнлист)» (проектные параметры, статус ИД и ответственный инженер ПТО).
  * Поля «Уровень качества» (qualityLevel) и «Категория трубопровода» (pipelineCategory) могут быть пустыми.
  */
 export interface ProjectLineItem {
@@ -621,6 +712,8 @@ export interface ProjectLineItem {
   pvkPercent: number; // 15. Процент контроля ПВК
   manualStatus?: string; // 16. Статус из Excel (если по линии ещё нет стыков в базе)
   testDate: string; // 17. Дата испытания (хранится YYYY-MM-DD или ДД.ММ.ГГ, отображается ДД.ММ.ГГ)
+  idStatus?: ExecutiveDocStatus; // Статус исполнительной документации (В работе / Подписана)
+  responsiblePto?: string; // Ответственный инженер ПТО
   weatherStationId?: string; // Привязка к метеостанции РФ (weather_stations.id)
   weatherStationName?: string; // Название метеостанции (WMO)
   recordStatus?: RecordStatus;
@@ -644,7 +737,10 @@ export type LineListColumnKey =
   | 'rkPercent'
   | 'uzkPercent'
   | 'pvkPercent'
+  | 'readinessProgress'
   | 'computedStatus'
+  | 'idStatus'
+  | 'responsiblePto'
   | 'testDate';
 
 export interface WeatherStationItem {

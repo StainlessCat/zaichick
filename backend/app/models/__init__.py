@@ -1,6 +1,7 @@
 from app.core.database import Base
 from app.models.audit import AuditLog
 from app.models.enums import (
+    CircuitTestStatusEnum,
     ControlResultEnum,
     DepartmentEnum,
     ElementCombinationEnum,
@@ -12,6 +13,7 @@ from app.models.enums import (
     NdtMethodEnum,
     RecordStatusEnum,
     RoleEnum,
+    SriStatusEnum,
     SystemRoleEnum,
     WeldingMaterialStatusEnum,
     WeldingMaterialTypeEnum,
@@ -23,6 +25,7 @@ from app.models.lab_request import NdtLabRequestModel
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
 from app.models.settings import AppSetting, ColumnTemplate
+from app.models.test_circuit import TestCircuit
 from app.models.user import User
 from app.models.weather import WeatherDaily, WeatherStation, WeatherStationAlias
 from app.models.welding_tech import (
@@ -38,6 +41,7 @@ __all__ = [
     "AppSetting",
     "AuditLog",
     "Base",
+    "CircuitTestStatusEnum",
     "ColumnTemplate",
     "ControlResultEnum",
     "CustomWeatherStation",
@@ -57,9 +61,11 @@ __all__ = [
     "ProjectLine",
     "RecordStatusEnum",
     "RoleEnum",
+    "SriStatusEnum",
     "SystemRoleEnum",
     "TechCard",
     "TechCardPreheatRule",
+    "TestCircuit",
     "User",
     "WeatherDaily",
     "WeatherStation",

@@ -47,19 +47,46 @@ from app.services.domain_validation import (
     build_unique_line_id,
     validate_weld_joint_comprehensive,
 )
-from app.services.event_bus import event_bus
+from app.services.event_bus import event_bus, publish_domain_event
 from app.services.pipe_calc import calculate_equivalent_dia_inch, mm_to_inch_diameter
 from app.services.rbac import (
     assert_can_mutate_record,
     assert_can_transition_record_status,
     find_forbidden_joint_fields,
 )
+from app.services.test_circuit_service import (
+    CIRCUIT_ALLOWED_DEPTS,
+    validate_and_sync_joint_circuit_change,
+)
+from app.models.test_circuit import TestCircuit
 
 router = APIRouter(prefix="/api/joints", tags=["joints"])
 
 JOINT_CREATE_DELETE_DEPTS = (DepartmentEnum.PTO,)
-JOINT_EDIT_DEPTS = (DepartmentEnum.PTO, DepartmentEnum.PIL)
+JOINT_EDIT_DEPTS = (DepartmentEnum.PTO, DepartmentEnum.PIL, DepartmentEnum.SK)
 JOINT_STATUS_DEPTS = (DepartmentEnum.PTO, DepartmentEnum.PIL, DepartmentEnum.SK)
+
+_CIRCUIT_METRIC_AFFECTING_FIELDS = frozenset(
+    {
+        "test_circuit_id",
+        "welding_date",
+        "diameter_mm",
+        "diameter_inch",
+        "equiv_diameter_inch",
+        "wall_thickness",
+        "welder_stamp",
+        "vik_result",
+        "ndt_result",
+        "dup_ndt_type",
+        "dup_ndt_result",
+        "repair_action",
+        "repair_vik_result",
+        "repair_ndt_type",
+        "repair_ndt_result",
+        "repair_dup_ndt_type",
+        "repair_dup_ndt_result",
+    }
+)
 
 
 async def _load_validation_context(
@@ -280,6 +307,7 @@ def _build_joint_orm(
         legacy_id=payload.legacy_id,
         line_id=matched_line.id,
         facility_id=payload.facility_id or matched_line.facility_id,
+        test_circuit_id=payload.test_circuit_id,
         lrv1_item_id=payload.lrv1_item_id,
         lrv2_item_id=payload.lrv2_item_id,
         tech_card_id=payload.tech_card_id,
@@ -586,6 +614,19 @@ async def create_joint(
     )
 
     candidate = _build_joint_orm(payload, matched_line, current_user)
+    affected_circuits: set[uuid.UUID] = set()
+    if payload.test_circuit_id is not None:
+        candidate.test_circuit_id = None
+        synced_contour, affected_circuits = await validate_and_sync_joint_circuit_change(
+            session,
+            joint=candidate,
+            new_circuit_id=payload.test_circuit_id,
+            user=current_user,
+        )
+        candidate.test_circuit_id = payload.test_circuit_id
+        if synced_contour is not None:
+            candidate.contour = synced_contour
+
     summary = validate_weld_joint_comprehensive(
         joint=candidate,
         all_joints=ctx["all_joints"],
@@ -624,6 +665,15 @@ async def create_joint(
         updated_by=current_user.login,
         data=snapshot,
     )
+    for cid in affected_circuits:
+        await publish_domain_event(
+            session,
+            event="circuit_updated",
+            entity_type="test_circuit",
+            entity_id=cid,
+            updated_by=current_user.login,
+            data={"action": "joint_created", "circuit_id": str(cid)},
+        )
     return _to_joint_out(candidate, summary)
 
 
@@ -720,6 +770,22 @@ async def update_joint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стык не найден.")
 
     patch_data = payload.model_dump(exclude_unset=True)
+    affected_circuits: set[uuid.UUID] = set()
+    if "test_circuit_id" in patch_data:
+        synced_contour, circuit_ids = await validate_and_sync_joint_circuit_change(
+            session,
+            joint=joint,
+            new_circuit_id=patch_data["test_circuit_id"],
+            user=current_user,
+        )
+        affected_circuits.update(circuit_ids)
+        if synced_contour is not None and "contour" not in patch_data:
+            patch_data["contour"] = synced_contour
+    elif joint.test_circuit_id is not None and (
+        set(patch_data.keys()) & _CIRCUIT_METRIC_AFFECTING_FIELDS
+    ):
+        affected_circuits.add(joint.test_circuit_id)
+
     candidate_preview = _make_candidate_namespace(joint, patch_data)
     ctx = await _load_validation_context(session, target_joints=[joint, candidate_preview])
     old_snap, summary = _apply_joint_patch_and_validate(
@@ -756,6 +822,15 @@ async def update_joint(
         updated_by=current_user.login,
         data=new_snap,
     )
+    for cid in affected_circuits:
+        await publish_domain_event(
+            session,
+            event="circuit_updated",
+            entity_type="test_circuit",
+            entity_id=cid,
+            updated_by=current_user.login,
+            data={"action": "joint_updated", "circuit_id": str(cid)},
+        )
     return _to_joint_out(joint, summary)
 
 
@@ -797,6 +872,7 @@ async def bulk_update_joints(
     joints_by_id: dict[uuid.UUID, WeldJoint] = {j.id: j for j in ctx["all_joints"]}
     joints_by_id.update(target_map)
     updated_results: list[tuple[WeldJoint, dict[str, Any], JointValidationSummary]] = []
+    bulk_affected_circuits: set[uuid.UUID] = set()
 
     for item in payload.items:
         joint = joints_by_id.get(item.id)
@@ -807,6 +883,21 @@ async def bulk_update_joints(
             )
         patch_data = item.model_dump(exclude_unset=True)
         patch_data.pop("id", None)
+        if "test_circuit_id" in patch_data:
+            synced_contour, circuit_ids = await validate_and_sync_joint_circuit_change(
+                session,
+                joint=joint,
+                new_circuit_id=patch_data["test_circuit_id"],
+                user=current_user,
+            )
+            bulk_affected_circuits.update(circuit_ids)
+            if synced_contour is not None and "contour" not in patch_data:
+                patch_data["contour"] = synced_contour
+        elif joint.test_circuit_id is not None and (
+            set(patch_data.keys()) & _CIRCUIT_METRIC_AFFECTING_FIELDS
+        ):
+            bulk_affected_circuits.add(joint.test_circuit_id)
+
         old_snap, summary = _apply_joint_patch_and_validate(
             joint=joint,
             patch_data=patch_data,
@@ -847,6 +938,16 @@ async def bulk_update_joints(
             data=new_snap,
         )
         out_items.append(_to_joint_out(joint, summary))
+
+    for cid in bulk_affected_circuits:
+        await publish_domain_event(
+            session,
+            event="circuit_updated",
+            entity_type="test_circuit",
+            entity_id=cid,
+            updated_by=current_user.login,
+            data={"action": "bulk_joint_updated", "circuit_id": str(cid)},
+        )
 
     return out_items
 
@@ -946,6 +1047,20 @@ async def delete_joint(
         operation="delete",
     )
 
+    if joint.test_circuit_id is not None:
+        bound_circuit = (
+            await session.execute(
+                select(TestCircuit).where(TestCircuit.id == joint.test_circuit_id)
+            )
+        ).scalar_one_or_none()
+        if bound_circuit is not None:
+            assert_can_mutate_record(
+                user=current_user,
+                record=bound_circuit,
+                allowed_departments=CIRCUIT_ALLOWED_DEPTS,
+                operation="update",
+            )
+
     if expected_version is not None:
         enforce_optimistic_lock(
             entity_type="weld_joint",
@@ -955,6 +1070,7 @@ async def delete_joint(
             schema_cls=WeldJointOut,
         )
 
+    old_circuit_id = joint.test_circuit_id
     old_snap = orm_snapshot(joint, WeldJointOut)
     await session.delete(joint)
     await record_audit_log(
@@ -979,3 +1095,12 @@ async def delete_joint(
         updated_by=current_user.login,
         data={"id": str(joint_id)},
     )
+    if old_circuit_id is not None:
+        await publish_domain_event(
+            session,
+            event="circuit_updated",
+            entity_type="test_circuit",
+            entity_id=old_circuit_id,
+            updated_by=current_user.login,
+            data={"action": "joint_deleted", "circuit_id": str(old_circuit_id)},
+        )

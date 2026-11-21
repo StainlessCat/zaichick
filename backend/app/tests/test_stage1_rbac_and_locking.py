@@ -432,6 +432,7 @@ async def test_project_purge_requires_superadmin_password_and_confirm_name_and_l
             _FakeResult(scalar=fac),  # select Facility
             _FakeResult(rows=[]),  # select ProjectLine ids
             _FakeResult(rowcount=5),  # delete WeldJoint
+            _FakeResult(rowcount=1),  # delete TestCircuit
             _FakeResult(rowcount=2),  # delete NdtLabRequestModel
             _FakeResult(rowcount=3),  # delete ProjectLine
             _FakeResult(rowcount=4),  # delete LrvItem
@@ -446,7 +447,8 @@ async def test_project_purge_requires_superadmin_password_and_confirm_name_and_l
         assert r_ok.status_code == 200
         body = r_ok.json()
         assert body["deleted_counts"]["weld_joints"] == 5
-        assert body["total_deleted"] == 14
+        assert body["deleted_counts"]["test_circuits"] == 1
+        assert body["total_deleted"] == 15
         audit_entries = [obj for obj in added_objects if isinstance(obj, AuditLog)]
         assert any(a.action == "PROJECT_PURGED" for a in audit_entries)
     finally:

@@ -47,19 +47,19 @@ export const OptimisticConflictModal: React.FC<OptimisticConflictModalProps> = (
         onClick={onClose}
       />
 
-      <div className="relative z-10 w-full max-w-4xl bg-white rounded-xl shadow-2xl border-2 border-amber-400 overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="relative z-10 w-full max-w-4xl bg-white rounded-xl shadow-2xl border border-slate-300 overflow-hidden flex flex-col max-h-[92vh]">
         {/* Шапка модального окна HTTP 409 Conflict */}
         <div className="flex items-center justify-between px-6 py-4 bg-[#1e3799] text-white shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-amber-500 text-slate-950 shrink-0">
+            <div className="p-2 rounded-lg bg-white/15 text-sky-200 shrink-0">
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-sm sm:text-base font-bold uppercase tracking-wider">
-                  Конфликт оптимистической блокировки (HTTP 409 Conflict)
+                  Конфликт оптимистической блокировки
                 </h2>
-                <span className="px-2 py-0.5 rounded bg-amber-400/20 border border-amber-300 text-amber-200 font-mono text-[11px] font-bold">
+                <span className="px-2 py-0.5 rounded bg-white/15 border border-white/25 text-white font-mono text-[11px] font-bold">
                   v{conflict.expectedVersion} ≠ v{conflict.actualServerVersion}
                 </span>
               </div>

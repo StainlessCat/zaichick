@@ -7,6 +7,7 @@ import {
   Edit3,
   ExternalLink,
   Filter,
+  Gauge,
   MapPin,
   RotateCcw,
   Trash2,
@@ -20,12 +21,22 @@ import {
 import {
   computeLineListItemStatus,
   formatDateDDMMYY,
+  formatExecutiveDocStatusLabel,
   LINELIST_COLUMNS,
+  normalizeExecutiveDocStatus,
 } from '../../utils/weldingLogic';
 import { canUserMutateRecord } from '../../utils/rbac';
 import { RecordStatusActions, RecordStatusBadge } from '../RecordStatusControls';
 import { LineListExcelFilterPopover } from './LineListExcelFilterPopover';
 import { SortConfig } from './types';
+
+export interface LineCircuitBindingSummary {
+  circuitId: string;
+  circuitName: string;
+  assigned: number;
+  total: number;
+  isFull: boolean;
+}
 
 interface LineListTableProps {
   filteredAndSortedList: {
@@ -36,6 +47,9 @@ interface LineListTableProps {
   onToggleSelectAll: () => void;
   onToggleSelectRow: (id: string) => void;
   canEdit: boolean;
+  canSelectForCircuit?: boolean;
+  lineCircuitsMap?: Map<string, LineCircuitBindingSummary[]>;
+  onOpenTestingCircuits?: () => void;
   columnFilters: Partial<Record<LineListColumnKey, string[]>>;
   setColumnFilters: React.Dispatch<
     React.SetStateAction<Partial<Record<LineListColumnKey, string[]>>>
@@ -78,6 +92,9 @@ export const LineListTable: React.FC<LineListTableProps> = ({
   onToggleSelectAll,
   onToggleSelectRow,
   canEdit,
+  canSelectForCircuit = false,
+  lineCircuitsMap,
+  onOpenTestingCircuits,
   columnFilters,
   setColumnFilters,
   openFilterColumnKey,
@@ -228,10 +245,10 @@ export const LineListTable: React.FC<LineListTableProps> = ({
               filteredAndSortedList.map(({ item, status }) => {
                 const isSelected = selectedLineIds.includes(item.id);
                 const rowEditCheck = currentUser
-                  ? canUserMutateRecord(currentUser, item, ['PTO'], 'edit', false)
+                  ? canUserMutateRecord(currentUser, item, ['PTO'], 'edit', true)
                   : { allowed: canEdit };
                 const rowDeleteCheck = currentUser
-                  ? canUserMutateRecord(currentUser, item, ['PTO'], 'delete', false)
+                  ? canUserMutateRecord(currentUser, item, ['PTO'], 'delete', true)
                   : { allowed: canEdit };
                 const canEditRow = canEdit && rowEditCheck.allowed;
                 const canDeleteRow = canEdit && rowDeleteCheck.allowed;
@@ -253,7 +270,7 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                         aria-label={`Выбрать линию ${item.uniqueLineId}`}
                         checked={isSelected}
                         onChange={() => onToggleSelectRow(item.id)}
-                        disabled={!canEditRow}
+                        disabled={!canEditRow && !canSelectForCircuit}
                         className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799] cursor-pointer disabled:opacity-40"
                       />
                     </td>
@@ -408,7 +425,45 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                       }}
                       className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700"
                     >
-                      {item.testContour}
+                      {(() => {
+                        const bindings = lineCircuitsMap?.get(item.uniqueLineId);
+                        if (!bindings || bindings.length === 0) {
+                          return item.testContour || (
+                            <span className="text-slate-400">—</span>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {bindings.map((b) => (
+                              <button
+                                key={b.circuitId}
+                                type="button"
+                                onClick={() => onOpenTestingCircuits?.()}
+                                title={
+                                  b.isFull
+                                    ? `${b.circuitName}: назначена вся линия (${b.assigned}/${b.total} ст.)`
+                                    : `${b.circuitName}: частичное назначение (${b.assigned} из ${b.total} ст.)`
+                                }
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold border transition-colors ${
+                                  onOpenTestingCircuits ? 'cursor-pointer hover:brightness-95' : ''
+                                } ${
+                                  b.isFull
+                                    ? 'bg-[#eef4fc] text-[#1e3799] border-[#1e3799]/25'
+                                    : 'bg-amber-50 text-amber-900 border-amber-300'
+                                }`}
+                              >
+                                <Gauge className="w-3 h-3 shrink-0" />
+                                <span className="truncate max-w-[140px]">{b.circuitName}</span>
+                                {!b.isFull && (
+                                  <span className="font-mono text-[10px] opacity-80">
+                                    {b.assigned}/{b.total}
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td
                       style={{
@@ -497,6 +552,56 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                     </td>
                     <td
                       style={{
+                        width: getColumnWidth('readinessProgress'),
+                        minWidth: getColumnWidth('readinessProgress'),
+                      }}
+                      className="py-2 px-2.5 border-r border-slate-200"
+                    >
+                      {status.totalJoints === 0 ? (
+                        <span
+                          className="text-slate-400 font-mono text-[11px]"
+                          title="Стыки не внесены"
+                        >
+                          —
+                        </span>
+                      ) : (
+                        <div
+                          className="space-y-1"
+                          title={`Стыки: ${status.weldedJoints} из ${status.totalJoints} (${status.jointsReadinessPct}%) · EDI: ${status.weldedEdi} из ${status.totalEdi} (${status.ediReadinessPct}%)`}
+                        >
+                          <div className="flex items-center justify-between gap-2 text-[11px] leading-tight">
+                            <span className="font-mono font-bold text-[#1e3799]">
+                              {status.jointsReadinessPct}%
+                            </span>
+                            <span className="font-mono text-[10px] text-slate-500 whitespace-nowrap">
+                              {status.weldedJoints}/{status.totalJoints} ст.
+                            </span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                status.jointsReadinessPct >= 100
+                                  ? 'bg-emerald-500'
+                                  : 'bg-[#1e3799]'
+                              }`}
+                              style={{
+                                width: `${Math.min(100, Math.max(0, status.jointsReadinessPct))}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between gap-2 text-[10px] leading-tight">
+                            <span className="font-mono font-semibold text-slate-700">
+                              {status.ediReadinessPct}%
+                            </span>
+                            <span className="font-mono text-slate-500 whitespace-nowrap">
+                              {status.weldedEdi}/{status.totalEdi} EDI
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                    <td
+                      style={{
                         width: getColumnWidth('computedStatus'),
                         minWidth: getColumnWidth('computedStatus'),
                       }}
@@ -541,6 +646,39 @@ export const LineListTable: React.FC<LineListTableProps> = ({
                           />
                         )}
                       </div>
+                    </td>
+                    <td
+                      style={{
+                        width: getColumnWidth('idStatus'),
+                        minWidth: getColumnWidth('idStatus'),
+                      }}
+                      className="py-2.5 px-2.5 border-r border-slate-200 whitespace-nowrap"
+                    >
+                      {normalizeExecutiveDocStatus(item.idStatus) === 'SIGNED' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-700" />
+                          <span>{formatExecutiveDocStatusLabel(item.idStatus)}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
+                          {formatExecutiveDocStatusLabel(item.idStatus)}
+                        </span>
+                      )}
+                    </td>
+                    <td
+                      style={{
+                        width: getColumnWidth('responsiblePto'),
+                        minWidth: getColumnWidth('responsiblePto'),
+                      }}
+                      className="py-2.5 px-2.5 border-r border-slate-200 text-slate-700"
+                    >
+                      {item.responsiblePto?.trim() ? (
+                        <span className="font-medium text-slate-800">
+                          {item.responsiblePto.trim()}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td
                       style={{

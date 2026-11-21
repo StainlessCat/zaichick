@@ -536,7 +536,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
         <div className="px-5 py-3.5 bg-gradient-to-r from-[#1e3799] to-[#2a4dbd] text-white flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center">
-              <CloudSun className="w-5 h-5 text-amber-300" />
+              <CloudSun className="w-5 h-5 text-sky-200" />
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-bold">

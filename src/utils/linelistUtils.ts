@@ -1,5 +1,6 @@
 import {
   AuditLogEntry,
+  ExecutiveDocStatus,
   FacilityObject,
   LRVItem,
   ProjectLineItem,
@@ -161,6 +162,24 @@ export function applyBulkUpdateToJoints(
   return { updatedJoints, auditEntries };
 }
 
+export function normalizeExecutiveDocStatus(raw?: string | null): ExecutiveDocStatus {
+  const normalized = (raw || '').trim().toLowerCase();
+  if (
+    normalized === 'signed' ||
+    normalized === 'подписана' ||
+    normalized === 'подписан' ||
+    normalized === 'подписано' ||
+    normalized === 'сдана'
+  ) {
+    return 'SIGNED';
+  }
+  return 'IN_WORK';
+}
+
+export function formatExecutiveDocStatusLabel(status?: ExecutiveDocStatus | string | null): string {
+  return normalizeExecutiveDocStatus(status) === 'SIGNED' ? 'Подписана' : 'В работе';
+}
+
 /**
  * Преобразует массив объектов из листа Excel (или CSV/TSV) с аналогичной структурой полей
  * в типизированный список ProjectLineItem[] для раздела «Проект (лайнлист)».
@@ -172,17 +191,34 @@ export function parseProjectLineListRecords(
 ): ProjectLineItem[] {
   const result: ProjectLineItem[] = [];
 
-  const getField = (row: Record<string, unknown>, candidates: string[], fallbackIdx: number): string => {
+  const getField = (
+    row: Record<string, unknown>,
+    candidates: string[],
+    fallbackIdx?: number,
+    excludeSubstrings: string[] = []
+  ): string => {
     const keys = Object.keys(row);
+    const isExcluded = (k: string) => {
+      const low = k.trim().toLowerCase();
+      return excludeSubstrings.some((ex) => low.includes(ex.toLowerCase()));
+    };
     for (const cand of candidates) {
-      const foundKey = keys.find(
-        (k) => k.trim().toLowerCase() === cand.toLowerCase() || k.trim().toLowerCase().includes(cand.toLowerCase())
+      const exactKey = keys.find(
+        (k) => !isExcluded(k) && k.trim().toLowerCase() === cand.toLowerCase()
       );
-      if (foundKey !== undefined && row[foundKey] !== undefined && row[foundKey] !== null) {
-        return String(row[foundKey]).trim();
+      if (exactKey !== undefined && row[exactKey] !== undefined && row[exactKey] !== null) {
+        return String(row[exactKey]).trim();
       }
     }
-    if (keys[fallbackIdx] !== undefined && row[keys[fallbackIdx]] !== undefined) {
+    for (const cand of candidates) {
+      const partialKey = keys.find(
+        (k) => !isExcluded(k) && k.trim().toLowerCase().includes(cand.toLowerCase())
+      );
+      if (partialKey !== undefined && row[partialKey] !== undefined && row[partialKey] !== null) {
+        return String(row[partialKey]).trim();
+      }
+    }
+    if (fallbackIdx !== undefined && keys[fallbackIdx] !== undefined && row[keys[fallbackIdx]] !== undefined) {
       return String(row[keys[fallbackIdx]]).trim();
     }
     return '';
@@ -232,20 +268,33 @@ export function parseProjectLineListRecords(
     const workingTemperature =
       getField(row, ['температура', 'рабочая температура'], 11) || '-20...+60 °C';
     const rkPercent = parsePercent(
-      getField(row, ['процент контроля рк', 'рк, %', 'контроль рк'], 12),
+      getField(row, ['процент контроля рк', 'рк, %', 'контроль рк', 'рк (%)'], 12),
       100
     );
     const uzkPercent = parsePercent(
-      getField(row, ['процент контроля узк', 'узк, %', 'контроль узк'], 13),
+      getField(row, ['процент контроля узк', 'узк, %', 'контроль узк', 'узк (%)'], 13),
       100
     );
     const pvkPercent = parsePercent(
-      getField(row, ['процент контроля пвк', 'пвк, %', 'контроль пвк'], 14),
+      getField(row, ['процент контроля пвк', 'пвк, %', 'контроль пвк', 'пвк (%)'], 14),
       0
     );
-    const manualStatus = getField(row, ['статус', 'готовность'], 15);
+    const manualStatus = getField(
+      row,
+      ['статус линии', 'статус сварки', 'статус'],
+      15,
+      ['статус ид']
+    );
     const rawTestDate = getField(row, ['дата испытания', 'испытание'], 16);
     const testDate = normalizeDateToISO(rawTestDate) || rawTestDate;
+    const rawIdStatus = getField(row, ['статус ид', 'исполнительная документация']);
+    const idStatus = normalizeExecutiveDocStatus(rawIdStatus);
+    const responsiblePto = getField(row, [
+      'ответственный пто',
+      'ответственный инженер пто',
+      'инженер пто',
+      'ответственный',
+    ]);
 
     const finalLineNumber = lineNumber || `Л-${idx + 1}`;
 
@@ -269,6 +318,8 @@ export function parseProjectLineListRecords(
       pvkPercent,
       manualStatus: manualStatus || undefined,
       testDate,
+      idStatus,
+      responsiblePto: responsiblePto || undefined,
     });
   });
 

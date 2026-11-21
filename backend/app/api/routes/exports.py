@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_client_ip, get_db_session, require_permission
@@ -212,6 +212,7 @@ async def export_linelist_xlsx(
     session: AsyncSession = Depends(get_db_session),
 ) -> Response:
     lines: list[ProjectLine] = []
+    line_joints: list[WeldJoint] = []
     if not template:
         stmt = select(ProjectLine)
         if facility_id is not None:
@@ -219,6 +220,15 @@ async def export_linelist_xlsx(
         if rd_code:
             stmt = stmt.where(ProjectLine.rd_code == rd_code.strip())
         lines = list((await session.execute(stmt.order_by(ProjectLine.sort_order.asc()))).scalars().all())
+        if lines:
+            line_ids = [line.id for line in lines]
+            line_uids = [line.unique_line_id for line in lines if line.unique_line_id]
+            j_filters = [WeldJoint.line_id.in_(line_ids)]
+            if line_uids:
+                j_filters.append(WeldJoint.unique_line_id.in_(line_uids))
+            line_joints = list(
+                (await session.execute(select(WeldJoint).where(or_(*j_filters)))).scalars().all()
+            )
         await record_audit_log(
             session,
             action="EXPORT",
@@ -230,7 +240,7 @@ async def export_linelist_xlsx(
             rd_code=rd_code,
             summary=f"Экспорт проектного лайнлиста ({len(lines)} линий)",
         )
-    payload = build_linelist_workbook_bytes(lines, is_template=template)
+    payload = build_linelist_workbook_bytes(lines, joints=line_joints, is_template=template)
     filename = "ZAYCHICK_Shablon_LineList.xlsx" if template else "ZAYCHICK_Project_LineList.xlsx"
     return _xlsx_response(payload, filename)
 

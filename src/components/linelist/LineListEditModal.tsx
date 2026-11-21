@@ -6,8 +6,12 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { ProjectLineItem } from '../../types/welding';
-import { buildUniqueLineId, formatDateDDMMYY } from '../../utils/weldingLogic';
+import { ExecutiveDocStatus, ProjectLineItem } from '../../types/welding';
+import {
+  buildUniqueLineId,
+  formatDateDDMMYY,
+  normalizeExecutiveDocStatus,
+} from '../../utils/weldingLogic';
 
 interface LineListEditModalProps {
   isOpen: boolean;
@@ -516,7 +520,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-medium text-slate-700">
-                  17. Дата испытания
+                  16. Дата испытания
                 </label>
                 <span className="text-xs font-mono font-bold text-[#1e3799]">
                   {formatDateDDMMYY(editForm.testDate)}
@@ -534,6 +538,46 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 }
                 aria-label="Дата испытания"
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                17. Статус ИД
+              </label>
+              <select
+                value={normalizeExecutiveDocStatus(editForm.idStatus)}
+                onChange={(e) =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    idStatus: e.target.value as ExecutiveDocStatus,
+                  }))
+                }
+                aria-label="Статус ИД"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-semibold text-slate-900 cursor-pointer"
+              >
+                <option value="IN_WORK">В работе</option>
+                <option value="SIGNED">Подписана</option>
+              </select>
+            </div>
+
+            <div className="sm:col-span-2 lg:col-span-3">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                18. Ответственный ПТО
+              </label>
+              <input
+                type="text"
+                list="ll-pto-engineers-list"
+                value={editForm.responsiblePto || ''}
+                onChange={(e) =>
+                  setEditForm((prev) => ({
+                    ...prev,
+                    responsiblePto: e.target.value,
+                  }))
+                }
+                placeholder="Выберите сотрудника ПТО из списка или введите ФИО"
+                aria-label="Ответственный ПТО"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs"
               />
             </div>
           </div>

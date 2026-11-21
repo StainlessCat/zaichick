@@ -50,6 +50,7 @@ class RolePermissions:
     can_create_or_delete_joints: bool
     can_edit_prep_and_welding_fields: bool
     can_edit_ndt_fields: bool
+    can_manage_test_circuits: bool
     can_export_documents: bool
     can_view_audit_logs: bool
 
@@ -102,6 +103,7 @@ PTO_EDITABLE_JOINT_FIELDS: frozenset[str] = frozenset(
         "object_name",
         "rd_code",
         "contour",
+        "test_circuit_id",
         "line_number",
         "unique_line_id",
         "joint_kind",
@@ -171,6 +173,13 @@ PTO_EDITABLE_JOINT_FIELDS: frozenset[str] = frozenset(
     }
 )
 
+SK_EDITABLE_JOINT_FIELDS: frozenset[str] = frozenset(
+    {
+        "test_circuit_id",
+        "contour",
+    }
+)
+
 
 def validate_role_department_pair(role: SystemRoleEnum, department: DepartmentEnum) -> None:
     """Enforce invariant: DepartmentEnum.ALL is strictly reserved for SUPERADMIN."""
@@ -209,6 +218,7 @@ def get_role_permissions(
             can_create_or_delete_joints=True,
             can_edit_prep_and_welding_fields=True,
             can_edit_ndt_fields=True,
+            can_manage_test_circuits=True,
             can_export_documents=True,
             can_view_audit_logs=True,
         )
@@ -220,7 +230,7 @@ def get_role_permissions(
             department=department,
             label=f"Наблюдатель · {dept_label}",
             description=(
-                "Режим инспекционного просмотра: просмотр реестров, журналов, аудита и выгрузка "
+                "Режим инспекционного просмотра: просмотр реестров, журналов и выгрузка "
                 "исполнительной документации без права внесения изменений."
             ),
             can_manage_users=False,
@@ -234,20 +244,22 @@ def get_role_permissions(
             can_create_or_delete_joints=False,
             can_edit_prep_and_welding_fields=False,
             can_edit_ndt_fields=False,
+            can_manage_test_circuits=False,
             can_export_documents=True,
-            can_view_audit_logs=True,
+            can_view_audit_logs=False,
         )
 
     is_dept_admin = role == SystemRoleEnum.DEPT_ADMIN
     role_label = ROLE_LABELS_RU[role]
     dept_label = DEPARTMENT_LABELS_RU.get(department, department.value)
 
-    can_edit_line_list = department == DepartmentEnum.PTO
+    can_edit_line_list = department == DepartmentEnum.PTO and is_dept_admin
     can_edit_lrv_catalog = department == DepartmentEnum.PTO and is_dept_admin
     can_create_or_delete_joints = department == DepartmentEnum.PTO
     can_edit_prep_and_welding = department == DepartmentEnum.PTO
     can_edit_welding_tech = department == DepartmentEnum.OGS and is_dept_admin
     can_edit_ndt = department == DepartmentEnum.PIL
+    can_manage_test_circuits = department in (DepartmentEnum.PTO, DepartmentEnum.SK)
 
     if is_dept_admin:
         description = (
@@ -257,7 +269,7 @@ def get_role_permissions(
     else:
         description = (
             f"Пользователь отдела {dept_label}: создание и редактирование черновиков в своём домене. "
-            "Редактирование справочников, чужих записей при удалении и проверенных/закрытых записей запрещено."
+            "Редактирование объектов, шифров РД, лайнлиста, справочников, чужих записей при удалении и проверенных/закрытых записей запрещено."
         )
 
     return RolePermissions(
@@ -276,8 +288,9 @@ def get_role_permissions(
         can_create_or_delete_joints=can_create_or_delete_joints,
         can_edit_prep_and_welding_fields=can_edit_prep_and_welding,
         can_edit_ndt_fields=can_edit_ndt,
+        can_manage_test_circuits=can_manage_test_circuits,
         can_export_documents=True,
-        can_view_audit_logs=True,
+        can_view_audit_logs=is_dept_admin,
     )
 
 
@@ -301,6 +314,8 @@ def can_edit_joint_field(
         if is_create and field_name == "joint_number":
             return True
         return field_name in PTO_EDITABLE_JOINT_FIELDS
+    if department == DepartmentEnum.SK:
+        return field_name in SK_EDITABLE_JOINT_FIELDS
     return False
 
 
