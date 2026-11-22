@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Установка зависимостей бэкенда ZAYCHICK
 COPY backend/ ./
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir . greenlet && \
+    pip install --no-cache-dir . greenlet httpx && \
     apt-get purge -y --auto-remove build-essential && \
     rm -rf /var/lib/apt/lists/*
 
