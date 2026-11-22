@@ -447,11 +447,11 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                                 )}
                                 {isIncomplete && (
                                   <span
-                                    className="ml-1.5 px-1 py-0.2 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300 shrink-0 inline-flex items-center gap-0.5"
-                                    title={`Внимание: введена дата сварки (${formatDateDDMMYY(joint.weldingDate)}), но не заполнены обязательные поля паспорта (${missingFields.length}): ${missingFields.join(', ')}`}
+                                    className="ml-1.5 p-0.5 rounded text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-300 shrink-0 inline-flex items-center justify-center cursor-help transition-colors"
+                                    title={`Не заполнен: введена дата сварки (${formatDateDDMMYY(joint.weldingDate)}), но не заполнены обязательные поля паспорта (${missingFields.length}): ${missingFields.join(', ')}`}
+                                    aria-label={`Не заполнен: не заполнены обязательные поля паспорта (${missingFields.length}): ${missingFields.join(', ')}`}
                                   >
-                                    <AlertTriangle className="w-2.5 h-2.5 text-amber-700" />
-                                    <span>Не заполнен</span>
+                                    <AlertTriangle className="w-3 h-3 text-amber-600" />
                                   </span>
                                 )}
                               </button>

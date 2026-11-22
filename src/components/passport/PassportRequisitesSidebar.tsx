@@ -487,7 +487,7 @@ export const PassportRequisitesSidebar: React.FC<PassportRequisitesSidebarProps>
                     : 'text-slate-600'
                 }`}
               >
-                Основной (010...)
+                Основной
               </button>
               <button
                 type="button"
@@ -508,7 +508,7 @@ export const PassportRequisitesSidebar: React.FC<PassportRequisitesSidebarProps>
                     : 'text-slate-600'
                 }`}
               >
-                Доп. (011...)
+                Дополнительный
               </button>
             </div>
 

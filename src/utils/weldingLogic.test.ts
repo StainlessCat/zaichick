@@ -146,11 +146,11 @@ test('extractRdSuffix and buildUniqueLineId follow exact specification after las
   assert.equal(buildUniqueLineId(rdLatin, 'ФП1.2/1'), '001-TX3-ФП1.2/1');
 });
 
-test('suggestNextJointNumber generates main joints by 10s (010, 020) and supplementary joints (011, 012)', () => {
-  assert.equal(suggestNextJointNumber([]), '010');
-  assert.equal(suggestNextJointNumber(['010', '020', '030']), '040');
-  assert.equal(suggestNextJointNumber(['010', '020'], '010'), '011');
-  assert.equal(suggestNextJointNumber(['010', '011', '020'], '010'), '012');
+test('suggestNextJointNumber generates sequential main joints (1, 2, 3...) and supplementary joints (1а, 1б...)', () => {
+  assert.equal(suggestNextJointNumber([]), '1');
+  assert.equal(suggestNextJointNumber(['1', '2', '3']), '4');
+  assert.equal(suggestNextJointNumber(['1', '2'], '1'), '1а');
+  assert.equal(suggestNextJointNumber(['1', '1а', '2'], '1'), '1б');
 });
 
 test('filterLrvCatalogByRd strictly isolates LRV items by RD code unless overridden', () => {
@@ -764,7 +764,7 @@ test('nominal bore DN1/DN2, ГОСТ 16037-80 joint types, НАКС positions, a
   assert.equal(gostRow.cells.length, 17);
   assert.equal(gostRow.col1, '1');
   // Во 2 столбце без номера линии и без справочных подписей ("010, С17")
-  assert.equal(gostRow.col2, '010, С17');
+  assert.equal(gostRow.col2, '1, С17');
   assert.equal(gostRow.col3.includes('Клеймо'), false);
   assert.equal(gostRow.col6.includes('T раб. зоны'), false);
   // В 4 столбце без скобок, у наименования элемента убраны диаметр и толщина стенки, НТД и сертификат через запятую, каждый элемент с новой строки
@@ -1413,12 +1413,12 @@ test('COMPREHENSIVE 10-USER SIMULATION: registration of 10 users, collaborative 
   assert.equal(joints[0].elem1Manufacturer, 'ПАО «ЧТПЗ»', 'Завод-изготовитель элемента 1 должен подтянуться из ЛРВ');
   assert.equal(joints[0].elem2Manufacturer, 'АО «СОТ»', 'Завод-изготовитель элемента 2 должен подтянуться из ЛРВ');
 
-  // Добавление дополнительного (ремонтного/монтажного) стыка 011 и временного 012 (на удаление)
+  // Добавление дополнительного (ремонтного/монтажного) стыка 1а и временного 1б (на удаление)
   const line1Nums = joints
     .filter((j) => j.lineNumber === 'ГС-201/1')
     .map((j) => j.jointNumber);
   const suppNum1 = suggestNextJointNumber(line1Nums, '010');
-  assert.equal(suppNum1, '011');
+  assert.equal(suppNum1, '010а');
   const suppJoint011: WeldJoint = {
     ...joints[0],
     id: 'j-sim-011',
@@ -1429,14 +1429,14 @@ test('COMPREHENSIVE 10-USER SIMULATION: registration of 10 users, collaborative 
   const suppJoint012ToDel: WeldJoint = {
     ...joints[0],
     id: 'j-sim-012-del',
-    jointNumber: '012',
+    jointNumber: '010б',
   };
   joints.push(suppJoint012ToDel);
   assert.equal(joints.length, 6);
 
-  // Удаление ошибочного стыка 012
+  // Удаление ошибочного стыка 010б
   joints = joints.filter((j) => j.id !== 'j-sim-012-del');
-  assert.equal(joints.length, 5, 'Ошибочный стык 012 должен быть удалён');
+  assert.equal(joints.length, 5, 'Ошибочный стык должен быть удалён');
 
   // =========================================================================
   // ЭТАП 5. Разноска сварки по рапортам (Инженер ПТО Волков Д.И.) и контроль (ЛНК Лебедев С.А., Попов М.В., Новикова О.А.)

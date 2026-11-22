@@ -882,8 +882,8 @@ export function buildKharasaveyData() {
     const dayStep = Math.max(1, Math.floor(115 / spec.jointsCount));
 
     for (let jIdx = 0; jIdx < spec.jointsCount; jIdx++) {
-      const jointNumVal = (jIdx + 1) * 10;
-      const jointNumber = String(jointNumVal).padStart(3, '0');
+      const jointNumVal = jIdx + 1;
+      const jointNumber = String(jointNumVal);
       const jDate = new Date(startDate.getTime() + jIdx * dayStep * 86400000);
       const weldingDate = jDate.toISOString().split('T')[0];
 
@@ -1013,7 +1013,7 @@ export function buildKharasaveyData() {
           contour: spec.contour,
           lineNumber: spec.lineNum,
           uniqueLineId,
-          jointNumber: `${jointNumber.slice(0, 2)}1`,
+          jointNumber: `${jointNumber}а`,
           isSupplementary: true,
           jointType: 'Монтажный',
           diameterMm: spec.diameter,

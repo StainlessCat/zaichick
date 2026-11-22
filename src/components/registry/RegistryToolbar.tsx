@@ -154,7 +154,7 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
               type="button"
               variant="secondary"
               onClick={onQuickAddSupplementaryJoint}
-              title="Добавить дополнительный стык с нумерацией 011, 012..."
+              title="Добавить дополнительный стык на линии (1а, 1б...)"
             >
               <FilePlus2 className="w-3.5 h-3.5 text-[#1e3799]" />
               <span>Доборный стык</span>
