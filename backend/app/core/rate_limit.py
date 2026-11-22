@@ -5,9 +5,8 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 import math
 import time
-from typing import Any
 
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import case, delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 

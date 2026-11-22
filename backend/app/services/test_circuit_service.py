@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, case, cast, func, literal, or_, select, update
+from sqlalchemy import and_, case, func, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import (
@@ -1265,7 +1265,7 @@ async def assign_lines_to_circuit(
     circuit.updated_at = now
     await session.flush()
 
-    line_labels = [l.unique_line_id for l in lines]
+    line_labels = [line_obj.unique_line_id for line_obj in lines]
     await record_audit_log(
         session,
         action="CIRCUIT_ASSIGN_LINES",

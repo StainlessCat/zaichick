@@ -5,13 +5,11 @@ import asyncio
 import csv
 import io
 import logging
-import sys
 import uuid
 from typing import Any
 
 import httpx
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
 from app.models.weather import WeatherStation

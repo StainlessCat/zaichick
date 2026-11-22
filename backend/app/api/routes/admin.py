@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_client_ip, require_roles, require_superadmin
 from app.core.database import get_db_session
 from app.core.security import hash_password, verify_password
-from app.models.enums import DepartmentEnum, SystemRoleEnum
+from app.models.enums import SystemRoleEnum
 from app.models.facility import Facility
 from app.models.joint import WeldJoint
 from app.models.lab_request import NdtLabRequestModel

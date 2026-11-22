@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 

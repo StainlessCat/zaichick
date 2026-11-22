@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status

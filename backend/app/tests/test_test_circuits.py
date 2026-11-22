@@ -37,6 +37,9 @@ from app.services.test_circuit_service import (
     update_test_circuit,
 )
 
+TestCircuit.__test__ = False
+TestCircuitUpdate.__test__ = False
+
 
 def _make_user(
     *,
