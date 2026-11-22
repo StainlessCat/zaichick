@@ -87,11 +87,11 @@ export const LrvTable: React.FC<LrvTableProps> = ({
           <thead className="sticky top-0 z-20 shadow-xs">
             <tr className="bg-[#1e3799] text-white text-left">
               <th
-                className="py-2.5 px-2 border-r border-white/15 w-8 text-center bg-[#1e3799]"
+                className="py-2.5 px-2 border-r border-white/15 w-8 min-w-[32px] max-w-[32px] text-center sticky left-0 top-0 z-30 bg-[#1e3799]"
                 title="Раскрыть перечень актов"
               />
               {onDeleteLrvItems && (
-                <th className="py-2.5 px-2.5 border-r border-white/15 w-9 text-center sticky left-0 top-0 z-30 bg-[#1e3799]">
+                <th className="py-2.5 px-2.5 border-r border-white/15 w-9 min-w-[36px] max-w-[36px] text-center sticky left-8 top-0 z-30 bg-[#1e3799]">
                   <input
                     type="checkbox"
                     aria-label="Выбрать все материалы в ЛРВ"

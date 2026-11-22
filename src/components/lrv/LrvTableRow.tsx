@@ -57,17 +57,42 @@ export const LrvTableRow: React.FC<LrvTableRowProps> = ({
   const category = resolveLrvItemCategory(item);
   const isUsed = Boolean(joints && isLrvItemUsedInJoints(item, joints));
 
+  const handleRowClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button, input, select, textarea, a, label')) {
+      return;
+    }
+    onToggleExpand(item.id);
+  };
+
   return (
     <React.Fragment key={item.id}>
       <tr
-        className={`hover:bg-[#e8f1fc]/50 transition-colors ${
-          isSelected ? 'bg-[#e8f1fc]' : 'odd:bg-white even:bg-slate-50/60'
+        onClick={handleRowClick}
+        title="Нажмите на строку, чтобы раскрыть партии и акты входного контроля"
+        className={`hover:bg-[#e8f1fc] transition-colors cursor-pointer select-none ${
+          isSelected
+            ? 'bg-[#e8f1fc]'
+            : isExpanded
+            ? 'bg-sky-50/70'
+            : 'odd:bg-white even:bg-slate-50/60'
         }`}
       >
-        <td className="py-2.5 px-1.5 text-center border-r border-slate-200">
+        <td
+          className={`py-2.5 px-1.5 text-center border-r border-slate-200 sticky left-0 z-10 w-8 min-w-[32px] max-w-[32px] ${
+            isSelected
+              ? 'bg-[#e8f1fc]'
+              : isExpanded
+              ? 'bg-sky-50'
+              : 'bg-white'
+          }`}
+        >
           <button
             type="button"
-            onClick={() => onToggleExpand(item.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand(item.id);
+            }}
             className="p-1 rounded hover:bg-slate-200 text-slate-500 transition-colors cursor-pointer"
             aria-label="Раскрыть партии и акты входного контроля"
           >
@@ -80,12 +105,21 @@ export const LrvTableRow: React.FC<LrvTableRowProps> = ({
         </td>
 
         {onDeleteLrvItems && (
-          <td className="py-2.5 px-2.5 border-r border-slate-200 text-center sticky left-0 z-10 bg-inherit">
+          <td
+            className={`py-2.5 px-2.5 border-r border-slate-200 text-center sticky left-8 z-10 w-9 min-w-[36px] max-w-[36px] ${
+              isSelected
+                ? 'bg-[#e8f1fc]'
+                : isExpanded
+                ? 'bg-sky-50'
+                : 'bg-white'
+            }`}
+          >
             <input
               type="checkbox"
               aria-label={`Выбрать позицию ЛРВ ${item.lrvCode}`}
               checked={isSelected}
               onChange={() => onToggleSelect(item.id)}
+              onClick={(e) => e.stopPropagation()}
               className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799] cursor-pointer"
             />
           </td>

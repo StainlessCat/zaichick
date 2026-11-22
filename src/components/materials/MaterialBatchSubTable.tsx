@@ -30,24 +30,24 @@ export const MaterialBatchSubTable: React.FC<MaterialBatchSubTableProps> = ({
 
   return (
     <div className="bg-slate-50/90 p-4 border-t border-b border-slate-300">
-      <div className="flex items-center justify-between mb-3">
+      <div className="sticky left-0 inline-flex flex-wrap items-center gap-3 mb-3 bg-slate-100/90 py-1.5 px-3 rounded-lg border border-slate-200/80 z-10 shadow-2xs">
         <div className="flex items-center gap-2">
           <FileText className="w-4 h-4 text-[#1e3799]" />
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800">
             Партии поступления и акты входного контроля
           </h4>
           <span className="text-xs text-slate-500 font-medium">
-            Всего актов: {batches.length}
+            Всего: {batches.length}
           </span>
         </div>
 
         {canEdit && onAddAct && (
           <Button
             type="button"
-            variant="secondary"
+            variant="primary"
             size="sm"
             onClick={() => onAddAct(material.id)}
-            className="flex items-center gap-1.5 text-xs text-[#1e3799] border-[#1e3799]/30 hover:bg-[#e8f1fc]"
+            className="flex items-center gap-1.5 text-xs bg-[#1e3799] hover:bg-[#15286e] text-white font-semibold shadow-xs"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Внести акт входного контроля</span>
@@ -56,7 +56,7 @@ export const MaterialBatchSubTable: React.FC<MaterialBatchSubTableProps> = ({
       </div>
 
       {batches.length === 0 ? (
-        <div className="py-6 px-4 text-center rounded-lg border border-dashed border-slate-300 bg-white">
+        <div className="sticky left-0 max-w-xl py-6 px-4 text-center rounded-lg border border-dashed border-slate-300 bg-white shadow-2xs">
           <Clock className="w-8 h-8 text-slate-400 mx-auto mb-2" />
           <p className="text-sm font-medium text-slate-700">
             По данной позиции спецификации акты входного контроля пока не зарегистрированы
@@ -64,19 +64,33 @@ export const MaterialBatchSubTable: React.FC<MaterialBatchSubTableProps> = ({
           <p className="text-xs text-slate-500 mt-1">
             Материал заблокирован для вовлечения в сборку и сварку стыков до подписания заключения лаборатории
           </p>
+          {canEdit && onAddAct && (
+            <div className="mt-3.5">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => onAddAct(material.id)}
+                className="inline-flex items-center gap-1.5 text-xs bg-[#1e3799] hover:bg-[#15286e] text-white font-semibold shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Внести акт входного контроля</span>
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded border border-slate-200 bg-white shadow-xs">
+        <div className="sticky left-0 overflow-x-auto rounded border border-slate-200 bg-white shadow-xs max-w-5xl">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-100/90 text-slate-700 font-semibold border-b border-slate-200">
                 <th className="py-2 px-3 border-r border-slate-200">Номер акта</th>
                 <th className="py-2 px-3 border-r border-slate-200">Дата акта</th>
-                <th className="py-2 px-3 border-r border-slate-200">Сертификат / паспорт</th>
+                <th className="py-2 px-3 border-r border-slate-200">Сертификаты, паспорта</th>
                 <th className="py-2 px-3 border-r border-slate-200">Плавка / партия</th>
                 <th className="py-2 px-3 border-r border-slate-200">Заводские номера</th>
-                <th className="py-2 px-3 border-r border-slate-200 text-right">Количество, {material.unit}</th>
-                <th className="py-2 px-3 border-r border-slate-200 text-center">Заключение контроля</th>
+                <th className="py-2 px-3 border-r border-slate-200 text-right">Количество</th>
+                <th className="py-2 px-3 border-r border-slate-200 text-center">Результат контроля</th>
                 <th className="py-2 px-3 border-r border-slate-200">Контролёр</th>
                 <th className="py-2 px-3 text-center">Действия</th>
               </tr>
@@ -129,14 +143,14 @@ export const MaterialBatchSubTable: React.FC<MaterialBatchSubTableProps> = ({
                       {isAccepted && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>Годен</span>
+                          <span>Пройден</span>
                         </span>
                       )}
                       {isRejected && (
                         <div className="flex flex-col items-center gap-0.5">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800">
                             <XCircle className="w-3 h-3 text-rose-600" />
-                            <span>Брак</span>
+                            <span>Не пройден</span>
                           </span>
                           {batch.rejectionReason && (
                             <span

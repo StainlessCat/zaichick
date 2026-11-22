@@ -30,6 +30,7 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
   const [certificateNumber, setCertificateNumber] = useState('');
   const [heatNumber, setHeatNumber] = useState('');
   const [quantity, setQuantity] = useState<number>(remainingQty > 0 ? remainingQty : 1);
+  const [unit, setUnit] = useState<'шт' | 'м'>(() => (material.unit === 'м' ? 'м' : 'шт'));
   const [serialNumbers, setSerialNumbers] = useState('');
   const [verdict, setVerdict] = useState<'accepted' | 'rejected'>('accepted');
   const [inspectorName, setInspectorName] = useState('Орлова Е. В.');
@@ -63,16 +64,22 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
       .map((s) => s.trim())
       .filter(Boolean);
 
+    const certs = certificateNumber
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .join(', ');
+
     const newBatch: MaterialBatchAct = {
       id: `batch-${Date.now()}`,
       materialId: material.id,
       actNumber: actNumber.trim(),
       actDate: actDate.trim(),
-      certificateNumber: certificateNumber.trim(),
+      certificateNumber: certs || certificateNumber.trim(),
       heatNumber: heatNumber.trim() || undefined,
       serialNumbers: serials.length > 0 ? serials : undefined,
       quantity,
-      unit: material.unit,
+      unit,
       verdict,
       inspectorName: inspectorName.trim() || undefined,
       rejectionReason: verdict === 'rejected' ? rejectionReason.trim() : undefined,
@@ -145,14 +152,14 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
 
             <div>
               <label htmlFor="modalCertNumberInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                Номер сертификата / паспорта:
+                Сертификаты и паспорта через запятую:
               </label>
               <input
                 id="modalCertNumberInput"
                 type="text"
                 value={certificateNumber}
                 onChange={(e) => setCertificateNumber(e.target.value)}
-                placeholder="4511/ТПА"
+                placeholder="4511/ТПА, 4512/ТПА"
                 className="w-full px-2.5 py-1.5 text-xs font-mono rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
               />
             </div>
@@ -173,33 +180,46 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
 
             <div>
               <label htmlFor="modalQuantityInput" className="block text-slate-600 text-[11px] mb-1 font-semibold">
-                Количество в партии, {material.unit}:
+                Количество в партии:
               </label>
-              <input
-                id="modalQuantityInput"
-                type="number"
-                min={1}
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-                className="w-full px-2.5 py-1.5 text-xs font-mono font-bold rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
-              />
+              <div className="flex gap-2">
+                <input
+                  id="modalQuantityInput"
+                  type="number"
+                  min={0.01}
+                  step="any"
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                  className="flex-1 px-2.5 py-1.5 text-xs font-mono font-bold rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                />
+                <select
+                  id="modalUnitSelect"
+                  aria-label="Единица измерения количества"
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value as 'шт' | 'м')}
+                  className="w-20 px-2.5 py-1.5 text-xs font-semibold rounded border border-slate-300 bg-white focus:ring-1 focus:ring-[#1e3799]"
+                >
+                  <option value="шт">шт</option>
+                  <option value="м">м</option>
+                </select>
+              </div>
               <span className="text-[10px] text-slate-500 mt-0.5 block">
-                Не закрыто актами по проекту: {remainingQty} {material.unit}
+                Не закрыто актами по проекту: {remainingQty} {unit}
               </span>
             </div>
 
             <div>
               <label htmlFor="modalVerdictSelect" className="block text-slate-600 text-[11px] mb-1 font-semibold">
-                Заключение лаборатории:
+                Результат контроля:
               </label>
               <select
                 id="modalVerdictSelect"
                 value={verdict}
                 onChange={(e) => setVerdict(e.target.value as 'accepted' | 'rejected')}
-                className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 bg-white focus:ring-1 focus:ring-[#1e3799]"
+                className="w-full px-2.5 py-1.5 text-xs font-semibold rounded border border-slate-300 bg-white focus:ring-1 focus:ring-[#1e3799]"
               >
-                <option value="accepted">Годен к монтажу</option>
-                <option value="rejected">Выявлен брак (отклонен)</option>
+                <option value="accepted">Пройден</option>
+                <option value="rejected">Не пройден</option>
               </select>
             </div>
 
