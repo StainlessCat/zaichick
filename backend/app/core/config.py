@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Any, Literal
 
@@ -60,14 +61,58 @@ class Settings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def normalize_database_url(cls, data: Any) -> Any:
-        """Automatically normalize cloud DSNs (postgres:// -> postgresql+asyncpg://, sslmode -> ssl)."""
+        """Automatically normalize cloud DSNs or assemble from separate environment variables."""
         if isinstance(data, dict):
             raw_url = data.get("DATABASE_URL") or data.get("database_url")
+
+            # Check for separate environment variables (DB_USER, DB_PASSWORD, DB_HOST, DB_NAME, DB_PORT)
+            db_user = (
+                data.get("DB_USER")
+                or os.getenv("DB_USER")
+                or data.get("POSTGRES_USER")
+                or os.getenv("POSTGRES_USER")
+            )
+            db_pass = (
+                data.get("DB_PASSWORD")
+                or os.getenv("DB_PASSWORD")
+                or data.get("POSTGRES_PASSWORD")
+                or os.getenv("POSTGRES_PASSWORD")
+            )
+            db_host = (
+                data.get("DB_HOST")
+                or os.getenv("DB_HOST")
+                or data.get("POSTGRES_HOST")
+                or os.getenv("POSTGRES_HOST")
+            )
+            db_name = (
+                data.get("DB_NAME")
+                or os.getenv("DB_NAME")
+                or data.get("POSTGRES_DB")
+                or os.getenv("POSTGRES_DB")
+            )
+            db_port = (
+                data.get("DB_PORT")
+                or os.getenv("DB_PORT")
+                or data.get("POSTGRES_PORT")
+                or os.getenv("POSTGRES_PORT")
+                or "5432"
+            )
+
+            # If raw_url looks like just a hostname (e.g. cnpg-zaychick2-rw) and separate credentials are provided:
+            if raw_url and "://" not in raw_url and "@" not in raw_url:
+                if not db_host:
+                    db_host = raw_url.strip()
+
+            if db_user and db_pass and db_host and db_name:
+                raw_url = f"postgresql+asyncpg://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+
             if raw_url and isinstance(raw_url, str):
                 normalized = raw_url.strip()
                 if normalized.startswith("postgres://"):
                     normalized = "postgresql+asyncpg://" + normalized[len("postgres://"):]
-                elif normalized.startswith("postgresql://") and not normalized.startswith("postgresql+asyncpg://"):
+                elif normalized.startswith("postgresql://") and not normalized.startswith(
+                    "postgresql+asyncpg://"
+                ):
                     normalized = "postgresql+asyncpg://" + normalized[len("postgresql://"):]
                 normalized = normalized.replace("sslmode=require", "ssl=require")
                 data["database_url"] = normalized
@@ -77,9 +122,17 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_and_dsn(self) -> Settings:
         if not self.database_url.startswith("postgresql+asyncpg://"):
+            hint = ""
+            if "://" not in self.database_url:
+                hint = (
+                    f"\nВнимание: значение '{self.database_url}' похоже только на имя хоста базы данных. "
+                    f"В Amvera необходимо указать полную строку подключения вида:\n"
+                    f"postgresql://<пользователь>:<пароль>@{self.database_url}:5432/<имя_базы>\n"
+                    f"Скопируйте пользователя, пароль и имя базы из карточки PostgreSQL в Amvera."
+                )
             raise ValueError(
                 f"Некорректный DATABASE_URL ('{self.database_url}'). "
-                "ZAYCHICK 2.0 требует асинхронный драйвер PostgreSQL: 'postgresql+asyncpg://user:pass@host:port/dbname'."
+                f"ZAYCHICK 2.0 требует асинхронный драйвер PostgreSQL: 'postgresql+asyncpg://user:pass@host:port/dbname'.{hint}"
             )
 
         if self.environment == "production":

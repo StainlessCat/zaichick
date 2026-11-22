@@ -161,3 +161,21 @@ def test_database_url_cloud_normalization():
 
     s2 = Settings(database_url="postgresql://user:pass@host:5432/db?sslmode=require")
     assert s2.database_url == "postgresql+asyncpg://user:pass@host:5432/db?ssl=require"
+
+
+def test_database_url_assembly_from_components():
+    """Verify separate DB env vars (e.g. from cloud platforms) assemble a valid asyncpg DSN."""
+    s = Settings(
+        DATABASE_URL="cnpg-zaychick2-rw",
+        DB_USER="app_user",
+        DB_PASSWORD="secret_password",
+        DB_NAME="zaychick_db",
+    )
+    assert s.database_url == "postgresql+asyncpg://app_user:secret_password@cnpg-zaychick2-rw:5432/zaychick_db"
+
+
+def test_database_url_hostname_only_hint():
+    """Verify informative error message when only hostname is provided without credentials."""
+    with pytest.raises(ValidationError) as exc:
+        Settings(DATABASE_URL="cnpg-zaychick2-rw")
+    assert "В Amvera необходимо указать полную строку подключения" in str(exc.value)
