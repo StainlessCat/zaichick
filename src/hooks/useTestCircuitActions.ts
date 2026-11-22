@@ -239,6 +239,7 @@ export function useTestCircuitActions({
         actNumber?: string | null;
         actualTestDate?: string | null;
         force?: boolean;
+        forceReason?: string | null;
       }
     ): Promise<CircuitActionOutcome<TestCircuitDetail>> => {
       if (isOnline && UUID_RE.test(circuitId)) {
@@ -290,22 +291,41 @@ export function useTestCircuitActions({
           };
         }
         const blockers: string[] = [];
-        if (metrics.totalJoints === 0) blockers.push('В контуре нет привязанных стыков');
+        if (metrics.totalJoints === 0) {
+          return {
+            ok: false,
+            error: 'В контуре нет привязанных стыков. Перевод в статус «Испытано» невозможен.',
+            errorCode: 'CIRCUIT_CRITICAL_DEFECTS_BLOCK',
+          };
+        }
+        if (metrics.defectiveJointsCount > 0) {
+          return {
+            ok: false,
+            error: `В контуре есть неисправленный брак (${metrics.defectiveJointsCount} стык.). Принудительное закрытие категорически запрещено.`,
+            errorCode: 'CIRCUIT_CRITICAL_DEFECTS_BLOCK',
+          };
+        }
         if (metrics.weldingJointsPercent < 100) {
           blockers.push(`Сварка выполнена не полностью (${metrics.weldedJoints} из ${metrics.totalJoints} стыков)`);
         }
         if (nextSriStatus !== 'APPROVED') {
           blockers.push('СРИ не согласована');
         }
-        if (metrics.defectiveJointsCount > 0) {
-          blockers.push(`Есть неисправленный брак (${metrics.defectiveJointsCount} стык.)`);
-        }
-        if (blockers.length > 0 && !payload.force) {
-          return {
-            ok: false,
-            error: `Контур не готов к переводу в «Испытано»: ${blockers.join('; ')}.`,
-            errorCode: 'CIRCUIT_NOT_READY_FOR_TEST',
-          };
+        if (blockers.length > 0) {
+          if (!payload.force) {
+            return {
+              ok: false,
+              error: `Контур не готов к переводу в «Испытано»: ${blockers.join('; ')}.`,
+              errorCode: 'CIRCUIT_NOT_READY_FOR_TEST',
+            };
+          }
+          if (!payload.forceReason?.trim()) {
+            return {
+              ok: false,
+              error: 'Для принудительного перевода контура в статус «Испытано» обязательно укажите обоснование.',
+              errorCode: 'CIRCUIT_FORCE_REASON_REQUIRED',
+            };
+          }
         }
       }
 

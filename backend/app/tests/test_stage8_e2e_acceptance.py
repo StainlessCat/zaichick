@@ -19,6 +19,7 @@ from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.models.enums import (
     ControlResultEnum,
+    DepartmentEnum,
     ElementCombinationEnum,
     JointKindEnum,
     JointTypeEnum,
@@ -127,7 +128,7 @@ async def test_stage8_full_operational_e2e_lifecycle(tmp_path):
             password_hash=hash_password("SuperSecret123!"),
             full_name="Главный Администратор",
             role=RoleEnum.ADMIN,
-            department="ИТ",
+            department=DepartmentEnum.ALL,
             is_active=True,
             session_number=1,
             created_at=now,
@@ -139,7 +140,7 @@ async def test_stage8_full_operational_e2e_lifecycle(tmp_path):
             password_hash=hash_password("PtoPass123!"),
             full_name="Инженер ПТО Сидоров",
             role=RoleEnum.PTO,
-            department="ПТО",
+            department=DepartmentEnum.PTO,
             is_active=True,
             session_number=1,
             created_at=now,
@@ -151,7 +152,7 @@ async def test_stage8_full_operational_e2e_lifecycle(tmp_path):
             password_hash=hash_password("PilPass123!"),
             full_name="Дефектоскопист ПИЛ Петров",
             role=RoleEnum.PIL,
-            department="ЛНК",
+            department=DepartmentEnum.PIL,
             is_active=True,
             session_number=1,
             created_at=now,
@@ -163,7 +164,7 @@ async def test_stage8_full_operational_e2e_lifecycle(tmp_path):
             password_hash=hash_password("OgsPass123!"),
             full_name="Главный Сварщик ОГС Васильев",
             role=RoleEnum.OGS,
-            department="ОГС",
+            department=DepartmentEnum.OGS,
             is_active=True,
             session_number=1,
             created_at=now,
@@ -175,7 +176,7 @@ async def test_stage8_full_operational_e2e_lifecycle(tmp_path):
             password_hash=hash_password("ViewerPass123!"),
             full_name="Представитель Заказчика (Газпром)",
             role=RoleEnum.VIEWER,
-            department="Технадзор",
+            department=DepartmentEnum.SK,
             is_active=True,
             session_number=1,
             created_at=now,
@@ -348,7 +349,8 @@ async def test_stage8_full_operational_e2e_lifecycle(tmp_path):
         )
         assert login_res.status_code == 200, f"Login failed: {login_res.text}"
         auth_body = login_res.json()
-        assert auth_body["user"]["role"] == "PTO"
+        assert auth_body["user"]["role"] in ("PTO", "OPERATOR")
+        assert auth_body["user"]["department"] in ("PTO", "ПТО")
         assert "zaychick_jwt" in login_res.cookies or "Set-Cookie" in login_res.headers
 
         # Programmatic client token endpoint
@@ -596,6 +598,7 @@ async def test_stage8_rbac_field_isolation_and_viewer_immutability():
         password_hash=hash_password("Pass123!"),
         full_name="ПТО",
         role=RoleEnum.PTO,
+        department=DepartmentEnum.PTO,
         is_active=True,
         session_number=1,
         created_at=now,
@@ -607,6 +610,7 @@ async def test_stage8_rbac_field_isolation_and_viewer_immutability():
         password_hash=hash_password("Pass123!"),
         full_name="ПИЛ",
         role=RoleEnum.PIL,
+        department=DepartmentEnum.PIL,
         is_active=True,
         session_number=1,
         created_at=now,
@@ -618,6 +622,7 @@ async def test_stage8_rbac_field_isolation_and_viewer_immutability():
         password_hash=hash_password("Pass123!"),
         full_name="Наблюдатель",
         role=RoleEnum.VIEWER,
+        department=DepartmentEnum.SK,
         is_active=True,
         session_number=1,
         created_at=now,

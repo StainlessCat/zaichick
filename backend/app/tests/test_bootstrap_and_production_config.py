@@ -10,7 +10,7 @@ from sqlalchemy.pool import NullPool
 from app.cli.bootstrap_admin import bootstrap_admin
 from app.core.config import Settings
 from app.core.database import verify_schema_migrations_applied
-from app.models.enums import RoleEnum
+from app.models.enums import DepartmentEnum, RoleEnum
 
 TEST_DATABASE_URL = "postgresql+asyncpg://zaychick:zaychick_dev_password@127.0.0.1:5432/zaychick_test"
 test_engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
@@ -123,7 +123,7 @@ async def test_bootstrap_admin_idempotency_and_forbidden_passwords():
                 login=f"admin_{uuid.uuid4().hex[:6]}",
                 password="123",  # Forbidden!
                 full_name="Админ",
-                department="ОИТ",
+                department=DepartmentEnum.ALL,
                 session=session,
             )
         assert "запрещённым" in str(exc.value) or "слабый" in str(exc.value)

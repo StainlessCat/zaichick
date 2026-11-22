@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 from pathlib import Path
 from typing import Any
@@ -132,3 +133,96 @@ def test_docker_compose_and_env_templates() -> None:
     assert "JWT_SECRET_KEY=" in env_text
     assert "COOKIE_SECURE=true" in env_text
 
+    # [C-01] Ensure docker-compose.override.yml is absent so docker compose up cannot auto-merge dev secrets in production
+    assert not (repo_root / "docker-compose.override.yml").exists(), (
+        "docker-compose.override.yml is forbidden as Docker Compose automatically merges it in production. "
+        "Use docker-compose.dev.yml instead."
+    )
+    assert not (repo_root / "docker-compose.override.yaml").exists()
+
+    # Verify dedicated dev compose file exists with explicit dev environment profile
+    dev_compose_path = repo_root / "docker-compose.dev.yml"
+    assert dev_compose_path.exists(), f"docker-compose.dev.yml not found at {dev_compose_path}"
+    dev_compose_text = dev_compose_path.read_text(encoding="utf-8")
+    assert "ENVIRONMENT: development" in dev_compose_text
+
+@pytest.mark.asyncio
+async def test_sse_heartbeat_idle_timeout() -> None:
+    bus = SseEventBus()
+    events_received: list[dict[str, Any]] = []
+
+    async def collect() -> None:
+        async for evt in bus.subscribe(heartbeat_interval=0.05):
+            events_received.append(evt)
+            if len(events_received) >= 3:
+                break
+
+    await asyncio.wait_for(collect(), timeout=1.0)
+
+    assert len(events_received) >= 3
+    assert events_received[0]["event"] == "connected"
+    assert events_received[1]["event"] == "ping"
+    assert events_received[1]["heartbeat"] is True
+    assert "timestamp" in events_received[1]
+    assert events_received[2]["event"] == "ping"
+
+
+@pytest.mark.asyncio
+async def test_sse_stream_heartbeat_comment_and_clean_cleanup() -> None:
+    from httpx import ASGITransport, AsyncClient
+    from app.main import app
+    from app.api.deps import get_current_user
+    import uuid
+    from app.models.user import User
+    from app.models.enums import RoleEnum, DepartmentEnum
+    from app.services.event_bus import event_bus
+
+    fake_user = User(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        login="sse_test_user",
+        password_hash="fake",
+        full_name="SSE Test User",
+        role=RoleEnum.OPERATOR,
+        department=DepartmentEnum.PTO,
+        is_active=True,
+    )
+
+    app.dependency_overrides[get_current_user] = lambda: fake_user
+    initial_subscribers_count = len(event_bus._subscribers)
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            async with client.stream(
+                "GET",
+                "/api/events/stream?heartbeat_interval=0.05&once=true",
+            ) as response:
+                assert response.status_code == 200
+                body = (await response.aread()).decode("utf-8")
+                assert ": keepalive" in body
+
+        await asyncio.sleep(0.05)
+        assert len(event_bus._subscribers) == initial_subscribers_count
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_python_runtime_and_ci_alignment() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    pyproject_path = repo_root / "backend" / "pyproject.toml"
+    ci_path = repo_root / ".github" / "workflows" / "ci.yml"
+    dockerfile_path = repo_root / "Dockerfile"
+
+    assert pyproject_path.exists()
+    assert ci_path.exists()
+    assert dockerfile_path.exists()
+
+    pyproject_text = pyproject_path.read_text(encoding="utf-8")
+    ci_text = ci_path.read_text(encoding="utf-8")
+    docker_text = dockerfile_path.read_text(encoding="utf-8")
+
+    assert 'requires-python = ">=3.10, <3.14"' in pyproject_text
+    assert '"Programming Language :: Python :: 3.12"' in pyproject_text
+
+    assert "python-version: '3.12'" in ci_text
+    assert "python:3.12-slim" in docker_text

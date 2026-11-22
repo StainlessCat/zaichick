@@ -116,6 +116,15 @@ def run_pg_dump_backup(
     return dump_path
 
 
+def create_mandatory_pg_dump_backup(
+    backups_dir: Path | None = None,
+    database_url: str | None = None,
+) -> Path:
+    """Wrapper alias for run_pg_dump_backup using application settings."""
+    db_url = database_url or get_settings().database_url
+    return run_pg_dump_backup(db_url, backups_dir=backups_dir)
+
+
 async def truncate_domain_tables(
     session: AsyncSession,
     *,
@@ -192,9 +201,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not args.confirm:
         print(
             "[ОТМЕНА] Укажите флаг --confirm для выполнения сброса БД. "

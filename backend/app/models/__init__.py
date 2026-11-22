@@ -21,6 +21,7 @@ from app.models.enums import (
 )
 from app.models.facility import CustomWeatherStation, Facility, FacilityRdCode
 from app.models.joint import WeldJoint
+from app.models.rate_limit import LoginRateLimit
 from app.models.lab_request import NdtLabRequestModel
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
@@ -52,6 +53,7 @@ __all__ = [
     "Inspector",
     "JointKindEnum",
     "JointTypeEnum",
+    "LoginRateLimit",
     "LrvElementCategoryEnum",
     "LrvItem",
     "LrvStatusEnum",

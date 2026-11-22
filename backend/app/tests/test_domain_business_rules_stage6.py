@@ -17,6 +17,7 @@ from app.api.deps import get_db_session
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.models.enums import (
+    DepartmentEnum,
     ControlResultEnum,
     ElementCombinationEnum,
     JointKindEnum,
@@ -119,7 +120,7 @@ async def _seed_domain_fixtures(session: AsyncSession) -> dict[str, Any]:
         password_hash=hash_password("Pass123!"),
         full_name="Инженер ПТО",
         role=RoleEnum.PTO,
-        department="ПТО",
+        department=DepartmentEnum.PTO,
         position_title="Ведущий инженер ПТО",
         session_number=1,
         is_active=True,
@@ -134,7 +135,7 @@ async def _seed_domain_fixtures(session: AsyncSession) -> dict[str, Any]:
         password_hash=hash_password("Pass123!"),
         full_name="Дефектоскопист ЛНК",
         role=RoleEnum.PIL,
-        department="ЛНК",
+        department=DepartmentEnum.PIL,
         position_title="Специалист НК II уровня",
         session_number=1,
         is_active=True,
@@ -149,7 +150,7 @@ async def _seed_domain_fixtures(session: AsyncSession) -> dict[str, Any]:
         password_hash=hash_password("Pass123!"),
         full_name="Главный сварщик (ОГС)",
         role=RoleEnum.OGS,
-        department="ОГС",
+        department=DepartmentEnum.OGS,
         position_title="Технолог по сварке",
         session_number=1,
         is_active=True,
@@ -164,7 +165,7 @@ async def _seed_domain_fixtures(session: AsyncSession) -> dict[str, Any]:
         password_hash=hash_password("Pass123!"),
         full_name="Представитель Газпром",
         role=RoleEnum.VIEWER,
-        department="СКК",
+        department=DepartmentEnum.SK,
         position_title="Инспектор строительного контроля",
         session_number=1,
         is_active=True,

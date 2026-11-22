@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import (
     get_client_ip,
@@ -104,26 +105,31 @@ async def list_lines(
     total = (await session.execute(count_stmt)).scalar_one()
 
     paged_stmt = (
-        stmt.order_by(ProjectLine.sort_order.asc(), ProjectLine.line_number.asc())
+        stmt.options(selectinload(ProjectLine.joints))
+        .order_by(ProjectLine.sort_order.asc(), ProjectLine.line_number.asc())
         .limit(limit)
         .offset(offset)
     )
     page = list((await session.execute(paged_stmt)).scalars().all())
 
-    if page:
-        page_line_ids = [line.id for line in page]
-        page_uids = [line.unique_line_id for line in page if line.unique_line_id]
-        joint_filters = [WeldJoint.line_id.in_(page_line_ids)]
-        if page_uids:
-            joint_filters.append(WeldJoint.unique_line_id.in_(page_uids))
-        page_joints = list(
-            (await session.execute(select(WeldJoint).where(or_(*joint_filters)))).scalars().all()
+    page_joints_map: dict[uuid.UUID, list[WeldJoint]] = {}
+    missing_line_ids: list[uuid.UUID] = []
+    for line in page:
+        loaded = getattr(line, "joints", None)
+        if loaded is not None:
+            page_joints_map[line.id] = list(loaded)
+        else:
+            missing_line_ids.append(line.id)
+
+    if missing_line_ids:
+        missing_joints = list(
+            (await session.execute(select(WeldJoint).where(WeldJoint.line_id.in_(missing_line_ids)))).scalars().all()
         )
-    else:
-        page_joints = []
+        for j in missing_joints:
+            page_joints_map.setdefault(j.line_id, []).append(j)
 
     return PaginatedResponse(
-        items=[_line_to_out(line, page_joints) for line in page],
+        items=[_line_to_out(line, page_joints_map.get(line.id, [])) for line in page],
         total=total,
         limit=limit,
         offset=offset,
@@ -137,24 +143,30 @@ async def get_line(
     session: AsyncSession = Depends(get_db_session),
 ) -> ProjectLineOut:
     line = (
-        await session.execute(select(ProjectLine).where(ProjectLine.id == line_id))
+        await session.execute(
+            select(ProjectLine)
+            .options(selectinload(ProjectLine.joints))
+            .where(ProjectLine.id == line_id)
+        )
     ).scalar_one_or_none()
     if line is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Линия не найдена.")
-    line_joints = list(
-        (
-            await session.execute(
-                select(WeldJoint).where(
-                    or_(
-                        WeldJoint.line_id == line.id,
-                        WeldJoint.unique_line_id == line.unique_line_id,
+    line_joints = list(getattr(line, "joints", None) or [])
+    if not line_joints:
+        line_joints = list(
+            (
+                await session.execute(
+                    select(WeldJoint).where(
+                        or_(
+                            WeldJoint.line_id == line.id,
+                            WeldJoint.unique_line_id == line.unique_line_id,
+                        )
                     )
                 )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
     return _line_to_out(line, line_joints)
 
 
@@ -165,24 +177,30 @@ async def get_line_ndt_progress(
     session: AsyncSession = Depends(get_db_session),
 ) -> LineNdtProgressOut:
     line = (
-        await session.execute(select(ProjectLine).where(ProjectLine.id == line_id))
+        await session.execute(
+            select(ProjectLine)
+            .options(selectinload(ProjectLine.joints))
+            .where(ProjectLine.id == line_id)
+        )
     ).scalar_one_or_none()
     if line is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Линия не найдена.")
-    line_joints = list(
-        (
-            await session.execute(
-                select(WeldJoint).where(
-                    or_(
-                        WeldJoint.line_id == line.id,
-                        WeldJoint.unique_line_id == line.unique_line_id,
+    line_joints = list(getattr(line, "joints", None) or [])
+    if not line_joints:
+        line_joints = list(
+            (
+                await session.execute(
+                    select(WeldJoint).where(
+                        or_(
+                            WeldJoint.line_id == line.id,
+                            WeldJoint.unique_line_id == line.unique_line_id,
+                        )
                     )
                 )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
     prog = calculate_line_ndt_progress(line_joints, line)
     return LineNdtProgressOut(**dataclasses.asdict(prog))
 

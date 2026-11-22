@@ -10,7 +10,7 @@ import pytest
 from app.api.deps import get_current_user, get_db_session
 from app.cli.seed_stations import extract_rs_stations_from_csv
 from app.main import app
-from app.models.enums import RoleEnum
+from app.models.enums import DepartmentEnum, RoleEnum
 from app.models.user import User
 from app.models.weather import WeatherDaily, WeatherStation, WeatherStationAlias
 from app.services.weather.geo import haversine_distance_km
@@ -33,7 +33,7 @@ def _make_test_user(role: RoleEnum = RoleEnum.PTO) -> User:
         login=f"user_{uuid.uuid4().hex[:6]}",
         full_name="Тестовый Инженер",
         password_hash="fakehash",
-        department="ПТО",
+        department=DepartmentEnum.PTO,
         position_title="Инженер",
         role=role,
         is_active=True,

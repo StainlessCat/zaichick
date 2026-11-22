@@ -348,7 +348,13 @@ def _joint_edi_value(joint: Any) -> float:
 
 
 def compute_line_list_item_status(line: Any, all_joints: list[Any]) -> LineCompletionStatus:
-    line_joints = [j for j in all_joints if getattr(j, "unique_line_id", None) == line.unique_line_id]
+    line_id = getattr(line, "id", None)
+    unique_line_id = getattr(line, "unique_line_id", None)
+    line_joints = [
+        j for j in all_joints
+        if (line_id is not None and getattr(j, "line_id", None) == line_id)
+        or (unique_line_id is not None and getattr(j, "unique_line_id", None) == unique_line_id)
+    ]
     rk_plan_pct = float(getattr(line, "rk_percent", 0) or 0)
     uzk_plan_pct = float(getattr(line, "uzk_percent", 0) or 0)
 

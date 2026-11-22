@@ -65,6 +65,7 @@ class TestCircuitUpdate(BaseModel):
     act_number: str | None = Field(default=None, max_length=100)
     actual_test_date: date | None = None
     force: bool = False
+    force_reason: str | None = Field(default=None, max_length=1000)
 
 
 class TestCircuitOut(BaseModel):

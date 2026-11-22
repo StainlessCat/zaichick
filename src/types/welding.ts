@@ -274,6 +274,15 @@ export interface LRVItem {
   unit: 'шт' | 'м';
   status?: 'active' | 'superseded' | 'archived'; // Статус позиции: активная / аннулирована (заменена) / архивная
   replacementLetter?: string; // № и дата официального письма согласования замены от института/Заказчика
+  controlStatus?: import('./materialControl').MaterialControlStatus;
+  totalSpecQty?: number;
+  acceptedQty?: number;
+  rejectedQty?: number;
+  replacedQty?: number;
+  pendingQty?: number;
+  batches?: import('./materialControl').MaterialBatchAct[];
+  parentMaterialId?: string;
+  replacementNotice?: import('./materialControl').MaterialReplacementNotice;
   replacementDate?: string; // Дата согласования замены (YYYY-MM-DD)
   recordStatus?: RecordStatus;
   createdById?: string | null;
@@ -421,6 +430,7 @@ export interface WeldJoint {
   elem1DiameterMm?: number; // Стыкуемый диаметр элемента 1, мм
   elem1WallThickness?: number; // Стыкуемая толщина стенки элемента 1, мм
   elem1FactoryNumber?: string; // Заводской номер элемента 1 (вручную заполняет инженер ПТО)
+  elem1SerialNumber?: string; // Серийный/заводской номер элемента 1
   elem1Manufacturer?: string; // Завод-изготовитель элемента 1 (из базы ЛРВ)
   elem1Length?: string; // Длина элемента 1, м (вручную заполняется в паспорте и реестре стыков, попадает в журнал по СТО)
   elem1CertNumber?: string; // № сертификата качества элемента 1 (заводской сертификат на трубу/деталь)
@@ -435,6 +445,7 @@ export interface WeldJoint {
   elem2DiameterMm?: number; // Стыкуемый диаметр элемента 2, мм
   elem2WallThickness?: number; // Стыкуемая толщина стенки элемента 2, мм
   elem2FactoryNumber?: string; // Заводской номер элемента 2 (вручную заполняет инженер ПТО)
+  elem2SerialNumber?: string; // Серийный/заводской номер элемента 2
   elem2Manufacturer?: string; // Завод-изготовитель элемента 2 (из базы ЛРВ)
   elem2Length?: string; // Длина элемента 2, м (вручную заполняется в паспорте и реестре стыков, попадает в журнал по СТО)
   elem2CertNumber?: string; // № сертификата качества элемента 2 (заводской сертификат на трубу/деталь)

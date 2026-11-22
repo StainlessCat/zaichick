@@ -48,7 +48,12 @@ async def fetch_filtered_joints_and_lrv(
         .scalars()
         .all()
     )
-    lrv_items = list((await session.execute(select(LrvItem))).scalars().all())
+    lrv_stmt = select(LrvItem)
+    if facility_id is not None:
+        lrv_stmt = lrv_stmt.where(LrvItem.facility_id == facility_id)
+    if rd_code:
+        lrv_stmt = lrv_stmt.where(LrvItem.rd_code == rd_code.strip())
+    lrv_items = list((await session.execute(lrv_stmt)).scalars().all())
     lrv_map = {(item.rd_code, item.lrv_code): item for item in lrv_items}
     return joints, lrv_map
 

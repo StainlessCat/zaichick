@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 
 from app.api.routes.admin import router as admin_router
 from app.api.routes.audit import router as audit_router
@@ -31,11 +33,14 @@ from app.core.database import (
     verify_schema_migrations_applied,
 )
 from app.core.errors import integrity_error_handler
-from app.services.event_bus import start_postgres_listener, stop_postgres_listener
+from app.core.logging_config import setup_logging
+from app.core.metrics import PrometheusMetrics
+from app.services.event_bus import event_bus, start_postgres_listener, stop_postgres_listener
 from app.services.weather.reference_stations import ensure_baseline_weather_stations_seeded
 from sqlalchemy.exc import IntegrityError
 
 settings = get_settings()
+setup_logging(settings.environment)
 
 
 @asynccontextmanager
@@ -66,6 +71,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def prometheus_metrics_middleware(request: Request, call_next) -> Response:
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    duration = time.perf_counter() - start_time
+    PrometheusMetrics.record_request(request.method, request.url.path, response.status_code, duration)
+    return response
+
+
 app.add_exception_handler(IntegrityError, integrity_error_handler)
 
 app.include_router(auth_router)
@@ -94,3 +109,11 @@ async def healthcheck() -> dict[str, str]:
     await verify_postgres_connection()
     schema_ver = await verify_schema_migrations_applied()
     return {"status": "ok", "database": "postgresql", "schema_version": schema_ver}
+
+
+@app.get("/metrics", response_class=PlainTextResponse, tags=["system"])
+async def get_prometheus_metrics() -> PlainTextResponse:
+    return PlainTextResponse(
+        content=PrometheusMetrics.render(event_bus.active_subscribers_count),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )

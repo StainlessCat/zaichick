@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Literal
 from urllib.parse import quote
@@ -78,7 +79,8 @@ async def export_welding_journal_xlsx(
         )
 
     object_title = joints[0].object_name if joints else ""
-    payload = build_welding_journal_workbook_bytes(
+    payload = await asyncio.to_thread(
+        build_welding_journal_workbook_bytes,
         joints,
         standard=standard,
         lrv_items=list(lrv_map.values()),
@@ -133,7 +135,12 @@ async def export_readiness_xlsx(
     joints = list((await session.execute(j_stmt)).scalars().all())
     lines = list((await session.execute(l_stmt.order_by(ProjectLine.sort_order.asc()))).scalars().all())
 
-    payload = build_readiness_and_quotas_workbook_bytes(joints, lines, condition=condition)
+    payload = await asyncio.to_thread(
+        build_readiness_and_quotas_workbook_bytes,
+        joints,
+        lines,
+        condition=condition,
+    )
     await record_audit_log(
         session,
         action="EXPORT",
@@ -173,7 +180,7 @@ async def export_joints_registry_xlsx(
         .scalars()
         .all()
     )
-    payload = build_joints_registry_workbook_bytes(joints)
+    payload = await asyncio.to_thread(build_joints_registry_workbook_bytes, joints)
     await record_audit_log(
         session,
         action="EXPORT",
@@ -195,7 +202,8 @@ async def export_joints_template_xlsx(
     line_number: str | None = Query(default=None),
     _current_user: User = Depends(require_permission("can_export_documents")),
 ) -> Response:
-    payload = build_joints_template_workbook_bytes(
+    payload = await asyncio.to_thread(
+        build_joints_template_workbook_bytes,
         rd_code=rd_code or "0092.049.Р.13/1 0004 УКПГ.045.0077.001-ТХ3",
         line_number=line_number or "ФП1.2/1",
     )
@@ -240,7 +248,12 @@ async def export_linelist_xlsx(
             rd_code=rd_code,
             summary=f"Экспорт проектного лайнлиста ({len(lines)} линий)",
         )
-    payload = build_linelist_workbook_bytes(lines, joints=line_joints, is_template=template)
+    payload = await asyncio.to_thread(
+        build_linelist_workbook_bytes,
+        lines,
+        joints=line_joints,
+        is_template=template,
+    )
     filename = "ZAYCHICK_Shablon_LineList.xlsx" if template else "ZAYCHICK_Project_LineList.xlsx"
     return _xlsx_response(payload, filename)
 
@@ -273,6 +286,6 @@ async def export_lrv_xlsx(
             rd_code=rd_code,
             summary=f"Экспорт каталога ЛРВ ({len(items)} позиций)",
         )
-    payload = build_lrv_workbook_bytes(items, is_template=template)
+    payload = await asyncio.to_thread(build_lrv_workbook_bytes, items, is_template=template)
     filename = "ZAYCHICK_Shablon_LRV.xlsx" if template else "ZAYCHICK_Katalog_LRV.xlsx"
     return _xlsx_response(payload, filename)

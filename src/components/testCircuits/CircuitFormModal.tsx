@@ -31,6 +31,7 @@ export interface CircuitFormSubmitPayload {
   actNumber?: string | null;
   actualTestDate?: string | null;
   force?: boolean;
+  forceReason?: string | null;
 }
 
 export interface CircuitFormModalProps {
@@ -65,6 +66,7 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
   const [actNumber, setActNumber] = useState('');
   const [actualTestDate, setActualTestDate] = useState('');
   const [forceClose, setForceClose] = useState(false);
+  const [forceReason, setForceReason] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -72,6 +74,7 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
     if (!isOpen) return;
     setError('');
     setForceClose(false);
+    setForceReason('');
     if (mode === 'edit' && circuit) {
       setSelectedFacilityName(circuit.objectName || defaultObjectName || facilities[0]?.name || '');
       setName(circuit.name || '');
@@ -102,23 +105,14 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
   const canForce = canForceCloseTestCircuit(currentUser);
   const isSwitchingToTested = mode === 'edit' && testStatus === 'TESTED';
 
-  const readinessChecks =
+  const criticalChecks =
     mode === 'edit' && circuit
       ? [
           {
             id: 'has_joints',
             label: `В контур включены стыки: ${circuit.totalJoints} шт.`,
             ok: circuit.totalJoints > 0,
-          },
-          {
-            id: 'welded_100',
-            label: `Сварка выполнена на 100%: ${circuit.weldedJoints} из ${circuit.totalJoints} шт.`,
-            ok: circuit.totalJoints > 0 && circuit.weldingJointsPercent >= 100,
-          },
-          {
-            id: 'sri_approved',
-            label: 'Статус СРИ — Согласована',
-            ok: sriStatus === 'APPROVED',
+            critical: true,
           },
           {
             id: 'no_defects',
@@ -127,11 +121,33 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
                 ? 'Неисправленный брак отсутствует'
                 : `Неисправленный брак: ${circuit.defectiveJointsCount} стык.`,
             ok: circuit.defectiveJointsCount === 0,
+            critical: true,
           },
         ]
       : [];
 
-  const hasReadinessBlockers = readinessChecks.some((c) => !c.ok);
+  const warningChecks =
+    mode === 'edit' && circuit
+      ? [
+          {
+            id: 'welded_100',
+            label: `Сварка выполнена на 100%: ${circuit.weldedJoints} из ${circuit.totalJoints} шт.`,
+            ok: circuit.totalJoints > 0 && circuit.weldingJointsPercent >= 100,
+            critical: false,
+          },
+          {
+            id: 'sri_approved',
+            label: 'Статус СРИ — Согласована',
+            ok: sriStatus === 'APPROVED',
+            critical: false,
+          },
+        ]
+      : [];
+
+  const readinessChecks = [...criticalChecks, ...warningChecks];
+  const hasCriticalBlockers = criticalChecks.some((c) => !c.ok);
+  const hasWarningBlockers = warningChecks.some((c) => !c.ok);
+  const hasReadinessBlockers = hasCriticalBlockers || hasWarningBlockers;
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,13 +164,25 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
         );
         return;
       }
-      if (hasReadinessBlockers && !forceClose) {
+      if (hasCriticalBlockers) {
         setError(
-          canForce
-            ? 'Не выполнены все условия готовности. Устраните замечания или отметьте принудительное закрытие.'
-            : 'Не выполнены условия готовности для перевода контура в статус «Испытано».'
+          'Перевод контура в статус «Испытано» невозможен: контур пуст или содержит неисправленный брак. Принудительное закрытие запрещено.'
         );
         return;
+      }
+      if (hasWarningBlockers) {
+        if (!forceClose) {
+          setError(
+            canForce
+              ? 'Не выполнены все условия готовности. Устраните замечания или укажите обоснование для принудительного закрытия.'
+              : 'Не выполнены условия готовности для перевода контура в статус «Испытано».'
+          );
+          return;
+        }
+        if (!forceReason.trim() || forceReason.trim().length < 5) {
+          setError('Для принудительного закрытия обязательно укажите обоснование не менее 5 символов.');
+          return;
+        }
       }
     }
 
@@ -169,7 +197,13 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
         name: trimmedName,
         sriName: sriName.trim() || null,
         sriStatus,
-        ...(mode === 'edit' ? { testStatus, force: forceClose } : {}),
+        ...(mode === 'edit'
+          ? {
+              testStatus,
+              force: forceClose && !hasCriticalBlockers,
+              forceReason: forceClose && !hasCriticalBlockers ? forceReason.trim() : null,
+            }
+          : {}),
         plannedDate: plannedDate || null,
         actNumber: actNumber.trim() || null,
         actualTestDate: actualTestDate || null,
@@ -319,7 +353,7 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
                   onChange={(e) => {
                     const next = e.target.value as CircuitTestStatus;
                     setTestStatus(next);
-                    if (next !== 'TESTED') setForceClose(false);
+                    if (next !== 'TESTED') { setForceClose(false); setForceReason(''); }
                   }}
                   className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 >
@@ -399,21 +433,44 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
               </ul>
 
               {hasReadinessBlockers && (
-                <div className="pt-2 border-t border-amber-200">
-                  {canForce ? (
-                    <label className="flex items-start gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        checked={forceClose}
-                        onChange={(e) => setForceClose(e.target.checked)}
-                        className="mt-0.5 rounded border-amber-400 text-[#1e3799] focus:ring-[#1e3799]"
-                      />
-                      <span className="text-[11px] text-amber-950 leading-snug">
-                        <span className="font-bold">Принудительное закрытие контура</span> — перевести
-                        в статус «Испытано» несмотря на неполную готовность. Факт принудительного
-                        закрытия будет зафиксирован в журнале аудита.
+                <div className="pt-2 border-t border-amber-200 space-y-2">
+                  {hasCriticalBlockers ? (
+                    <div className="flex items-start gap-2 p-2 rounded bg-red-50 border border-red-200 text-[11px] text-red-900">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <span>
+                        Принудительное закрытие контура невозможно при наличии неисправленного брака или без привязанных стыков.
                       </span>
-                    </label>
+                    </div>
+                  ) : canForce ? (
+                    <div className="space-y-2">
+                      <label className="flex items-start gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={forceClose}
+                          onChange={(e) => setForceClose(e.target.checked)}
+                          className="mt-0.5 rounded border-amber-400 text-[#1e3799] focus:ring-[#1e3799]"
+                        />
+                        <span className="text-[11px] text-amber-950 leading-snug">
+                          <span className="font-bold">Принудительное закрытие контура</span> — перевести
+                          в статус «Испытано» при незавершённой сварке или несогласованной СРИ.
+                          Факт принудительного закрытия фиксируется в журнале аудита.
+                        </span>
+                      </label>
+                      {forceClose && (
+                        <div className="space-y-1 pl-5">
+                          <label className="text-[11px] font-semibold text-amber-950 block">
+                            Обоснование принудительного закрытия <span className="text-red-600">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={forceReason}
+                            onChange={(e) => setForceReason(e.target.value)}
+                            placeholder="Номер распоряжения или причина решения"
+                            className="w-full h-8 px-2.5 text-xs rounded border border-amber-300 bg-white focus:outline-none focus:ring-1 focus:ring-[#1e3799]"
+                          />
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <div className="flex items-start gap-2 text-[11px] text-amber-900">
                       <ShieldAlert className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />

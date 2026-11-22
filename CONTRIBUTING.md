@@ -35,7 +35,7 @@ ZAYCHICK/
 ├── archive/legacy_v1/        # Архив исторического прототипа v1.0 (Express/SQLite)
 ├── .github/workflows/        # CI/CD Pipeline (GitHub Actions)
 ├── docker-compose.yml        # Production Docker развёртывание
-├── docker-compose.override.yml # Hot-reload окружение для локальной разработки
+├── docker-compose.dev.yml      # Hot-reload окружение для локальной разработки
 └── Dockerfile                # Multi-stage сборка для production
 ```
 
@@ -99,14 +99,14 @@ npm run dev
 Для быстрого запуска всей инфраструктуры с горячей перезагрузкой кода:
 
 ```bash
-# 1. Запуск всех сервисов (PostgreSQL + FastAPI + Nginx) с docker-compose.override.yml:
-docker compose up -d --build
+# 1. Запуск всех сервисов (PostgreSQL + FastAPI + Nginx) с docker-compose.dev.yml:
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 # 2. Просмотр логов бэкенда в реальном времени:
-docker compose logs -f backend
+docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f backend
 
 # 3. Остановка сервисов:
-docker compose down
+docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 ```
 
 В dev-режиме:

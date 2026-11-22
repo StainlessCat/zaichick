@@ -19,6 +19,7 @@ from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.models.audit import AuditLog
 from app.models.enums import (
+    DepartmentEnum,
     ControlResultEnum,
     JointKindEnum,
     JointTypeEnum,
@@ -35,7 +36,7 @@ from app.models.lrv import LrvItem
 from app.models.settings import AppSetting, ColumnTemplate
 from app.models.user import User
 from app.models.welding_tech import TechCard, Welder, WeldingMaterial
-from app.services.sqlite_migrator import migrate_sqlite_to_postgres
+from app.legacy.sqlite_migrator import migrate_sqlite_to_postgres
 
 
 class _FakeResult:
@@ -573,7 +574,7 @@ async def test_excel_templates_linelist_lrv_exports_and_parse_spreadsheet():
         password_hash=hash_password("Pass123!"),
         full_name="Инженер ПТО",
         role=RoleEnum.PTO,
-        department="ПТО",
+        department=DepartmentEnum.PTO,
         position_title="Инженер",
         session_number=1,
         is_active=True,

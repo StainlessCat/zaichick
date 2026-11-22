@@ -198,6 +198,12 @@ def get_role_permissions(
     if role not in ROLE_RANK:
         raise ValueError(f"Неизвестная роль пользователя: {role!r}")
 
+    if isinstance(department, str) and not isinstance(department, DepartmentEnum):
+        try:
+            department = DepartmentEnum(department)
+        except ValueError:
+            pass
+
     if role == SystemRoleEnum.SUPERADMIN:
         return RolePermissions(
             role=role,
@@ -224,7 +230,7 @@ def get_role_permissions(
         )
 
     if role == SystemRoleEnum.VIEWER:
-        dept_label = DEPARTMENT_LABELS_RU.get(department, department.value)
+        dept_label = DEPARTMENT_LABELS_RU.get(department, getattr(department, "value", str(department)))
         return RolePermissions(
             role=role,
             department=department,
@@ -251,7 +257,7 @@ def get_role_permissions(
 
     is_dept_admin = role == SystemRoleEnum.DEPT_ADMIN
     role_label = ROLE_LABELS_RU[role]
-    dept_label = DEPARTMENT_LABELS_RU.get(department, department.value)
+    dept_label = DEPARTMENT_LABELS_RU.get(department, getattr(department, "value", str(department)))
 
     can_edit_line_list = department == DepartmentEnum.PTO and is_dept_admin
     can_edit_lrv_catalog = department == DepartmentEnum.PTO and is_dept_admin

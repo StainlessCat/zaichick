@@ -310,7 +310,16 @@ def validate_preheat_temperature(
             message="Выберите технологическую карту для проверки режима подогрева",
         )
 
-    ambient_c = float(ambient_temp_c) if ambient_temp_c is not None else 0.0
+    if ambient_temp_c is None:
+        return PreheatValidationResult(
+            is_valid=False,
+            required_min_c=0.0,
+            actual_c=None,
+            rule_label="Температура воздуха не указана",
+            message="Отсутствует фактическая температура окружающего воздуха. Введите температуру для проверки режима подогрева по ТК.",
+        )
+
+    ambient_c = float(ambient_temp_c)
     matched_rule = None
     for r in preheat_rules:
         r_min = float(r.ambient_min_c)

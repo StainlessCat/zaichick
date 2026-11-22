@@ -1,0 +1,47 @@
+# =========================================================================
+# ZAYCHICK 2.0 — Конфигурация для локальной разработки (Development Profile)
+#
+# Файл изолирован от docker-compose.override.yml во избежание автоматического
+# слияния слабых dev-настроек в production (уязвимость C-01).
+#
+# Запуск dev-окружения:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+# Остановка:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+# Просмотр логов бэкенда:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f backend
+# =========================================================================
+
+services:
+  # 1. База данных PostgreSQL (доступна разработчику на 127.0.0.1:5432)
+  db:
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zaychick}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zaychick_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-zaychick}
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  # 2. FastAPI Backend в режиме горячей перезагрузки (Hot Reload)
+  backend:
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-zaychick}:${POSTGRES_PASSWORD:-zaychick_dev_password}@db:5432/${POSTGRES_DB:-zaychick}"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-key-32-bytes-minimum-length!}
+      # В development-режиме отключаем Secure флаг куки для работы по HTTP (http://localhost:5173 / http://localhost:8000)
+      COOKIE_SECURE: "false"
+      COOKIE_SAMESITE: lax
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-admin123}
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000,http://localhost,http://127.0.0.1,http://127.0.0.1:5173,http://127.0.0.1:8000"
+    # Монтируем директории с исходным кодом для автоматического перезапуска uvicorn при правках
+    volumes:
+      - ./backend/app:/app/backend/app
+      - ./backend/alembic:/app/backend/alembic
+      - ./backend/pyproject.toml:/app/backend/pyproject.toml:ro
+    # Запускаем миграции, первичный bootstrap админа и uvicorn с флагом --reload
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.cli.bootstrap_admin &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/backend/app"
+    ports:
+      - "127.0.0.1:8000:8000"

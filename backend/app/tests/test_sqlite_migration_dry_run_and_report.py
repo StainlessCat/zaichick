@@ -15,7 +15,7 @@ from app.models.audit import AuditLog
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
 from app.models.user import User
-from app.services.sqlite_migrator import migrate_sqlite_to_postgres
+from app.legacy.sqlite_migrator import migrate_sqlite_to_postgres
 
 TEST_DATABASE_URL = "postgresql+asyncpg://zaychick:zaychick_dev_password@127.0.0.1:5432/zaychick_test"
 

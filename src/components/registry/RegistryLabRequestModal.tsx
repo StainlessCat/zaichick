@@ -133,8 +133,8 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
           candidateEvaluation.eligible.length
         } ст. Статус в реестре обновлён на «Заявка подана».`
       );
-    } catch (err: any) {
-      setSubmitError(err?.message || 'Ошибка передачи заявки на сервер');
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : 'Ошибка передачи заявки на сервер');
     } finally {
       setIsSubmitting(false);
     }

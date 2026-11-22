@@ -228,8 +228,8 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
     try {
       await exportReadinessReportToExcel(condition);
       setExportToast(`Серверный отчёт готовности и квот НК (.XLSX) успешно сформирован.`);
-    } catch (err: any) {
-      setExportToast(`Ошибка серверной выгрузки .XLSX: ${err?.message || 'Проверьте авторизацию'}`);
+    } catch (err: unknown) {
+      setExportToast(`Ошибка серверной выгрузки .XLSX: ${(err instanceof Error ? err.message : String(err)) || 'Проверьте авторизацию'}`);
     }
     setTimeout(() => setExportToast(''), 4500);
   };

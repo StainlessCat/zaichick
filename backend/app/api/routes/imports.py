@@ -12,7 +12,7 @@ from app.api.deps import get_client_ip, get_current_user, get_db_session, requir
 from app.models.user import User
 from app.services.audit_service import record_audit_log
 from app.services.event_bus import publish_domain_event
-from app.services.sqlite_migrator import restore_backup_payload_to_postgres
+from app.legacy.sqlite_migrator import restore_backup_payload_to_postgres
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
 

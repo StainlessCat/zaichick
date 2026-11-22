@@ -103,6 +103,8 @@ ALL_ENUMS = (
 
 def upgrade() -> None:
     bind = op.get_bind()
+    # Widen alembic_version.version_num column so longer revision names (>32 chars) do not truncate
+    op.execute(sa.text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128);"))
     for pg_enum_type in ALL_ENUMS:
         pg_enum_type.create(bind, checkfirst=True)
 

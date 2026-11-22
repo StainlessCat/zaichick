@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from app.core.database import async_session_factory, verify_postgres_connection
-from app.services.sqlite_migrator import migrate_sqlite_to_postgres
+from app.legacy.sqlite_migrator import migrate_sqlite_to_postgres
 
 
 def build_parser() -> argparse.ArgumentParser:

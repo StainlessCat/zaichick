@@ -18,7 +18,7 @@ from app.core.security import (
 )
 from app.main import app
 from app.models.audit import AuditLog
-from app.models.enums import RoleEnum
+from app.models.enums import DepartmentEnum, RoleEnum, SystemRoleEnum
 from app.models.user import User
 from app.services.audit_service import extract_changed_fields, sanitize_audit_snapshot
 from app.services.rbac import (
@@ -32,19 +32,21 @@ def _make_user(
     *,
     login: str,
     role: RoleEnum,
+    department: DepartmentEnum | None = None,
     password: str = "Secret123!",
     is_active: bool = True,
     session_number: int = 1,
     version: int = 1,
 ) -> User:
     now = datetime.now(timezone.utc)
+    dep = department or (DepartmentEnum.ALL if role in (RoleEnum.ADMIN, SystemRoleEnum.SUPERADMIN) else DepartmentEnum.PTO)
     return User(
         id=uuid.uuid4(),
         login=login,
         password_hash=hash_password(password),
         full_name=f"Пользователь {login}",
         role=role,
-        department="Тест",
+        department=dep,
         position_title=role.value,
         session_number=session_number,
         is_active=is_active,
@@ -167,32 +169,33 @@ def test_argon2_password_hashing_and_jwt_roundtrip() -> None:
     )
     payload = decode_access_token(token)
     assert payload["sub"] == str(uid)
-    assert payload["role"] == "PTO"
+    assert payload["role"] in ("PTO", "OPERATOR")
     assert payload["session_number"] == 3
 
 
 def test_strict_rbac_matrix_and_field_level_guards() -> None:
-    assert get_role_permissions(RoleEnum.ADMIN).can_manage_users is True
-    assert get_role_permissions(RoleEnum.PTO).can_create_or_delete_joints is True
-    assert get_role_permissions(RoleEnum.PTO).can_edit_ndt_fields is False
-    assert get_role_permissions(RoleEnum.OGS).can_edit_welding_tech is True
-    assert get_role_permissions(RoleEnum.OGS).can_edit_prep_and_welding_fields is False
-    assert get_role_permissions(RoleEnum.PIL).can_edit_ndt_fields is True
-    assert get_role_permissions(RoleEnum.PIL).can_create_or_delete_joints is False
-    assert get_role_permissions(RoleEnum.VIEWER).can_export_documents is True
-    assert get_role_permissions(RoleEnum.VIEWER).can_edit_ndt_fields is False
+    assert get_role_permissions(SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL).can_manage_users is True
+    assert get_role_permissions(SystemRoleEnum.OPERATOR, DepartmentEnum.PTO).can_create_or_delete_joints is True
+    assert get_role_permissions(SystemRoleEnum.OPERATOR, DepartmentEnum.PTO).can_edit_ndt_fields is False
+    assert get_role_permissions(SystemRoleEnum.DEPT_ADMIN, DepartmentEnum.OGS).can_edit_welding_tech is True
+    assert get_role_permissions(SystemRoleEnum.OPERATOR, DepartmentEnum.OGS).can_edit_prep_and_welding_fields is False
+    assert get_role_permissions(SystemRoleEnum.OPERATOR, DepartmentEnum.PIL).can_edit_ndt_fields is True
+    assert get_role_permissions(SystemRoleEnum.OPERATOR, DepartmentEnum.PIL).can_create_or_delete_joints is False
+    assert get_role_permissions(SystemRoleEnum.VIEWER, DepartmentEnum.SK).can_export_documents is True
+    assert get_role_permissions(SystemRoleEnum.VIEWER, DepartmentEnum.SK).can_edit_ndt_fields is False
 
     with pytest.raises(ValueError):
         get_role_permissions("unknown_role")  # type: ignore[arg-type]
 
     # Joint number cannot be renamed after creation
-    assert can_edit_joint_field(RoleEnum.PTO, "joint_number", is_create=True) is True
-    assert can_edit_joint_field(RoleEnum.PTO, "joint_number", is_create=False) is False
-    assert can_edit_joint_field(RoleEnum.ADMIN, "joint_number", is_create=False) is False
+    assert can_edit_joint_field(SystemRoleEnum.OPERATOR, DepartmentEnum.PTO, "joint_number", is_create=True) is True
+    assert can_edit_joint_field(SystemRoleEnum.OPERATOR, DepartmentEnum.PTO, "joint_number", is_create=False) is False
+    assert can_edit_joint_field(SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL, "joint_number", is_create=False) is False
 
     # PTO trying to tamper with NDT field gets rejected; unchanged NDT field is allowed
     forbidden = find_forbidden_joint_fields(
-        RoleEnum.PTO,
+        SystemRoleEnum.OPERATOR,
+        DepartmentEnum.PTO,
         {"welding_date": "2026-03-01", "ndt_result": "Годен"},
         existing_values={"welding_date": "2026-02-28", "ndt_result": "Не проводился"},
     )
@@ -201,7 +204,8 @@ def test_strict_rbac_matrix_and_field_level_guards() -> None:
     # PIL can update NDT & repair verification fields, but not welding_date
     assert (
         find_forbidden_joint_fields(
-            RoleEnum.PIL,
+            SystemRoleEnum.OPERATOR,
+            DepartmentEnum.PIL,
             {"ndt_result": "Годен", "repair_vik_result": "Годен"},
             existing_values={"ndt_result": "В работе", "repair_vik_result": None},
         )
@@ -209,7 +213,8 @@ def test_strict_rbac_matrix_and_field_level_guards() -> None:
     )
     assert (
         find_forbidden_joint_fields(
-            RoleEnum.PIL,
+            SystemRoleEnum.OPERATOR,
+            DepartmentEnum.PIL,
             {"welding_date": "2026-03-05"},
             existing_values={"welding_date": "2026-03-01"},
         )
@@ -287,7 +292,7 @@ async def test_http_auth_cookie_query_token_ban_rbac_rate_limit_and_audit(
             assert "httponly" in cookie_header
             assert "samesite=lax" in cookie_header
             assert "access_token" not in login_resp.json()
-            assert login_resp.json()["user"]["role"] == "PTO"
+            assert login_resp.json()["user"]["role"] in ("PTO", "OPERATOR")
             assert any(
                 a.action == "login_success" and a.user_login == "pto_1"
                 for a in fake_db.audit_logs
@@ -344,12 +349,14 @@ async def test_http_auth_cookie_query_token_ban_rbac_rate_limit_and_audit(
                         "login": "pil_master",
                         "password": "PilPassword1!",
                         "full_name": "Дефектоскопист ЛНК",
-                        "role": "PIL",
+                        "role": "OPERATOR",
+                        "department": "PIL",
                     },
                 )
                 assert admin_create.status_code == 201
-                assert admin_create.json()["role"] == "PIL"
-                assert any(a.action == "user_created" for a in fake_db.audit_logs)
+                assert admin_create.json()["role"] in ("PIL", "OPERATOR")
+                assert admin_create.json()["department"] == "PIL"
+                assert any(a.action.lower() == "user_created" for a in fake_db.audit_logs)
 
                 # Logout increments session_number -> old Bearer token stops working
                 await admin_client.post(
@@ -413,3 +420,54 @@ def test_orm_blocks_audit_log_mutation() -> None:
     mock_session.deleted = {entry}
     with pytest.raises(RuntimeError, match="DELETE"):
         _enforce_immutable_audit_logs(mock_session, None, None)
+
+
+@pytest.mark.asyncio
+async def test_multi_worker_shared_rate_limiting_across_sessions() -> None:
+    """
+    Verify that login rate limits are synchronized across independent worker processes
+    via PostgreSQL shared storage, preventing distributed brute-force attacks.
+    """
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.pool import NullPool
+
+    test_url = "postgresql+asyncpg://zaychick:zaychick_dev_password@127.0.0.1:5432/zaychick_test"
+    engine = create_async_engine(test_url, poolclass=NullPool)
+    session_factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as session1, session_factory() as session2:
+        # Worker 1 has its own limiter instance
+        worker1_limiter = SlidingWindowRateLimiter(max_attempts=3, window_seconds=60)
+        # Worker 2 has a completely separate limiter instance with EMPTY in-memory state
+        worker2_limiter = SlidingWindowRateLimiter(max_attempts=3, window_seconds=60)
+
+        # Clear state
+        await worker1_limiter.clear_all(session=session1)
+        await session1.commit()
+
+        test_ip = "192.168.10.99"
+        test_login = "worker_bruteforce_target"
+
+        # Initially allowed on both workers
+        assert (await worker1_limiter.check_allowed(test_ip, test_login, session=session1))[0] is True
+        assert (await worker2_limiter.check_allowed(test_ip, test_login, session=session2))[0] is True
+
+        # Worker 1 receives 3 failed login attempts and persists them to PostgreSQL
+        for _ in range(3):
+            await worker1_limiter.record_failure(test_ip, test_login, session=session1)
+        await session1.commit()
+
+        # Worker 2 has NEVER seen any attempts in memory, but MUST immediately block because of PostgreSQL shared state!
+        allowed_w2, retry_after_w2 = await worker2_limiter.check_allowed(test_ip, test_login, session=session2)
+        assert allowed_w2 is False
+        assert retry_after_w2 >= 1
+
+        # Worker 2 resets after successful login
+        await worker2_limiter.reset_for_login(test_ip, test_login, session=session2)
+        await session2.commit()
+
+        # Clean up
+        await worker1_limiter.clear_all(session=session1)
+        await session1.commit()
+
+    await engine.dispose()

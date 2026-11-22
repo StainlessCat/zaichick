@@ -8,6 +8,7 @@ import {
   WeldingMaterialCertificate,
   WeldJoint,
 } from '../types/welding';
+import { validateJointMaterialIncomingControl } from './jointMaterialValidator';
 import {
   buildUniqueLineId,
   calculateEquivalentDiaInch,
@@ -738,6 +739,12 @@ export function validateWeldJointComprehensive(params: {
         message: `Сварщик ${welder.fullName} (${welder.stamp}) аттестован на [${welder.allowedMethods.join(', ')}], но для стыка указан вид сварки «${joint.weldingType}».`,
       });
     }
+  }
+
+  // Проверка входного контроля элементов стыка (трубы, фасонные детали, ЗРА)
+  if (lrvCatalog && lrvCatalog.length > 0) {
+    const materialIssues = validateJointMaterialIncomingControl(joint, lrvCatalog);
+    issues.push(...materialIssues);
   }
 
   // Проверка даты входного контроля (ВК) и статуса сварочных материалов

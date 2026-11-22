@@ -359,10 +359,10 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           `Ошибка регистрации заявки № ${reqNumber} на сервере. Заявка не сохранена.`
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       showBanner(
         'error',
-        `Сбой при регистрации заявки на сервере: ${err?.message || String(err)}`
+        `Сбой при регистрации заявки на сервере: ${(err instanceof Error ? err.message : String(err)) || String(err)}`
       );
     }
   };
@@ -392,10 +392,10 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           `Сервер отклонил приём заявки № ${req.requestNumber} в работу. Проверьте права доступа.`
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       showBanner(
         'error',
-        `Сбой приёмки заявки на сервере: ${err?.message || String(err)}`
+        `Сбой приёмки заявки на сервере: ${(err instanceof Error ? err.message : String(err)) || String(err)}`
       );
     }
   };

@@ -16,7 +16,7 @@ from app.api.deps import get_current_user, get_db_session
 from app.core.security import create_access_token
 from app.main import app
 from app.models.audit import AuditLog
-from app.models.enums import RoleEnum
+from app.models.enums import DepartmentEnum, RoleEnum
 from app.models.facility import Facility
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
@@ -76,7 +76,7 @@ async def admin_user() -> User:
             password_hash="argon2_fake_hash",
             full_name="Тестовый Администратор",
             role=RoleEnum.ADMIN,
-            department="ОИТ",
+            department=DepartmentEnum.ALL,
             position_title="Администратор",
             session_number=1,
             is_active=True,

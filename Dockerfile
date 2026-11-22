@@ -25,10 +25,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем исходный код бэкенда и миграции Alembic и устанавливаем пакет
+# Копируем исходный код бэкенда и миграции Alembic и устанавливаем пакет в production-режиме
 COPY backend/ ./
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -e . greenlet
+    pip install --no-cache-dir . greenlet && \
+    apt-get purge -y --auto-remove build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
 # Копируем собранный фронтенд (на случай прямой раздачи статики)
 COPY --from=frontend-builder /app/dist /app/dist
@@ -51,5 +53,5 @@ FROM nginx:alpine AS frontend
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 80 443
 CMD ["nginx", "-g", "daemon off;"]

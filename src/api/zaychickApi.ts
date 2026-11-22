@@ -799,6 +799,7 @@ export const zaychickApi = {
       actNumber?: string | null;
       actualTestDate?: string | null;
       force?: boolean;
+      forceReason?: string | null;
     }
   ): Promise<TestCircuitDetail> {
     const dto = await apiRequest<Record<string, unknown>>(`/api/test-circuits/${circuitId}`, {

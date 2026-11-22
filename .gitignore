@@ -7,11 +7,22 @@ coverage/
 *.log
 .env*
 !.env.example
-data/*.sqlite*
-data/zaychick-fallback.json
-data/backups/
-data/simulation_screenshots/
+
+# Local SQLite databases, WAL, backups and data dumps (PostgreSQL-only architecture)
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+data/
+
 .vscode/
 .idea/
 .antigravity/
 .aistudio/
+
+# Prevent accidental auto-merging of dev overrides in production
+docker-compose.override.yml
+docker-compose.override.yaml

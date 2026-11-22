@@ -3133,7 +3133,7 @@ test('Sprint 1: Серверная безопасность, криптосто�
     timingSafeCompare,
     createAuthenticatedSession: serverCreateSession,
     isSessionActive: serverIsActive,
-  } = await import('../server/serverAuth');
+  } = await import('../../archive/legacy_v1/server/serverAuth');
 
   // 1. Серверное соленое хеширование и timing-safe сравнение через node:crypto
   const serverP1 = serverHash('Gazprom2026!');
@@ -3942,8 +3942,8 @@ test('Sprint 2: OCC-контроль ревизий (HTTP 409), согласов
   const os = await import('node:os');
   const path = await import('node:path');
   const fs = await import('node:fs');
-  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
-  const { hashPasswordWithSalt, verifyPassword } = await import('../server/serverAuth');
+  const { UnifiedServerDatabase } = await import('../../archive/legacy_v1/server/sqliteDb');
+  const { hashPasswordWithSalt, verifyPassword } = await import('../../archive/legacy_v1/server/serverAuth');
   const { USER_ACCOUNTS } = await import('../data/seedData');
 
   // 1. Проверка сидовых учетных записей: отсутствие открытых паролей и валидность scrypt-хешей
@@ -4011,7 +4011,7 @@ test('Sprint 3: Регресс сохранения хешей паролей п
   const os = await import('node:os');
   const path = await import('node:path');
   const fs = await import('node:fs');
-  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
+  const { UnifiedServerDatabase } = await import('../../archive/legacy_v1/server/sqliteDb');
 
   // Изолированная временная БД для теста
   const tmpDir = path.join(os.tmpdir(), `zaychick-test-auth-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
@@ -4103,7 +4103,7 @@ test('Sprint 3: Физическая валидация сигнатуры бэ�
   const os = await import('node:os');
   const path = await import('node:path');
   const fs = await import('node:fs');
-  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
+  const { UnifiedServerDatabase } = await import('../../archive/legacy_v1/server/sqliteDb');
 
   // Изолированная временная БД для теста бэкапа
   const tmpDir = path.join(os.tmpdir(), `zaychick-test-backup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
@@ -5086,7 +5086,7 @@ test('Повторный аудит п. 1: Безопасная миграция
   const path = await import('node:path');
   const fs = await import('node:fs');
   const nodeSqlite = await import('node:sqlite');
-  const { UnifiedServerDatabase } = await import('../server/sqliteDb');
+  const { UnifiedServerDatabase } = await import('../../archive/legacy_v1/server/sqliteDb');
 
   const tmpDir = path.join(
     os.tmpdir(),
@@ -5304,7 +5304,7 @@ test('Повторный аудит п. 2: Пакетная синхрониза
   const fs = await import('node:fs');
   const nodeSqlite = await import('node:sqlite');
   const { UnifiedServerDatabase, mapDbMutationResultToHttpError } = await import(
-    '../server/sqliteDb'
+    '../../archive/legacy_v1/server/sqliteDb'
   );
 
   const tmpDir = path.join(

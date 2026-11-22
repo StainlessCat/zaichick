@@ -31,6 +31,10 @@ class SseEventBus:
         self._recent_event_queue: deque[str] = deque()
         self._max_recent_ids = max(1, max_recent_ids)
 
+    @property
+    def active_subscribers_count(self) -> int:
+        return len(self._subscribers)
+
     def _track_event_id_locked(self, event_id: str) -> bool:
         """
         Record event_id with strict synchronized FIFO eviction to prevent unbounded memory growth.
@@ -46,14 +50,27 @@ class SseEventBus:
         self._recent_event_queue.append(event_id)
         return True
 
-    async def subscribe(self) -> AsyncGenerator[dict[str, Any], None]:
+    async def subscribe(
+        self, heartbeat_interval: float | None = 15.0
+    ) -> AsyncGenerator[dict[str, Any], None]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=256)
         async with self._lock:
             self._subscribers.add(queue)
         try:
             yield await self._emit_connected_sentinel()
             while True:
-                event = await queue.get()
+                if heartbeat_interval and heartbeat_interval > 0:
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=heartbeat_interval)
+                    except asyncio.TimeoutError:
+                        yield {
+                            "event": "ping",
+                            'heartbeat': True,
+                            'timestamp': datetime.now(timezone.utc).isoformat(),
+                        }
+                        continue
+                else:
+                    event = await queue.get()
                 yield event
         finally:
             async with self._lock:

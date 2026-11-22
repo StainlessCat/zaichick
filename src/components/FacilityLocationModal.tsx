@@ -290,7 +290,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
     const updated = [created, ...customStations];
     setCustomStations(updated);
     setSourceType('custom');
-    handleSelectStation(created as any, false);
+    handleSelectStation({ ...created, country: 'RU' }, false);
     setShowAddCustomModal(false);
     setNewCustomStation({
       name: '',
@@ -426,11 +426,11 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
           message: 'За дату данных нет (наблюдения на выбранной метеостанции отсутствуют)',
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setDateCheckStatus({
         status: 'not_found',
         tempC: '',
-        message: `Ошибка связи: ${err?.message || 'Сервис метеонаблюдений недоступен'}. Климатическая подмена запрещена.`,
+        message: `Ошибка связи: ${(err instanceof Error ? err.message : String(err)) || 'Сервис метеонаблюдений недоступен'}. Климатическая подмена запрещена.`,
       });
     }
   };
@@ -469,8 +469,8 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
       setArchiveLoadMessage(
         `Загружено ${loadedCount} сут. фактических наблюдений. За ${missingCount} сут. наблюдения на станции отсутствуют (статус «нет данных»).`
       );
-    } catch (err: any) {
-      setArchiveLoadMessage(`Ошибка загрузки архива: ${err?.message || 'Сбой сети'}`);
+    } catch (err: unknown) {
+      setArchiveLoadMessage(`Ошибка загрузки архива: ${(err instanceof Error ? err.message : String(err)) || 'Сбой сети'}`);
     } finally {
       setIsLoadingArchive(false);
     }

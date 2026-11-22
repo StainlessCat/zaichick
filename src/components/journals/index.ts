@@ -5,3 +5,4 @@ export * from './JournalLineSelector';
 export * from './JournalToolbar';
 export * from './JournalGostTable';
 export * from './JournalStoTable';
+export * from './useWeldingJournals';

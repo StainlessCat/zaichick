@@ -1,11 +1,39 @@
-node_modules
+# Version control and CI
 .git
 .github
+
+# Node / Frontend
+node_modules
 dist
 coverage
+*.tsbuildinfo
+
+# Python / Backend
+backend/.venv
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.mypy_cache
+backend/coverage
+backend/htmlcov
+*.egg-info
+
+# Data, DB residues, Logs
 data/*.sqlite*
 data/backups/*
 data/simulation_screenshots
 *.log
+*.sqlite
+*.sqlite3
+
+# IDE and OS artifacts
+.vscode
+.idea
 .DS_Store
 Thumbs.db
+archive
+docs/audit

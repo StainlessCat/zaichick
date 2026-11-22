@@ -252,6 +252,12 @@ async def supersede_lrv_item(
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Позиция ЛРВ не найдена.")
 
+    if item.status == LrvStatusEnum.SUPERSEDED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Позиция ЛРВ «{item.lrv_code}» уже заменена письмом «{item.replacement_letter or ''}». Повторная замена запрещена.",
+        )
+
     assert_can_mutate_record(
         user=current_user,
         record=item,
@@ -281,9 +287,39 @@ async def supersede_lrv_item(
         replacement_created = _build_lrv_item(payload.new_item, created_by_id=current_user.id)
         session.add(replacement_created)
 
+    linked_joints = list(
+        (
+            await session.execute(
+                select(WeldJoint).where(
+                    or_(
+                        WeldJoint.lrv1_item_id == item.id,
+                        WeldJoint.lrv2_item_id == item.id,
+                        and_(
+                            WeldJoint.rd_code == item.rd_code,
+                            or_(
+                                WeldJoint.lrv1_code == item.lrv_code,
+                                WeldJoint.lrv2_code == item.lrv_code,
+                            ),
+                        ),
+                    )
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    affected_joint_numbers = [
+        f"№{j.joint_number} ({j.line_number or j.rd_code})"
+        for j in linked_joints
+    ]
+
     await session.flush()
 
-    new_snap = orm_snapshot(item, LrvItemOut)
+    out = LrvItemOut.model_validate(item)
+    out.affected_joints = affected_joint_numbers
+    out.affected_joints_count = len(linked_joints)
+    new_snap = out.model_dump(mode="json")
+
     await record_audit_log(
         session,
         action="UPDATE",
@@ -295,10 +331,15 @@ async def supersede_lrv_item(
             "status": item.status.value,
             "replacement_letter": item.replacement_letter,
             "replacement_id": str(replacement_created.id) if replacement_created else None,
+            "affected_joints": affected_joint_numbers,
+            "affected_joints_count": len(linked_joints),
         },
         ip_address=get_client_ip(request),
         rd_code=item.rd_code,
-        summary=f"Позиция ЛРВ «{item.lrv_code}» переведена в superseded ({item.replacement_letter})",
+        summary=(
+            f"Позиция ЛРВ «{item.lrv_code}» переведена в superseded ({item.replacement_letter}). "
+            f"Затронуто стыков: {len(linked_joints)}"
+        ),
     )
     await event_bus.emit_delta(
         session,
@@ -309,7 +350,7 @@ async def supersede_lrv_item(
         updated_by=current_user.login,
         data=new_snap,
     )
-    return LrvItemOut.model_validate(item)
+    return out
 
 
 @router.patch("/{item_id}/status", response_model=LrvItemOut)
@@ -392,6 +433,16 @@ async def delete_lrv_item(
     item = (await session.execute(select(LrvItem).where(LrvItem.id == item_id))).scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Позиция ЛРВ не найдена.")
+
+    if item.status == LrvStatusEnum.SUPERSEDED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Физическое удаление позиции ЛРВ «{item.lrv_code}» со статусом «superseded» (заменена) "
+                f"запрещено для сохранения нормативной прослеживаемости (traceability). "
+                f"Позиция зафиксирована в письме {item.replacement_letter or ''}."
+            ),
+        )
 
     assert_can_mutate_record(
         user=current_user,

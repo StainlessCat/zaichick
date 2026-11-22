@@ -368,6 +368,8 @@ class LrvItemOut(BaseModel):
     sort_order: int
     record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
     created_by_id: uuid.UUID | None = None
+    affected_joints: list[str] = Field(default_factory=list)
+    affected_joints_count: int = 0
     version: int
     created_at: datetime | None = None
     updated_at: datetime | None = None

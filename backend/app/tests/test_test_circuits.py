@@ -26,7 +26,7 @@ from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
 from app.models.test_circuit import TestCircuit
 from app.models.user import User
-from app.schemas.test_circuit import AssignLinesRequest
+from app.schemas.test_circuit import AssignLinesRequest, TestCircuitUpdate
 from app.services.rbac import can_edit_joint_field, get_role_permissions
 from app.services.test_circuit_service import (
     CircuitMetrics,
@@ -34,6 +34,7 @@ from app.services.test_circuit_service import (
     calculate_circuit_metrics_from_joints,
     validate_and_sync_joint_circuit_change,
     validate_circuit_test_readiness,
+    update_test_circuit,
 )
 
 
@@ -73,7 +74,7 @@ def _make_joint(
     welder_stamp: str = "W-01",
     vik_result: ControlResultEnum = ControlResultEnum.FIT,
     ndt_result: ControlResultEnum = ControlResultEnum.FIT,
-    ndt_type: NdtMethodEnum = NdtMethodEnum.RT,
+    ndt_type: NdtMethodEnum = NdtMethodEnum.RK,
     dup_ndt_type: NdtMethodEnum = NdtMethodEnum.NOT_REQUIRED,
     dup_ndt_result: ControlResultEnum = ControlResultEnum.NOT_CONDUCTED,
     repair_action: str | None = None,
@@ -237,52 +238,114 @@ def test_validate_circuit_test_readiness_guardrails_and_force():
             metrics=ready_metrics,
             user=sa,
             force=True,
+            force_reason="Согласовано главным инженером",
         )
     assert exc.value.status_code == 400
     assert exc.value.detail["code"] == "CIRCUIT_ACT_FIELDS_REQUIRED"
 
-    # Unready metrics: incomplete welding + unapproved SRI + unresolved defect
-    bad_metrics = CircuitMetrics(
+    # Critical invariant: active defects CANNOT be bypassed with force under ANY circumstances
+    defective_metrics = CircuitMetrics(
         total_joints=10,
-        welded_joints=8,
-        welding_joints_percent=80.0,
+        welded_joints=10,
+        welding_joints_percent=100.0,
         defective_joints_count=2,
     )
     with pytest.raises(HTTPException) as exc:
         validate_circuit_test_readiness(
-            circuit_sri_status=SriStatusEnum.DEVELOPED,
+            circuit_sri_status=SriStatusEnum.APPROVED,
             act_number="АКТ-01",
             actual_test_date=date(2026, 5, 20),
-            metrics=bad_metrics,
-            user=op_pto,
-            force=False,
+            metrics=defective_metrics,
+            user=adm_sk,
+            force=True,
+            force_reason="Попытка закрытия с действующим браком",
         )
     assert exc.value.status_code == 400
-    assert len(exc.value.detail["reasons"]) == 3
+    assert exc.value.detail["code"] == "CIRCUIT_CRITICAL_DEFECTS_BLOCK"
     assert exc.value.detail["can_force"] is False
 
-    # OPERATOR cannot use force=True -> 403
+    # Critical invariant: empty circuit (0 joints) CANNOT be tested
+    empty_metrics = CircuitMetrics(
+        total_joints=0,
+        welded_joints=0,
+        welding_joints_percent=0.0,
+        defective_joints_count=0,
+    )
+    with pytest.raises(HTTPException) as exc:
+        validate_circuit_test_readiness(
+            circuit_sri_status=SriStatusEnum.APPROVED,
+            act_number="АКТ-01",
+            actual_test_date=date(2026, 5, 20),
+            metrics=empty_metrics,
+            user=sa,
+            force=True,
+            force_reason="Тест пустого контура",
+        )
+    assert exc.value.status_code == 400
+    assert exc.value.detail["code"] == "CIRCUIT_CRITICAL_DEFECTS_BLOCK"
+    assert exc.value.detail["can_force"] is False
+
+    # Administrative warnings: incomplete welding + unapproved SRI
+    warn_metrics = CircuitMetrics(
+        total_joints=10,
+        welded_joints=8,
+        welding_joints_percent=80.0,
+        defective_joints_count=0,
+    )
+
+    # 1. Operator with force=False -> 400 with can_force=False
     with pytest.raises(HTTPException) as exc:
         validate_circuit_test_readiness(
             circuit_sri_status=SriStatusEnum.DEVELOPED,
             act_number="АКТ-01",
             actual_test_date=date(2026, 5, 20),
-            metrics=bad_metrics,
+            metrics=warn_metrics,
+            user=op_pto,
+            force=False,
+        )
+    assert exc.value.status_code == 400
+    assert exc.value.detail["code"] == "CIRCUIT_TEST_GUARDRAIL_FAILED"
+    assert len(exc.value.detail["reasons"]) == 2
+    assert exc.value.detail["can_force"] is False
+
+    # 2. OPERATOR cannot use force=True -> 403 Forbidden
+    with pytest.raises(HTTPException) as exc:
+        validate_circuit_test_readiness(
+            circuit_sri_status=SriStatusEnum.DEVELOPED,
+            act_number="АКТ-01",
+            actual_test_date=date(2026, 5, 20),
+            metrics=warn_metrics,
             user=op_pto,
             force=True,
+            force_reason="Оператор пытается закрыть контур",
         )
     assert exc.value.status_code == 403
 
-    # SK DEPT_ADMIN can use force=True -> returns warning reasons for audit log
+    # 3. SK DEPT_ADMIN attempts force=True WITHOUT force_reason -> 400 CIRCUIT_FORCE_REASON_REQUIRED
+    with pytest.raises(HTTPException) as exc:
+        validate_circuit_test_readiness(
+            circuit_sri_status=SriStatusEnum.DEVELOPED,
+            act_number="АКТ-01",
+            actual_test_date=date(2026, 5, 20),
+            metrics=warn_metrics,
+            user=adm_sk,
+            force=True,
+            force_reason="",
+        )
+    assert exc.value.status_code == 400
+    assert exc.value.detail["code"] == "CIRCUIT_FORCE_REASON_REQUIRED"
+
+    # 4. SK DEPT_ADMIN with force=True AND valid force_reason -> authorized with warnings list
     warnings = validate_circuit_test_readiness(
         circuit_sri_status=SriStatusEnum.DEVELOPED,
         act_number="АКТ-01",
         actual_test_date=date(2026, 5, 20),
-        metrics=bad_metrics,
+        metrics=warn_metrics,
         user=adm_sk,
         force=True,
+        force_reason="Согласовано главным инженером объекта в оперативном порядке",
     )
-    assert len(warnings) == 3
+    assert len(warnings) == 2
 
     # Clean readiness -> passes with empty warnings
     ok_warnings = validate_circuit_test_readiness(
@@ -424,3 +487,42 @@ async def test_pil_operator_forbidden_to_create_test_circuit():
         assert resp.status_code == 403
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_repeated_force_test_blocked():
+    """Verify that repeated force=True on an already TESTED circuit is blocked (400)."""
+    sa = _make_user(login="sa", role=SystemRoleEnum.SUPERADMIN, department=DepartmentEnum.ALL)
+    fac_id = uuid.uuid4()
+    cid = uuid.uuid4()
+    circuit = TestCircuit(
+        id=cid,
+        facility_id=fac_id,
+        name="К-10",
+        sri_status=SriStatusEnum.APPROVED,
+        test_status=CircuitTestStatusEnum.TESTED,
+        record_status=RecordStatusEnum.VERIFIED,
+        act_number="АКТ-10",
+        actual_test_date=date(2026, 5, 20),
+        version=2,
+    )
+
+    fake_session = AsyncMock()
+    fake_session.execute = AsyncMock(
+        return_value=_FakeResult(one=(circuit, "КС Портовая"))
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await update_test_circuit(
+            fake_session,
+            cid,
+            TestCircuitUpdate(
+                version=2,
+                test_status=CircuitTestStatusEnum.TESTED,
+                force=True,
+                force_reason="Повторный force",
+            ),
+            user=sa,
+        )
+    assert exc.value.status_code == 400
+    assert "Повторный принудительный перевод не допускается" in str(exc.value.detail)

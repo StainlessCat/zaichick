@@ -434,10 +434,11 @@ def validate_circuit_test_readiness(
     metrics: CircuitMetrics,
     user: User,
     force: bool = False,
+    force_reason: str | None = None,
 ) -> list[str]:
     """
     Validate guardrails before setting test_status = TESTED.
-    Returns list of overridden warnings (non-empty only when force=True is authorized).
+    Returns list of overridden warnings (non-empty only when force=True is authorized and valid force_reason is provided).
     Raises 400/403 HTTPException when blocked.
     """
     missing_fields: list[str] = []
@@ -460,21 +461,39 @@ def validate_circuit_test_readiness(
             },
         )
 
-    reasons: list[str] = []
+    # Critical safety invariants that CANNOT be bypassed under ANY circumstances (even with force=True)
+    critical_violations: list[str] = []
     if metrics.total_joints == 0:
-        reasons.append("В контур не привязан ни один стык")
-    elif metrics.welded_joints < metrics.total_joints:
-        reasons.append(
+        critical_violations.append("В контур не привязан ни один стык")
+    if metrics.defective_joints_count > 0:
+        critical_violations.append(
+            f"Имеются стыки с неисправленным браком ({metrics.defective_joints_count} шт.)"
+        )
+    if critical_violations:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "CIRCUIT_CRITICAL_DEFECTS_BLOCK",
+                "message": (
+                    "Перевод контура в статус «Испытано» категорически запрещён правилами промышленной безопасности: "
+                    + "; ".join(critical_violations)
+                    + ". Наличие неисправленного брака или отсутствие стыков не может быть обойдено принудительно (force)."
+                ),
+                "reasons": critical_violations,
+                "can_force": False,
+            },
+        )
+
+    # Non-critical administrative warnings that may be overridden by authorized roles with justification
+    warnings: list[str] = []
+    if metrics.welded_joints < metrics.total_joints:
+        warnings.append(
             f"Не завершена сварка ({metrics.welded_joints} из {metrics.total_joints} стыков)"
         )
     if circuit_sri_status != SriStatusEnum.APPROVED:
-        reasons.append("СРИ не согласована")
-    if metrics.defective_joints_count > 0:
-        reasons.append(
-            f"Имеются стыки с неисправленным браком ({metrics.defective_joints_count} шт.)"
-        )
+        warnings.append("СРИ не согласована")
 
-    if not reasons:
+    if not warnings:
         return []
 
     can_force = user.role == SystemRoleEnum.SUPERADMIN or (
@@ -485,8 +504,8 @@ def validate_circuit_test_readiness(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "code": "CIRCUIT_TEST_GUARDRAIL_FAILED",
-                "message": "Невозможно перевести контур в статус «Испытано»: " + "; ".join(reasons) + ".",
-                "reasons": reasons,
+                "message": "Невозможно перевести контур в статус «Испытано»: " + "; ".join(warnings) + ".",
+                "reasons": warnings,
                 "can_force": can_force,
             },
         )
@@ -500,7 +519,22 @@ def validate_circuit_test_readiness(
             ),
         )
 
-    return reasons
+    clean_reason = (force_reason or "").strip()
+    if len(clean_reason) < 5:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "CIRCUIT_FORCE_REASON_REQUIRED",
+                "message": (
+                    "Для принудительного перевода контура в статус «Испытано» "
+                    "необходимо обязательно указать обоснование (force_reason, не менее 5 символов)."
+                ),
+                "reasons": warnings,
+                "can_force": True,
+            },
+        )
+
+    return warnings
 
 
 def _circuit_snapshot(circuit: TestCircuit) -> dict[str, Any]:
@@ -789,6 +823,7 @@ async def update_test_circuit(
 
     patch_data = payload.model_dump(exclude_unset=True)
     force_flag = bool(patch_data.pop("force", False))
+    force_reason = patch_data.pop("force_reason", None)
     expected_version = int(patch_data.pop("version"))
 
     enforce_optimistic_lock(
@@ -802,6 +837,16 @@ async def update_test_circuit(
     old_snap = _circuit_snapshot(circuit)
     old_name = circuit.name
     old_test_status = circuit.test_status
+
+    if (
+        old_test_status == CircuitTestStatusEnum.TESTED
+        and patch_data.get("test_status") == CircuitTestStatusEnum.TESTED
+        and force_flag
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Контур уже находится в статусе «Испытано». Повторный принудительный перевод не допускается.",
+        )
 
     next_name = (
         patch_data["name"].strip()
@@ -849,6 +894,7 @@ async def update_test_circuit(
             metrics=current_metrics,
             user=user,
             force=force_flag,
+            force_reason=force_reason,
         )
 
     circuit.name = next_name
@@ -886,14 +932,21 @@ async def update_test_circuit(
     new_snap = _circuit_snapshot(circuit)
     old_diff, new_diff = extract_changed_fields(old_snap, new_snap)
     if forced_warnings:
-        new_diff = {**(new_diff or {}), "force_warnings": forced_warnings}
+        new_diff = {
+            **(new_diff or {}),
+            "force_warnings": forced_warnings,
+            "force_reason": (force_reason or "").strip(),
+            "forced_by_user": user.login,
+            "forced_by_role": user.role.value if hasattr(user.role, "value") else str(user.role),
+        }
     summary = f"Обновлён испытательный контур «{circuit.name}» (v{circuit.version})"
     action_code = "UPDATE"
     if forced_warnings:
         action_code = "CIRCUIT_FORCE_TESTED"
         summary = (
             f"Принудительно закрыт акт испытания контура «{circuit.name}» "
-            f"(Акт {circuit.act_number}): " + "; ".join(forced_warnings)
+            f"(Акт {circuit.act_number}). Обоснование: {(force_reason or '').strip()}. "
+            f"Предупреждения: " + "; ".join(forced_warnings)
         )
     elif old_test_status != CircuitTestStatusEnum.TESTED and next_test_status == CircuitTestStatusEnum.TESTED:
         action_code = "CIRCUIT_TESTED"

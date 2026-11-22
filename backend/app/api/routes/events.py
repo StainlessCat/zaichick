@@ -22,22 +22,39 @@ def _format_sse_frame(event_name: str, payload: dict) -> str:
 async def stream_domain_events(
     request: Request,
     once: bool = Query(default=False, description="Emit initial connected frame and optionally single delta for tests"),
+    heartbeat_interval: float = Query(
+        default=15.0,
+        ge=0.05,
+        le=300.0,
+        description="SSE heartbeat interval in seconds to keep proxies alive and detect disconnects",
+    ),
     _: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """
     Server-Sent Events (SSE) endpoint authenticated via HttpOnly Cookie or Bearer header.
-    Streams pinpoint delta events (no full-database dumps).
+    Streams pinpoint delta events (no full-database dumps) with periodic keepalive heartbeats.
     """
 
     async def event_generator():
-        async for evt in event_bus.subscribe():
-            if await request.is_disconnected():
-                break
-            event_name = str(evt.get("event") or "delta")
-            yield _format_sse_frame(event_name, evt)
-            if once and event_name != "connected":
-                break
-            await asyncio.sleep(0)
+        try:
+            async for evt in event_bus.subscribe(heartbeat_interval=heartbeat_interval):
+                if await request.is_disconnected():
+                    break
+                event_name = str(evt.get("event") or "delta")
+                if evt.get("heartbeat") or event_name == "ping":
+                    # SSE standard comment line resets reverse proxy timeouts without triggering client message events
+                    ts = evt.get("timestamp") or ""
+                    yield f": keepalive {ts}\n\n"
+                    if once:
+                        break
+                    continue
+
+                yield _format_sse_frame(event_name, evt)
+                if once and event_name != "connected":
+                    break
+                await asyncio.sleep(0)
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
 
     return StreamingResponse(
         event_generator(),

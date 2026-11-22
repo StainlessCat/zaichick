@@ -120,7 +120,7 @@ export function searchWeatherStations(
     latitude: cs.latitude,
     longitude: cs.longitude,
     elevationM: cs.elevationM,
-    source: (cs as any).source || 'custom',
+    source: ('source' in cs && typeof cs.source === 'string') ? cs.source : 'custom',
     deviceModel: cs.deviceModel,
     verificationCertNumber: cs.verificationCertNumber,
     verificationValidUntil: cs.verificationValidUntil,
@@ -213,18 +213,30 @@ export async function fetchMeteostatNearbyStations(
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data?.data)) {
-        return data.data.map((item: any) => ({
-          id: String(item.id),
-          name: item.name?.ru || item.name?.en || item.name || `Станция ${item.id}`,
-          region: item.region || item.country || 'RU',
-          country: item.country || 'RU',
-          latitude: Number(item.location?.latitude ?? latitude),
-          longitude: Number(item.location?.longitude ?? longitude),
-          elevationM: item.location?.elevation,
-          distanceKm: item.distance ? Math.round(item.distance / 100) / 10 : undefined,
-          wmoId: item.identifiers?.wmo,
-          source: 'meteostat',
-        }));
+        interface MeteostatRawStation {
+          id: string | number;
+          name?: string | { ru?: string; en?: string };
+          region?: string;
+          country?: string;
+          location?: { latitude?: number; longitude?: number; elevation?: number };
+          distance?: number;
+          identifiers?: { wmo?: string };
+        }
+        return (data.data as MeteostatRawStation[]).map((item) => {
+          const rawName = typeof item.name === 'object' ? item.name?.ru || item.name?.en : item.name;
+          return {
+            id: String(item.id),
+            name: rawName || `Станция ${item.id}`,
+            region: item.region || item.country || 'RU',
+            country: item.country || 'RU',
+            latitude: Number(item.location?.latitude ?? latitude),
+            longitude: Number(item.location?.longitude ?? longitude),
+            elevationM: item.location?.elevation,
+            distanceKm: item.distance ? Math.round(item.distance / 100) / 10 : undefined,
+            wmoId: item.identifiers?.wmo,
+            source: 'meteostat',
+          };
+        });
       }
     }
   } catch {
@@ -497,7 +509,17 @@ export async function searchLocationGeocoding(
     const data = await res.json();
     if (!Array.isArray(data?.results)) return [];
 
-    const results: GeocodingSearchResult[] = data.results.map((r: any) => {
+    interface OpenMeteoRawGeo {
+      id: string | number;
+      name: string;
+      latitude: number;
+      longitude: number;
+      elevation?: number;
+      admin1?: string;
+      country?: string;
+      country_code?: string;
+    }
+    const results: GeocodingSearchResult[] = (data.results as OpenMeteoRawGeo[]).map((r) => {
       const lat = Math.round(r.latitude * 100) / 100;
       const lon = Math.round(r.longitude * 100) / 100;
       const regionStr = [r.admin1, r.country || 'Россия'].filter(Boolean).join(', ');
@@ -560,12 +582,13 @@ export async function checkWeatherServiceHealth(
         lastCheckedAt,
         errorMessage: `HTTP ${res.status}: ${res.statusText}`,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Сбой подключения к Open-Meteo API';
       return {
         source,
         status: 'offline',
         lastCheckedAt,
-        errorMessage: err?.message || 'Сбой подключения к Open-Meteo API',
+        errorMessage: msg,
       };
     }
   }
@@ -609,12 +632,13 @@ export async function checkWeatherServiceHealth(
       lastCheckedAt,
       errorMessage: `HTTP ${res.status} (${res.statusText || 'Сервис Meteostat временно недоступен'})`,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Сбой подключения к сервису Meteostat';
     return {
       source,
       status: 'offline',
       lastCheckedAt,
-      errorMessage: err?.message || 'Сбой подключения к сервису Meteostat',
+      errorMessage: msg,
     };
   }
 }

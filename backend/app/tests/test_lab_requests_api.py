@@ -10,20 +10,20 @@ from sqlalchemy import select
 from app.api.deps import get_current_user
 from app.core.database import async_session_factory
 from app.main import app
-from app.models.enums import ControlResultEnum, JointKindEnum, JointTypeEnum, NdtMethodEnum, RoleEnum
+from app.models.enums import DepartmentEnum, ControlResultEnum, JointKindEnum, JointTypeEnum, NdtMethodEnum, RoleEnum, SystemRoleEnum
 from app.models.facility import Facility
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
 from app.models.user import User
 
 
-def _make_test_user(role: RoleEnum, username: str = "testuser") -> User:
+def _make_test_user(role: SystemRoleEnum, department: DepartmentEnum, username: str = "testuser") -> User:
     return User(
         id=uuid.uuid4(),
         login=username,
-        full_name=f"Test {role.value}",
+        full_name=f"Test {username}",
         password_hash="fakehash",
-        department="Департамент контроля",
+        department=department,
         position_title="Специалист",
         role=role,
         is_active=True,
@@ -33,10 +33,10 @@ def _make_test_user(role: RoleEnum, username: str = "testuser") -> User:
 @pytest.mark.asyncio
 async def test_lab_request_crud_and_permissions() -> None:
     """Test full CRUD lifecycle, RBAC enforcement, joint validation, and FSM for NDT lab requests."""
-    admin_user = _make_test_user(RoleEnum.ADMIN, f"adm_{uuid.uuid4().hex[:6]}")
-    pto_user = _make_test_user(RoleEnum.PTO, f"pto_{uuid.uuid4().hex[:6]}")
-    pil_user = _make_test_user(RoleEnum.PIL, f"pil_{uuid.uuid4().hex[:6]}")
-    viewer_user = _make_test_user(RoleEnum.VIEWER, f"viw_{uuid.uuid4().hex[:6]}")
+    admin_user = _make_test_user(SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL, f"adm_{uuid.uuid4().hex[:6]}")
+    pto_user = _make_test_user(SystemRoleEnum.OPERATOR, DepartmentEnum.PTO, f"pto_{uuid.uuid4().hex[:6]}")
+    pil_user = _make_test_user(SystemRoleEnum.OPERATOR, DepartmentEnum.PIL, f"pil_{uuid.uuid4().hex[:6]}")
+    viewer_user = _make_test_user(SystemRoleEnum.VIEWER, DepartmentEnum.SK, f"viw_{uuid.uuid4().hex[:6]}")
 
     fac_id = uuid.uuid4()
     line_id = uuid.uuid4()

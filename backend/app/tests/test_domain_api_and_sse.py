@@ -16,6 +16,10 @@ from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.models.audit import AuditLog
 from app.models.enums import (
+    DepartmentEnum,
+    ExecutiveDocStatusEnum,
+    RecordStatusEnum,
+    SystemRoleEnum,
     ControlResultEnum,
     ElementCombinationEnum,
     JointKindEnum,
@@ -199,7 +203,11 @@ class _DomainFakeAsyncSession:
         )
 
 
-def _make_user(login: str, role: RoleEnum) -> User:
+def _make_user(
+    login: str,
+    role: SystemRoleEnum,
+    department: DepartmentEnum = DepartmentEnum.PTO,
+) -> User:
     now = datetime.now(timezone.utc)
     return User(
         id=uuid.uuid4(),
@@ -207,8 +215,8 @@ def _make_user(login: str, role: RoleEnum) -> User:
         password_hash=hash_password("Pass123!"),
         full_name=f"Тест {login}",
         role=role,
-        department="ПТО",
-        position_title=role.value,
+        department=department,
+        position_title=getattr(role, "value", str(role)),
         session_number=1,
         is_active=True,
         must_change_password=False,
@@ -230,11 +238,11 @@ def _auth_header(user: User) -> dict[str, str]:
 
 def _seed_domain_data(fake_db: _DomainFakeAsyncSession) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
-    admin = _make_user("admin", RoleEnum.ADMIN)
-    pto = _make_user("pto_ivanov", RoleEnum.PTO)
-    pil = _make_user("pil_smirnov", RoleEnum.PIL)
-    ogs = _make_user("ogs_kozlov", RoleEnum.OGS)
-    viewer = _make_user("viewer_zakaz", RoleEnum.VIEWER)
+    admin = _make_user("admin", SystemRoleEnum.SUPERADMIN, DepartmentEnum.ALL)
+    pto = _make_user("pto_ivanov", SystemRoleEnum.OPERATOR, DepartmentEnum.PTO)
+    pil = _make_user("pil_smirnov", SystemRoleEnum.OPERATOR, DepartmentEnum.PIL)
+    ogs = _make_user("ogs_kozlov", SystemRoleEnum.OPERATOR, DepartmentEnum.OGS)
+    viewer = _make_user("viewer_zakaz", SystemRoleEnum.VIEWER, DepartmentEnum.SK)
     for u in (admin, pto, pil, ogs, viewer):
         fake_db.add(u)
 
@@ -272,6 +280,8 @@ def _seed_domain_data(fake_db: _DomainFakeAsyncSession) -> dict[str, Any]:
         rk_percent=100.0,
         uzk_percent=0.0,
         pvk_percent=0.0,
+        id_status=ExecutiveDocStatusEnum.IN_WORK,
+        record_status=RecordStatusEnum.DRAFT,
         sort_order=1,
         version=1,
         created_at=now,
@@ -293,6 +303,7 @@ def _seed_domain_data(fake_db: _DomainFakeAsyncSession) -> dict[str, Any]:
         spec_qty=10.0,
         unit=LrvUnitEnum.PCS,
         status=LrvStatusEnum.ACTIVE,
+        record_status=RecordStatusEnum.DRAFT,
         sort_order=1,
         version=1,
         created_at=now,
@@ -317,6 +328,7 @@ def _seed_domain_data(fake_db: _DomainFakeAsyncSession) -> dict[str, Any]:
         min_wall_thickness_mm=3.0,
         max_wall_thickness_mm=20.0,
         sort_order=1,
+        record_status=RecordStatusEnum.DRAFT,
         version=1,
         naks_certs=[
             WelderNaksCert(
@@ -355,6 +367,7 @@ def _seed_domain_data(fake_db: _DomainFakeAsyncSession) -> dict[str, Any]:
         min_wall_thickness_mm=3.0,
         max_wall_thickness_mm=16.0,
         sort_order=2,
+        record_status=RecordStatusEnum.DRAFT,
         version=1,
         naks_certs=[],
         created_at=now,
@@ -378,6 +391,7 @@ def _seed_domain_data(fake_db: _DomainFakeAsyncSession) -> dict[str, Any]:
         max_wall_thickness_mm=16.0,
         recommended_materials="ER70S-6",
         sort_order=1,
+        record_status=RecordStatusEnum.DRAFT,
         version=1,
         preheat_rules=[
             TechCardPreheatRule(
@@ -403,6 +417,7 @@ def _seed_domain_data(fake_db: _DomainFakeAsyncSession) -> dict[str, Any]:
         certificate_number="С-777",
         incoming_control_act="АВК-12",
         status=WeldingMaterialStatusEnum.ADMITTED,
+        record_status=RecordStatusEnum.DRAFT,
         sort_order=1,
         version=1,
         created_at=now,
@@ -771,7 +786,26 @@ async def test_joints_rbac_occ_validation_audit_and_sse() -> None:
                 headers=_auth_header(seed["admin"]),
             )
             assert res_sup.status_code == 200
-            assert res_sup.json()["status"] == "superseded"
+            sup_data = res_sup.json()
+            assert sup_data["status"] == "superseded"
+            assert sup_data["affected_joints_count"] == 2
+            assert any("№1" in j for j in sup_data["affected_joints"])
+            assert any("№2" in j for j in sup_data["affected_joints"])
+
+            # Re-superseding already superseded item is rejected (400)
+            res_re_sup = await client.post(
+                f"/api/lrv/{seed['lrv_pipe'].id}/supersede",
+                json={"version": 2, "replacement_letter": "Письмо РД-46/2026"},
+                headers=_auth_header(seed["admin"]),
+            )
+            assert res_re_sup.status_code == 400
+
+            # Physical delete of superseded item is forbidden (400) to maintain traceability
+            res_del_superseded = await client.delete(
+                f"/api/lrv/{seed['lrv_pipe'].id}",
+                headers=_auth_header(seed["admin"]),
+            )
+            assert res_del_superseded.status_code == 400
 
             # 10. Quotas, Journals & Completeness, Readiness Reports, Audit Log
             res_quotas = await client.get(

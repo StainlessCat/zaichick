@@ -24,6 +24,12 @@ class SystemRoleEnum(str, enum.Enum):
     OPERATOR = "OPERATOR"
     VIEWER = "VIEWER"
 
+    # Backward-compatible aliases for legacy imports/tests
+    ADMIN = "SUPERADMIN"
+    PTO = "OPERATOR"
+    OGS = "OPERATOR"
+    PIL = "OPERATOR"
+
 
 class DepartmentEnum(str, enum.Enum):
     """Production departments / functional domains."""
@@ -107,6 +113,7 @@ class ControlResultEnum(str, enum.Enum):
 
 class NdtMethodEnum(str, enum.Enum):
     RK = "РК"
+    RT = "РК"  # Alias for RK
     UZK = "УЗК"
     PVK = "ПВК"
     MK = "МК"
@@ -136,6 +143,7 @@ class LrvStatusEnum(str, enum.Enum):
     ACTIVE = "active"
     SUPERSEDED = "superseded"
     ARCHIVED = "archived"
+    REPLACED = "superseded"
 
 
 class WeldingMaterialTypeEnum(str, enum.Enum):
@@ -148,3 +156,4 @@ class WeldingMaterialTypeEnum(str, enum.Enum):
 class WeldingMaterialStatusEnum(str, enum.Enum):
     ADMITTED = "Допущен в производство"
     TESTING = "На испытании"
+

@@ -123,6 +123,42 @@ const DEFAULT_REFERENCE_STATIONS: WeatherStationItem[] = [
   },
 ];
 
+interface RawWeatherStationPayload {
+  id: string | number;
+  wmo_id?: string;
+  wmoId?: string;
+  usaf?: string;
+  wban?: string;
+  name: string;
+  name_en?: string;
+  nameEn?: string;
+  region?: string;
+  latitude: number;
+  longitude: number;
+  is_active?: boolean;
+  distance_km?: number;
+  distanceKm?: number;
+  matched_settlement?: string;
+  matchedSettlement?: string;
+}
+
+interface RawWeatherDailyPayload {
+  id: string | number;
+  station_id?: string;
+  stationId?: string;
+  obs_date?: string;
+  obsDate?: string;
+  t_min?: number;
+  tMin?: number;
+  t_max?: number;
+  tMax?: number;
+  t_mean?: number;
+  tMean?: number;
+  source?: string;
+  updated_at?: string;
+  updatedAt?: string;
+}
+
 export async function fetchWeatherStations(
   search?: string,
   lat?: number,
@@ -138,9 +174,9 @@ export async function fetchWeatherStations(
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
-        return data.map((d: any) => ({
+        return (data as RawWeatherStationPayload[]).map((d) => ({
           id: String(d.id),
-          wmoId: d.wmo_id || d.wmoId,
+          wmoId: d.wmo_id || d.wmoId || String(d.id),
           usaf: d.usaf,
           wban: d.wban,
           name: d.name,
@@ -229,10 +265,10 @@ export async function fetchWeatherDaily(
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
-        return data.map((d: any) => ({
+        return (data as RawWeatherDailyPayload[]).map((d) => ({
           id: String(d.id),
-          stationId: d.station_id || d.stationId,
-          obsDate: d.obs_date || d.obsDate,
+          stationId: d.station_id || d.stationId || stationId,
+          obsDate: d.obs_date || d.obsDate || dateFrom,
           tMin: d.t_min ?? d.tMin,
           tMax: d.t_max ?? d.tMax,
           tMean: d.t_mean ?? d.tMean,

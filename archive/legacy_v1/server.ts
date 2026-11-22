@@ -3,8 +3,8 @@ import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { serverDb, sanitizeUserAccountForClient, mapDbMutationResultToHttpError } from './src/server/sqliteDb';
-import { getUserRolePermissions } from './src/utils/rbac';
+import { serverDb, sanitizeUserAccountForClient, mapDbMutationResultToHttpError } from './server/sqliteDb';
+import { getUserRolePermissions } from '../../src/utils/rbac';
 
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT_DIR = process.cwd();

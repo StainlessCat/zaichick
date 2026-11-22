@@ -16,7 +16,7 @@ from app.api.deps import get_db_session
 from app.cli.backup_db import compute_sha256, create_backup, restore_backup, verify_backup
 from app.core.security import create_access_token, hash_password
 from app.main import app
-from app.models.enums import ControlResultEnum, JointKindEnum, JointTypeEnum, RoleEnum
+from app.models.enums import ControlResultEnum, DepartmentEnum, JointKindEnum, JointTypeEnum, RoleEnum
 from app.models.facility import Facility
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
@@ -86,7 +86,7 @@ async def test_sql_level_server_pagination():
             password_hash=hash_password("Pass123!"),
             full_name="Наблюдатель",
             role=RoleEnum.VIEWER,
-            department="СКК",
+            department=DepartmentEnum.SK,
             position_title="Инспектор",
             session_number=1,
             is_active=True,
@@ -315,7 +315,7 @@ async def test_backup_create_verify_and_restore(tmp_path: Path):
             password_hash=hash_password("Pass123!"),
             full_name="Админ Бэкапа",
             role=RoleEnum.ADMIN,
-            department="IT",
+            department=DepartmentEnum.ALL,
             position_title="Системный администратор",
             session_number=1,
             is_active=True,

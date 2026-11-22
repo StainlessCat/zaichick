@@ -59,7 +59,7 @@ async def _authenticate_user(
     ip_address = get_client_ip(request)
     ip_key = ip_address or "unknown"
 
-    allowed, retry_after = await login_rate_limiter.check_allowed(ip_key, payload.login)
+    allowed, retry_after = await login_rate_limiter.check_allowed(ip_key, payload.login, session=session)
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -78,7 +78,7 @@ async def _authenticate_user(
     ).scalar_one_or_none()
 
     if user is not None and not user.is_active:
-        await login_rate_limiter.record_failure(ip_key, payload.login)
+        await login_rate_limiter.record_failure(ip_key, payload.login, session=session)
         await record_audit_log(
             session,
             action="login_failed",
@@ -97,7 +97,7 @@ async def _authenticate_user(
         )
 
     if user is None or not verify_password(payload.password, user.password_hash):
-        await login_rate_limiter.record_failure(ip_key, payload.login)
+        await login_rate_limiter.record_failure(ip_key, payload.login, session=session)
         await record_audit_log(
             session,
             action="login_failed",
@@ -115,7 +115,7 @@ async def _authenticate_user(
             detail="Неверный логин или пароль.",
         )
 
-    await login_rate_limiter.reset_for_login(ip_key, payload.login)
+    await login_rate_limiter.reset_for_login(ip_key, payload.login, session=session)
     token, expires_at = create_access_token(
         user_id=user.id,
         login=user.login,

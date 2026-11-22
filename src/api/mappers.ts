@@ -1235,11 +1235,13 @@ export function mapTestCircuitToUpdatePayload(payload: {
   actNumber?: string | null;
   actualTestDate?: string | null;
   force?: boolean;
+  forceReason?: string | null;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {
     version: payload.version,
     force: Boolean(payload.force),
   };
+  if (payload.forceReason !== undefined) body.force_reason = asNullableStr(payload.forceReason);
   if (payload.name !== undefined) body.name = payload.name.trim();
   if (payload.sriName !== undefined) body.sri_name = asNullableStr(payload.sriName);
   if (payload.sriStatus !== undefined) body.sri_status = payload.sriStatus;
