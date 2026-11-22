@@ -211,7 +211,7 @@ describe('Сквозной ролевой симуляционный UAT-тес�
       contour: 'Контур 1',
       uniqueLineId: lineId,
       lineNumber: createdLine.lineNumber,
-      jointNumber: 'С-UAT-01',
+      jointNumber: '010',
       jointType: 'Монтажный',
       diameterMm: 219,
       diameterInch: '8"',
@@ -252,7 +252,7 @@ describe('Сквозной ролевой симуляционный UAT-тес�
     const rawJoint2 = {
       ...rawJoint1,
       id: 'joint-uat-02',
-      jointNumber: 'С-UAT-02',
+      jointNumber: '020',
       lrv2Code: lrvItemPipe.lrvCode,
       elem2Name: lrvItemPipe.shortName,
       elem2Material: lrvItemPipe.material,

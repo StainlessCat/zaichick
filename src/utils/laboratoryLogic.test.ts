@@ -111,9 +111,9 @@ describe('Laboratory Logic — Stage 3 Enhancements', () => {
   });
 
   it('calculateLaboratoryDeficitStatement excludes joints with active requests from candidates', () => {
-    const j1 = makeTestJoint('j-1', 'С-01');
-    const j2 = makeTestJoint('j-2', 'С-02');
-    const j3 = makeTestJoint('j-3', 'С-03');
+    const j1 = makeTestJoint('j-1', '010');
+    const j2 = makeTestJoint('j-2', '020');
+    const j3 = makeTestJoint('j-3', '030');
 
     const activeReq: NdtLabRequest = {
       id: 'req-active',
@@ -161,7 +161,7 @@ describe('Laboratory Logic — Stage 3 Enhancements', () => {
   });
 
   it('buildLabConclusionPatch strictly requires official report number on completed NDT results', () => {
-    const joint = makeTestJoint('j-1', 'С-01');
+    const joint = makeTestJoint('j-1', '010');
 
     // 1. Missing report number with result 'Годен' -> rejects with error
     const resEmptyNum = buildLabConclusionPatch(joint, {

@@ -244,8 +244,8 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
   return (
     <main className="flex-1 max-w-[1920px] w-full mx-auto p-3 sm:p-4 space-y-3">
       {selectedObjectName === 'УКПГ-1С Харасавэйское ГКМ' &&
-        joints.filter((j) => j.objectName === 'УКПГ-1С Харасавэйское ГКМ').length ===
-          0 && (
+        joints.filter((j) => j.objectName === 'УКПГ-1С Харасавэйское ГКМ').length <=
+          10 && (
           <div className="p-3.5 sm:p-4 rounded-xl bg-gradient-to-r from-sky-50 via-indigo-50 to-blue-50 border border-sky-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-[#1e3799] text-white flex items-center justify-center font-bold text-sm shadow-2xs shrink-0">
