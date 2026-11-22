@@ -28,7 +28,7 @@ import { WeldingJournalsView } from '../WeldingJournalsView';
 import { ReadinessReportView } from '../ReadinessReportView';
 import { LrvCatalogView } from '../LrvCatalogView';
 import { AuditHistoryView } from '../AuditHistoryView';
-import { UserGuideBookletView } from '../UserGuideBookletView';
+import { WikiView } from '../wiki';
 import { TestCircuitsView } from '../TestCircuitsView';
 import type { useTestCircuitActions } from '../../hooks/useTestCircuitActions';
 import { useAuth, useAppContext } from '../../context';
@@ -436,7 +436,9 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
           </div>
         ))}
 
-      {activeSection === 'user_guide' && <UserGuideBookletView />}
+      {activeSection === 'user_guide' && (
+        <WikiView onNavigateSection={setActiveSection} />
+      )}
     </main>
   );
 };

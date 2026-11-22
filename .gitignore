@@ -16,7 +16,8 @@ coverage/
 *.db
 *.db-wal
 *.db-shm
-data/
+/data/
+!src/data/
 
 .vscode/
 .idea/
