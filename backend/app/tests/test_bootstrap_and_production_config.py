@@ -179,3 +179,34 @@ def test_database_url_hostname_only_hint():
     with pytest.raises(ValidationError) as exc:
         Settings(DATABASE_URL="cnpg-zaychick2-rw")
     assert "В Amvera необходимо указать полную строку подключения" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_baseline_domain_data_seeding():
+    """Verify that a fresh empty database is properly seeded with baseline domain data."""
+    from app.models.facility import Facility
+    from app.models.joint import WeldJoint
+    from app.models.line import ProjectLine
+    from app.services.baseline_seed import seed_baseline_domain_data
+    from sqlalchemy import select
+
+    async with db_session_factory() as session:
+        await session.execute(
+            text("TRUNCATE TABLE weld_joints, project_lines, facilities, lrv_items, test_circuits CASCADE")
+        )
+        await session.commit()
+
+        res = await seed_baseline_domain_data(session)
+        assert res["facilities"] == 1
+        assert res["lines"] == 3
+        assert res["joints"] == 6
+
+        fac = (await session.execute(select(Facility))).scalars().first()
+        assert fac is not None
+        assert "Харасавэй" in fac.name
+
+        lines = (await session.execute(select(ProjectLine))).scalars().all()
+        assert len(lines) == 3
+
+        joints = (await session.execute(select(WeldJoint))).scalars().all()
+        assert len(joints) == 6

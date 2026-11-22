@@ -478,3 +478,45 @@ async def purge_project_data(
         deleted_counts=deleted_counts,
         total_deleted=total_deleted,
     )
+
+
+@router.post("/restore-seed")
+async def restore_baseline_seed_endpoint(
+    request: Request,
+    current_user: User = Depends(require_superadmin()),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, object]:
+    """
+    Idempotently populate baseline demonstration domain dataset (Facility, Lines, Joints).
+    Available strictly to SUPERADMIN.
+    """
+    from app.services.baseline_seed import seed_baseline_domain_data
+
+    existing_fac = (await session.execute(select(Facility).limit(1))).scalars().first()
+    if existing_fac is None:
+        res: dict[str, object] = await seed_baseline_domain_data(session)
+    else:
+        res = {"status": "exists", "message": "Объекты строительства уже созданы в базе данных."}
+
+    client_ip = get_client_ip(request)
+    await record_audit_log(
+        session,
+        action="BASELINE_SEED_RESTORED",
+        entity_type="system",
+        entity_id="baseline_seed",
+        user=current_user,
+        new_data={"result": res},
+        ip_address=client_ip,
+        summary="Восстановление эталонного массива данных ZAYCHICK",
+    )
+    await publish_domain_event(
+        session,
+        event="system.restored",
+        entity_type="system",
+        entity_id="baseline_seed",
+        version=1,
+        updated_by=current_user.login,
+        data={"result": res},
+    )
+    await session.commit()
+    return {"status": "ok", "result": res}

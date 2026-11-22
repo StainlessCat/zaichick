@@ -1028,6 +1028,15 @@ export const App: React.FC = () => {
 
   const handleAuthorRestoreDemoSeed = useCallback(async (): Promise<boolean> => {
     try {
+      if (isAuthenticated) {
+        try {
+          await zaychickApi.restoreBaselineSeed();
+          await fetchServerDbState(false);
+          return true;
+        } catch (serverErr) {
+          console.warn('Серверный сброс не удался, применяем локальный fallback:', serverErr);
+        }
+      }
       const demoData = await import('./data/seedData');
       setJoints(demoData.INITIAL_JOINTS);
       setProjectLineList(demoData.INITIAL_PROJECT_LINELIST);

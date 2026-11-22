@@ -271,6 +271,12 @@ export const zaychickApi = {
     });
   },
 
+  async restoreBaselineSeed(): Promise<{ status: string; result: Record<string, unknown> }> {
+    return apiRequest('/api/admin/restore-seed', {
+      method: 'POST',
+    });
+  },
+
   async listUsers(): Promise<UserAccount[]> {
     return this.listAdminUsers();
   },

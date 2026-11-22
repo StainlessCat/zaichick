@@ -37,6 +37,7 @@ from app.core.database import (
 from app.core.errors import integrity_error_handler
 from app.core.logging_config import setup_logging
 from app.core.metrics import PrometheusMetrics
+from app.services.baseline_seed import ensure_baseline_domain_data_seeded
 from app.services.event_bus import event_bus, start_postgres_listener, stop_postgres_listener
 from app.services.weather.reference_stations import ensure_baseline_weather_stations_seeded
 from sqlalchemy.exc import IntegrityError
@@ -51,6 +52,7 @@ async def lifespan(_app: FastAPI):
     await verify_postgres_connection()
     await verify_schema_migrations_applied()
     await ensure_baseline_weather_stations_seeded()
+    await ensure_baseline_domain_data_seeded()
     await start_postgres_listener(settings.database_url)
     try:
         yield
