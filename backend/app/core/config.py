@@ -26,8 +26,8 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://zaychick:zaychick_dev_password@127.0.0.1:5432/zaychick",
         alias="DATABASE_URL",
     )
-    db_pool_size: int = 10
-    db_max_overflow: int = 20
+    db_pool_size: int = 3
+    db_max_overflow: int = 5
     db_echo: bool = False
 
     # JWT & Cookie Auth

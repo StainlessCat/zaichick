@@ -61,6 +61,20 @@ async def _execute_bootstrap(
     ).scalar_one_or_none()
 
     if existing_admin is not None:
+        reset_env = os.getenv("RESET_ADMIN_PASSWORD", "").strip()
+        if reset_env and len(reset_env) >= 6:
+            existing_admin.password_hash = hash_password(reset_env)
+            existing_admin.is_active = True
+            existing_admin.session_number += 1
+            existing_admin.updated_at = datetime.now(timezone.utc)
+            session.add(existing_admin)
+            await session.commit()
+            print(
+                f"[OK] Пароль существующего администратора '{existing_admin.login}' (id={existing_admin.id}) "
+                f"успешно сброшен из переменной RESET_ADMIN_PASSWORD."
+            )
+            return existing_admin, reset_env, False
+
         print(
             f"[INFO] Администратор уже существует в системе: login='{existing_admin.login}', "
             f"id={existing_admin.id}. Пароль существующего пользователя не изменяется (идемпотентность)."
