@@ -152,3 +152,12 @@ async def test_bootstrap_admin_idempotency_and_forbidden_passwords():
         assert created2 is False
         assert user2.id == user1.id
         assert pwd_used2 == ""
+
+
+def test_database_url_cloud_normalization():
+    """Verify cloud DSNs (postgres:// and sslmode=require) are automatically normalized for asyncpg."""
+    s1 = Settings(database_url="postgres://user:pass@host:5432/db")
+    assert s1.database_url == "postgresql+asyncpg://user:pass@host:5432/db"
+
+    s2 = Settings(database_url="postgresql://user:pass@host:5432/db?sslmode=require")
+    assert s2.database_url == "postgresql+asyncpg://user:pass@host:5432/db?ssl=require"

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes.admin import router as admin_router
 from app.api.routes.audit import router as audit_router
@@ -117,3 +119,32 @@ async def get_prometheus_metrics() -> PlainTextResponse:
         content=PrometheusMetrics.render(event_bus.active_subscribers_count),
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )
+
+
+# --- Static SPA Hosting for standalone / cloud container deployment (Amvera, Render, etc.) ---
+frontend_dist = os.getenv("FRONTEND_DIST_DIR", "/app/dist")
+if not os.path.isdir(frontend_dist):
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    dist_candidate = os.path.join(repo_root, "dist")
+    prebuilt_candidate = os.path.join(repo_root, "prebuilt")
+    if os.path.isdir(dist_candidate):
+        frontend_dist = dist_candidate
+    elif os.path.isdir(prebuilt_candidate):
+        frontend_dist = prebuilt_candidate
+
+if os.path.isdir(frontend_dist):
+    assets_dir = os.path.join(frontend_dist, "assets")
+    if os.path.isdir(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="spa-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str) -> Response:
+        if full_path.startswith("api/") or full_path == "metrics":
+            return Response(status_code=404, content='{"detail":"Not Found"}', media_type="application/json")
+        target_path = os.path.join(frontend_dist, full_path)
+        if full_path and os.path.isfile(target_path):
+            return FileResponse(target_path)
+        index_file = os.path.join(frontend_dist, "index.html")
+        if os.path.isfile(index_file):
+            return FileResponse(index_file)
+        return Response(status_code=404, content='{"detail":"SPA build not found"}', media_type="application/json")

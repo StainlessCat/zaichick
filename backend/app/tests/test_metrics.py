@@ -55,3 +55,21 @@ async def test_metrics_endpoint_integration():
         assert "process_uptime_seconds" in body
         assert "sse_active_connections" in body
         assert "http_requests_total" in body
+
+
+
+@pytest.mark.asyncio
+async def test_spa_serving_fallback():
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        # Request root SPA
+        resp = await client.get("/")
+        assert resp.status_code == 200
+        assert "html" in resp.headers.get("content-type", "")
+
+        # Request client-side deep route (HTML5 pushState fallback)
+        resp2 = await client.get("/registry/lines")
+        assert resp2.status_code == 200
+        assert "html" in resp2.headers.get("content-type", "")

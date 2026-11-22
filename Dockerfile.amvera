@@ -1,0 +1,49 @@
+# =========================================================================
+# Multi-stage Dockerfile для промышленного развёртывания ZAYCHICK 2.0
+# на облачном хостинге Amvera Cloud (All-in-One: Frontend SPA + FastAPI)
+# =========================================================================
+
+# --- ЭТАП 1: Сборка фронтенда (React 19 + TypeScript + Vite) ---
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps
+
+COPY . .
+RUN npm run build
+
+# --- ЭТАП 2: All-in-One контейнер приложения (Python 3.12 + FastAPI + SPA) ---
+FROM python:3.12-slim AS runner
+
+WORKDIR /app/backend
+
+# Системные утилиты для сборки и healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Установка зависимостей бэкенда ZAYCHICK
+COPY backend/ ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir . greenlet && \
+    apt-get purge -y --auto-remove build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+# Копирование скомпилированного фронтенда (SPA) из Этапа 1
+COPY --from=frontend-builder /app/dist /app/dist
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/backend
+ENV FRONTEND_DIST_DIR=/app/dist
+
+EXPOSE 8000
+
+# Встроенный мониторинг здоровья контейнера
+HEALTHCHECK --interval=20s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -f http://127.0.0.1:8000/api/health || exit 1
+
+# Автоматическое применение миграций Alembic, безопасное создание первого администратора и запуск
+CMD ["sh", "-c", "alembic upgrade head && python -m app.cli.bootstrap_admin && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]

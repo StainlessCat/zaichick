@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,6 +56,23 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_origins_raw.split(",") if o.strip()]
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_database_url(cls, data: Any) -> Any:
+        """Automatically normalize cloud DSNs (postgres:// -> postgresql+asyncpg://, sslmode -> ssl)."""
+        if isinstance(data, dict):
+            raw_url = data.get("DATABASE_URL") or data.get("database_url")
+            if raw_url and isinstance(raw_url, str):
+                normalized = raw_url.strip()
+                if normalized.startswith("postgres://"):
+                    normalized = "postgresql+asyncpg://" + normalized[len("postgres://"):]
+                elif normalized.startswith("postgresql://") and not normalized.startswith("postgresql+asyncpg://"):
+                    normalized = "postgresql+asyncpg://" + normalized[len("postgresql://"):]
+                normalized = normalized.replace("sslmode=require", "ssl=require")
+                data["database_url"] = normalized
+                data["DATABASE_URL"] = normalized
+        return data
 
     @model_validator(mode="after")
     def validate_production_and_dsn(self) -> Settings:
