@@ -3,7 +3,6 @@ import {
   Bookmark,
   Calendar,
   Columns,
-  FilePlus2,
   FileSpreadsheet,
   Layers,
   Plus,
@@ -133,33 +132,23 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
 
         {(userPermissions.canEditPrepAndWeldingFields ||
           userPermissions.canEditNdtFields ||
-          userPermissions.canManageTestCircuits) && (
-          <Button
-            type="button"
-            variant={selectedJointIds.length > 0 ? 'primary' : 'secondary'}
-            onClick={onOpenBulkEdit}
-            title="Массовое редактирование параметров выделенных стыков"
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>
-              Массовое редактирование
-              {selectedJointIds.length > 0 ? ` · ${selectedJointIds.length}` : ''}
-            </span>
-          </Button>
-        )}
+          userPermissions.canManageTestCircuits) &&
+          selectedJointIds.length > 1 && (
+            <Button
+              type="button"
+              variant="primary"
+              onClick={onOpenBulkEdit}
+              title="Массовое редактирование параметров выделенных стыков"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>
+                Массовое редактирование · {selectedJointIds.length}
+              </span>
+            </Button>
+          )}
 
         {userPermissions.canCreateOrDeleteJoints && (
           <>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onQuickAddSupplementaryJoint}
-              title="Добавить дополнительный стык с нумерацией 011, 012..."
-            >
-              <FilePlus2 className="w-3.5 h-3.5 text-[#1e3799]" />
-              <span>Доборный стык</span>
-            </Button>
-
             <Button
               type="button"
               variant="secondary"
