@@ -238,8 +238,31 @@ export function sanitizeWeldJointRecord(joint: Partial<WeldJoint>): WeldJoint {
     contour: sanitizeCleanString(joint.contour),
     lineNumber,
     uniqueLineId,
-    jointNumber: sanitizeCleanString(joint.jointNumber, '010'),
-    isSupplementary: Boolean(joint.isSupplementary),
+    ...(() => {
+      const rawNum = sanitizeCleanString(joint.jointNumber, '010');
+      if (uniqueLineId === 'УКПГ-1С:01-ГП:01-ГП-1.1') {
+        if (rawNum === '1') return { jointNumber: '010', isSupplementary: false };
+        if (rawNum === '2') return { jointNumber: '011', isSupplementary: true };
+        if (rawNum === '3') return { jointNumber: '020', isSupplementary: false };
+      }
+      if (uniqueLineId === 'УКПГ-1С:02-ШФЛУ:02-ШФЛУ-2.1') {
+        if (rawNum === '1') return { jointNumber: '010', isSupplementary: false };
+        if (rawNum === '2') return { jointNumber: '020', isSupplementary: false };
+      }
+      if (uniqueLineId === 'УКПГ-1С:03-МТ:03-МТ-108') {
+        if (rawNum === '1') return { jointNumber: '010', isSupplementary: false };
+      }
+      if (/^[1-9]$/.test(rawNum)) {
+        return {
+          jointNumber: String(Number(rawNum) * 10).padStart(3, '0'),
+          isSupplementary: Boolean(joint.isSupplementary),
+        };
+      }
+      return {
+        jointNumber: rawNum,
+        isSupplementary: Boolean(joint.isSupplementary),
+      };
+    })(),
     jointKind: joint.jointKind === 'Угловое' ? 'Угловое' : 'Стыковое',
     jointType: joint.jointType === 'Цеховой' ? 'Цеховой' : 'Монтажный',
     diameterMm: safeDiam,

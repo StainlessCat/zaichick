@@ -584,6 +584,68 @@ async def seed_baseline_domain_data(session: AsyncSession) -> dict[str, int]:
     }
 
 
+async def fix_legacy_baseline_joint_numbers(session: AsyncSession) -> int:
+    """Migrate legacy single-digit joint numbers (1, 2, 3...) to corporate standard (010, 011, 020...)."""
+    from sqlalchemy import text
+    try:
+        # 1. Update line 01-ГП-1.1
+        await session.execute(
+            text(
+                "UPDATE weld_joints SET joint_number = '010' "
+                "WHERE joint_number = '1' AND unique_line_id = 'УКПГ-1С:01-ГП:01-ГП-1.1'"
+            )
+        )
+        await session.execute(
+            text(
+                "UPDATE weld_joints SET joint_number = '011', is_supplementary = true "
+                "WHERE joint_number = '2' AND unique_line_id = 'УКПГ-1С:01-ГП:01-ГП-1.1'"
+            )
+        )
+        await session.execute(
+            text(
+                "UPDATE weld_joints SET joint_number = '020' "
+                "WHERE joint_number = '3' AND unique_line_id = 'УКПГ-1С:01-ГП:01-ГП-1.1'"
+            )
+        )
+
+        # 2. Update line 02-ШФЛУ-2.1
+        await session.execute(
+            text(
+                "UPDATE weld_joints SET joint_number = '010' "
+                "WHERE joint_number = '1' AND unique_line_id = 'УКПГ-1С:02-ШФЛУ:02-ШФЛУ-2.1'"
+            )
+        )
+        await session.execute(
+            text(
+                "UPDATE weld_joints SET joint_number = '020' "
+                "WHERE joint_number = '2' AND unique_line_id = 'УКПГ-1С:02-ШФЛУ:02-ШФЛУ-2.1'"
+            )
+        )
+
+        # 3. Update line 03-МТ-108
+        await session.execute(
+            text(
+                "UPDATE weld_joints SET joint_number = '010' "
+                "WHERE joint_number = '1' AND unique_line_id = 'УКПГ-1С:03-МТ:03-МТ-108'"
+            )
+        )
+
+        # 4. General fallback: Any remaining single-digit natural numbers (1-9) -> (010, 020, ... 090)
+        res = await session.execute(
+            text(
+                "UPDATE weld_joints "
+                "SET joint_number = '0' || (CAST(joint_number AS integer) * 10) "
+                "WHERE joint_number ~ '^[1-9]$'"
+            )
+        )
+        await session.commit()
+        return res.rowcount or 0
+    except Exception as exc:
+        logger.warning("Could not run fix_legacy_baseline_joint_numbers: %s", exc)
+        await session.rollback()
+        return 0
+
+
 async def ensure_baseline_domain_data_seeded() -> int:
     """Check if facilities table is empty; if so and SEED_BASELINE_DEMO_DATA is True, populate baseline reference data."""
     from app.core.config import get_settings
@@ -604,6 +666,7 @@ async def ensure_baseline_domain_data_seeded() -> int:
                 return res.get("joints", 0)
             else:
                 logger.info("facilities table already contains %d facilities.", count)
+                await fix_legacy_baseline_joint_numbers(session)
                 return 0
     except Exception as exc:
         logger.error("Failed to ensure baseline domain data seeded: %s", exc)

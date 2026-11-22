@@ -492,11 +492,16 @@ async def restore_baseline_seed_endpoint(
     """
     from app.services.baseline_seed import seed_baseline_domain_data
 
+    from app.services.baseline_seed import fix_legacy_baseline_joint_numbers
     existing_fac = (await session.execute(select(Facility).limit(1))).scalars().first()
     if existing_fac is None:
         res: dict[str, object] = await seed_baseline_domain_data(session)
     else:
-        res = {"status": "exists", "message": "Объекты строительства уже созданы в базе данных."}
+        migrated = await fix_legacy_baseline_joint_numbers(session)
+        res = {
+            "status": "exists",
+            "message": f"Объекты строительства уже созданы в базе данных. Проверено соответствие номеров стыков корпоративному стандарту (обновлено {migrated} поз.).",
+        }
 
     client_ip = get_client_ip(request)
     await record_audit_log(

@@ -608,6 +608,45 @@ export function mapTemplateDto(dto: Record<string, unknown>): ColumnTemplate {
   };
 }
 
+/**
+ * Нормализация номеров стыков к корпоративному стандарту ZAYCHICK:
+ * - Основные стыки: 010, 020, 030 ... 650, 660 ... 1020 (шаг 10, с ведущим нулём < 100)
+ * - Дополнительные стыки: 011, 012 ... внутри декады
+ * - Защита от устаревших номеров вида 1, 2, 3...
+ */
+export function normalizeCorporateJointNumber(
+  jointNumber: unknown,
+  uniqueLineId: string,
+  isSupp?: unknown
+): { jointNumber: string; isSupplementary: boolean } {
+  const raw = String(jointNumber ?? '').trim();
+  let supp = Boolean(isSupp);
+
+  // Точное соответствие для базовых линий УКПГ-1С при получении устаревших данных
+  if (uniqueLineId === 'УКПГ-1С:01-ГП:01-ГП-1.1') {
+    if (raw === '1') return { jointNumber: '010', isSupplementary: false };
+    if (raw === '2') return { jointNumber: '011', isSupplementary: true };
+    if (raw === '3') return { jointNumber: '020', isSupplementary: false };
+  }
+  if (uniqueLineId === 'УКПГ-1С:02-ШФЛУ:02-ШФЛУ-2.1') {
+    if (raw === '1') return { jointNumber: '010', isSupplementary: false };
+    if (raw === '2') return { jointNumber: '020', isSupplementary: false };
+  }
+  if (uniqueLineId === 'УКПГ-1С:03-МТ:03-МТ-108') {
+    if (raw === '1') return { jointNumber: '010', isSupplementary: false };
+  }
+
+  // Общий фоллбэк: единичные натуральные числа 1..9 переводятся в ряд 010..090
+  if (/^[1-9]$/.test(raw)) {
+    return {
+      jointNumber: String(Number(raw) * 10).padStart(3, '0'),
+      isSupplementary: supp,
+    };
+  }
+
+  return { jointNumber: raw, isSupplementary: supp };
+}
+
 export function mapJointDto(dto: Record<string, unknown>): WeldJoint {
   return {
     id: String(dto.id || ''),
@@ -619,8 +658,17 @@ export function mapJointDto(dto: Record<string, unknown>): WeldJoint {
     testCircuitId: dto.test_circuit_id ? String(dto.test_circuit_id) : null,
     lineNumber: String(dto.line_number || ''),
     uniqueLineId: String(dto.unique_line_id || ''),
-    jointNumber: String(dto.joint_number || ''),
-    isSupplementary: Boolean(dto.is_supplementary),
+    ...(() => {
+      const norm = normalizeCorporateJointNumber(
+        dto.joint_number,
+        String(dto.unique_line_id || ''),
+        dto.is_supplementary
+      );
+      return {
+        jointNumber: norm.jointNumber,
+        isSupplementary: norm.isSupplementary,
+      };
+    })(),
     jointKind: (dto.joint_kind === 'Угловое' ? 'Угловое' : 'Стыковое') as JointKind,
     jointType: (dto.joint_type === 'Цеховой' ? 'Цеховой' : 'Монтажный') as JointType,
     diameterMm: Number(dto.diameter_mm ?? 0),
@@ -1131,7 +1179,7 @@ export function mapCircuitJointBriefDto(dto: Record<string, unknown>): CircuitJo
   return {
     id: String(dto.id || ''),
     lineId: String(dto.line_id || ''),
-    jointNumber: String(dto.joint_number || ''),
+    jointNumber: normalizeCorporateJointNumber(dto.joint_number, String(dto.unique_line_id || ''), false).jointNumber,
     uniqueLineId: String(dto.unique_line_id || ''),
     lineNumber: String(dto.line_number || ''),
     rdCode: String(dto.rd_code || ''),
