@@ -210,3 +210,16 @@ async def test_baseline_domain_data_seeding():
 
         joints = (await session.execute(select(WeldJoint))).scalars().all()
         assert len(joints) == 6
+
+
+@pytest.mark.asyncio
+async def test_baseline_domain_data_seeding_disabled(monkeypatch):
+    """Verify that setting SEED_BASELINE_DEMO_DATA=false disables auto-seeding."""
+    from app.services.baseline_seed import ensure_baseline_domain_data_seeded
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "seed_baseline_demo_data", False)
+
+    seeded_count = await ensure_baseline_domain_data_seeded()
+    assert seeded_count == 0

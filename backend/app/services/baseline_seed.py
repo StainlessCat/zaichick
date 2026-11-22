@@ -583,7 +583,14 @@ async def seed_baseline_domain_data(session: AsyncSession) -> dict[str, int]:
 
 
 async def ensure_baseline_domain_data_seeded() -> int:
-    """Check if facilities table is empty; if so, populate baseline reference data."""
+    """Check if facilities table is empty; if so and SEED_BASELINE_DEMO_DATA is True, populate baseline reference data."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if not settings.seed_baseline_demo_data:
+        logger.info("SEED_BASELINE_DEMO_DATA is False. Skipping baseline demo data seeding for production environment.")
+        return 0
+
     try:
         async with async_session_factory() as session:
             count = (

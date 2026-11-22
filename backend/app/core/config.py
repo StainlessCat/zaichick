@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     login_rate_limit_attempts: int = 10
     login_rate_limit_window_seconds: int = 300
 
+    # Production vs Demo data initialization
+    seed_baseline_demo_data: bool = Field(
+        default=True,
+        alias="SEED_BASELINE_DEMO_DATA",
+        description="Флаг авто-заполнения демонстрационных данных (стыки, лайнлист, материалы) при пустой БД",
+    )
+
     cors_origins_raw: str = Field(
         default="http://localhost:5173,http://127.0.0.1:5173",
         alias="CORS_ORIGINS",
