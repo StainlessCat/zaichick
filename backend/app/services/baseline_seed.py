@@ -360,7 +360,7 @@ async def seed_baseline_domain_data(session: AsyncSession) -> dict[str, int]:
         # Линия 01-ГП-1.1
         {
             "line": line_01,
-            "joint_number": "1",
+            "joint_number": "010",
             "date": date(2024, 3, 10),
             "stamp": "А01",
             "dia": 1020.0,
@@ -382,7 +382,7 @@ async def seed_baseline_domain_data(session: AsyncSession) -> dict[str, int]:
         },
         {
             "line": line_01,
-            "joint_number": "2",
+            "joint_number": "020",
             "date": date(2024, 3, 11),
             "stamp": "А02",
             "dia": 1020.0,
@@ -404,7 +404,7 @@ async def seed_baseline_domain_data(session: AsyncSession) -> dict[str, int]:
         },
         {
             "line": line_01,
-            "joint_number": "3",
+            "joint_number": "030",
             "date": date(2024, 3, 12),
             "stamp": "А01",
             "dia": 1020.0,
@@ -427,7 +427,7 @@ async def seed_baseline_domain_data(session: AsyncSession) -> dict[str, int]:
         # Линия 02-ШФЛУ-2.1
         {
             "line": line_02,
-            "joint_number": "1",
+            "joint_number": "010",
             "date": date(2024, 3, 12),
             "stamp": "Б01",
             "dia": 530.0,
@@ -449,7 +449,7 @@ async def seed_baseline_domain_data(session: AsyncSession) -> dict[str, int]:
         },
         {
             "line": line_02,
-            "joint_number": "2",
+            "joint_number": "020",
             "date": date(2024, 3, 13),
             "stamp": "Б02",
             "dia": 530.0,
@@ -472,7 +472,7 @@ async def seed_baseline_domain_data(session: AsyncSession) -> dict[str, int]:
         # Линия 03-МТ-108
         {
             "line": line_03,
-            "joint_number": "1",
+            "joint_number": "010",
             "date": date(2024, 3, 14),
             "stamp": "В01",
             "dia": 108.0,

@@ -55,57 +55,34 @@ export function buildUniqueLineId(rdCode: string, lineNumber: string): string {
 }
 
 /**
- * Предлагает номер следующего стыка на линии в соответствии с отраслевыми правилами
- * строительства магистральных и технологических трубопроводов (СП 86.13330, СТО Газпром 15-1.1-002-2023, ВСН 012-88):
- * - Для основных стыков: сквозная нумерация натуральными числами (1, 2, 3, 4, 5...)
- * - Для дополнительных стыков (катушки, врезки): буквенный индекс после базового стыка (1а, 1б, 2а...)
+ * Предлагает номер следующего стыка на линии.
+ * - Для основных стыков: шаг 10 (010, 020, 030, 040...)
+ * - Для дополнительных стыков после базового (напр. "010"): 011, 012 и т.д.
  */
 export function suggestNextJointNumber(
   existingJointNumbersInLine: string[],
   baseJointForSupplementary?: string
 ): string {
-  const trimmedExisting = existingJointNumbersInLine.map((n) => n.trim().toLowerCase());
+  const parsedNums = existingJointNumbersInLine
+    .map((n) => parseInt(n.replace(/\D/g, ''), 10))
+    .filter((n) => !Number.isNaN(n));
 
   if (baseJointForSupplementary) {
-    // Извлекаем базу (например из '1', '1а', '10' -> '1', '10')
-    const match = baseJointForSupplementary.trim().match(/^(\d+)/);
-    const basePrefix = match ? match[1] : baseJointForSupplementary.trim();
-
-    // Алфавит суффиксов для дополнительных стыков: а, б, в, г, д, е, ж, и, к, л, м
-    const SUFFIXES = ['а', 'б', 'в', 'г', 'д', 'е', 'ж', 'и', 'к', 'л', 'м'];
-    for (const suffix of SUFFIXES) {
-      const candidate = `${basePrefix}${suffix}`;
-      if (!trimmedExisting.includes(candidate.toLowerCase())) {
-        return candidate;
+    const baseNum = parseInt(baseJointForSupplementary.replace(/\D/g, ''), 10);
+    if (!Number.isNaN(baseNum)) {
+      const decadeBase = Math.floor(baseNum / 10) * 10;
+      let candidate = decadeBase + 1;
+      while (parsedNums.includes(candidate)) {
+        candidate += 1;
       }
+      return String(candidate).padStart(3, '0');
     }
-    // Если все суффиксы заняты — используем дробную нумерацию
-    let subIdx = 1;
-    while (trimmedExisting.includes(`${basePrefix}/${subIdx}`.toLowerCase())) {
-      subIdx++;
-    }
-    return `${basePrefix}/${subIdx}`;
   }
 
-  // Для основных стыков: извлекаем натуральные числа (без суффиксов)
-  const pureNumeric = existingJointNumbersInLine
-    .map((n) => {
-      const m = n.trim().match(/^(\d+)$/);
-      return m ? parseInt(m[1], 10) : null;
-    })
-    .filter((n): n is number => n !== null && !Number.isNaN(n));
-
-  if (pureNumeric.length === 0) {
-    // Если на линии нет чисто числовых номеров, пробуем найти любые числа
-    const anyNums = existingJointNumbersInLine
-      .map((n) => parseInt(n.replace(/\D/g, ''), 10))
-      .filter((n) => !Number.isNaN(n));
-    if (anyNums.length === 0) return '1';
-    return String(Math.max(...anyNums) + 1);
-  }
-
-  const maxNum = Math.max(...pureNumeric);
-  return String(maxNum + 1);
+  if (parsedNums.length === 0) return '010';
+  const maxMainDecade = Math.max(...parsedNums.map((n) => Math.floor(n / 10) * 10));
+  const nextDecade = maxMainDecade + 10;
+  return String(nextDecade).padStart(3, '0');
 }
 
 /**

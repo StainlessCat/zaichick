@@ -30,3 +30,9 @@ Strictly enforce these engineering and regulatory invariants across backend serv
 
 ## 5. Server-Side Excel & Document Generation
 - Generate all official forms (**Form Г.1**, **GOST 32569**, **EDI**, **Readiness Reports**) exclusively on the Python backend using `openpyxl`. Never use client-side `xlsx` packages.
+
+
+## 6. Corporate Joint Numbering Standard
+- **Main joints:** Strictly step 10 with 3-digit padding for < 100: `010, 020, 030 ... 650, 660 ... 1020, 1030`.
+- **Supplementary joints (spools, tie-ins, cutouts):** Sequential numbering within the decade of the base joint: `011, 012 ... 019; 651, 652 ...; 1021, 1022`.
+- Any normalization to standard 1, 2, 3... natural sequence is strictly prohibited in ZAYCHICK.

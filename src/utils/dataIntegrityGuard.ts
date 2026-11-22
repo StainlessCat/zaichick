@@ -238,7 +238,7 @@ export function sanitizeWeldJointRecord(joint: Partial<WeldJoint>): WeldJoint {
     contour: sanitizeCleanString(joint.contour),
     lineNumber,
     uniqueLineId,
-    jointNumber: sanitizeCleanString(joint.jointNumber, '1'),
+    jointNumber: sanitizeCleanString(joint.jointNumber, '010'),
     isSupplementary: Boolean(joint.isSupplementary),
     jointKind: joint.jointKind === 'Угловое' ? 'Угловое' : 'Стыковое',
     jointType: joint.jointType === 'Цеховой' ? 'Цеховой' : 'Монтажный',

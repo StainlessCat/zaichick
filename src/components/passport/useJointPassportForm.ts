@@ -153,7 +153,7 @@ export function useJointPassportForm({
     projectLineList[0];
 
   const [isSupplementaryMode, setIsSupplementaryMode] = useState(false);
-  const [baseJointForSupp] = useState('1');
+  const [baseJointForSupp] = useState('010');
   const [allowCrossRdLrv, setAllowCrossRdLrv] = useState(false);
   const [filterLrvBySameDiameter, setFilterLrvBySameDiameter] = useState(true);
   const [confirmDeleteStep, setConfirmDeleteStep] = useState(false);
@@ -198,7 +198,7 @@ export function useJointPassportForm({
         'Контур испытания КИ-1',
       lineNumber: initLineNum,
       uniqueLineId: buildUniqueLineId(firstRd, initLineNum),
-      jointNumber: '1',
+      jointNumber: '010',
       jointType: 'Монтажный',
       diameterMm: 159,
       diameterInch: '6"',
@@ -377,7 +377,7 @@ export function useJointPassportForm({
         contour: firstLineObj?.testContour || firstFac.rdCodes[0]?.contours[0] || 'Основной контур',
         lineNumber: initLineNum,
         uniqueLineId: buildUniqueLineId(firstRd, initLineNum),
-        jointNumber: '1',
+        jointNumber: '010',
         jointType: 'Монтажный',
         diameterMm: 159,
         diameterInch: '6"',
