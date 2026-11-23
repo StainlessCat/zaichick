@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { RotateCcw } from 'lucide-react';
 import { LRVItem, LrvElementCategory } from '../../types/welding';
 import {
   detectLrvConnectionType,
   detectLrvElementType,
+  generateLrvFullName,
   getLrvItemDn1,
   getLrvItemDn2,
   LRV_ELEMENT_TYPE_OPTIONS,
@@ -39,6 +41,10 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
   const [newCategory, setNewCategory] = useState<LrvElementCategory>('Переход');
   const [newConnectionType, setNewConnectionType] = useState<'приварной' | 'фланцевый'>('приварной');
   const [isCategoryManuallySet, setIsCategoryManuallySet] = useState(false);
+  const [newMarking, setNewMarking] = useState('');
+  const [newPnMpa, setNewPnMpa] = useState('');
+  const [newFullName, setNewFullName] = useState('');
+  const [isFullNameManual, setIsFullNameManual] = useState(false);
   const [newMaterial, setNewMaterial] = useState('09Г2С');
   const [newNtd, setNewNtd] = useState('ГОСТ 17378-2001');
   const [newManufacturer, setNewManufacturer] = useState('ПАО «ЧТПЗ»');
@@ -62,6 +68,10 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
       setNewCategory(resolveLrvItemCategory(editingItem));
       setNewConnectionType(resolveLrvConnectionType(editingItem));
       setIsCategoryManuallySet(true);
+      setNewMarking(editingItem.marking || '');
+      setNewPnMpa(editingItem.pnMpa || '');
+      setNewFullName(editingItem.fullName || '');
+      setIsFullNameManual(Boolean(editingItem.fullName));
       setNewMaterial(editingItem.material);
       setNewNtd(editingItem.ntd);
       setNewManufacturer(editingItem.manufacturer || '');
@@ -81,8 +91,27 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
         setNewRd(allRds[0].code);
       }
       setIsCategoryManuallySet(false);
+      setNewMarking('');
+      setNewPnMpa('');
+      setNewFullName('');
+      setIsFullNameManual(false);
     }
   }, [editingItem, allRds]);
+
+  // Автогенерация полного наименования при изменении базовых атрибутов (если не правилось вручную)
+  useEffect(() => {
+    if (!isFullNameManual) {
+      const auto = generateLrvFullName({
+        shortName: newShortName,
+        dn1: newDn1,
+        pnMpa: newPnMpa,
+        marking: newMarking,
+        material: newMaterial,
+        ntd: newNtd,
+      });
+      setNewFullName(auto);
+    }
+  }, [newShortName, newDn1, newPnMpa, newMarking, newMaterial, newNtd, isFullNameManual]);
 
   if (!isOpen) return null;
 
@@ -93,6 +122,19 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
       setNewCategory(autoCat);
       setNewConnectionType(detectLrvConnectionType(val));
     }
+  };
+
+  const handleResetFullNameToAuto = () => {
+    setIsFullNameManual(false);
+    const auto = generateLrvFullName({
+      shortName: newShortName,
+      dn1: newDn1,
+      pnMpa: newPnMpa,
+      marking: newMarking,
+      material: newMaterial,
+      ntd: newNtd,
+    });
+    setNewFullName(auto);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -171,6 +213,9 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
       shortName: newShortName.trim(),
       category: newCategory,
       connectionType: newCategory === 'ЗРА' ? newConnectionType : undefined,
+      marking: newMarking.trim() || undefined,
+      pnMpa: newPnMpa.trim() || undefined,
+      fullName: newFullName.trim() || undefined,
       material: newMaterial.trim(),
       ntd: newNtd.trim(),
       manufacturer: newManufacturer.trim() || undefined,
@@ -205,7 +250,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xs font-bold text-[#1e3799]">
           {editingItem
-            ? `Редактирование позиции ЛРВ: ${newLrvCode}`
+            ? `Редактирование позиции базы материалов: ${newLrvCode}`
             : 'Новая позиция базы материалов'}
         </h3>
         <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
@@ -219,8 +264,9 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
         </label>
       </div>
 
+      {/* Строка 1: Основные идентификаторы */}
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-        <div className="sm:col-span-4">
+        <div className="sm:col-span-3">
           <label className="block text-xs text-slate-600 mb-1">Шифр РД *</label>
           {allRds.length > 0 ? (
             <select
@@ -255,13 +301,14 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
             className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
           />
         </div>
-        <div className={newCategory === 'ЗРА' ? 'sm:col-span-3' : 'sm:col-span-4'}>
+        <div className={newCategory === 'ЗРА' ? 'sm:col-span-4' : 'sm:col-span-5'}>
           <label className="block text-xs text-slate-600 mb-1">Краткое наименование *</label>
           <input
             type="text"
             required
             value={newShortName}
             onChange={(e) => handleShortNameChange(e.target.value)}
+            placeholder="Кран шаровой, Отвод 90°, Труба..."
             className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-xs"
           />
         </div>
@@ -299,26 +346,49 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-9 gap-3">
-        <div>
+      {/* Строка 2: Маркировка, PN, Сталь, НТД, Завод */}
+      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+        <div className="sm:col-span-3">
+          <label className="block text-xs text-slate-600 mb-1">Маркировка</label>
+          <input
+            type="text"
+            value={newMarking}
+            onChange={(e) => setNewMarking(e.target.value)}
+            placeholder="напр. КШР-50-16-Ф.ХЛ1"
+            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs text-slate-600 mb-1">PN, МПа</label>
+          <input
+            type="text"
+            value={newPnMpa}
+            onChange={(e) => setNewPnMpa(e.target.value)}
+            placeholder="16 или 1,6"
+            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
+          />
+        </div>
+        <div className="sm:col-span-2">
           <label className="block text-xs text-slate-600 mb-1">Марка стали</label>
           <input
             type="text"
             value={newMaterial}
             onChange={(e) => setNewMaterial(e.target.value)}
+            placeholder="09Г2С, 20..."
             className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-mono"
           />
         </div>
-        <div>
+        <div className="sm:col-span-2">
           <label className="block text-xs text-slate-600 mb-1">НТД (ГОСТ / ТУ)</label>
           <input
             type="text"
             value={newNtd}
             onChange={(e) => setNewNtd(e.target.value)}
+            placeholder="ТУ 1483-18..."
             className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs"
           />
         </div>
-        <div>
+        <div className="sm:col-span-3">
           <label className="block text-xs text-slate-600 mb-1">Завод-изготовитель</label>
           <input
             type="text"
@@ -328,6 +398,49 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
             className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs"
           />
         </div>
+      </div>
+
+      {/* Строка 3: Полное наименование с индикатором авто/ручной правки */}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-slate-700 font-semibold flex items-center gap-2">
+            <span>Полное наименование</span>
+            {isFullNameManual ? (
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-normal">
+                ручная правка
+              </span>
+            ) : (
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-100 text-[#005EB8] font-normal">
+                автогенерация
+              </span>
+            )}
+          </label>
+          {isFullNameManual && (
+            <button
+              type="button"
+              onClick={handleResetFullNameToAuto}
+              title="Сбросить ручные правки и сформировать полное наименование по шаблону"
+              className="text-[11px] text-[#005EB8] hover:text-[#00478a] hover:underline inline-flex items-center gap-1 cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Вернуть автогенерацию</span>
+            </button>
+          )}
+        </div>
+        <input
+          type="text"
+          value={newFullName}
+          onChange={(e) => {
+            setNewFullName(e.target.value);
+            setIsFullNameManual(true);
+          }}
+          placeholder="Кран шаровой DN 50, PN 16 МПа, КШР-50-16-Ф.ХЛ1, 09Г2С, ТУ 1483-18-16788656-2013"
+          className="w-full px-3 py-1.5 bg-slate-50/60 focus:bg-white border border-slate-300 focus:border-[#005EB8] rounded text-xs text-slate-900 font-medium transition-colors"
+        />
+      </div>
+
+      {/* Строка 4: Геометрические параметры и количество */}
+      <div className="grid grid-cols-2 sm:grid-cols-9 gap-3">
         <div>
           <label className="block text-xs text-slate-600 mb-1">DN 1</label>
           <input
@@ -398,7 +511,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
             </div>
           </>
         )}
-        <div>
+        <div className={hasSecondDimension ? 'sm:col-span-3' : 'sm:col-span-6'}>
           <label className="block text-xs text-slate-600 mb-1">Кол-во по спец.</label>
           <div className="flex gap-1">
             <input
@@ -419,7 +532,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
         </div>
       </div>
 
-      <div className="flex justify-end gap-2">
+      <div className="flex justify-end gap-2 pt-1 border-t border-slate-100">
         <button
           type="button"
           onClick={onClose}
@@ -429,7 +542,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
         </button>
         <button
           type="submit"
-          className="px-4 py-1.5 rounded bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] cursor-pointer shadow-xs"
+          className="px-4 py-1.5 rounded bg-[#005EB8] text-white text-xs font-semibold hover:bg-[#00478a] cursor-pointer shadow-xs transition-colors"
         >
           Сохранить позицию
         </button>

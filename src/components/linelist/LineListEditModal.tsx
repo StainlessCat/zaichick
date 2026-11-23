@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Check,
   Info,
@@ -6,11 +6,13 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { ExecutiveDocStatus, ProjectLineItem } from '../../types/welding';
+import { ExecutiveDocStatus, ProjectLineItem, TestCircuit } from '../../types/welding';
 import {
   buildUniqueLineId,
   formatDateDDMMYY,
+  formatRangeValue,
   normalizeExecutiveDocStatus,
+  parseRangeValue,
 } from '../../utils/weldingLogic';
 
 interface LineListEditModalProps {
@@ -34,6 +36,7 @@ interface LineListEditModalProps {
   onSave: (e: React.FormEvent) => void;
   onDelete: () => void;
   onClose: () => void;
+  testCircuits?: TestCircuit[];
 }
 
 export const LineListEditModal: React.FC<LineListEditModalProps> = ({
@@ -57,7 +60,62 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
   onSave,
   onDelete,
   onClose,
+  testCircuits = [],
 }) => {
+  // Парные состояния для диапазона давления и температуры
+  const [pressureFrom, setPressureFrom] = useState('');
+  const [pressureTo, setPressureTo] = useState('');
+  const [tempFrom, setTempFrom] = useState('');
+  const [tempTo, setTempTo] = useState('');
+
+  // Синхронизация при открытии окна / изменении редактируемой строки
+  useEffect(() => {
+    if (isOpen) {
+      const parsedP = parseRangeValue(editForm.workingPressure);
+      setPressureFrom(parsedP.from);
+      setPressureTo(parsedP.to);
+
+      const parsedT = parseRangeValue(editForm.workingTemperature);
+      setTempFrom(parsedT.from);
+      setTempTo(parsedT.to);
+    }
+  }, [isOpen, rowItem]);
+
+  // Обработчики изменения давления
+  const handlePressureFromChange = (val: string) => {
+    setPressureFrom(val);
+    const combined = formatRangeValue(val, pressureTo, false);
+    setEditForm((prev) => ({ ...prev, workingPressure: combined }));
+  };
+
+  const handlePressureToChange = (val: string) => {
+    setPressureTo(val);
+    const combined = formatRangeValue(pressureFrom, val, false);
+    setEditForm((prev) => ({ ...prev, workingPressure: combined }));
+  };
+
+  // Обработчики изменения температуры
+  const handleTempFromChange = (val: string) => {
+    setTempFrom(val);
+    const combined = formatRangeValue(val, tempTo, true);
+    setEditForm((prev) => ({ ...prev, workingTemperature: combined }));
+  };
+
+  const handleTempToChange = (val: string) => {
+    setTempTo(val);
+    const combined = formatRangeValue(tempFrom, val, true);
+    setEditForm((prev) => ({ ...prev, workingTemperature: combined }));
+  };
+
+  // Фильтрация контуров испытания по текущему объекту
+  const relevantCircuits = useMemo(() => {
+    if (!testCircuits || testCircuits.length === 0) return [];
+    if (!editForm.objectName || editForm.objectName === 'ALL') return testCircuits;
+    return testCircuits.filter(
+      (c) => !c.objectName || c.objectName === editForm.objectName
+    );
+  }, [testCircuits, editForm.objectName]);
+
   if (!isOpen) return null;
 
   return (
@@ -117,11 +175,14 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 items-end">
             {/* 1. НАЗВАНИЕ ОБЪЕКТА */}
             <div className="sm:col-span-2">
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-700">
+                <label
+                  className="block text-xs font-semibold text-slate-700 truncate whitespace-nowrap overflow-hidden"
+                  title="1. Название объекта *"
+                >
                   1. Название объекта *
                 </label>
                 {selectedObjectName === 'ALL' && availableObjectOptions.length > 0 && (
@@ -138,7 +199,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                         setEditForm((prev) => ({ ...prev, objectName: '', rdCode: '' }));
                       }
                     }}
-                    className="text-[11px] text-[#1e3799] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                    className="text-[11px] text-[#1e3799] hover:underline font-semibold flex items-center gap-1 cursor-pointer shrink-0 ml-1"
                   >
                     {isCustomObject ? (
                       '← Выбрать из существующих'
@@ -153,7 +214,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
               </div>
 
               {selectedObjectName !== 'ALL' ? (
-                <div className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md text-xs font-semibold text-[#1e3799] flex items-center justify-between">
+                <div className="w-full h-9 px-3 bg-slate-50 border border-slate-300 rounded-md text-xs font-semibold text-[#1e3799] flex items-center justify-between">
                   <span className="truncate">{selectedObjectName}</span>
                   <span className="text-[10px] text-slate-500 font-mono shrink-0 ml-1">
                     (зафиксирован в меню)
@@ -167,10 +228,10 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                   onChange={(e) =>
                     setEditForm((prev) => ({ ...prev, objectName: e.target.value }))
                   }
-                  placeholder="Введите название нового объекта (напр.: КС «Воркутинская»)"
+                  placeholder="Введите название нового объекта"
                   autoFocus
                   aria-label="Название объекта"
-                  className="w-full px-3 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                  className="w-full h-9 px-3 bg-white border border-[#1e3799] rounded-md text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
                 />
               ) : (
                 <select
@@ -185,7 +246,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                     }
                   }}
                   aria-label="Название объекта"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799] cursor-pointer"
+                  className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799] cursor-pointer"
                 >
                   {availableObjectOptions.map((o) => (
                     <option key={o} value={o}>
@@ -200,7 +261,10 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
             {/* 2. ШИФР РД */}
             <div className="sm:col-span-2">
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-700">
+                <label
+                  className="block text-xs font-semibold text-slate-700 truncate whitespace-nowrap overflow-hidden"
+                  title="2. Шифр РД *"
+                >
                   2. Шифр РД *
                 </label>
                 <button
@@ -219,7 +283,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                       }));
                     }
                   }}
-                  className="text-[11px] text-[#1e3799] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  className="text-[11px] text-[#1e3799] hover:underline font-semibold flex items-center gap-1 cursor-pointer shrink-0 ml-1"
                 >
                   {isCustomRd && !isCustomObject && rdsForCurrentObject.length > 0 ? (
                     '← Выбрать из существующих РД'
@@ -247,9 +311,9 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                       ),
                     }))
                   }
-                  placeholder="Введите шифр РД (напр.: 0092.049.Р.13/1 0004 УКПГ.045.0077.003-ТХ5)"
+                  placeholder="Введите шифр РД"
                   aria-label="Шифр РД"
-                  className="w-full px-3 py-2 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                  className="w-full h-9 px-3 bg-white border border-[#1e3799] rounded-md text-xs font-mono font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
                 />
               ) : (
                 <select
@@ -267,7 +331,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                     }
                   }}
                   aria-label="Шифр РД"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799] cursor-pointer"
+                  className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-mono font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799] cursor-pointer"
                 >
                   {rdsForCurrentObject.map((r) => (
                     <option key={r} value={r}>
@@ -279,8 +343,12 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
               )}
             </div>
 
+            {/* 3. НОМЕР ЛИНИИ */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="3. Номер линии *"
+              >
                 3. Номер линии *
               </label>
               <input
@@ -296,12 +364,16 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 }
                 placeholder="Напр.: ФП1.2/1"
                 aria-label="Номер линии"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono font-bold text-[#1e3799]"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-mono font-bold text-[#1e3799] focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 4. НАИМЕНОВАНИЕ ЛИНИИ */}
             <div className="sm:col-span-3">
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="4. Наименование линии *"
+              >
                 4. Наименование линии *
               </label>
               <input
@@ -311,13 +383,18 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 onChange={(e) =>
                   setEditForm((prev) => ({ ...prev, lineName: e.target.value }))
                 }
+                placeholder="Напр.: Газопровод сырого газа от сепараторов"
                 aria-label="Наименование линии"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 5. ПРОДУКТ */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="5. Продукт"
+              >
                 5. Продукт
               </label>
               <input
@@ -326,32 +403,46 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 onChange={(e) =>
                   setEditForm((prev) => ({ ...prev, product: e.target.value }))
                 }
+                placeholder="Напр.: Природный газ"
                 aria-label="Продукт"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 6. КОНТУР ИСПЫТАНИЯ (ТОЛЬКО ВЫБОР ИЗ СОЗДАННЫХ КОНТУРОВ) */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="6. Контур испытания"
+              >
                 6. Контур испытания
               </label>
-              <input
-                type="text"
-                list="ll-contours-list"
-                value={editForm.testContour}
+              <select
+                value={editForm.testContour || ''}
                 onChange={(e) =>
                   setEditForm((prev) => ({
                     ...prev,
-                    testContour: e.target.value,
+                    testContour: e.target.value || '',
                   }))
                 }
                 aria-label="Контур испытания"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs"
-              />
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-semibold text-[#1e3799] focus:outline-none focus:ring-2 focus:ring-[#1e3799] cursor-pointer"
+              >
+                <option value="">— Не выбран (пусто) —</option>
+                {relevantCircuits.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name} {c.medium ? `(${c.medium})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
 
+            {/* 7. НТД НА СВАРКУ */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="7. НТД на сварку"
+              >
                 7. НТД на сварку
               </label>
               <input
@@ -360,13 +451,18 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 onChange={(e) =>
                   setEditForm((prev) => ({ ...prev, weldingNtd: e.target.value }))
                 }
+                placeholder="Напр.: СТО Газпром 15-1.1-002-2023"
                 aria-label="НТД на сварку"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 8. НТД НА КОНТРОЛЬ */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="8. НТД на контроль"
+              >
                 8. НТД на контроль
               </label>
               <input
@@ -375,14 +471,19 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 onChange={(e) =>
                   setEditForm((prev) => ({ ...prev, controlNtd: e.target.value }))
                 }
+                placeholder="Напр.: СТО Газпром 15-1.3-004-2023"
                 aria-label="НТД на контроль"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 9. УРОВЕНЬ КАЧЕСТВА */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                9. Уровень качества (может быть пустым)
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="9. Уровень качества"
+              >
+                9. Уровень качества
               </label>
               <select
                 value={editForm.qualityLevel}
@@ -393,7 +494,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                   }))
                 }
                 aria-label="Уровень качества"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-semibold text-[#1e3799]"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-semibold text-[#1e3799] focus:outline-none focus:ring-2 focus:ring-[#1e3799] cursor-pointer"
               >
                 <option value="">— Не указан (пусто) —</option>
                 <option value="Уровень А">Уровень А</option>
@@ -402,9 +503,13 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
               </select>
             </div>
 
+            {/* 10. КАТЕГОРИЯ ТРУБОПРОВОДА */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                10. Категория трубопровода (может быть пустой)
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="10. Категория трубопровода"
+              >
+                10. Категория трубопровода
               </label>
               <input
                 type="text"
@@ -415,116 +520,157 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                     pipelineCategory: e.target.value,
                   }))
                 }
-                placeholder="Напр.: I (В) или оставьте пустым"
+                placeholder="Напр.: I (В) или пусто"
                 aria-label="Категория трубопровода"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-mono font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 11. ДАВЛЕНИЕ, МПа (ПАРНЫЕ ПОЛЯ ОТ И ДО) */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                11. Рабочее давление
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="11. Давление, МПа"
+              >
+                11. Давление, МПа
               </label>
-              <input
-                type="text"
-                value={editForm.workingPressure}
-                onChange={(e) =>
-                  setEditForm((prev) => ({
-                    ...prev,
-                    workingPressure: e.target.value,
-                  }))
-                }
-                aria-label="Рабочее давление"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
-              />
+              <div className="grid grid-cols-2 gap-1.5 items-center">
+                <input
+                  type="text"
+                  value={pressureFrom}
+                  onChange={(e) => handlePressureFromChange(e.target.value)}
+                  placeholder="От (мин.)"
+                  aria-label="Давление от"
+                  className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                />
+                <input
+                  type="text"
+                  value={pressureTo}
+                  onChange={(e) => handlePressureToChange(e.target.value)}
+                  placeholder="До (макс.)"
+                  aria-label="Давление до"
+                  className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                />
+              </div>
             </div>
 
+            {/* 12. ТЕМПЕРАТУРА, °C (ПАРНЫЕ ПОЛЯ ОТ И ДО) */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                12. Температура
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="12. Температура, °C"
+              >
+                12. Температура, °C
               </label>
-              <input
-                type="text"
-                value={editForm.workingTemperature}
-                onChange={(e) =>
-                  setEditForm((prev) => ({
-                    ...prev,
-                    workingTemperature: e.target.value,
-                  }))
-                }
-                aria-label="Температура"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
-              />
+              <div className="grid grid-cols-2 gap-1.5 items-center">
+                <input
+                  type="text"
+                  value={tempFrom}
+                  onChange={(e) => handleTempFromChange(e.target.value)}
+                  placeholder="От (напр. -1,0)"
+                  aria-label="Температура от"
+                  className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                />
+                <input
+                  type="text"
+                  value={tempTo}
+                  onChange={(e) => handleTempToChange(e.target.value)}
+                  placeholder="До (напр. +21,8)"
+                  aria-label="Температура до"
+                  className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                />
+              </div>
             </div>
 
+            {/* 13. ПРОЦЕНТ КОНТРОЛЯ РК */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="13. Процент контроля РК, %"
+              >
                 13. Процент контроля РК, %
               </label>
               <input
                 type="number"
                 min={0}
                 max={100}
-                value={editForm.rkPercent}
+                value={editForm.rkPercent ?? ''}
                 onChange={(e) =>
                   setEditForm((prev) => ({
                     ...prev,
-                    rkPercent: Number(e.target.value),
+                    rkPercent: e.target.value === '' ? 0 : Number(e.target.value),
                   }))
                 }
+                placeholder="0"
                 aria-label="Процент контроля РК"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-mono font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 14. ПРОЦЕНТ КОНТРОЛЯ УЗК */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="14. Процент контроля УЗК, %"
+              >
                 14. Процент контроля УЗК, %
               </label>
               <input
                 type="number"
                 min={0}
                 max={100}
-                value={editForm.uzkPercent}
+                value={editForm.uzkPercent ?? ''}
                 onChange={(e) =>
                   setEditForm((prev) => ({
                     ...prev,
-                    uzkPercent: Number(e.target.value),
+                    uzkPercent: e.target.value === '' ? 0 : Number(e.target.value),
                   }))
                 }
+                placeholder="0"
                 aria-label="Процент контроля УЗК"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-mono font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 15. ПРОЦЕНТ КОНТРОЛЯ ПВК */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="15. Процент контроля ПВК, %"
+              >
                 15. Процент контроля ПВК, %
               </label>
               <input
                 type="number"
                 min={0}
                 max={100}
-                value={editForm.pvkPercent}
+                value={editForm.pvkPercent ?? ''}
                 onChange={(e) =>
                   setEditForm((prev) => ({
                     ...prev,
-                    pvkPercent: Number(e.target.value),
+                    pvkPercent: e.target.value === '' ? 0 : Number(e.target.value),
                   }))
                 }
+                placeholder="0"
                 aria-label="Процент контроля ПВК"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-mono font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 16. ДАТА ИСПЫТАНИЯ */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-slate-700">
+                <label
+                  className="text-xs font-semibold text-slate-700 truncate whitespace-nowrap overflow-hidden"
+                  title="16. Дата испытания"
+                >
                   16. Дата испытания
                 </label>
-                <span className="text-xs font-mono font-bold text-[#1e3799]">
-                  {formatDateDDMMYY(editForm.testDate)}
-                </span>
+                {editForm.testDate && (
+                  <span className="text-[11px] font-mono font-bold text-[#1e3799] shrink-0 ml-1">
+                    {formatDateDDMMYY(editForm.testDate)}
+                  </span>
+                )}
               </div>
               <input
                 type="date"
@@ -537,12 +683,16 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                   setEditForm((prev) => ({ ...prev, testDate: e.target.value }))
                 }
                 aria-label="Дата испытания"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-mono font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
 
+            {/* 17. СТАТУС ИД */}
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="17. Статус ИД"
+              >
                 17. Статус ИД
               </label>
               <select
@@ -554,15 +704,19 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                   }))
                 }
                 aria-label="Статус ИД"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-semibold text-slate-900 cursor-pointer"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799] cursor-pointer"
               >
                 <option value="IN_WORK">В работе</option>
                 <option value="SIGNED">Подписана</option>
               </select>
             </div>
 
+            {/* 18. ОТВЕТСТВЕННЫЙ ПТО */}
             <div className="sm:col-span-2 lg:col-span-3">
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+              <label
+                className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
+                title="18. Ответственный ПТО"
+              >
                 18. Ответственный ПТО
               </label>
               <input
@@ -577,7 +731,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 }
                 placeholder="Выберите сотрудника ПТО из списка или введите ФИО"
                 aria-label="Ответственный ПТО"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs"
+                className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
               />
             </div>
           </div>
@@ -609,7 +763,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 <button
                   type="button"
                   onClick={onDelete}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 text-xs font-semibold transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-3.5 h-9 rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 text-xs font-semibold transition-colors cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
                   <span>Удалить эту линию</span>
@@ -621,13 +775,13 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                className="px-4 h-9 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
               >
                 Отмена
               </button>
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-5 h-9 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] cursor-pointer"
               >
                 <Check className="w-4 h-4" />
                 <span>

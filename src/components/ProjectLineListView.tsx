@@ -282,19 +282,19 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = (props) =
       lineNumber: '',
       uniqueLineId: '',
       lineName: '',
-      product: 'Природный газ',
-      testContour: initContour,
-      weldingNtd: 'СТО Газпром 15-1.1-002-2023',
-      controlNtd: 'СТО Газпром 15-1.3-004-2023',
-      qualityLevel: 'Уровень А',
-      pipelineCategory: 'I (В)',
-      workingPressure: '11.8 МПа',
-      workingTemperature: '-40...+60 °C',
-      rkPercent: 100,
-      uzkPercent: 100,
+      product: '',
+      testContour: '',
+      weldingNtd: '',
+      controlNtd: '',
+      qualityLevel: '',
+      pipelineCategory: '',
+      workingPressure: '',
+      workingTemperature: '',
+      rkPercent: 0,
+      uzkPercent: 0,
       pvkPercent: 0,
-      manualStatus: 'В работе',
-      testDate: '2026-10-30',
+      manualStatus: '',
+      testDate: '',
       idStatus: 'IN_WORK',
       responsiblePto: '',
     });
@@ -869,6 +869,7 @@ export const ProjectLineListView: React.FC<ProjectLineListViewProps> = (props) =
 
       {/* Модальное окно создания и редактирования строки лайнлиста */}
       <LineListEditModal
+        testCircuits={testCircuits}
         isOpen={rowModal.isOpen}
         mode={rowModal.mode}
         rowItem={rowModal.item}

@@ -294,6 +294,9 @@ class LrvItemCreate(BaseModel):
     material: str = ""
     ntd: str = ""
     manufacturer: str | None = None
+    marking: str | None = None
+    pn_mpa: str | None = None
+    full_name: str | None = None
     dn1: int | None = None
     diameter_mm: float = Field(default=0.0, ge=0.0)
     wall_thickness: float = Field(default=0.0, ge=0.0)
@@ -319,6 +322,9 @@ class LrvItemUpdate(BaseModel):
     material: str | None = None
     ntd: str | None = None
     manufacturer: str | None = None
+    marking: str | None = None
+    pn_mpa: str | None = None
+    full_name: str | None = None
     dn1: int | None = None
     diameter_mm: float | None = Field(default=None, ge=0.0)
     wall_thickness: float | None = Field(default=None, ge=0.0)
@@ -354,6 +360,9 @@ class LrvItemOut(BaseModel):
     material: str
     ntd: str
     manufacturer: str | None = None
+    marking: str | None = None
+    pn_mpa: str | None = None
+    full_name: str | None = None
     dn1: int | None = None
     diameter_mm: float
     wall_thickness: float

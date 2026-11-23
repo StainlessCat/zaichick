@@ -600,3 +600,66 @@ export function applyBulkUpdateToLineList(
     return nextItem;
   });
 }
+
+/**
+ * Очищает строку температуры или давления от единиц измерения (°C, МПа) для вывода в таблице.
+ */
+export function cleanUnitDisplay(val: string | null | undefined): string {
+  if (!val) return '—';
+  const trimmed = String(val).trim();
+  if (!trimmed) return '—';
+  const cleaned = trimmed.replace(/\s*(°C|°С|C|С|МПа|MPa)\s*$/gi, '').trim();
+  return cleaned || '—';
+}
+
+/**
+ * Разбирает сохраненное значение температуры или давления на парные компоненты "От" и "До".
+ */
+export function parseRangeValue(val: string | null | undefined): { from: string; to: string } {
+  if (!val) return { from: '', to: '' };
+  const raw = String(val).trim().replace(/\s*(°C|°С|C|С|МПа|MPa)\s*$/gi, '').trim();
+  if (!raw) return { from: '', to: '' };
+
+  if (raw.includes('...')) {
+    const [f, ...rest] = raw.split('...');
+    return { from: f.trim(), to: rest.join('...').trim() };
+  }
+  if (raw.includes('..')) {
+    const [f, ...rest] = raw.split('..');
+    return { from: f.trim(), to: rest.join('..').trim() };
+  }
+  if (raw.includes(' - ')) {
+    const [f, ...rest] = raw.split(' - ');
+    return { from: f.trim(), to: rest.join(' - ').trim() };
+  }
+
+  return { from: raw, to: '' };
+}
+
+/**
+ * Объединяет введенные поля "От" и "До" в единую строку по правилам:
+ * - Если заполнено только одно поле (или значения идентичны) -> сохраняется одно значение.
+ * - Если заполнены оба и различаются -> формат "<От>...<До>".
+ * - Для температуры: сохраняется знак "+" перед положительным числом, если указан, либо форматируется единообразно.
+ */
+export function formatRangeValue(fromVal: string, toVal: string, isTemperature = false): string {
+  const f = (fromVal || '').trim().replace(/[°CСМПа\s]/gi, '');
+  const t = (toVal || '').trim().replace(/[°CСМПа\s]/gi, '');
+
+  if (!f && !t) return '';
+  if (!f) return t;
+  if (!t) return f;
+  if (f === t) return f;
+
+  const formattedF = f;
+  let formattedT = t;
+
+  if (isTemperature) {
+    const numT = parseFloat(t.replace(',', '.'));
+    if (!Number.isNaN(numT) && numT > 0 && !t.startsWith('+')) {
+      formattedT = `+${t}`;
+    }
+  }
+
+  return `${formattedF}...${formattedT}`;
+}

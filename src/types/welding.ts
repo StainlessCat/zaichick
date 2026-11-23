@@ -12,6 +12,8 @@ export type LrvElementCategory =
   | 'Кран'
   | 'Фланец'
   | 'Заглушка'
+  | 'Штуцер'
+  | 'Бобышка'
   | 'Прочее';
 
 export type ControlResult = 'Годен' | 'Ремонт' | 'Вырезать' | 'В работе' | 'Не проводился';
@@ -264,6 +266,9 @@ export interface LRVItem {
   material: string; // Сталь 09Г2С, 20, 12Х18Н10Т и т.д.
   ntd: string; // ГОСТ / ТУ / ОСТ
   manufacturer?: string; // Завод-изготовитель / завод-поставщик элемента трубопровода
+  marking?: string; // Маркировка (напр. КШР-50-16-Ф.ХЛ1)
+  pnMpa?: string; // Номинальное давление PN, МПа
+  fullName?: string; // Полное наименование элемента
   dn1?: number; // Условный проход DN 1 (напр. 50, 150, 300)
   diameterMm: number; // Основной диаметр Ø1, мм
   wallThickness: number; // Основная толщина стенки S1, мм

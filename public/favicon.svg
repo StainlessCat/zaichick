@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="7" fill="#005EB8"/>
+  <!-- Left ear -->
+  <line x1="12.5" y1="14" x2="11" y2="5" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"/>
+  <!-- Right ear -->
+  <line x1="19.5" y1="14" x2="21" y2="5" stroke="#FFFFFF" stroke-width="2.8" stroke-linecap="round"/>
+  <!-- Pipe cross section / weld ring -->
+  <circle cx="16" cy="20.5" r="7.5" stroke="#FFFFFF" stroke-width="2.8"/>
+  <!-- Core weld center -->
+  <circle cx="16" cy="20.5" r="2" fill="#FFFFFF"/>
+</svg>

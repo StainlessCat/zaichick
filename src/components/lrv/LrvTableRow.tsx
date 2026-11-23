@@ -167,7 +167,17 @@ export const LrvTableRow: React.FC<LrvTableRowProps> = ({
           }}
           className="py-2.5 px-3 border-r border-slate-200 font-semibold text-slate-900"
         >
-          {item.shortName}
+          <div>{item.shortName}</div>
+          {item.fullName && item.fullName !== item.shortName && (
+            <div className="text-[11px] text-slate-500 font-normal mt-0.5 leading-tight" title={item.fullName}>
+              {item.fullName}
+            </div>
+          )}
+          {item.marking && (
+            <div className="inline-block mt-0.5 px-1.5 py-0.2 rounded bg-indigo-50 border border-indigo-200/80 text-[10px] font-mono font-medium text-indigo-700">
+              {item.marking}
+            </div>
+          )}
         </td>
 
         <td

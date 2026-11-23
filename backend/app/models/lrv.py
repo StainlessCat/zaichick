@@ -64,6 +64,9 @@ class LrvItem(Base):
     material: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     ntd: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     manufacturer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    marking: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    pn_mpa: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    full_name: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     dn1: Mapped[int | None] = mapped_column(Integer, nullable=True)
     diameter_mm: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

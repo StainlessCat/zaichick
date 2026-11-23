@@ -131,6 +131,8 @@ class LrvElementCategoryEnum(str, enum.Enum):
     VALVE = "Кран"
     FLANGE = "Фланец"
     CAP = "Заглушка"
+    CHOKE = "Штуцер"
+    BOSS = "Бобышка"
     OTHER = "Прочее"
 
 
