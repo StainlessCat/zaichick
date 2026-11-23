@@ -48,10 +48,10 @@ describe('pipeCalc & LRV materials catalog', () => {
     expect(detectLrvElementType('Бобышка БП1-М20х1,5-55')).toBe('Бобышка');
   });
 
-  it('generateLrvFullName produces exact corporate template output', () => {
-    // Reference example from user prompt:
-    // Кран шаровой DN 50, PN 16 МПа, КШР-50-16-Ф.ХЛ1, 09Г2С, ТУ 1483-18-16788656-2013
-    const fullName = generateLrvFullName({
+  it('generateLrvFullName includes DN and PN for ЗРА and Фланцы', () => {
+    // ЗРА (Кран шаровой)
+    const zraName = generateLrvFullName({
+      category: 'ЗРА',
       shortName: 'Кран шаровой',
       dn1: 50,
       pnMpa: 16,
@@ -59,22 +59,53 @@ describe('pipeCalc & LRV materials catalog', () => {
       material: '09Г2С',
       ntd: 'ТУ 1483-18-16788656-2013',
     });
-    expect(fullName).toBe(
+    expect(zraName).toBe(
       'Кран шаровой DN 50, PN 16 МПа, КШР-50-16-Ф.ХЛ1, 09Г2С, ТУ 1483-18-16788656-2013'
+    );
+
+    // Фланец
+    const flangeName = generateLrvFullName({
+      category: 'Фланец',
+      shortName: 'Фланец воротниковый',
+      dn1: 100,
+      pnMpa: '25',
+      material: '09Г2С',
+      ntd: 'ГОСТ 33259-2015',
+    });
+    expect(flangeName).toBe(
+      'Фланец воротниковый DN 100, PN 25 МПа, 09Г2С, ГОСТ 33259-2015'
     );
   });
 
-  it('generateLrvFullName handles missing optional attributes without extra commas', () => {
+  it('generateLrvFullName does NOT include DN and PN for other categories (Трубы, Отводы, Штуцеры и т.д.)', () => {
+    // Труба (даже если dn1 и pnMpa переданы, они не должны включаться)
     const pipeName = generateLrvFullName({
-      shortName: 'Труба',
-      dn1: 100,
+      category: 'Труба',
+      shortName: 'Труба 1020х14',
+      dn1: 1000,
+      pnMpa: 11.8,
       material: '09Г2С',
-      ntd: 'ГОСТ 8732-78',
+      ntd: 'ГОСТ 20295-85',
     });
-    expect(pipeName).toBe('Труба DN 100, 09Г2С, ГОСТ 8732-78');
+    expect(pipeName).toBe('Труба 1020х14, 09Г2С, ГОСТ 20295-85');
 
+    // Отвод
+    const bendName = generateLrvFullName({
+      category: 'Отвод',
+      shortName: 'Отвод 90° 219х10',
+      dn1: 200,
+      pnMpa: 16,
+      material: '09Г2С',
+      ntd: 'ГОСТ 17375-2001',
+    });
+    expect(bendName).toBe('Отвод 90° 219х10, 09Г2С, ГОСТ 17375-2001');
+
+    // Штуцер
     const chokeName = generateLrvFullName({
+      category: 'Штуцер',
       shortName: 'Штуцер',
+      dn1: 50,
+      pnMpa: 16,
       marking: 'Ш-50-16',
       ntd: 'ТУ 102-488-05',
     });

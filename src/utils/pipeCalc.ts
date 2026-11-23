@@ -821,6 +821,7 @@ export const LRV_ELEMENT_TYPE_OPTIONS: LrvElementCategory[] = [
 ];
 
 export interface GenerateLrvFullNameParams {
+  category?: LrvElementCategory | string | null;
   shortName?: string;
   dn1?: number | string | null;
   pnMpa?: number | string | null;
@@ -831,12 +832,25 @@ export interface GenerateLrvFullNameParams {
 
 /**
  * Автогенерация полного наименования позиции базы материалов (ЛРВ) по корпоративному шаблону:
+ * Для категорий ЗРА и Фланцы:
  * <Краткое наименование>[ DN <DN>][, PN <PN> МПа][, <Маркировка>][, <Марка стали>][, <НТД>]
- * Без запятой между Кратким наименованием и DN, остальные заполненные атрибуты через запятую.
+ * Для остальных категорий (Трубы, Отводы, Переходы, Тройники и др.): DN и PN не включаются:
+ * <Краткое наименование>[, <Маркировка>][, <Марка стали>][, <НТД>]
  */
 export function generateLrvFullName(params: GenerateLrvFullNameParams): string {
   const shortName = (params.shortName || '').trim();
-  const rawDn = params.dn1 != null && params.dn1 !== '' ? String(params.dn1).trim() : '';
+  const rawCat = (params.category || (shortName ? detectLrvElementType(shortName) : '')).trim().toLowerCase();
+  const isZraOrFlange =
+    rawCat === 'зра' ||
+    rawCat === 'кран' ||
+    rawCat === 'фланец' ||
+    rawCat.includes('зра') ||
+    rawCat.includes('флан');
+
+  const rawDn =
+    isZraOrFlange && params.dn1 != null && params.dn1 !== ''
+      ? String(params.dn1).trim()
+      : '';
   const dnPart = rawDn ? `DN ${rawDn.replace(/^DN\s*/i, '')}` : '';
 
   let head = '';
@@ -853,7 +867,7 @@ export function generateLrvFullName(params: GenerateLrvFullNameParams): string {
     parts.push(head);
   }
 
-  if (params.pnMpa != null) {
+  if (isZraOrFlange && params.pnMpa != null) {
     let pnStr = String(params.pnMpa).trim();
     if (pnStr) {
       pnStr = pnStr.replace(/^PN\s*/i, '').replace(/\s*МПа$/i, '').trim();

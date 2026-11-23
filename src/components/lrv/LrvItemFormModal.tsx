@@ -102,6 +102,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
   useEffect(() => {
     if (!isFullNameManual) {
       const auto = generateLrvFullName({
+        category: newCategory,
         shortName: newShortName,
         dn1: newDn1,
         pnMpa: newPnMpa,
@@ -111,7 +112,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
       });
       setNewFullName(auto);
     }
-  }, [newShortName, newDn1, newPnMpa, newMarking, newMaterial, newNtd, isFullNameManual]);
+  }, [newCategory, newShortName, newDn1, newPnMpa, newMarking, newMaterial, newNtd, isFullNameManual]);
 
   if (!isOpen) return null;
 
@@ -127,6 +128,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
   const handleResetFullNameToAuto = () => {
     setIsFullNameManual(false);
     const auto = generateLrvFullName({
+      category: newCategory,
       shortName: newShortName,
       dn1: newDn1,
       pnMpa: newPnMpa,
