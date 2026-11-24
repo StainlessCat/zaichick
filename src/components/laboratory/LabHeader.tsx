@@ -33,6 +33,8 @@ interface LabHeaderProps {
   setSearchQuery: (query: string) => void;
   statusBanner: { type: 'success' | 'error'; message: string } | null;
   onDismissStatusBanner: () => void;
+  hasActiveFilters?: boolean;
+  onResetAllFilters?: () => void;
 }
 
 export const LabHeader: React.FC<LabHeaderProps> = ({

@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 import React, { useState } from 'react';
 import {
   AlertTriangle,
@@ -50,6 +51,15 @@ export const MaterialPartialReplaceModal: React.FC<MaterialPartialReplaceModalPr
   batch,
   onConfirmReplacement,
 }) => {
+  const isDirty = Boolean(decisionLetterNumber.trim() || (reason && reason !== 'other'));
+
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty,
+    onClose,
+    confirmMessage: 'В форме замены материала есть несохранённые данные. Закрыть без сохранения?',
+  });
+
   if (!isOpen) return null;
 
   // Количество на замену
@@ -159,7 +169,7 @@ export const MaterialPartialReplaceModal: React.FC<MaterialPartialReplaceModalPr
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -411,7 +421,7 @@ export const MaterialPartialReplaceModal: React.FC<MaterialPartialReplaceModalPr
             <Button
               type="button"
               variant="secondary"
-              onClick={onClose}
+              onClick={handleRequestClose}
               className="text-xs text-slate-700"
             >
               Отмена

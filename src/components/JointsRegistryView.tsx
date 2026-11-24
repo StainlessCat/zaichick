@@ -230,6 +230,8 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
         visibleColumnsCount={visibleColumns.length}
         totalColumnsCount={ALL_COLUMNS.length}
         onOpenColumnsModal={onOpenColumnsModal}
+        hasActiveFilters={Boolean(weldingDateFrom || weldingDateTo || activeFilterKeys.length > 0 || globalSearch.trim())}
+        onResetAllFilters={onResetAllFilters}
       />
 
       {/* Полоса активных фильтров (даты сварки + Excel-фильтры) */}

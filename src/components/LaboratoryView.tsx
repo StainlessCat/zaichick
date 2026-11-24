@@ -864,6 +864,8 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         setSearchQuery={setSearchQuery}
         statusBanner={statusBanner}
         onDismissStatusBanner={() => setStatusBanner(null)}
+        hasActiveFilters={Boolean(searchQuery.trim() || (selectedRdCode && selectedRdCode !== 'ALL'))}
+        onResetAllFilters={() => { setSearchQuery(''); onSelectRdCode('ALL'); }}
       />
 
       {/* Вкладка 1: Дефицитная ведомость */}

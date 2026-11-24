@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Check,
@@ -116,6 +117,28 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
     );
   }, [testCircuits, editForm.objectName]);
 
+  const initialSnapshotRef = React.useRef<string>('');
+  useEffect(() => {
+    if (isOpen) {
+      initialSnapshotRef.current = JSON.stringify(editForm);
+    }
+  }, [isOpen]);
+
+  const isDirty = useMemo(() => {
+    return (
+      isOpen &&
+      initialSnapshotRef.current !== '' &&
+      JSON.stringify(editForm) !== initialSnapshotRef.current
+    );
+  }, [isOpen, editForm]);
+
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty,
+    onClose,
+    confirmMessage: 'В форме линии есть несохранённые изменения. Закрыть без сохранения?',
+  });
+
   if (!isOpen) return null;
 
   return (
@@ -131,7 +154,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
     >
       <div
         className="fixed inset-0 bg-slate-900/45 backdrop-blur-[1px]"
-        onClick={onClose}
+        onClick={handleRequestClose}
       />
       <div className="relative z-10 w-full max-w-4xl bg-white rounded-xl shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 bg-[#1e3799] text-white shrink-0">
@@ -147,7 +170,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             aria-label="Закрыть окно редактирования строки лайнлиста"
             className="p-1.5 rounded-lg text-sky-100 hover:text-white hover:bg-white/10 cursor-pointer"
           >
@@ -774,7 +797,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleRequestClose}
                 className="px-4 h-9 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
               >
                 Отмена

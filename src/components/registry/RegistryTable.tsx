@@ -1,3 +1,4 @@
+import { normalizeCorporateJointNumber } from '../../api/mappers';
 import React, { useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
@@ -374,7 +375,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                       >
                         <input
                           type="checkbox"
-                          aria-label={`Выбрать стык ${joint.jointNumber}`}
+                          aria-label={`Выбрать стык ${normalizeCorporateJointNumber(joint.jointNumber, joint.uniqueLineId, joint.isSupplementary).jointNumber}`}
                           checked={isSelected}
                           onChange={() => onToggleSelectRow(joint.id)}
                           className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799] cursor-pointer"
@@ -424,7 +425,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                                 <span className="truncate">
                                   {joint.jointNumber}
                                 </span>
-                                {isSupp && (
+                                {(isSupp || normalizeCorporateJointNumber(joint.jointNumber, joint.uniqueLineId, joint.isSupplementary).isSupplementary) && (
                                   <span
                                     className="ml-1.5 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 text-[#1e3799] shrink-0"
                                     title="Дополнительный стык"

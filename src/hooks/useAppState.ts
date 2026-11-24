@@ -43,6 +43,81 @@ import {
 export { STORAGE_KEYS, EMPTY_FACILITY_FALLBACK };
 export type { AppDataSnapshot };
 
+
+const VALID_SECTIONS = new Set([
+  'registry',
+  'testing_circuits',
+  'laboratory',
+  'project_linelist',
+  'welding_tech',
+  'journals',
+  'readiness',
+  'lrv_catalog',
+  'audit_log',
+  'user_guide',
+]);
+
+const STORAGE_ACTIVE_SECTION = 'zaychick_active_section';
+const STORAGE_SELECTED_OBJECT = 'zaychick_selected_object_name';
+const STORAGE_SELECTED_RD = 'zaychick_selected_rd_code';
+
+function getInitialActiveSection(): AppSection {
+  try {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') || params.get('section');
+      if (tabParam && VALID_SECTIONS.has(tabParam)) {
+        return tabParam as AppSection;
+      }
+      const saved = localStorage.getItem(STORAGE_ACTIVE_SECTION);
+      if (saved && VALID_SECTIONS.has(saved)) {
+        return saved as AppSection;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return 'registry';
+}
+
+function getInitialSelectedObjectName(): string {
+  try {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const projParam = params.get('project') || params.get('object');
+      if (projParam !== null && projParam !== undefined) {
+        return projParam;
+      }
+      const saved = localStorage.getItem(STORAGE_SELECTED_OBJECT);
+      if (saved !== null && saved !== undefined) {
+        return saved;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return FACILITY_OBJECTS[0].name;
+}
+
+function getInitialSelectedRdCode(): string {
+  try {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const rdParam = params.get('rd');
+      if (rdParam !== null && rdParam !== undefined) {
+        return rdParam;
+      }
+      const saved = localStorage.getItem(STORAGE_SELECTED_RD);
+      if (saved !== null && saved !== undefined) {
+        return saved;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return 'ALL';
+}
+
 export function useAppState() {
   // Очищаем устаревший полный дамп БД и небезопасный токен в localStorage при переходе на PostgreSQL + HttpOnly Cookie
   useEffect(() => {

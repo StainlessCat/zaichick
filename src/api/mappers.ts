@@ -1,3 +1,4 @@
+import { humanizeAuditEntry } from '../utils/auditHumanizer';
 import type {
   AuditLogEntry,
   CircuitAssignmentConflictItem,
@@ -1138,9 +1139,7 @@ export function mapAuditLogDto(dto: Record<string, unknown>): AuditLogEntry {
   else if (entityType === 'user' && action === 'DELETE') operationType = 'user_deleted';
   else if (action === 'EXPORT' || action === 'MIGRATION_QUARANTINE') operationType = 'batch_upload';
 
-  const oldObj = dto.old_data && typeof dto.old_data === 'object' ? (dto.old_data as Record<string, unknown>) : null;
-  const newObj = dto.new_data && typeof dto.new_data === 'object' ? (dto.new_data as Record<string, unknown>) : null;
-  const changedKeys = newObj ? Object.keys(newObj) : oldObj ? Object.keys(oldObj) : [];
+  const human = humanizeAuditEntry(dto);
 
   return {
     id: String(dto.id || ''),
@@ -1152,10 +1151,10 @@ export function mapAuditLogDto(dto: Record<string, unknown>): AuditLogEntry {
     jointNumber: String(dto.joint_number || '—'),
     uniqueLineId: String(dto.unique_line_id || entityType),
     rdCode: String(dto.rd_code || 'СИСТЕМА'),
-    fieldKey: changedKeys[0] || action.toLowerCase(),
-    fieldLabel: String(dto.summary || `${action} (${entityType})`),
-    oldValue: oldObj ? JSON.stringify(oldObj) : '—',
-    newValue: newObj ? JSON.stringify(newObj) : '—',
+    fieldKey: human.fieldKey,
+    fieldLabel: human.fieldLabel,
+    oldValue: human.oldValue,
+    newValue: human.newValue,
     operationType,
   };
 }

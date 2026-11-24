@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, FileSpreadsheet, Plus, Trash2, Upload } from 'lucide-react';
+import { Download, FileSpreadsheet, Plus, Trash2, Upload, RotateCcw } from 'lucide-react';
 import { Button } from '../ui';
 import { LRVItem, WeldJoint } from '../../types/welding';
 import { isLrvItemUsedInJoints } from '../../utils/weldingLogic';
@@ -28,6 +28,8 @@ interface LrvToolbarProps {
   catalog: LRVItem[];
   joints?: WeldJoint[];
   onBlockMessage: (msg: string) => void;
+  hasActiveFilters?: boolean;
+  onResetAllFilters?: () => void;
 }
 
 export const LrvToolbar: React.FC<LrvToolbarProps> = ({
@@ -45,6 +47,8 @@ export const LrvToolbar: React.FC<LrvToolbarProps> = ({
   catalog,
   joints,
   onBlockMessage,
+  hasActiveFilters,
+  onResetAllFilters,
 }) => {
   const [confirmBulkDelete, setConfirmBulkDelete] = React.useState(false);
 

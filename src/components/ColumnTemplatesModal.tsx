@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import React, { useState } from 'react';
 import {
   ArrowDown,
@@ -46,6 +47,15 @@ export const ColumnTemplatesModal: React.FC<ColumnTemplatesModalProps> = ({
   const [newTemplateDesc, setNewTemplateDesc] = useState('');
   const [groupFilter, setGroupFilter] = useState<string>('ALL');
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
+
+  const isDirty = Boolean(newTemplateName.trim());
+
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty,
+    onClose,
+    confirmMessage: 'Введены параметры нового шаблона. Закрыть окно без сохранения?',
+  });
 
   if (!isOpen) return null;
 
@@ -124,7 +134,7 @@ export const ColumnTemplatesModal: React.FC<ColumnTemplatesModalProps> = ({
     >
       <div
         className="fixed inset-0 bg-slate-900/45 backdrop-blur-[1px]"
-        onClick={onClose}
+        onClick={handleRequestClose}
       />
 
       <div className="relative z-10 w-full max-w-4xl bg-white rounded-xl shadow-2xl border border-slate-200 flex flex-col max-h-[88vh] overflow-hidden">
@@ -143,7 +153,7 @@ export const ColumnTemplatesModal: React.FC<ColumnTemplatesModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             aria-label="Закрыть настройку столбцов"
             className="p-1.5 rounded-lg text-sky-100 hover:text-white hover:bg-white/10"
           >

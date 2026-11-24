@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
@@ -99,6 +100,15 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
       setActualTestDate('');
     }
   }, [isOpen, mode, circuit, defaultObjectName, facilities]);
+
+  const isDirty = Boolean(name.trim() || sriName.trim() || actNumber.trim());
+
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty,
+    onClose,
+    confirmMessage: 'В форме испытательного контура есть несохранённые данные. Закрыть без сохранения?',
+  });
 
   if (!isOpen) return null;
 
@@ -227,7 +237,7 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
     >
       <div
         className="fixed inset-0 bg-slate-900/50 backdrop-blur-[1px]"
-        onClick={onClose}
+        onClick={handleRequestClose}
       />
       <form
         onSubmit={handleFormSubmit}
@@ -245,7 +255,7 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             aria-label="Закрыть окно"
             className="p-1 rounded text-sky-100 hover:text-white hover:bg-white/10 cursor-pointer"
           >
@@ -497,7 +507,7 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
         <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="h-8 px-3.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-100 cursor-pointer"
           >
             Отмена

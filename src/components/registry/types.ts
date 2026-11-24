@@ -35,6 +35,8 @@ export interface RegistryToolbarProps {
   visibleColumnsCount: number;
   totalColumnsCount: number;
   onOpenColumnsModal: () => void;
+  hasActiveFilters?: boolean;
+  onResetAllFilters?: () => void;
 }
 
 export interface RegistryActiveFilterBarProps {

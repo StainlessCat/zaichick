@@ -37,6 +37,8 @@ export interface LineListToolbarProps {
   onSelectRdCode?: (code: string) => void;
   canManageCircuits?: boolean;
   onOpenAssignCircuitModal?: () => void;
+  hasActiveFilters?: boolean;
+  onResetAllFilters?: () => void;
 }
 
 export const LineListToolbar: React.FC<LineListToolbarProps> = ({

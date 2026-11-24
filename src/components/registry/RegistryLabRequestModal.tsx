@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Radiation, Send, X } from 'lucide-react';
 import {
@@ -157,7 +158,7 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             aria-label="Закрыть окно"
             className="p-1 rounded-lg hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
           >
@@ -318,7 +319,7 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleRequestClose}
               disabled={isSubmitting}
               className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-xs font-semibold cursor-pointer disabled:opacity-50"
             >

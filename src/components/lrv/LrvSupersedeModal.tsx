@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 import React, { useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { LRVItem, WeldJoint } from '../../types/welding';
@@ -44,7 +45,7 @@ export const LrvSupersedeModal: React.FC<LrvSupersedeModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -93,7 +94,7 @@ export const LrvSupersedeModal: React.FC<LrvSupersedeModalProps> = ({
         <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
           >
             Отмена

@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Download,
   FileSpreadsheet,
+  RotateCcw,
 } from 'lucide-react';
 import { JournalStandard } from '../../types/welding';
 import { Button, FormField } from '../ui';
@@ -25,6 +26,8 @@ interface JournalToolbarProps {
   onSwitchStandard: (standard: JournalStandard) => void;
   onExportXlsx: () => void;
   onExportCsv: () => void;
+  hasActiveFilters?: boolean;
+  onResetAllFilters?: () => void;
 }
 
 export const JournalToolbar: React.FC<JournalToolbarProps> = ({
@@ -42,6 +45,8 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
   onSwitchStandard,
   onExportXlsx,
   onExportCsv,
+  hasActiveFilters,
+  onResetAllFilters,
 }) => {
   return (
     <div className="bg-white rounded-xl border border-slate-200 px-3 py-2 shadow-2xs flex flex-wrap items-end justify-between gap-2.5 no-print">
@@ -116,6 +121,18 @@ export const JournalToolbar: React.FC<JournalToolbarProps> = ({
             </button>
           </div>
         </FormField>
+        {hasActiveFilters && onResetAllFilters && (
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onResetAllFilters}
+            className="h-8 px-2.5 text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-300"
+            title="Сбросить все фильтры журнала сварки"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-[#1e3799]" />
+            <span>Сбросить все фильтры</span>
+          </Button>
+        )}
       </div>
 
       {/* Правая группа: Экспорт */}

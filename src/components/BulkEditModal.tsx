@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   Check,
@@ -162,6 +163,29 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     rbac.canManageTestCircuits,
   ]);
 
+  const isDirty = Boolean(
+    enableWeldingDate ||
+    enableWelderStamp ||
+    enableWeldingType ||
+    enableGostJointType ||
+    enableWeldingPosition ||
+    enablePreheatTemp ||
+    enableAmbientTemp ||
+    enableTechCard ||
+    enableResponsiblePerson ||
+    enableVikResult ||
+    enableNdt ||
+    enableDupNdt ||
+    enableCircuit
+  );
+
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty,
+    onClose,
+    confirmMessage: 'В форме массового редактирования есть не применённые параметры. Закрыть без сохранения?',
+  });
+
   if (!isOpen) return null;
 
   const activeWelder = welders.find((w) => w.stamp === selectedStamp);
@@ -275,7 +299,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     >
       <div
         className="fixed inset-0 bg-slate-900/45 backdrop-blur-[1px]"
-        onClick={onClose}
+        onClick={handleRequestClose}
       />
 
       <div className="relative z-10 w-full max-w-2xl bg-white rounded-xl shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
@@ -294,7 +318,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             aria-label="Закрыть массовое редактирование"
             className="p-1.5 rounded-lg text-sky-100 hover:text-white hover:bg-white/10"
           >
@@ -812,7 +836,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
           <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleRequestClose}
               className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50"
             >
               Отмена

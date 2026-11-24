@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 import React, { useState } from 'react';
 import { FilePlus2, X, AlertTriangle } from 'lucide-react';
 import { MaterialBatchAct } from '../../types/materialControl';
@@ -37,6 +38,15 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
   const [rejectionReason, setRejectionReason] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
+
+  const isDirty = Boolean(certificateNumber.trim() || heatNumber.trim() || serialNumbers.trim() || notes.trim());
+
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty,
+    onClose,
+    confirmMessage: 'В форме акта входного контроля есть несохранённые данные. Закрыть без сохранения?',
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +116,7 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -285,7 +295,7 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
             <Button
               type="button"
               variant="secondary"
-              onClick={onClose}
+              onClick={handleRequestClose}
               className="text-xs text-slate-700"
             >
               Отмена

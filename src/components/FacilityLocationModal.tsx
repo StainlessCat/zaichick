@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
@@ -529,7 +530,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
       aria-modal="true"
       aria-label="Настройка метеопункта объекта и архива наблюдений"
     >
-      <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px]" onClick={handleRequestClose} />
 
       <div className="relative bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Шапка */}
@@ -549,7 +550,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             aria-label="Закрыть окно"
             className="p-1 rounded-lg hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
           >

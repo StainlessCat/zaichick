@@ -1,3 +1,4 @@
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
@@ -268,7 +269,7 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
     >
       <div
         className="fixed inset-0 bg-slate-900/50 backdrop-blur-[1px]"
-        onClick={onClose}
+        onClick={handleRequestClose}
       />
       <div className="relative z-10 w-full max-w-4xl bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
@@ -286,7 +287,7 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleRequestClose}
             aria-label="Закрыть окно"
             className="p-1 rounded text-sky-100 hover:text-white hover:bg-white/10 cursor-pointer"
           >
