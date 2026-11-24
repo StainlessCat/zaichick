@@ -29,6 +29,7 @@ import {
   WELDERS_DIRECTORY,
 } from '../data/seedData';
 import { mergeDynamicInspectors } from '../utils/rbac';
+import { normalizeCorporateJointNumber } from '../api/mappers';
 import { buildSeedTestCircuitsFromJoints } from '../utils/testCircuitCalc';
 import type { LoginModalMode } from '../components/LoginModal';
 import {
@@ -137,16 +138,26 @@ export function useAppState() {
     useState<LoginModalMode>('login');
 
   // Выбор объекта и раздела программы
-  const [activeSection, setActiveSection] = useState<AppSection>('registry');
-  const [selectedObjectName, setSelectedObjectName] = useState<string>(
-    FACILITY_OBJECTS[0].name
-  );
-  const [selectedRdCode, setSelectedRdCode] = useState<string>('ALL');
+  const [activeSection, setActiveSection] = useState<AppSection>(getInitialActiveSection);
+  const [selectedObjectName, setSelectedObjectName] = useState<string>(getInitialSelectedObjectName);
+  const [selectedRdCode, setSelectedRdCode] = useState<string>(getInitialSelectedRdCode);
 
   // Основные коллекции системы (источник истины — PostgreSQL через FastAPI REST API)
   const [serverFacilities, setServerFacilities] =
     useState<FacilityObject[]>(FACILITY_OBJECTS);
-  const [joints, setJoints] = useState<WeldJoint[]>(INITIAL_JOINTS);
+  const [joints, setJoints] = useState<WeldJoint[]>(() =>
+    INITIAL_JOINTS.map((j) => {
+      const norm = normalizeCorporateJointNumber(
+        j.jointNumber,
+        j.uniqueLineId,
+        j.isSupplementary
+      );
+      if (norm.jointNumber !== j.jointNumber || norm.isSupplementary !== j.isSupplementary) {
+        return { ...j, jointNumber: norm.jointNumber, isSupplementary: norm.isSupplementary };
+      }
+      return j;
+    })
+  );
   const [projectLineList, setProjectLineList] =
     useState<ProjectLineItem[]>(INITIAL_PROJECT_LINELIST);
   const [lrvCatalog, setLrvCatalog] = useState<LRVItem[]>(INITIAL_LRV_CATALOG);
@@ -198,6 +209,69 @@ export function useAppState() {
     facilityGeoOverrides,
     setFacilityGeoOverrides,
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_ACTIVE_SECTION, activeSection);
+      localStorage.setItem(STORAGE_SELECTED_OBJECT, selectedObjectName);
+      localStorage.setItem(STORAGE_SELECTED_RD, selectedRdCode);
+
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        let changed = false;
+        if (params.get('tab') !== activeSection) {
+          params.set('tab', activeSection);
+          params.delete('section');
+          changed = true;
+        }
+        if (params.get('project') !== selectedObjectName) {
+          params.set('project', selectedObjectName);
+          params.delete('object');
+          changed = true;
+        }
+        if (selectedRdCode && selectedRdCode !== 'ALL') {
+          if (params.get('rd') !== selectedRdCode) {
+            params.set('rd', selectedRdCode);
+            changed = true;
+          }
+        } else if (params.has('rd')) {
+          params.delete('rd');
+          changed = true;
+        }
+        if (changed) {
+          const newSearch = params.toString();
+          const newUrl = `${window.location.pathname}${newSearch ? `?${newSearch}` : ''}${window.location.hash}`;
+          window.history.replaceState(null, '', newUrl);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [activeSection, selectedObjectName, selectedRdCode]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tab = params.get('tab') || params.get('section');
+        if (tab && VALID_SECTIONS.has(tab)) {
+          setActiveSection(tab as AppSection);
+        }
+        const proj = params.get('project') || params.get('object');
+        if (proj !== null) {
+          setSelectedObjectName(proj);
+        }
+        const rd = params.get('rd');
+        if (rd !== null) {
+          setSelectedRdCode(rd);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // 3. Декомпозированный хук геопозиций объектов и метеостанций
   const facilityWeather = useFacilityWeatherState({

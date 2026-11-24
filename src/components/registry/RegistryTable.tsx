@@ -422,17 +422,26 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                                 title="Нажмите на номер стыка, чтобы открыть паспорт стыка"
                                 className="inline-flex items-center font-mono font-bold text-[#1e3799] hover:text-[#15276e] underline decoration-[#1e3799]/40 hover:decoration-[#1e3799] underline-offset-2 transition-colors cursor-pointer truncate max-w-full"
                               >
-                                <span className="truncate">
-                                  {joint.jointNumber}
-                                </span>
-                                {(isSupp || normalizeCorporateJointNumber(joint.jointNumber, joint.uniqueLineId, joint.isSupplementary).isSupplementary) && (
-                                  <span
-                                    className="ml-1.5 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 text-[#1e3799] shrink-0"
-                                    title="Дополнительный стык"
-                                  >
-                                    доп.
-                                  </span>
-                                )}
+                                {(() => {
+                                  const corp = normalizeCorporateJointNumber(
+                                    joint.jointNumber,
+                                    joint.uniqueLineId,
+                                    joint.isSupplementary
+                                  );
+                                  return (
+                                    <>
+                                      <span className="truncate">{corp.jointNumber}</span>
+                                      {(isSupp || corp.isSupplementary) && (
+                                        <span
+                                          className="ml-1.5 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 text-[#1e3799] shrink-0"
+                                          title="Доборный стык"
+                                        >
+                                          доб.
+                                        </span>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                                 {duplicateJointIds.has(joint.id) && (
                                   <span
                                     className="ml-1.5 px-1.5 py-0.5 rounded bg-red-100 text-red-800 text-[10px] font-bold border border-red-300 shrink-0 animate-pulse"

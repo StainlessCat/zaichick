@@ -633,16 +633,17 @@ export function normalizeCorporateJointNumber(
   let supp = Boolean(isSupp);
 
   // Точное соответствие для базовых линий УКПГ-1С при получении устаревших данных
-  if (uniqueLineId === 'УКПГ-1С:01-ГП:01-ГП-1.1') {
+  const uid = String(uniqueLineId || '');
+  if (uid.includes('01-ГП') || uid.includes('01-GP')) {
     if (raw === '1') return { jointNumber: '010', isSupplementary: false };
     if (raw === '2') return { jointNumber: '011', isSupplementary: true };
     if (raw === '3') return { jointNumber: '020', isSupplementary: false };
   }
-  if (uniqueLineId === 'УКПГ-1С:02-ШФЛУ:02-ШФЛУ-2.1') {
+  if (uid.includes('02-ШФЛУ') || uid.includes('02-SFLU')) {
     if (raw === '1') return { jointNumber: '010', isSupplementary: false };
     if (raw === '2') return { jointNumber: '020', isSupplementary: false };
   }
-  if (uniqueLineId === 'УКПГ-1С:03-МТ:03-МТ-108') {
+  if (uid.includes('03-МТ') || uid.includes('03-MT')) {
     if (raw === '1') return { jointNumber: '010', isSupplementary: false };
   }
 

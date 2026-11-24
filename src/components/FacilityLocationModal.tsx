@@ -519,6 +519,12 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
     onClose();
   };
 
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty: false,
+    onClose,
+  });
+
   if (!isOpen) return null;
 
   const archiveDaysCount = Object.keys(weatherArchive).length;

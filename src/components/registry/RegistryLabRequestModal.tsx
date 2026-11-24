@@ -31,6 +31,11 @@ export const RegistryLabRequestModal: React.FC<RegistryLabRequestModalProps> = (
   const [labReqNumber, setLabReqNumber] = useState(() =>
     suggestNextLabRequestNumber(labRequests)
   );
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty: false,
+    onClose,
+  });
   const [labReqDate, setLabReqDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );

@@ -39,6 +39,12 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
   onSubmitNewRequest,
   onClose,
 }) => {
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty: false,
+    onClose,
+  });
+
   if (!isOpen) return null;
 
   return (

@@ -51,46 +51,37 @@ export const MaterialPartialReplaceModal: React.FC<MaterialPartialReplaceModalPr
   batch,
   onConfirmReplacement,
 }) => {
-  const isDirty = Boolean(decisionLetterNumber.trim() || (reason && reason !== 'other'));
+  // State definitions
+  const [replaceQty, setReplaceQty] = useState<number>(batch.quantity || 1);
+  const [letterNumber, setLetterNumber] = useState('Письмо 284/Т');
+  const [letterDate, setLetterDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [approvedBy, setApprovedBy] = useState('Гл. технолог');
+  const [reason, setReason] = useState(
+    batch.rejectionReason || 'Брак при входном контроле. Требуется частичная замена партии.'
+  );
+  const defaultSuffix = '.Д1';
+  const [replLrvCode, setReplLrvCode] = useState(`${material.lrvCode}${defaultSuffix}`);
+  const [replShortName, setReplShortName] = useState(
+    `${material.shortName} (замена по письму)`
+  );
+  const [replMaterial, setReplMaterial] = useState(material.material);
+  const [replNtd, setReplNtd] = useState(material.ntd);
+  const [replManufacturer, setReplManufacturer] = useState('Завод-изготовитель');
+  const [replActNumber, setReplActNumber] = useState('АВК-122');
+  const [replActDate, setReplActDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [replCertNumber, setReplCertNumber] = useState('3310-П');
+  const [replSerialNumbers, setReplSerialNumbers] = useState('З-Д-07');
+  const [replInspectorName, setReplInspectorName] = useState('Орлова Е. В.');
+  const [formError, setFormError] = useState('');
 
+  const isDirty = Boolean(letterNumber.trim() || (reason && reason !== 'other'));
   const { handleRequestClose } = useModalDismiss({
     isOpen,
     isDirty,
     onClose,
-    confirmMessage: 'В форме замены материала есть несохранённые данные. Закрыть без сохранения?',
   });
 
   if (!isOpen) return null;
-
-  // Количество на замену
-  const [replaceQty, setReplaceQty] = useState<number>(batch.quantity || 1);
-
-  // Реквизиты письма
-  const [letterNumber, setLetterNumber] = useState('Письмо № 284/ГИП');
-  const [letterDate, setLetterDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [approvedBy, setApprovedBy] = useState('ООО «ПроектИнжиниринг»');
-  const [reason, setReason] = useState(
-    batch.rejectionReason || 'Отбраковка единицы при входном контроле. Замена на аналог из складского резерва.'
-  );
-
-  // Параметры заменяющего элемента
-  const defaultSuffix = '.З1';
-  const [replLrvCode, setReplLrvCode] = useState(`${material.lrvCode}${defaultSuffix}`);
-  const [replShortName, setReplShortName] = useState(
-    `${material.shortName} — замена по письму`
-  );
-  const [replMaterial, setReplMaterial] = useState(material.material);
-  const [replNtd, setReplNtd] = useState(material.ntd);
-  const [replManufacturer, setReplManufacturer] = useState('ПАО «Пензтяжпромарматура»');
-
-  // Входной контроль заменяющего элемента из наличия
-  const [replActNumber, setReplActNumber] = useState('АВК-122');
-  const [replActDate, setReplActDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [replCertNumber, setReplCertNumber] = useState('3310-Р');
-  const [replSerialNumbers, setReplSerialNumbers] = useState('КШ-РЕЗЕРВ-07');
-  const [replInspectorName, setReplInspectorName] = useState('Лебедев К. М.');
-
-  const [formError, setFormError] = useState('');
 
   const totalSpec = material.totalSpecQty ?? material.specQty;
 

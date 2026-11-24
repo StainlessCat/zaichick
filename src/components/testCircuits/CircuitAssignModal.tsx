@@ -62,6 +62,11 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
   const [search, setSearch] = useState('');
   const [selectedLineFilter, setSelectedLineFilter] = useState<string>('ALL');
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
+  const { handleRequestClose } = useModalDismiss({
+    isOpen,
+    isDirty: false,
+    onClose,
+  });
 
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
   const [selectedJointIds, setSelectedJointIds] = useState<string[]>([]);

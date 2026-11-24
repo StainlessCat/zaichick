@@ -164,19 +164,14 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   ]);
 
   const isDirty = Boolean(
+    enableDiameter ||
+    enableJointType ||
+    enableWelder ||
     enableWeldingDate ||
-    enableWelderStamp ||
-    enableWeldingType ||
-    enableGostJointType ||
-    enableWeldingPosition ||
-    enablePreheatTemp ||
-    enableAmbientTemp ||
-    enableTechCard ||
-    enableResponsiblePerson ||
-    enableVikResult ||
+    enableWeldingSpecs ||
+    enableVik ||
     enableNdt ||
-    enableDupNdt ||
-    enableCircuit
+    enableTestCircuit
   );
 
   const { handleRequestClose } = useModalDismiss({

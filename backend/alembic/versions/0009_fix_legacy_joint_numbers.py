@@ -23,19 +23,19 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             "UPDATE weld_joints SET joint_number = '010' "
-            "WHERE joint_number = '1' AND unique_line_id = 'УКПГ-1С:01-ГП:01-ГП-1.1'"
+            "WHERE joint_number = '1' AND (unique_line_id LIKE '%01-ГП%' OR unique_line_id LIKE '%01-GP%')"
         )
     )
     op.execute(
         sa.text(
             "UPDATE weld_joints SET joint_number = '011', is_supplementary = true "
-            "WHERE joint_number = '2' AND unique_line_id = 'УКПГ-1С:01-ГП:01-ГП-1.1'"
+            "WHERE joint_number = '2' AND (unique_line_id LIKE '%01-ГП%' OR unique_line_id LIKE '%01-GP%')"
         )
     )
     op.execute(
         sa.text(
             "UPDATE weld_joints SET joint_number = '020' "
-            "WHERE joint_number = '3' AND unique_line_id = 'УКПГ-1С:01-ГП:01-ГП-1.1'"
+            "WHERE joint_number = '3' AND (unique_line_id LIKE '%01-ГП%' OR unique_line_id LIKE '%01-GP%')"
         )
     )
 
@@ -43,13 +43,13 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             "UPDATE weld_joints SET joint_number = '010' "
-            "WHERE joint_number = '1' AND unique_line_id = 'УКПГ-1С:02-ШФЛУ:02-ШФЛУ-2.1'"
+            "WHERE joint_number = '1' AND (unique_line_id LIKE '%02-ШФЛУ%' OR unique_line_id LIKE '%02-SFLU%')"
         )
     )
     op.execute(
         sa.text(
             "UPDATE weld_joints SET joint_number = '020' "
-            "WHERE joint_number = '2' AND unique_line_id = 'УКПГ-1С:02-ШФЛУ:02-ШФЛУ-2.1'"
+            "WHERE joint_number = '2' AND (unique_line_id LIKE '%02-ШФЛУ%' OR unique_line_id LIKE '%02-SFLU%')"
         )
     )
 
@@ -57,7 +57,7 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             "UPDATE weld_joints SET joint_number = '010' "
-            "WHERE joint_number = '1' AND unique_line_id = 'УКПГ-1С:03-МТ:03-МТ-108'"
+            "WHERE joint_number = '1' AND (unique_line_id LIKE '%03-МТ%' OR unique_line_id LIKE '%03-MT%')"
         )
     )
 

@@ -25,6 +25,12 @@ export const LrvSupersedeModal: React.FC<LrvSupersedeModalProps> = ({
   );
 
   const affectedJoints = joints ? getJointsUsingLrvItem(item, joints) : [];
+  const isDirty = Boolean(letterInput.trim() && letterInput !== item?.replacementLetter);
+  const { handleRequestClose } = useModalDismiss({
+    isOpen: Boolean(item),
+    isDirty,
+    onClose,
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">

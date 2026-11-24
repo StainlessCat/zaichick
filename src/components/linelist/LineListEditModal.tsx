@@ -454,7 +454,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 <option value="">— Не выбран (пусто) —</option>
                 {relevantCircuits.map((c) => (
                   <option key={c.id} value={c.name}>
-                    {c.name} {c.medium ? `(${c.medium})` : ''}
+                    {c.name}
                   </option>
                 ))}
               </select>
