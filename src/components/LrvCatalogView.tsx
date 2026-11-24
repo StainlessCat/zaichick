@@ -49,26 +49,30 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
   const auth = useAuth();
   const app = useAppContext();
 
-  const joints = props.joints ?? app.joints;
+  const joints = props.joints ?? app?.joints ?? [];
   const catalog =
     props.catalog ??
-    (app.selectedObjectName !== 'ALL'
-      ? app.lrvCatalog.filter((item) => item.objectName === app.selectedObjectName)
-      : app.lrvCatalog);
+    (app?.lrvCatalog
+      ? app.selectedObjectName !== 'ALL'
+        ? app.lrvCatalog.filter((item) => item.objectName === app.selectedObjectName)
+        : app.lrvCatalog
+      : []) ?? [];
   const facilities =
     props.facilities ??
-    (app.selectedObjectName !== 'ALL'
-      ? app.derivedFacilities.filter((f) => f.name === app.selectedObjectName)
-      : app.derivedFacilities);
-  const selectedRdCode = props.selectedRdCode ?? app.selectedRdCode;
-  const canEdit = props.canEdit ?? auth.userPermissions.canEditLrvCatalog;
+    (app?.derivedFacilities
+      ? app.selectedObjectName !== 'ALL'
+        ? app.derivedFacilities.filter((f) => f.name === app.selectedObjectName)
+        : app.derivedFacilities
+      : []) ?? [];
+  const selectedRdCode = props.selectedRdCode ?? app?.selectedRdCode ?? '';
+  const canEdit = props.canEdit ?? auth?.userPermissions?.canEditLrvCatalog ?? false;
 
   const { onAddLrvItems, onUpdateLrvItem, onDeleteLrvItems } = props;
 
   const allRds = useMemo(
     () =>
-      facilities.flatMap((f) =>
-        f.rdCodes.map((r) => ({
+      (facilities || []).flatMap((f) =>
+        (f.rdCodes || []).map((r) => ({
           objectName: f.name,
           code: r.code,
           title: r.title,
@@ -115,16 +119,19 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
     defaultWidths: {
       lrvCode: 140,
       rdCode: 180,
-      shortName: 220,
+      shortName: 200,
+      marking: 150,
+      fullName: 240,
       category: 110,
+      pnMpa: 120,
       connectionType: 120,
       material: 130,
       ntd: 140,
       manufacturer: 160,
-      dn1: 95,
+      dn1: 90,
       diameterMm: 110,
       wallThickness: 110,
-      dn2: 95,
+      dn2: 90,
       diameterMm2: 110,
       wallThickness2: 110,
       specQty: 110,
@@ -166,34 +173,37 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
 
   const lrvColumnGetters = useMemo<Record<string, (item: LRVItem) => string>>(
     () => ({
-      lrvCode: (item) => item.lrvCode,
-      rdCode: (item) => item.rdCode,
-      shortName: (item) => item.shortName,
+      lrvCode: (item) => item.lrvCode || '',
+      rdCode: (item) => item.rdCode || '',
+      shortName: (item) => item.shortName || '',
+      marking: (item) => item.marking || '',
+      fullName: (item) => item.fullName || '',
       category: (item) => resolveLrvItemCategory(item),
+      pnMpa: (item) => (item.pnMpa ? `${item.pnMpa} МПа` : ''),
       connectionType: (item) =>
         resolveLrvItemCategory(item) === 'ЗРА'
           ? resolveLrvConnectionType(item) === 'фланцевый'
-            ? 'Фланцевый'
-            : 'Приварной'
+            ? 'фланцевый'
+            : 'приварной'
           : '',
-      material: (item) => item.material,
-      ntd: (item) => item.ntd,
+      material: (item) => item.material || '',
+      ntd: (item) => item.ntd || '',
       manufacturer: (item) => item.manufacturer || '',
       dn1: (item) => {
         const val = getLrvItemDn1(item);
         return val !== undefined ? String(val) : '';
       },
-      diameterMm: (item) => String(item.diameterMm),
-      wallThickness: (item) => item.wallThickness.toFixed(1),
+      diameterMm: (item) => (item.diameterMm !== undefined ? item.diameterMm.toFixed(1) : ''),
+      wallThickness: (item) => (item.wallThickness !== undefined ? item.wallThickness.toFixed(1) : ''),
       dn2: (item) => {
         const val = getLrvItemDn2(item);
         return val !== undefined ? String(val) : '';
       },
       diameterMm2: (item) =>
-        item.diameterMm2 !== undefined ? String(item.diameterMm2) : '',
+        item.diameterMm2 !== undefined ? item.diameterMm2.toFixed(1) : '',
       wallThickness2: (item) =>
         item.wallThickness2 !== undefined ? item.wallThickness2.toFixed(1) : '',
-      specQty: (item) => `${item.specQty} ${item.unit}`,
+      specQty: (item) => `${item.specQty ?? 0} ${item.unit || 'шт'}`,
     }),
     []
   );
@@ -202,9 +212,12 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
     lrvCode: 'Код ЛРВ',
     rdCode: 'Шифр РД',
     shortName: 'Краткое наименование',
+    marking: 'Маркировка',
+    fullName: 'Полное наименование',
     category: 'Категория',
+    pnMpa: 'Давление PN, МПа',
     connectionType: 'Подсоединение',
-    material: 'Материал (Сталь)',
+    material: 'Материал',
     ntd: 'НТД',
     manufacturer: 'Завод-изготовитель',
     dn1: 'DN 1',

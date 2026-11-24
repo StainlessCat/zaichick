@@ -413,6 +413,9 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'lrv_catalog' && (
         <LrvCatalogView
+          catalog={lrvCatalog}
+          facilities={derivedFacilities}
+          selectedRdCode={selectedRdCode}
           onAddLrvItems={dirActions.handleAddLrvItems}
           onUpdateLrvItem={dirActions.handleUpdateLrvItem}
           onDeleteLrvItems={dirActions.handleDeleteLrvItems}

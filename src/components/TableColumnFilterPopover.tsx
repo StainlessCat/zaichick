@@ -70,7 +70,7 @@ export function TableColumnFilterHeader<T>({
   const uniqueValuesWithCount = useMemo(() => {
     const counts = new Map<string, number>();
     rows.forEach((row, idx) => {
-      const val = String(getValue(row, idx) ?? '').trim();
+      const val = typeof getValue === 'function' ? String(getValue(row, idx) ?? '').trim() : '';
       counts.set(val, (counts.get(val) || 0) + 1);
     });
     return Array.from(counts.entries())
