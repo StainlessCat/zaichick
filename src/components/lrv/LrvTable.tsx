@@ -94,7 +94,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
                 <th className="py-2.5 px-2.5 border-r border-white/15 w-9 min-w-[36px] max-w-[36px] text-center sticky left-8 top-0 z-30 bg-[#1e3799]">
                   <input
                     type="checkbox"
-                    aria-label="Выбрать все материалы в ЛРВ"
+                    aria-label="Выбрать все материалы"
                     checked={allSelected}
                     onChange={onToggleSelectAll}
                     className="rounded border-white/40 text-sky-400 focus:ring-sky-300 cursor-pointer"
@@ -141,7 +141,35 @@ export const LrvTable: React.FC<LrvTableProps> = ({
                 width={getColumnWidth('shortName')}
                 minWidth={130}
                 onResizeStart={handleResizeStart}
-                onAutoFit={() => handleAutoFit('shortName', 220)}
+                onAutoFit={() => handleAutoFit('shortName', 200)}
+              />
+              <TableColumnFilterHeader
+                columnKey="marking"
+                label="Маркировка"
+                rows={rdScopedCatalog}
+                getValue={lrvColumnGetters.marking}
+                activeFilters={columnFilters}
+                onApplyFilter={onApplyColumnFilter}
+                sortConfig={sortConfig}
+                onSort={onSortColumn}
+                width={getColumnWidth('marking')}
+                minWidth={100}
+                onResizeStart={handleResizeStart}
+                onAutoFit={() => handleAutoFit('marking', 150)}
+              />
+              <TableColumnFilterHeader
+                columnKey="fullName"
+                label="Полное наименование"
+                rows={rdScopedCatalog}
+                getValue={lrvColumnGetters.fullName}
+                activeFilters={columnFilters}
+                onApplyFilter={onApplyColumnFilter}
+                sortConfig={sortConfig}
+                onSort={onSortColumn}
+                width={getColumnWidth('fullName')}
+                minWidth={150}
+                onResizeStart={handleResizeStart}
+                onAutoFit={() => handleAutoFit('fullName', 240)}
               />
               <TableColumnFilterHeader
                 columnKey="category"
@@ -156,6 +184,20 @@ export const LrvTable: React.FC<LrvTableProps> = ({
                 minWidth={90}
                 onResizeStart={handleResizeStart}
                 onAutoFit={() => handleAutoFit('category', 110)}
+              />
+              <TableColumnFilterHeader
+                columnKey="pnMpa"
+                label="Давление PN, МПа"
+                rows={rdScopedCatalog}
+                getValue={lrvColumnGetters.pnMpa}
+                activeFilters={columnFilters}
+                onApplyFilter={onApplyColumnFilter}
+                sortConfig={sortConfig}
+                onSort={onSortColumn}
+                width={getColumnWidth('pnMpa')}
+                minWidth={90}
+                onResizeStart={handleResizeStart}
+                onAutoFit={() => handleAutoFit('pnMpa', 120)}
               />
               <TableColumnFilterHeader
                 columnKey="connectionType"
@@ -173,7 +215,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               />
               <TableColumnFilterHeader
                 columnKey="material"
-                label="Материал (Сталь)"
+                label="Материал"
                 rows={rdScopedCatalog}
                 getValue={lrvColumnGetters.material}
                 activeFilters={columnFilters}
@@ -187,7 +229,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               />
               <TableColumnFilterHeader
                 columnKey="ntd"
-                label="НТД (ГОСТ / ТУ)"
+                label="НТД"
                 rows={rdScopedCatalog}
                 getValue={lrvColumnGetters.ntd}
                 activeFilters={columnFilters}
@@ -215,7 +257,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               />
               <TableColumnFilterHeader
                 columnKey="dn1"
-                label="Условный проход DN 1"
+                label="DN 1"
                 rows={rdScopedCatalog}
                 getValue={lrvColumnGetters.dn1}
                 activeFilters={columnFilters}
@@ -224,9 +266,9 @@ export const LrvTable: React.FC<LrvTableProps> = ({
                 onSort={onSortColumn}
                 align="right"
                 width={getColumnWidth('dn1')}
-                minWidth={80}
+                minWidth={70}
                 onResizeStart={handleResizeStart}
-                onAutoFit={() => handleAutoFit('dn1', 95)}
+                onAutoFit={() => handleAutoFit('dn1', 90)}
               />
               <TableColumnFilterHeader
                 columnKey="diameterMm"
@@ -260,7 +302,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               />
               <TableColumnFilterHeader
                 columnKey="dn2"
-                label="Условный проход DN 2"
+                label="DN 2"
                 rows={rdScopedCatalog}
                 getValue={lrvColumnGetters.dn2}
                 activeFilters={columnFilters}
@@ -269,9 +311,9 @@ export const LrvTable: React.FC<LrvTableProps> = ({
                 onSort={onSortColumn}
                 align="right"
                 width={getColumnWidth('dn2')}
-                minWidth={80}
+                minWidth={70}
                 onResizeStart={handleResizeStart}
-                onAutoFit={() => handleAutoFit('dn2', 95)}
+                onAutoFit={() => handleAutoFit('dn2', 90)}
               />
               <TableColumnFilterHeader
                 columnKey="diameterMm2"
@@ -406,7 +448,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
             <button
               type="button"
               onClick={handleResetWidths}
-              title="Сбросить пользовательские ширины столбцов справочника ЛРВ"
+              title="Сбросить пользовательские ширины столбцов таблицы материалов"
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] transition-colors shadow-2xs cursor-pointer"
             >
               <RotateCcw className="w-3 h-3 text-slate-400" />

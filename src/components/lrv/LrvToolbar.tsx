@@ -176,7 +176,7 @@ export const LrvToolbar: React.FC<LrvToolbarProps> = ({
               type="button"
               variant="secondary"
               onClick={onImportClick}
-              title="Импорт позиций ЛРВ из файла Excel"
+              title="Импорт позиций материалов из файла Excel"
             >
               <Upload className="w-3.5 h-3.5 text-[#1e3799]" />
               <span>Импорт Excel</span>
@@ -211,7 +211,7 @@ export const LrvToolbar: React.FC<LrvToolbarProps> = ({
                   type="button"
                   variant="danger"
                   onClick={() => setConfirmBulkDelete(true)}
-                  title="Удалить выбранные позиции каталога ЛРВ"
+                  title="Удалить выбранные позиции базы материалов"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Удалить: {selectedLrvIds.length}</span>

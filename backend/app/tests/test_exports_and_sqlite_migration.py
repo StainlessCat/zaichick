@@ -679,7 +679,7 @@ async def test_excel_templates_linelist_lrv_exports_and_parse_spreadsheet():
             res_lrv = await client.get("/api/exports/lrv.xlsx", headers=headers)
             assert res_lrv.status_code == 200
             wb_lrv = load_workbook(BytesIO(res_lrv.content))
-            assert wb_lrv["Каталог ЛРВ"].cell(row=2, column=1).value == "ЛРВ-101"
+            assert wb_lrv["База материалов"].cell(row=2, column=1).value == "ЛРВ-101"
 
             csv_bytes = "Код ЛРВ;Наименование\nЛРВ-202;Отвод 219х8\n".encode("utf-8")
             res_parse_csv = await client.post(

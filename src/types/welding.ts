@@ -16,6 +16,46 @@ export type LrvElementCategory =
   | 'Бобышка'
   | 'Прочее';
 
+/**
+ * Низкоуровневые системные надкатегории материалов для внутренней нормализации и шаблонизации
+ */
+export type MaterialMasterSubcategory =
+  | 'tube'
+  | 'sdt'
+  | 'zra'
+  | 'flange'
+  | 'equip'
+  | 'weldolet';
+
+export const MATERIAL_CATEGORY_TO_SUBCATEGORY: Record<string, MaterialMasterSubcategory> = {
+  'Труба': 'tube',
+  'Отвод': 'sdt',
+  'Переход': 'sdt',
+  'Тройник': 'sdt',
+  'Заглушка': 'sdt',
+  'ЗРА': 'zra',
+  'Кран': 'zra',
+  'Фланец': 'flange',
+  'Штуцер': 'weldolet',
+  'Бобышка': 'weldolet',
+  'Прочее': 'equip',
+};
+
+export function getMaterialMasterSubcategory(categoryOrShortName?: string | null): MaterialMasterSubcategory {
+  if (!categoryOrShortName) return 'equip';
+  const trimmed = categoryOrShortName.trim();
+  if (MATERIAL_CATEGORY_TO_SUBCATEGORY[trimmed]) {
+    return MATERIAL_CATEGORY_TO_SUBCATEGORY[trimmed];
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('труб')) return 'tube';
+  if (lower.startsWith('отвод') || lower.startsWith('переход') || lower.startsWith('тройник') || lower.startsWith('заглушк')) return 'sdt';
+  if (lower.startsWith('кран') || lower.startsWith('зра') || lower.includes('задвиж') || lower.includes('клапан')) return 'zra';
+  if (lower.startsWith('флан')) return 'flange';
+  if (lower.startsWith('штуцер') || lower.startsWith('бобышк')) return 'weldolet';
+  return 'equip';
+}
+
 export type ControlResult = 'Годен' | 'Ремонт' | 'Вырезать' | 'В работе' | 'Не проводился';
 
 export type NdtMethod = 'РК' | 'УЗК' | 'ПВК' | 'МК' | 'РК+УЗК' | 'Не требуется';
@@ -261,7 +301,8 @@ export interface LRVItem {
   rdCode: string; // Строгая привязка к Шифру РД
   objectName: string;
   shortName: string; // Краткое наименование элемента (Отвод 90°, Труба БШ, Переход К, Тройник переходной, Фланец)
-  category?: LrvElementCategory; // Категория элемента (Труба, Отвод, Переход, Тройник, ЗРА, Фланец, Заглушка, Прочее)
+  category?: LrvElementCategory;
+  masterSubcategory?: MaterialMasterSubcategory; // Категория элемента (Труба, Отвод, Переход, Тройник, ЗРА, Фланец, Заглушка, Прочее)
   connectionType?: 'приварной' | 'фланцевый' | string; // Тип подсоединения (для ЗРА: приварной / фланцевый)
   material: string; // Сталь 09Г2С, 20, 12Х18Н10Т и т.д.
   ntd: string; // ГОСТ / ТУ / ОСТ

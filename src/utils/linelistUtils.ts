@@ -5,10 +5,12 @@ import {
   LRVItem,
   ProjectLineItem,
   WeldJoint,
+  getMaterialMasterSubcategory,
 } from '../types/welding';
 import { formatDateDDMMYY, isDateColumnKey, normalizeDateToISO } from './dates';
 import {
   detectLrvConnectionType,
+  generateLrvFullName,
   mmToNominalBoreDn,
   resolveLrvItemCategory,
 } from './pipeCalc';
@@ -547,6 +549,43 @@ export function parseLrvCatalogRecords(
         ? detectLrvConnectionType(shortName, rawConnectionType)
         : undefined;
 
+    const marking =
+      getField(row, ['маркировка', 'обозначение', 'марка детали']) || undefined;
+    const pnMpa =
+      getField(row, [
+        'давление pn, мпа',
+        'давление pn',
+        'pn, мпа',
+        'pn',
+        'давление',
+        'давление p',
+        'p, мпа',
+      ]) || undefined;
+    const rawFullName =
+      getField(row, [
+        'полное наименование',
+        'полное наименование элемента',
+        'полное наименование материала',
+      ]) || undefined;
+
+    const fullName =
+      rawFullName ||
+      generateLrvFullName({
+        category: itemCategory,
+        shortName,
+        dn1,
+        pnMpa,
+        marking,
+        material,
+        ntd,
+        diameterMm: safeD1,
+        wallThickness: safeS1,
+        diameterMm2: safeD2,
+        wallThickness2: safeS2,
+      });
+
+    const masterSubcategory = getMaterialMasterSubcategory(itemCategory);
+
     result.push({
       id: `lrv-xls-${Date.now()}-${idx}`,
       lrvCode: finalCode,
@@ -554,10 +593,14 @@ export function parseLrvCatalogRecords(
       objectName,
       shortName: shortName || 'Деталь трубопровода',
       category: itemCategory,
+      masterSubcategory,
       connectionType,
       material,
       ntd,
       manufacturer,
+      marking,
+      pnMpa,
+      fullName,
       dn1,
       diameterMm: safeD1,
       wallThickness: safeS1,

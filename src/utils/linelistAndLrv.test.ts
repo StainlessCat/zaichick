@@ -5,6 +5,11 @@ import {
   generateLrvFullName,
   parseRangeValue,
 } from './weldingLogic';
+import {
+  getMaterialMasterSubcategory,
+  MaterialMasterSubcategory,
+} from '../types/welding';
+import { parseLrvCatalogRecords } from './linelistUtils';
 import { detectLrvElementType, LRV_ELEMENT_TYPE_OPTIONS } from './pipeCalc';
 
 describe('linelistUtils: range & units formatting', () => {
@@ -110,5 +115,94 @@ describe('pipeCalc & LRV materials catalog', () => {
       ntd: 'ТУ 102-488-05',
     });
     expect(chokeName).toBe('Штуцер, Ш-50-16, ТУ 102-488-05');
+  });
+
+  it('getMaterialMasterSubcategory correctly categorizes materials into the 6 subcategories', () => {
+    expect(getMaterialMasterSubcategory('Труба')).toBe('tube');
+    expect(getMaterialMasterSubcategory('Отвод')).toBe('sdt');
+    expect(getMaterialMasterSubcategory('Переход')).toBe('sdt');
+    expect(getMaterialMasterSubcategory('Тройник')).toBe('sdt');
+    expect(getMaterialMasterSubcategory('Заглушка')).toBe('sdt');
+    expect(getMaterialMasterSubcategory('ЗРА')).toBe('zra');
+    expect(getMaterialMasterSubcategory('Кран')).toBe('zra');
+    expect(getMaterialMasterSubcategory('Фланец')).toBe('flange');
+    expect(getMaterialMasterSubcategory('Штуцер')).toBe('weldolet');
+    expect(getMaterialMasterSubcategory('Бобышка')).toBe('weldolet');
+    expect(getMaterialMasterSubcategory('Прочее')).toBe('equip');
+  });
+
+  it('generateLrvFullName formats tube and sdt according to corporate rules', () => {
+    // Example 1: Single diameter pipe without marking
+    const tubeSingle = generateLrvFullName({
+      category: 'Труба',
+      shortName: 'Труба',
+      diameterMm: 530,
+      wallThickness: '8,0',
+      material: 'К60',
+      ntd: 'ГОСТ 180419-80',
+    });
+    expect(tubeSingle).toBe('Труба 530х8,0, К60, ГОСТ 180419-80');
+
+    // Example 2: Dual diameter reduction without marking
+    const sdtDual = generateLrvFullName({
+      category: 'Переход',
+      shortName: 'Переход',
+      diameterMm: 108,
+      wallThickness: 6,
+      diameterMm2: 89,
+      wallThickness2: 4,
+      material: 'К48',
+      ntd: 'ГОСТ 19375-2015',
+    });
+    expect(sdtDual).toBe('Переход 108х6-89х4, К48, ГОСТ 19375-2015');
+
+    // Rule: If marking is present for tube/sdt, use: shortName, marking, ntd
+    const tubeWithMarking = generateLrvFullName({
+      category: 'Труба',
+      shortName: 'Труба',
+      diameterMm: 530,
+      wallThickness: 8,
+      marking: '530х8-К60-ГОСТ 180419-80',
+      ntd: 'ГОСТ 180419-80',
+    });
+    expect(tubeWithMarking).toBe('Труба, 530х8-К60-ГОСТ 180419-80, ГОСТ 180419-80');
+
+    const sdtWithMarking = generateLrvFullName({
+      category: 'Отвод',
+      shortName: 'Отвод 90°',
+      marking: 'ОК 90-530(8,0)-К60',
+      material: 'К60',
+      ntd: 'ТУ 1469-014-01395041-03',
+    });
+    expect(sdtWithMarking).toBe('Отвод 90°, ОК 90-530(8,0)-К60, ТУ 1469-014-01395041-03');
+  });
+
+  it('parseLrvCatalogRecords correctly parses marking, pnMpa, fullName, and assigns masterSubcategory', () => {
+    const rawRows = [
+      {
+        'Код ЛРВ': 'ЛРВ-TEST-001',
+        'Шифр РД': '0092.049.Р.13/1-ТХ3',
+        'Объект': 'Бованенково',
+        'Краткое наименование': 'Труба',
+        'Маркировка': 'Тр-530х8-К60',
+        'Полное наименование': 'Труба 530х8,0, К60, ГОСТ 180419-80',
+        'Категория': 'Труба',
+        'Давление PN, МПа': '16,0',
+        'Материал': 'К60',
+        'НТД': 'ГОСТ 180419-80',
+        'Диаметр Ø1, мм': 530,
+        'Толщина стенки S1, мм': 8,
+        'Кол-во': 100,
+        'Ед. изм.': 'м',
+      },
+    ];
+
+    const parsed = parseLrvCatalogRecords(rawRows, 'Бованенково', '0092.049.Р.13/1-ТХ3');
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].lrvCode).toBe('ЛРВ-TEST-001');
+    expect(parsed[0].marking).toBe('Тр-530х8-К60');
+    expect(parsed[0].pnMpa).toBe('16,0');
+    expect(parsed[0].fullName).toBe('Труба 530х8,0, К60, ГОСТ 180419-80');
+    expect(parsed[0].masterSubcategory).toBe('tube');
   });
 });

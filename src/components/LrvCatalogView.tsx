@@ -254,13 +254,13 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
       if (parsedItems.length === 0) {
         setExcelUploadMessage({
           type: 'error',
-          text: `В файле «${file.name}» не найдено корректных строк с кодами ЛРВ и шифрами РД.`,
+          text: `В файле «${file.name}» не найдено корректных строк материалов.`,
         });
       } else {
         onAddLrvItems(parsedItems);
         setExcelUploadMessage({
           type: 'success',
-          text: `Из файла «${file.name}» успешно загружено ${parsedItems.length} поз. ЛРВ.`,
+          text: `Из файла «${file.name}» успешно загружено ${parsedItems.length} поз. материалов.`,
         });
       }
     } catch {

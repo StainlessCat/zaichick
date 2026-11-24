@@ -168,16 +168,34 @@ export const LrvTableRow: React.FC<LrvTableRowProps> = ({
           className="py-2.5 px-3 border-r border-slate-200 font-semibold text-slate-900"
         >
           <div>{item.shortName}</div>
-          {item.fullName && item.fullName !== item.shortName && (
-            <div className="text-[11px] text-slate-500 font-normal mt-0.5 leading-tight" title={item.fullName}>
-              {item.fullName}
-            </div>
-          )}
-          {item.marking && (
-            <div className="inline-block mt-0.5 px-1.5 py-0.2 rounded bg-indigo-50 border border-indigo-200/80 text-[10px] font-mono font-medium text-indigo-700">
+        </td>
+
+        <td
+          style={{
+            width: getColumnWidth('marking'),
+            minWidth: getColumnWidth('marking'),
+          }}
+          className="py-2.5 px-3 border-r border-slate-200 text-center whitespace-nowrap"
+        >
+          {item.marking ? (
+            <span className="px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-[11px] font-mono font-medium text-indigo-700">
               {item.marking}
-            </div>
+            </span>
+          ) : (
+            <span className="text-slate-300">—</span>
           )}
+        </td>
+
+        <td
+          style={{
+            width: getColumnWidth('fullName'),
+            minWidth: getColumnWidth('fullName'),
+          }}
+          className="py-2.5 px-3 border-r border-slate-200 text-slate-800"
+        >
+          <div className="text-[11px] leading-tight line-clamp-2" title={item.fullName || item.shortName}>
+            {item.fullName || item.shortName}
+          </div>
         </td>
 
         <td
@@ -190,6 +208,22 @@ export const LrvTableRow: React.FC<LrvTableRowProps> = ({
           <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700">
             {category}
           </span>
+        </td>
+
+        <td
+          style={{
+            width: getColumnWidth('pnMpa'),
+            minWidth: getColumnWidth('pnMpa'),
+          }}
+          className="py-2.5 px-3 border-r border-slate-200 text-center whitespace-nowrap"
+        >
+          {item.pnMpa ? (
+            <span className="font-mono text-slate-800 text-[11px]">
+              {item.pnMpa} МПа
+            </span>
+          ) : (
+            <span className="text-slate-300">—</span>
+          )}
         </td>
 
         <td
@@ -389,7 +423,7 @@ export const LrvTableRow: React.FC<LrvTableRowProps> = ({
                       ? 'Позиция привязана к стыкам: аннулировать и заменить'
                       : `Удалить материал ЛРВ «${item.lrvCode}»`
                   }
-                  aria-label={`Удалить материал ЛРВ ${item.lrvCode}`}
+                  aria-label={`Удалить материал ${item.lrvCode}`}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>

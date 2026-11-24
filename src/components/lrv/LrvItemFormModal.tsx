@@ -109,10 +109,28 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
         marking: newMarking,
         material: newMaterial,
         ntd: newNtd,
+        diameterMm: newDiameter1,
+        wallThickness: newThickness1,
+        diameterMm2: hasSecondDimension ? newDiameter2 : undefined,
+        wallThickness2: hasSecondDimension ? newThickness2 : undefined,
       });
       setNewFullName(auto);
     }
-  }, [newCategory, newShortName, newDn1, newPnMpa, newMarking, newMaterial, newNtd, isFullNameManual]);
+  }, [
+    newCategory,
+    newShortName,
+    newDn1,
+    newPnMpa,
+    newMarking,
+    newMaterial,
+    newNtd,
+    newDiameter1,
+    newThickness1,
+    newDiameter2,
+    newThickness2,
+    hasSecondDimension,
+    isFullNameManual,
+  ]);
 
   if (!isOpen) return null;
 
@@ -135,6 +153,10 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
       marking: newMarking,
       material: newMaterial,
       ntd: newNtd,
+      diameterMm: newDiameter1,
+      wallThickness: newThickness1,
+      diameterMm2: hasSecondDimension ? newDiameter2 : undefined,
+      wallThickness2: hasSecondDimension ? newThickness2 : undefined,
     });
     setNewFullName(auto);
   };
@@ -262,7 +284,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
             onChange={(e) => setHasSecondDimension(e.target.checked)}
             className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
           />
-          <span>Переход / переходной тройник (DN 2, Ø2, S2)</span>
+          <span>Второй диаметр DN 2, Ø2, S2</span>
         </label>
       </div>
 
@@ -371,7 +393,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
           />
         </div>
         <div className="sm:col-span-2">
-          <label className="block text-xs text-slate-600 mb-1">Марка стали</label>
+          <label className="block text-xs text-slate-600 mb-1">Материал</label>
           <input
             type="text"
             value={newMaterial}
@@ -381,7 +403,7 @@ export const LrvItemFormModal: React.FC<LrvItemFormModalProps> = ({
           />
         </div>
         <div className="sm:col-span-2">
-          <label className="block text-xs text-slate-600 mb-1">НТД (ГОСТ / ТУ)</label>
+          <label className="block text-xs text-slate-600 mb-1">НТД</label>
           <input
             type="text"
             value={newNtd}

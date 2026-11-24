@@ -619,27 +619,30 @@ def build_lrv_workbook_bytes(items: list[Any], *, is_template: bool = False) -> 
     """Export LRV catalog or Excel template to XLSX."""
     wb = Workbook()
     ws = wb.active
-    ws.title = "Каталог ЛРВ"
+    ws.title = "База материалов"
     headers = [
         "Код ЛРВ",
         "Шифр РД",
         "Объект",
         "Краткое наименование",
+        "Маркировка",
+        "Полное наименование",
         "Категория",
+        "Давление PN, МПа",
         "Тип подсоединения",
-        "Материал (Сталь)",
-        "НТД (ГОСТ / ТУ)",
+        "Материал",
+        "НТД",
         "Завод-изготовитель",
-        "Условный проход DN 1",
-        "Диаметр Ø1, мм",
-        "Толщина стенки S1, мм",
-        "Условный проход DN 2",
-        "Диаметр Ø2, мм",
-        "Толщина стенки S2, мм",
-        "Кол-во по спец.",
+        "DN 1",
+        "Ø1, мм",
+        "S1, мм",
+        "DN 2",
+        "Ø2, мм",
+        "S2, мм",
+        "Кол-во",
         "Ед. изм.",
     ]
-    widths = [22, 36, 26, 32, 16, 18, 18, 20, 22, 16, 16, 18, 16, 16, 18, 14, 10]
+    widths = [20, 36, 26, 30, 20, 38, 16, 18, 18, 18, 20, 22, 12, 14, 14, 12, 14, 14, 12, 10]
     for col, (h, w) in enumerate(zip(headers, widths), start=1):
         ws.cell(row=1, column=col, value=h)
         ws.column_dimensions[get_column_letter(col)].width = w
@@ -653,8 +656,11 @@ def build_lrv_workbook_bytes(items: list[Any], *, is_template: bool = False) -> 
                 "0092.049.Р.13/1 0004 УКПГ.045.0077.001-ТХ3",
                 "УКПГ-2В Бованенковское НГКМ",
                 "Труба электросварная 159х8",
+                "Тр-159х8-09Г2С",
+                "Труба электросварная 159х8, 09Г2С, ГОСТ 10704-91",
                 "Труба",
-                "",
+                "16,0",
+                "приварной",
                 "09Г2С",
                 "ГОСТ 10704-91",
                 "ПАО «ЧТПЗ»",
@@ -675,7 +681,10 @@ def build_lrv_workbook_bytes(items: list[Any], *, is_template: bool = False) -> 
                 it.rd_code,
                 it.object_name,
                 it.short_name,
+                getattr(it, "marking", None) or "",
+                getattr(it, "full_name", None) or "",
                 _ev(it.category),
+                getattr(it, "pn_mpa", None) or "",
                 it.connection_type or "",
                 it.material,
                 it.ntd,
@@ -691,5 +700,5 @@ def build_lrv_workbook_bytes(items: list[Any], *, is_template: bool = False) -> 
             ]
             for it in items
         ]
-    _write_table_rows(ws, start_row=2, rows=rows, left_align_cols={1, 2, 3, 4, 8, 9})
+    _write_table_rows(ws, start_row=2, rows=rows, left_align_cols={1, 2, 3, 4, 5, 6, 10, 11, 12})
     return _workbook_to_bytes(wb)

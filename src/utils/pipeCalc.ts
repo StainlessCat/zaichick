@@ -3,8 +3,10 @@ import {
   JointKind,
   LrvElementCategory,
   LRVItem,
+  MaterialMasterSubcategory,
   TechCardItem,
   WeldJoint,
+  getMaterialMasterSubcategory,
 } from '../types/welding';
 
 export interface PipeDnMappingRecord {
@@ -828,68 +830,124 @@ export interface GenerateLrvFullNameParams {
   marking?: string | null;
   material?: string | null;
   ntd?: string | null;
+  diameterMm?: number | string | null;
+  wallThickness?: number | string | null;
+  diameterMm2?: number | string | null;
+  wallThickness2?: number | string | null;
+}
+
+function formatDimNum(val: number | string | null | undefined): string {
+  if (val == null) return '';
+  const s = String(val).trim();
+  if (!s || s === '0') return '';
+  return s.replace('.', ',');
 }
 
 /**
- * Автогенерация полного наименования позиции базы материалов (ЛРВ) по корпоративному шаблону:
- * Для категорий ЗРА и Фланцы:
- * <Краткое наименование>[ DN <DN>][, PN <PN> МПа][, <Маркировка>][, <Марка стали>][, <НТД>]
- * Для остальных категорий (Трубы, Отводы, Переходы, Тройники и др.): DN и PN не включаются:
- * <Краткое наименование>[, <Маркировка>][, <Марка стали>][, <НТД>]
+ * Автогенерация полного наименования позиции базы материалов по корпоративным правилам:
+ * 1. Для категорий tube (Трубы) и sdt (Отводы, Переходы, Тройники, Заглушки):
+ *    - Если заполнена маркировка:
+ *      <Краткое наименование>, <Маркировка>, <НТД>
+ *    - Если маркировка не заполнена:
+ *      - Одиночный диаметр: <Краткое наименование> <Ø1>х<S1>, <Материал>, <НТД> (напр. "Труба 530х8,0, К60, ГОСТ 180419-80")
+ *      - Два диаметра: <Краткое наименование> <Ø1>х<S1>-<Ø2>х<S2>, <Материал>, <НТД> (напр. "Переход 108х6-89х4, К48, ГОСТ 19375-2015")
+ * 2. Для категорий zra (ЗРА) и flange (Фланцы):
+ *    - Включаются DN и PN: <Краткое наименование>[ DN <DN>][, PN <PN> МПа][, <Маркировка>][, <Материал>][, <НТД>]
+ * 3. Для категорий weldolet (Штуцеры, Бобышки) и equip (Прочее):
+ *    - Без DN/PN: <Краткое наименование>[ <Ø1>х<S1>][, <Маркировка>][, <Материал>][, <НТД>]
  */
 export function generateLrvFullName(params: GenerateLrvFullNameParams): string {
   const shortName = (params.shortName || '').trim();
-  const rawCat = (params.category || (shortName ? detectLrvElementType(shortName) : '')).trim().toLowerCase();
-  const isZraOrFlange =
-    rawCat === 'зра' ||
-    rawCat === 'кран' ||
-    rawCat === 'фланец' ||
-    rawCat.includes('зра') ||
-    rawCat.includes('флан');
+  const subcategory: MaterialMasterSubcategory = getMaterialMasterSubcategory(
+    params.category || (shortName ? detectLrvElementType(shortName) : '')
+  );
+  const isZraOrFlange = subcategory === 'zra' || subcategory === 'flange';
+  const isTubeOrSdt = subcategory === 'tube' || subcategory === 'sdt';
 
-  const rawDn =
-    isZraOrFlange && params.dn1 != null && params.dn1 !== ''
-      ? String(params.dn1).trim()
-      : '';
-  const dnPart = rawDn ? `DN ${rawDn.replace(/^DN\s*/i, '')}` : '';
+  // 1. Трубы и СДТ
+  if (isTubeOrSdt) {
+    if (params.marking && params.marking.trim()) {
+      return [shortName, params.marking.trim(), params.ntd?.trim()].filter(Boolean).join(', ');
+    }
 
-  let head = '';
-  if (shortName && dnPart) {
-    head = `${shortName} ${dnPart}`;
-  } else if (shortName) {
-    head = shortName;
-  } else if (dnPart) {
-    head = dnPart;
-  }
+    const d1Str = formatDimNum(params.diameterMm);
+    const s1Str = formatDimNum(params.wallThickness);
+    const d2Str = formatDimNum(params.diameterMm2);
+    const s2Str = formatDimNum(params.wallThickness2);
 
-  const parts: string[] = [];
-  if (head) {
-    parts.push(head);
-  }
+    let dimStr = '';
+    if (d1Str && s1Str && d2Str && s2Str) {
+      dimStr = `${d1Str}х${s1Str}-${d2Str}х${s2Str}`;
+    } else if (d1Str && s1Str) {
+      dimStr = `${d1Str}х${s1Str}`;
+    }
 
-  if (isZraOrFlange && params.pnMpa != null) {
-    let pnStr = String(params.pnMpa).trim();
-    if (pnStr) {
-      pnStr = pnStr.replace(/^PN\s*/i, '').replace(/\s*МПа$/i, '').trim();
-      if (pnStr) {
-        parts.push(`PN ${pnStr} МПа`);
+    let head = shortName;
+    if (dimStr) {
+      const alreadyHasDims = /\d+(?:[.,]\d+)?\s*[xх×]\s*\d+(?:[.,]\d+)?/i.test(shortName);
+      if (!alreadyHasDims) {
+        head = shortName ? `${shortName} ${dimStr}` : dimStr;
       }
     }
+
+    return [head, params.material?.trim(), params.ntd?.trim()].filter(Boolean).join(', ');
   }
 
-  if (params.marking && params.marking.trim()) {
-    parts.push(params.marking.trim());
+  // 2. ЗРА и Фланцы
+  if (isZraOrFlange) {
+    const rawDn = params.dn1 != null && params.dn1 !== '' ? String(params.dn1).trim() : '';
+    const dnPart = rawDn ? `DN ${rawDn.replace(/^DN\s*/i, '')}` : '';
+
+    let head = '';
+    if (shortName && dnPart) {
+      head = `${shortName} ${dnPart}`;
+    } else if (shortName) {
+      head = shortName;
+    } else if (dnPart) {
+      head = dnPart;
+    }
+
+    const parts: string[] = [];
+    if (head) {
+      parts.push(head);
+    }
+
+    if (params.pnMpa != null) {
+      let pnStr = String(params.pnMpa).trim();
+      if (pnStr) {
+        pnStr = pnStr.replace(/^PN\s*/i, '').replace(/\s*МПа$/i, '').trim();
+        if (pnStr) {
+          parts.push(`PN ${pnStr} МПа`);
+        }
+      }
+    }
+
+    if (params.marking && params.marking.trim()) {
+      parts.push(params.marking.trim());
+    }
+    if (params.material && params.material.trim()) {
+      parts.push(params.material.trim());
+    }
+    if (params.ntd && params.ntd.trim()) {
+      parts.push(params.ntd.trim());
+    }
+
+    return parts.join(', ');
   }
 
-  if (params.material && params.material.trim()) {
-    parts.push(params.material.trim());
+  // 3. Штуцеры, бобышки, прочее
+  const d1Str = formatDimNum(params.diameterMm);
+  const s1Str = formatDimNum(params.wallThickness);
+  let dimStr = '';
+  if (d1Str && s1Str) {
+    dimStr = `${d1Str}х${s1Str}`;
+  }
+  let head = shortName;
+  if (dimStr && !/\d+(?:[.,]\d+)?\s*[xх×]\s*\d+(?:[.,]\d+)?/i.test(shortName)) {
+    head = shortName ? `${shortName} ${dimStr}` : dimStr;
   }
 
-  if (params.ntd && params.ntd.trim()) {
-    parts.push(params.ntd.trim());
-  }
-
-  return parts.join(', ');
+  return [head, params.marking?.trim(), params.material?.trim(), params.ntd?.trim()].filter(Boolean).join(', ');
 }
 
 export interface LrvSizeOption {

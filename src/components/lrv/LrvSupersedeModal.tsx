@@ -42,7 +42,7 @@ export const LrvSupersedeModal: React.FC<LrvSupersedeModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                Аннулирование позиции ЛРВ
+                Аннулирование позиции материала
               </h3>
               <p className="text-xs text-slate-500">
                 Защита целостности базы данных и исполнительной документации
