@@ -31,6 +31,7 @@ import {
   mmToInchDiameter,
   normalizeDecimalInput,
   normalizeStampString,
+  resolveLrvItemCategory,
   resolveWeldersSelection,
   searchLrvCatalogItems,
   validateElementsDiameterMatch,
@@ -289,31 +290,60 @@ export function useJointPassportForm({
     [baseLrvOptionsForElem2, elem2TypeFilter]
   );
 
+  const elem1EffectiveSizeForSearch = useMemo(() => {
+    if (!elem1SizeFilter || elem1SizeFilter === 'all') return 'all';
+    const existsForType = elem1AvailableSizes.some((s) => s.key === elem1SizeFilter);
+    return existsForType ? elem1SizeFilter : 'all';
+  }, [elem1SizeFilter, elem1AvailableSizes]);
+
+  const elem2EffectiveSizeForSearch = useMemo(() => {
+    if (!elem2SizeFilter || elem2SizeFilter === 'all') return 'all';
+    const existsForType = elem2AvailableSizes.some((s) => s.key === elem2SizeFilter);
+    return existsForType ? elem2SizeFilter : 'all';
+  }, [elem2SizeFilter, elem2AvailableSizes]);
+
   const filteredLrvOptionsElem1 = useMemo(() => {
-    const matches = searchLrvCatalogItems(
+    return searchLrvCatalogItems(
       availableLrvItems,
       elem1SearchQuery,
       elem1TypeFilter,
-      elem1SizeFilter
+      elem1EffectiveSizeForSearch
     );
-    if (selectedLrv1Item && !matches.some((m) => m.lrvCode === selectedLrv1Item.lrvCode)) {
-      return [selectedLrv1Item, ...matches];
-    }
-    return matches;
-  }, [availableLrvItems, elem1SearchQuery, elem1TypeFilter, elem1SizeFilter, selectedLrv1Item]);
+  }, [availableLrvItems, elem1SearchQuery, elem1TypeFilter, elem1EffectiveSizeForSearch]);
 
   const filteredLrvOptionsElem2 = useMemo(() => {
-    const matches = searchLrvCatalogItems(
+    return searchLrvCatalogItems(
       baseLrvOptionsForElem2,
       elem2SearchQuery,
       elem2TypeFilter,
-      elem2SizeFilter
+      elem2EffectiveSizeForSearch
     );
-    if (selectedLrv2Item && !matches.some((m) => m.lrvCode === selectedLrv2Item.lrvCode)) {
-      return [selectedLrv2Item, ...matches];
-    }
-    return matches;
-  }, [baseLrvOptionsForElem2, elem2SearchQuery, elem2TypeFilter, elem2SizeFilter, selectedLrv2Item]);
+  }, [baseLrvOptionsForElem2, elem2SearchQuery, elem2TypeFilter, elem2EffectiveSizeForSearch]);
+
+  const resolveFiltersFromJoint = (joint: WeldJoint) => {
+    const lrv1 = lrvCatalog.find((i) => i.lrvCode === joint.lrv1Code);
+    const lrv2 = lrvCatalog.find((i) => i.lrvCode === joint.lrv2Code);
+
+    const type1: LrvElementCategory = lrv1
+      ? resolveLrvItemCategory(lrv1)
+      : joint.elem1Name
+      ? detectLrvElementType(joint.elem1Name)
+      : 'Все типы';
+    const d1 = joint.elem1DiameterMm ?? joint.diameterMm ?? 0;
+    const w1 = joint.elem1WallThickness ?? joint.wallThickness ?? 0;
+    const size1 = d1 > 0 && w1 > 0 ? `${d1}x${w1}` : 'all';
+
+    const type2: LrvElementCategory = lrv2
+      ? resolveLrvItemCategory(lrv2)
+      : joint.elem2Name
+      ? detectLrvElementType(joint.elem2Name)
+      : 'Все типы';
+    const d2 = joint.elem2DiameterMm ?? joint.diameterMm ?? 0;
+    const w2 = joint.elem2WallThickness ?? joint.wallThickness ?? 0;
+    const size2 = d2 > 0 && w2 > 0 ? `${d2}x${w2}` : 'all';
+
+    return { type1, size1, type2, size2 };
+  };
 
   // Sync & guaranteed reset when modal opens or switches joint/mode
   useEffect(() => {
@@ -324,11 +354,7 @@ export function useJointPassportForm({
     setAllowCrossRdLrv(false);
     setFilterLrvBySameDiameter(true);
     setElem1SearchQuery('');
-    setElem1TypeFilter('Все типы');
-    setElem1SizeFilter('all');
     setElem2SearchQuery('');
-    setElem2TypeFilter('Все типы');
-    setElem2SizeFilter('all');
     setElem1AutoSelectedCode(null);
     setElem2AutoSelectedCode(null);
 
@@ -336,6 +362,11 @@ export function useJointPassportForm({
       setForm({ ...initialJoint });
       initialSnapshotRef.current = JSON.stringify(initialJoint);
       setIsSupplementaryMode(Boolean(initialJoint.isSupplementary));
+      const synced = resolveFiltersFromJoint(initialJoint);
+      setElem1TypeFilter(synced.type1);
+      setElem1SizeFilter(synced.size1);
+      setElem2TypeFilter(synced.type2);
+      setElem2SizeFilter(synced.size2);
       const stamps =
         initialJoint.welderStampsList ||
         (initialJoint.welderStamp ? [initialJoint.welderStamp] : []);
@@ -351,6 +382,10 @@ export function useJointPassportForm({
     }
 
     // Режим создания: гарантированный полный сброс с сохранением только объекта, РД и линии
+    setElem1TypeFilter('Все типы');
+    setElem1SizeFilter('all');
+    setElem2TypeFilter('Все типы');
+    setElem2SizeFilter('all');
     setIsSupplementaryMode(false);
     setWelder1Stamp('');
     setWelder2Stamp('');
@@ -514,6 +549,7 @@ export function useJointPassportForm({
   const handleSelectLrv1 = (code: string, isAuto = false) => {
     if (!code) {
       setElem1AutoSelectedCode(null);
+      setElem1SearchQuery('');
       setForm((prev) => ({
         ...prev,
         lrv1Code: '',
@@ -535,6 +571,14 @@ export function useJointPassportForm({
       setForm((prev) => ({ ...prev, lrv1Code: code }));
       return;
     }
+    // Синхронизируем тип элемента и типоразмер по коду ЛРВ
+    setElem1TypeFilter(resolveLrvItemCategory(item));
+    setElem1SizeFilter(
+      item.diameterMm > 0 && item.wallThickness > 0
+        ? `${item.diameterMm}x${item.wallThickness}`
+        : 'all'
+    );
+    setElem1SearchQuery('');
     setForm((prev) => ({
       ...prev,
       lrv1Code: item.lrvCode,
@@ -553,6 +597,7 @@ export function useJointPassportForm({
   const handleSelectLrv2 = (code: string, isAuto = false) => {
     if (!code) {
       setElem2AutoSelectedCode(null);
+      setElem2SearchQuery('');
       setForm((prev) => ({
         ...prev,
         lrv2Code: '',
@@ -576,6 +621,12 @@ export function useJointPassportForm({
     const chosenDiam = useSecondEnd ? item.diameterMm2! : item.diameterMm;
     const chosenWall = useSecondEnd ? item.wallThickness2 ?? item.wallThickness : item.wallThickness;
 
+    // Синхронизируем тип элемента и типоразмер по коду ЛРВ
+    setElem2TypeFilter(resolveLrvItemCategory(item));
+    setElem2SizeFilter(
+      chosenDiam > 0 && chosenWall > 0 ? `${chosenDiam}x${chosenWall}` : 'all'
+    );
+    setElem2SearchQuery('');
     setForm((prev) => ({
       ...prev,
       lrv2Code: item.lrvCode,
@@ -610,6 +661,10 @@ export function useJointPassportForm({
     typeFilter: LrvElementCategory,
     sizeFilter: string
   ) => {
+    // На заполненной карточке не перезаписываем существующий материал автоматически
+    if (form.lrv1Code || form.elem1Name || elem1Diam > 0) {
+      return;
+    }
     const hasCriteria =
       typeFilter !== 'Все типы' || sizeFilter !== 'all' || query.trim().length > 0;
     if (!hasCriteria) {
@@ -636,6 +691,10 @@ export function useJointPassportForm({
     typeFilter: LrvElementCategory,
     sizeFilter: string
   ) => {
+    // На заполненной карточке не перезаписываем существующий материал автоматически
+    if (form.lrv2Code || form.elem2Name || elem2Diam > 0) {
+      return;
+    }
     const hasCriteria =
       typeFilter !== 'Все типы' || sizeFilter !== 'all' || query.trim().length > 0;
     if (!hasCriteria) {
@@ -658,8 +717,13 @@ export function useJointPassportForm({
 
   const handleElem1TypeFilterChange = (nextType: LrvElementCategory) => {
     setElem1TypeFilter(nextType);
-    setElem1SizeFilter('all');
-    tryAutoSelectElem1(availableLrvItems, elem1SearchQuery, nextType, 'all');
+    // Сохраняем текущий размер (подсветится красным при несоответствии) и не затираем заполненные данные
+    const nextSizes = getAvailableSizesFromLrv(availableLrvItems, nextType);
+    const effectiveSize =
+      elem1SizeFilter !== 'all' && nextSizes.some((s) => s.key === elem1SizeFilter)
+        ? elem1SizeFilter
+        : 'all';
+    tryAutoSelectElem1(availableLrvItems, elem1SearchQuery, nextType, effectiveSize);
   };
 
   const handleElem1SizeFilterChange = (nextSize: string) => {
@@ -669,13 +733,17 @@ export function useJointPassportForm({
 
   const handleElem1SearchQueryChange = (nextQuery: string) => {
     setElem1SearchQuery(nextQuery);
-    tryAutoSelectElem1(availableLrvItems, nextQuery, elem1TypeFilter, elem1SizeFilter);
   };
 
   const handleElem2TypeFilterChange = (nextType: LrvElementCategory) => {
     setElem2TypeFilter(nextType);
-    setElem2SizeFilter('all');
-    tryAutoSelectElem2(baseLrvOptionsForElem2, elem2SearchQuery, nextType, 'all');
+    // Сохраняем текущий размер (подсветится красным при несоответствии) и не затираем заполненные данные
+    const nextSizes = getAvailableSizesFromLrv(baseLrvOptionsForElem2, nextType);
+    const effectiveSize =
+      elem2SizeFilter !== 'all' && nextSizes.some((s) => s.key === elem2SizeFilter)
+        ? elem2SizeFilter
+        : 'all';
+    tryAutoSelectElem2(baseLrvOptionsForElem2, elem2SearchQuery, nextType, effectiveSize);
   };
 
   const handleElem2SizeFilterChange = (nextSize: string) => {
@@ -685,7 +753,6 @@ export function useJointPassportForm({
 
   const handleElem2SearchQueryChange = (nextQuery: string) => {
     setElem2SearchQuery(nextQuery);
-    tryAutoSelectElem2(baseLrvOptionsForElem2, nextQuery, elem2TypeFilter, elem2SizeFilter);
   };
 
   const handleToggleAllowCrossRdLrv = (nextVal: boolean) => {
@@ -717,13 +784,15 @@ export function useJointPassportForm({
   const handleCopyElementsFromJoint = (donorJointId: string): WeldJoint | null => {
     const donor = copyableLineJoints.find((j) => j.id === donorJointId);
     if (!donor) return null;
-    setForm((prev) => copyBothElementsFromJoint(prev, donor));
+    const nextJoint = copyBothElementsFromJoint(form, donor);
+    setForm(nextJoint);
+    const synced = resolveFiltersFromJoint(nextJoint);
     setElem1SearchQuery('');
-    setElem1TypeFilter('Все типы');
-    setElem1SizeFilter('all');
+    setElem1TypeFilter(synced.type1);
+    setElem1SizeFilter(synced.size1);
     setElem2SearchQuery('');
-    setElem2TypeFilter('Все типы');
-    setElem2SizeFilter('all');
+    setElem2TypeFilter(synced.type2);
+    setElem2SizeFilter(synced.size2);
     setElem1AutoSelectedCode(null);
     setElem2AutoSelectedCode(null);
     return donor;
@@ -731,6 +800,9 @@ export function useJointPassportForm({
 
   const handleCopyElem1ToElem2 = () => {
     setElem2AutoSelectedCode(null);
+    setElem2SearchQuery('');
+    setElem2TypeFilter(elem1TypeFilter);
+    setElem2SizeFilter(elem1SizeFilter);
     setForm((prev) => ({
       ...prev,
       lrv2Code: prev.lrv1Code,
@@ -751,6 +823,14 @@ export function useJointPassportForm({
   const handleSwapElements = () => {
     setElem1AutoSelectedCode(null);
     setElem2AutoSelectedCode(null);
+    setElem1SearchQuery('');
+    setElem2SearchQuery('');
+    const prevType1 = elem1TypeFilter;
+    const prevSize1 = elem1SizeFilter;
+    setElem1TypeFilter(elem2TypeFilter);
+    setElem1SizeFilter(elem2SizeFilter);
+    setElem2TypeFilter(prevType1);
+    setElem2SizeFilter(prevSize1);
     setForm((prev) => ({
       ...prev,
       lrv1Code: prev.lrv2Code,

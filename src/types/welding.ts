@@ -69,6 +69,7 @@ export type RecordStatus = 'DRAFT' | 'VERIFIED' | 'LOCKED';
 export type AppSection =
   | 'registry'
   | 'testing_circuits'
+  | 'executive_docs'
   | 'laboratory'
   | 'project_linelist'
   | 'welding_tech'

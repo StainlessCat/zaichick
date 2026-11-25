@@ -13,6 +13,7 @@ from app.api.routes.admin import router as admin_router
 from app.api.routes.audit import router as audit_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.events import router as events_router
+from app.api.routes.executive_docs import router as executive_docs_router
 from app.api.routes.exports import router as exports_router
 from app.api.routes.facilities import router as facilities_router
 from app.api.routes.imports import router as imports_router
@@ -98,6 +99,7 @@ app.include_router(wps_router)
 app.include_router(naks_router)
 app.include_router(joints_router)
 app.include_router(test_circuits_router)
+app.include_router(executive_docs_router)
 app.include_router(lab_requests_router)
 app.include_router(welding_journals_router)
 app.include_router(reports_router)

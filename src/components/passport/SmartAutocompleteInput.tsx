@@ -25,8 +25,11 @@ export interface SmartAutocompleteInputProps<T = unknown> {
   dropdownAlign?: 'left' | 'right';
   showChevron?: boolean;
   clearable?: boolean;
+  clearTitle?: string;
+  leadingIcon?: React.ReactNode;
   disabled?: boolean;
   openOnFocus?: boolean;
+  onFocusChange?: (focused: boolean) => void;
   onBlurWithoutSelect?: () => void;
 }
 
@@ -45,8 +48,11 @@ export function SmartAutocompleteInput<T = unknown>({
   dropdownAlign = 'left',
   showChevron = false,
   clearable = true,
+  clearTitle = 'Очистить поле',
+  leadingIcon,
   disabled = false,
   openOnFocus = true,
+  onFocusChange,
   onBlurWithoutSelect,
 }: SmartAutocompleteInputProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
@@ -64,13 +70,14 @@ export function SmartAutocompleteInput<T = unknown>({
         if (isOpen) {
           setIsOpen(false);
           setActiveIndex(-1);
+          onFocusChange?.(false);
           onBlurWithoutSelect?.();
         }
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onBlurWithoutSelect]);
+  }, [isOpen, onBlurWithoutSelect, onFocusChange]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -96,6 +103,7 @@ export function SmartAutocompleteInput<T = unknown>({
     onSelectOption(opt);
     setIsOpen(false);
     setActiveIndex(-1);
+    onFocusChange?.(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -132,6 +140,7 @@ export function SmartAutocompleteInput<T = unknown>({
     } else if (e.key === 'Tab' && isOpen) {
       setIsOpen(false);
       setActiveIndex(-1);
+      onFocusChange?.(false);
       onBlurWithoutSelect?.();
     }
   };
@@ -141,6 +150,11 @@ export function SmartAutocompleteInput<T = unknown>({
   return (
     <div ref={containerRef} className="relative">
       <div className="relative flex items-center">
+        {leadingIcon && (
+          <span className="absolute left-2 pointer-events-none flex items-center">
+            {leadingIcon}
+          </span>
+        )}
         <input
           type="text"
           role="combobox"
@@ -153,9 +167,13 @@ export function SmartAutocompleteInput<T = unknown>({
           value={value}
           placeholder={placeholder}
           onFocus={() => {
+            onFocusChange?.(true);
             if (openOnFocus && !disabled) {
               setIsOpen(true);
             }
+          }}
+          onBlur={() => {
+            onFocusChange?.(false);
           }}
           onChange={(e) => {
             onChangeText(e.target.value);
@@ -166,6 +184,8 @@ export function SmartAutocompleteInput<T = unknown>({
           }}
           onKeyDown={handleKeyDown}
           className={`w-full transition-colors focus:outline-none focus:ring-1 focus:ring-[#1e3799] focus:border-[#1e3799] ${
+            leadingIcon ? 'pl-6' : ''
+          } ${
             hasRightControls ? (showChevron && clearable && value ? 'pr-11' : 'pr-6') : ''
           } ${inputClassName}`}
         />
@@ -185,9 +205,9 @@ export function SmartAutocompleteInput<T = unknown>({
                   }
                   setActiveIndex(-1);
                 }}
-                aria-label={`Очистить: ${ariaLabel}`}
-                title="Очистить"
-                className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                aria-label={`${clearTitle}: ${ariaLabel}`}
+                title={clearTitle}
+                className="p-0.5 rounded text-slate-400 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -199,6 +219,7 @@ export function SmartAutocompleteInput<T = unknown>({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setIsOpen((prev) => !prev)}
                 aria-label={`Показать варианты: ${ariaLabel}`}
+                title="Показать список"
                 className="p-0.5 rounded text-slate-400 hover:text-[#1e3799] hover:bg-sky-50 cursor-pointer"
               >
                 <ChevronDown

@@ -30,6 +30,7 @@ import { LrvCatalogView } from '../LrvCatalogView';
 import { AuditHistoryView } from '../AuditHistoryView';
 import { WikiView } from '../wiki';
 import { TestCircuitsView } from '../TestCircuitsView';
+import { ExecutiveDocsView } from '../executiveDocs';
 import type { useTestCircuitActions } from '../../hooks/useTestCircuitActions';
 import { useAuth, useAppContext } from '../../context';
 
@@ -348,6 +349,18 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
           onAssignJointsToCircuit={testCircuitActions.handleAssignJointsToCircuit}
           onUnassignJointsFromCircuit={testCircuitActions.handleUnassignJointsFromCircuit}
           onOpenJointPassport={onOpenEditPassport}
+        />
+      )}
+
+      {activeSection === 'executive_docs' && (
+        <ExecutiveDocsView
+          onOpenLineInRegistry={(uniqueLineId) => {
+            setSelectedObjectName('ALL');
+            setSelectedRdCode('ALL');
+            setColumnFilters({ uniqueLineId: [uniqueLineId] });
+            setActiveSection('registry');
+          }}
+          onOpenLineList={() => setActiveSection('project_linelist')}
         />
       )}
 

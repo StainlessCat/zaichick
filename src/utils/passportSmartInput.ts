@@ -263,6 +263,88 @@ export function clearElementFields(
 }
 
 /**
+ * Форматирует ключ типоразмера (напр. "159x8") в читаемую подпись "Ø159 × 8 мм",
+ * даже если этот типоразмер отсутствует в доступных размерах текущего типа элемента.
+ */
+export function formatSizeFilterKeyLabel(
+  sizeKey: string,
+  availableSizes: LrvSizeOption[]
+): string {
+  if (!sizeKey || sizeKey === 'all') return '';
+  const found = availableSizes.find((s) => s.key === sizeKey);
+  if (found) return found.label;
+  const parts = sizeKey.split(/[xх×]/i);
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    return `Ø${parts[0]} × ${parts[1]} мм`;
+  }
+  return sizeKey;
+}
+
+function normalizeElementCategory(cat: string): string {
+  const clean = (cat || '').trim();
+  if (clean === 'Кран') return 'зра';
+  return clean.toLowerCase();
+}
+
+export interface ElementMismatchState {
+  isSizeMismatch: boolean;
+  isMaterialMismatch: boolean;
+}
+
+/**
+ * Проверяет несоответствие текущих данных заполненной карточки выбранному типу элемента.
+ * Используется для красной подсветки несоответствующих полей без потери введённых данных.
+ */
+export function computeElementTypeMismatchState(params: {
+  typeFilter: string;
+  sizeFilter: string;
+  availableSizesForType: LrvSizeOption[];
+  selectedCategory: string | null;
+  hasFilledMaterial: boolean;
+  diam: number;
+  wall: number;
+}): ElementMismatchState {
+  const {
+    typeFilter,
+    sizeFilter,
+    availableSizesForType,
+    selectedCategory,
+    hasFilledMaterial,
+    diam,
+    wall,
+  } = params;
+
+  const cleanType = (typeFilter || 'Все типы').trim();
+  if (!cleanType || cleanType === 'Все типы' || cleanType === 'ALL') {
+    return { isSizeMismatch: false, isMaterialMismatch: false };
+  }
+
+  const isMaterialMismatch = Boolean(
+    hasFilledMaterial &&
+      selectedCategory &&
+      normalizeElementCategory(selectedCategory) !==
+        normalizeElementCategory(cleanType)
+  );
+
+  const activeSizeKey =
+    sizeFilter && sizeFilter !== 'all'
+      ? sizeFilter
+      : diam > 0 && wall > 0
+      ? `${diam}x${wall}`
+      : '';
+
+  const isSizeMismatch = Boolean(
+    activeSizeKey &&
+      !availableSizesForType.some((sz) => sz.key === activeSizeKey)
+  );
+
+  return {
+    isSizeMismatch,
+    isMaterialMismatch,
+  };
+}
+
+/**
  * Нормализация строки типоразмера для живого поиска (159×8, 159х8, 159*8, Ø159 -> 159x8).
  */
 function normalizeSizeSearch(raw: string): string {

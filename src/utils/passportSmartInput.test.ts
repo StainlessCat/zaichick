@@ -5,10 +5,12 @@ import {
   applyTraceabilitySuggestionToElement,
   buildElementTraceabilitySuggestions,
   clearElementFields,
+  computeElementTypeMismatchState,
   copyBothElementsFromJoint,
   createBlankJointForCreateMode,
   filterSizeOptionsLive,
   findUniqueAutoSelectableLrv,
+  formatSizeFilterKeyLabel,
   getCopyableLineJoints,
   pickDefaultDonorJointId,
   searchLrvCodeSuggestions,
@@ -249,6 +251,52 @@ describe('passportSmartInput', () => {
       expect(findUniqueAutoSelectableLrv([item], 'ЛРВ-777')).toBeNull();
       expect(findUniqueAutoSelectableLrv([item, makeLrv({ id: '2', lrvCode: 'ЛРВ-778' })], '')).toBeNull();
       expect(findUniqueAutoSelectableLrv([], '')).toBeNull();
+    });
+
+    it('выявляет несоответствие материала и типоразмера при смене типа элемента на заполненной карточке', () => {
+      const elbowSizes: LrvSizeOption[] = [
+        { key: '219x10', label: 'Ø219 × 10 мм', diameterMm: 219, wallThickness: 10 },
+      ];
+
+      // Сменили тип с Трубы (159x8) на Отвод (у которого есть только 219x10)
+      const mismatchBoth = computeElementTypeMismatchState({
+        typeFilter: 'Отвод',
+        sizeFilter: '159x8',
+        availableSizesForType: elbowSizes,
+        selectedCategory: 'Труба',
+        hasFilledMaterial: true,
+        diam: 159,
+        wall: 8,
+      });
+      expect(mismatchBoth.isMaterialMismatch).toBe(true);
+      expect(mismatchBoth.isSizeMismatch).toBe(true);
+      expect(formatSizeFilterKeyLabel('159x8', elbowSizes)).toBe('Ø159 × 8 мм');
+
+      // Если размер 219x10 у Отвода есть, несоответствие только по материалу
+      const mismatchMaterialOnly = computeElementTypeMismatchState({
+        typeFilter: 'Отвод',
+        sizeFilter: '219x10',
+        availableSizesForType: elbowSizes,
+        selectedCategory: 'Труба',
+        hasFilledMaterial: true,
+        diam: 219,
+        wall: 10,
+      });
+      expect(mismatchMaterialOnly.isMaterialMismatch).toBe(true);
+      expect(mismatchMaterialOnly.isSizeMismatch).toBe(false);
+
+      // При возврате типа на «Труба» или «Все типы» подсветка снимается
+      const cleared = computeElementTypeMismatchState({
+        typeFilter: 'Все типы',
+        sizeFilter: '159x8',
+        availableSizesForType: elbowSizes,
+        selectedCategory: 'Труба',
+        hasFilledMaterial: true,
+        diam: 159,
+        wall: 8,
+      });
+      expect(cleared.isMaterialMismatch).toBe(false);
+      expect(cleared.isSizeMismatch).toBe(false);
     });
   });
 

@@ -19,6 +19,7 @@ from app.models.enums import (
     WeldingMaterialTypeEnum,
     WeldingTypeEnum,
 )
+from app.models.executive_doc import ExecutiveDoc
 from app.models.facility import CustomWeatherStation, Facility, FacilityRdCode
 from app.models.joint import WeldJoint
 from app.models.rate_limit import LoginRateLimit
@@ -48,6 +49,7 @@ __all__ = [
     "CustomWeatherStation",
     "DepartmentEnum",
     "ElementCombinationEnum",
+    "ExecutiveDoc",
     "Facility",
     "FacilityRdCode",
     "Inspector",

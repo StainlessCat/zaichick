@@ -92,6 +92,11 @@ const MAIN_NAV_ITEMS: MainNavItem[] = [
     title: 'Испытательные контуры и готовность к испытаниям',
   },
   {
+    id: 'executive_docs',
+    shortLabel: 'Исп. документация',
+    title: 'Исполнительная документация',
+  },
+  {
     id: 'lrv_catalog',
     shortLabel: 'База материалов',
     title: 'База материалов и комплектующих',

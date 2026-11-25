@@ -31,7 +31,9 @@ import {
 import {
   applyTraceabilitySuggestionToElement,
   buildElementTraceabilitySuggestions,
+  computeElementTypeMismatchState,
   filterSizeOptionsLive,
+  formatSizeFilterKeyLabel,
   searchLrvCodeSuggestions,
   TraceabilityField,
   TraceabilitySuggestion,
@@ -66,7 +68,7 @@ export interface PassportElementsTabProps {
   elem1AvailableSizes: LrvSizeOption[];
   elem1SearchQuery: string;
   setElem1SearchQuery: (v: string) => void;
-  elem1AutoSelectedCode: string | null;
+  elem1AutoSelectedCode?: string | null;
   elem2TypeFilter: LrvElementCategory;
   setElem2TypeFilter: (v: LrvElementCategory) => void;
   elem2SizeFilter: string;
@@ -74,7 +76,7 @@ export interface PassportElementsTabProps {
   elem2AvailableSizes: LrvSizeOption[];
   elem2SearchQuery: string;
   setElem2SearchQuery: (v: string) => void;
-  elem2AutoSelectedCode: string | null;
+  elem2AutoSelectedCode?: string | null;
   filteredLrvOptionsElem1: LRVItem[];
   filteredLrvOptionsElem2: LRVItem[];
   selectedLrv1Item?: LRVItem;
@@ -123,6 +125,22 @@ function filterTraceabilityOptions(
   }));
 }
 
+function formatCompactMaterialDisplay(
+  selectedLrvItem?: LRVItem,
+  elemName?: string
+): string {
+  if (selectedLrvItem) {
+    const dims = selectedLrvItem.diameterMm2
+      ? `Ø${selectedLrvItem.diameterMm}×${selectedLrvItem.wallThickness} / Ø${selectedLrvItem.diameterMm2}×${selectedLrvItem.wallThickness2 ?? selectedLrvItem.wallThickness}`
+      : `Ø${selectedLrvItem.diameterMm}×${selectedLrvItem.wallThickness}`;
+    const parts = [selectedLrvItem.shortName];
+    if (selectedLrvItem.material) parts.push(`ст. ${selectedLrvItem.material}`);
+    parts.push(dims);
+    return parts.join(' · ');
+  }
+  return elemName || '';
+}
+
 interface ElementCardProps {
   slot: 1 | 2;
   form: WeldJoint;
@@ -139,13 +157,11 @@ interface ElementCardProps {
   availableSizes: LrvSizeOption[];
   searchQuery: string;
   setSearchQuery: (v: string) => void;
-  autoSelectedCode: string | null;
   lrvPoolForCodeSearch: LRVItem[];
   filteredLrvOptions: LRVItem[];
   selectedLrvItem?: LRVItem;
   onSelectLrv: (code: string) => void;
   onClearElement: () => void;
-  formatLrvOptionLabel: (item: LRVItem) => string;
 }
 
 const ElementCard: React.FC<ElementCardProps> = ({
@@ -164,13 +180,11 @@ const ElementCard: React.FC<ElementCardProps> = ({
   availableSizes,
   searchQuery,
   setSearchQuery,
-  autoSelectedCode,
   lrvPoolForCodeSearch,
   filteredLrvOptions,
   selectedLrvItem,
   onSelectLrv,
   onClearElement,
-  formatLrvOptionLabel,
 }) => {
   const isFirst = slot === 1;
   const lrvCode = isFirst ? form.lrv1Code : form.lrv2Code;
@@ -184,18 +198,56 @@ const ElementCard: React.FC<ElementCardProps> = ({
   const heatNumber = isFirst ? form.elem1HeatNumber || '' : form.elem2HeatNumber || '';
   const batchNumber = isFirst ? form.elem1BatchNumber || '' : form.elem2BatchNumber || '';
 
+  // Проверка несоответствия данных заполненной карточки выбранному типу элемента
+  const selectedCategory = useMemo(() => {
+    if (selectedLrvItem) return resolveLrvItemCategory(selectedLrvItem);
+    if (elemName) return detectLrvElementType(elemName);
+    return null;
+  }, [selectedLrvItem, elemName]);
+
+  const hasFilledMaterial = Boolean(lrvCode || elemName || diam > 0);
+
+  const { isSizeMismatch, isMaterialMismatch } = useMemo(
+    () =>
+      computeElementTypeMismatchState({
+        typeFilter,
+        sizeFilter,
+        availableSizesForType: availableSizes,
+        selectedCategory,
+        hasFilledMaterial,
+        diam,
+        wall,
+      }),
+    [typeFilter, sizeFilter, availableSizes, selectedCategory, hasFilledMaterial, diam, wall]
+  );
+
   // Локальный текст живого поиска типоразмера
-  const activeSizeLabel = useMemo(() => {
-    if (!sizeFilter || sizeFilter === 'all') return '';
-    return availableSizes.find((s) => s.key === sizeFilter)?.label || sizeFilter;
-  }, [sizeFilter, availableSizes]);
+  const activeSizeLabel = useMemo(
+    () => formatSizeFilterKeyLabel(sizeFilter, availableSizes),
+    [sizeFilter, availableSizes]
+  );
 
   const [sizeInputText, setSizeInputText] = useState(activeSizeLabel);
+
+  // Локальный текст объединённого поля «Поиск + Выбор изделия из базы ЛРВ»
+  const activeMaterialLabel = useMemo(
+    () => formatCompactMaterialDisplay(selectedLrvItem, elemName),
+    [selectedLrvItem, elemName]
+  );
+
+  const [materialInputText, setMaterialInputText] = useState(activeMaterialLabel);
+  const [isMaterialFocused, setIsMaterialFocused] = useState(false);
   const [bundleFilledHint, setBundleFilledHint] = useState<string | null>(null);
 
   useEffect(() => {
     setSizeInputText(activeSizeLabel);
   }, [activeSizeLabel]);
+
+  useEffect(() => {
+    if (!isMaterialFocused) {
+      setMaterialInputText(activeMaterialLabel);
+    }
+  }, [activeMaterialLabel, isMaterialFocused]);
 
   useEffect(() => {
     setBundleFilledHint(null);
@@ -225,6 +277,30 @@ const ElementCard: React.FC<ElementCardProps> = ({
     }
     return items;
   }, [availableSizes, sizeInputText, activeSizeLabel]);
+
+  const materialOptions = useMemo<SmartAutocompleteOption<LRVItem>[]>(() => {
+    return filteredLrvOptions.map((item) => {
+      const dims = item.diameterMm2
+        ? `Ø${item.diameterMm}×${item.wallThickness} / Ø${item.diameterMm2}×${item.wallThickness2 ?? item.wallThickness}`
+        : `Ø${item.diameterMm}×${item.wallThickness}`;
+      const metaParts: string[] = [];
+      if (item.material) metaParts.push(`ст. ${item.material}`);
+      if (item.manufacturer) metaParts.push(item.manufacturer);
+      if (item.ntd) metaParts.push(item.ntd);
+      metaParts.push(`ЛРВ ${item.lrvCode}`);
+      if (item.status === 'superseded' || item.status === 'archived') {
+        metaParts.push(`аннулирована · ${item.replacementLetter || 'заменена'}`);
+      }
+      return {
+        key: item.id,
+        value: item.lrvCode,
+        label: item.shortName,
+        accentLabel: dims,
+        meta: metaParts.join(' · '),
+        data: item,
+      };
+    });
+  }, [filteredLrvOptions]);
 
   const lrvCodeOptions = useMemo<SmartAutocompleteOption<LRVItem>[]>(() => {
     const matched = searchLrvCodeSuggestions(lrvPoolForCodeSearch, lrvCode || '', 25);
@@ -304,10 +380,6 @@ const ElementCard: React.FC<ElementCardProps> = ({
     }
   };
 
-  const showAutoSelectedNotice = Boolean(
-    autoSelectedCode && autoSelectedCode === lrvCode && selectedLrvItem
-  );
-
   const hasAnyElementData = Boolean(
     lrvCode ||
       elemName ||
@@ -326,48 +398,34 @@ const ElementCard: React.FC<ElementCardProps> = ({
       sizeFilter !== 'all'
   );
 
+  const mismatchTextClass = isMaterialMismatch ? 'text-red-600' : '';
+
   return (
     <div className="lg:col-span-5 p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 flex flex-col justify-between">
       <div className="space-y-2.5">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xs font-bold text-[#1e3799]">
-              Элемент {slot}
-            </span>
-            {!disabled && hasAnyElementData && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSizeInputText('');
-                  setBundleFilledHint(null);
-                  onClearElement();
-                }}
-                aria-label={`Очистить все поля Элемента ${slot}`}
-                title={`Очистить все поля Элемента ${slot}`}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-200 bg-white text-[10px] font-medium text-slate-500 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50 transition-colors cursor-pointer"
-              >
-                <RotateCcw className="w-2.5 h-2.5" />
-                <span>Очистить</span>
-              </button>
-            )}
-          </div>
-          <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border font-mono tabular-nums text-[11px] font-bold shrink-0 ${
-              isFirst || diameterIsMatch
-                ? 'bg-white border-slate-200 text-[#1e3799]'
-                : 'bg-red-100 border-red-300 text-red-800'
-            }`}
-          >
-            <Lock className="w-3 h-3 text-slate-400" />
-            <span>
-              {diam > 0
-                ? `Из базы ЛРВ · Ø${diam}×${wall} мм`
-                : 'Не выбран'}
-            </span>
+          <span className="text-xs font-bold text-[#1e3799] whitespace-nowrap shrink-0">
+            Элемент {slot}
           </span>
+          {!disabled && hasAnyElementData && (
+            <button
+              type="button"
+              onClick={() => {
+                setSizeInputText('');
+                setMaterialInputText('');
+                setBundleFilledHint(null);
+                onClearElement();
+              }}
+              aria-label={`Очистить все поля Элемента ${slot}`}
+              title={`Очистить все поля Элемента ${slot}`}
+              className="p-1 rounded border border-slate-200 bg-white text-slate-400 hover:text-rose-700 hover:border-rose-200 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Каскадный подбор: 1. Тип -> 2. Типоразмер -> 3. Материал ЛРВ */}
+        {/* Каскадный подбор: 1. Тип -> 2. Типоразмер -> 3. Поиск и выбор изделия из базы ЛРВ */}
         <div className="p-2.5 rounded-lg bg-white border border-slate-200/90 space-y-2">
           <div className="grid grid-cols-12 gap-1.5">
             <div className="col-span-6">
@@ -380,8 +438,8 @@ const ElementCard: React.FC<ElementCardProps> = ({
                     type="button"
                     onClick={() => setTypeFilter('Все типы')}
                     aria-label={`Сбросить тип элемента ${slot}`}
-                    title="Сбросить фильтр типа"
-                    className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+                    title="Сбросить тип элемента"
+                    className="p-0.5 rounded text-slate-400 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
                   >
                     <X className="w-2.5 h-2.5" />
                   </button>
@@ -435,80 +493,74 @@ const ElementCard: React.FC<ElementCardProps> = ({
                 placeholder={`Все размеры · ${availableSizes.length}`}
                 ariaLabel={`Типоразмер Элемента ${slot}`}
                 emptyText="Типоразмер не найден"
+                clearTitle="Сбросить типоразмер"
                 showChevron
                 clearable
                 disabled={disabled}
-                inputClassName="px-2 py-1 bg-slate-50 border border-slate-300 rounded text-[11px] font-mono tabular-nums font-semibold text-slate-800"
+                inputClassName={`px-2 py-1 bg-slate-50 border rounded text-[11px] font-mono tabular-nums font-semibold ${
+                  isSizeMismatch
+                    ? 'border-red-400 text-red-600'
+                    : 'border-slate-300 text-slate-800'
+                }`}
               />
             </div>
           </div>
 
-          <div className="relative">
-            <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Уточнить поиск: марка стали, завод, ГОСТ..."
-              aria-label={`Поиск Элемента ${slot} по базе ЛРВ`}
-              className="w-full pl-6 pr-6 py-1 bg-white border border-slate-300 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-[#1e3799] focus:border-[#1e3799]"
-            />
-            {!disabled && searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                aria-label={`Очистить поиск Элемента ${slot}`}
-                title="Очистить поиск"
-                className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 absolute right-1 top-1/2 -translate-y-1/2 cursor-pointer"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-
+          {/* Объединённое поле поиска и выбора изделия из базы ЛРВ */}
           <div>
             <div className="flex items-center justify-between gap-2 mb-0.5">
               <label className="text-[10px] font-bold text-slate-600">
                 3. Изделие из базы ЛРВ
               </label>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-mono tabular-nums text-slate-500">
-                  найдено: {filteredLrvOptions.length}
-                </span>
-                {!disabled && (lrvCode || elemName) && (
-                  <button
-                    type="button"
-                    onClick={() => onSelectLrv('')}
-                    aria-label={`Очистить выбранное изделие Элемента ${slot}`}
-                    title="Сбросить выбранный материал"
-                    className="p-0.5 rounded text-slate-400 hover:text-rose-700 hover:bg-rose-50 cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
+              <span className="text-[10px] font-mono tabular-nums text-slate-500">
+                найдено: {filteredLrvOptions.length}
+              </span>
             </div>
-            <select
-              value={lrvCode}
-              onChange={(e) => onSelectLrv(e.target.value)}
-              aria-label={`Изделие Элемент ${slot} из базы ЛРВ`}
-              className="w-full px-2 py-1.5 bg-white border border-[#1e3799] rounded text-xs font-semibold text-[#1e3799] focus:outline-none focus:ring-1 focus:ring-[#1e3799]"
-            >
-              <option value="">— Выберите материал из базы ЛРВ —</option>
-              {filteredLrvOptions.map((item) => (
-                <option key={item.id} value={item.lrvCode}>
-                  {formatLrvOptionLabel(item)}
-                </option>
-              ))}
-            </select>
-            {showAutoSelectedNotice && (
-              <div className="mt-1 flex items-center gap-1 text-[10px] text-[#1e3799] font-medium">
-                <CheckCircle2 className="w-3 h-3 shrink-0" />
-                <span>
-                  Автоподстановка: единственный подходящий вариант · {autoSelectedCode}
-                </span>
-              </div>
-            )}
+            <SmartAutocompleteInput<LRVItem>
+              value={materialInputText}
+              onFocusChange={(focused) => {
+                setIsMaterialFocused(focused);
+                if (!focused) {
+                  setMaterialInputText(activeMaterialLabel);
+                  if (searchQuery) setSearchQuery('');
+                }
+              }}
+              onChangeText={(nextText) => {
+                setMaterialInputText(nextText);
+                setSearchQuery(nextText);
+              }}
+              onSelectOption={(opt) => {
+                const code = opt.data ? opt.data.lrvCode : opt.value;
+                onSelectLrv(code);
+                if (opt.data) {
+                  setMaterialInputText(formatCompactMaterialDisplay(opt.data));
+                }
+              }}
+              onClear={() => {
+                setMaterialInputText('');
+                setSearchQuery('');
+                onSelectLrv('');
+              }}
+              onBlurWithoutSelect={() => {
+                setMaterialInputText(activeMaterialLabel);
+                if (searchQuery) setSearchQuery('');
+              }}
+              options={materialOptions}
+              selectedKey={selectedLrvItem?.id}
+              placeholder="Поиск и выбор: марка стали, завод, ГОСТ, ЛРВ..."
+              ariaLabel={`Изделие Элемент ${slot} из базы ЛРВ`}
+              emptyText="Подходящие материалы не найдены"
+              clearTitle="Очистить выбранный материал"
+              leadingIcon={<Search className="w-3 h-3 text-slate-400" />}
+              showChevron
+              clearable
+              disabled={disabled}
+              inputClassName={`py-1.5 bg-white border rounded text-xs font-semibold ${
+                isMaterialMismatch
+                  ? 'border-red-400 text-red-600'
+                  : 'border-[#1e3799] text-[#1e3799]'
+              }`}
+            />
           </div>
 
           {/* Прямой ввод кода ЛРВ с автодополнением ближайших совпадений */}
@@ -533,11 +585,16 @@ const ElementCard: React.FC<ElementCardProps> = ({
                 placeholder="Введите код ЛРВ..."
                 ariaLabel={`Прямой ввод кода ЛРВ Элемент ${slot}`}
                 emptyText="Код ЛРВ не найден в каталоге"
+                clearTitle="Очистить код ЛРВ"
                 dropdownAlign="right"
                 dropdownClassName="w-72"
                 clearable
                 disabled={disabled}
-                inputClassName="px-2 py-0.5 bg-slate-50 border border-slate-300 rounded text-[11px] font-mono tabular-nums font-bold text-[#1e3799]"
+                inputClassName={`px-2 py-0.5 bg-slate-50 border rounded text-[11px] font-mono tabular-nums font-bold ${
+                  isMaterialMismatch
+                    ? 'border-red-400 text-red-600'
+                    : 'border-slate-300 text-[#1e3799]'
+                }`}
               />
             </div>
           </div>
@@ -549,7 +606,10 @@ const ElementCard: React.FC<ElementCardProps> = ({
             <div className="flex gap-1">
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  setSizeFilter(
+                    `${selectedLrvItem.diameterMm}x${selectedLrvItem.wallThickness}`
+                  );
                   setForm((prev) =>
                     isFirst
                       ? {
@@ -565,8 +625,8 @@ const ElementCard: React.FC<ElementCardProps> = ({
                           elem2DiameterMm: selectedLrvItem.diameterMm,
                           elem2WallThickness: selectedLrvItem.wallThickness,
                         }
-                  )
-                }
+                  );
+                }}
                 className={`px-2 py-0.5 rounded font-mono tabular-nums border cursor-pointer ${
                   diam === selectedLrvItem.diameterMm
                     ? 'bg-[#1e3799] text-white border-[#1e3799]'
@@ -577,30 +637,27 @@ const ElementCard: React.FC<ElementCardProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  const wt2 =
+                    selectedLrvItem.wallThickness2 ?? selectedLrvItem.wallThickness;
+                  setSizeFilter(`${selectedLrvItem.diameterMm2!}x${wt2}`);
                   setForm((prev) =>
                     isFirst
                       ? {
                           ...prev,
                           elem1DiameterMm: selectedLrvItem.diameterMm2!,
-                          elem1WallThickness:
-                            selectedLrvItem.wallThickness2 ??
-                            selectedLrvItem.wallThickness,
+                          elem1WallThickness: wt2,
                           diameterMm: selectedLrvItem.diameterMm2!,
                           diameterInch: mmToInchDiameter(selectedLrvItem.diameterMm2!),
-                          wallThickness:
-                            selectedLrvItem.wallThickness2 ??
-                            selectedLrvItem.wallThickness,
+                          wallThickness: wt2,
                         }
                       : {
                           ...prev,
                           elem2DiameterMm: selectedLrvItem.diameterMm2!,
-                          elem2WallThickness:
-                            selectedLrvItem.wallThickness2 ??
-                            selectedLrvItem.wallThickness,
+                          elem2WallThickness: wt2,
                         }
-                  )
-                }
+                  );
+                }}
                 className={`px-2 py-0.5 rounded font-mono tabular-nums border cursor-pointer ${
                   diam === selectedLrvItem.diameterMm2
                     ? 'bg-[#1e3799] text-white border-[#1e3799]'
@@ -619,7 +676,11 @@ const ElementCard: React.FC<ElementCardProps> = ({
           <div className="col-span-2">
             <div className="flex items-center justify-between text-[11px] text-slate-500 mb-0.5">
               <span>Краткое наименование</span>
-              <span className="font-mono text-[10px] text-[#1e3799] font-semibold">
+              <span
+                className={`font-mono text-[10px] font-semibold ${
+                  isMaterialMismatch ? 'text-red-600' : 'text-[#1e3799]'
+                }`}
+              >
                 {selectedLrvItem
                   ? `${resolveLrvItemCategory(selectedLrvItem)}${
                       resolveLrvItemCategory(selectedLrvItem) === 'ЗРА'
@@ -633,7 +694,9 @@ const ElementCard: React.FC<ElementCardProps> = ({
             </div>
             <div
               aria-label={`Наименование Элемента ${slot} из базы ЛРВ`}
-              className="w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs font-semibold text-slate-800 select-all"
+              className={`w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs font-semibold select-all ${
+                mismatchTextClass || 'text-slate-800'
+              }`}
             >
               {elemName || '—'}
             </div>
@@ -645,7 +708,9 @@ const ElementCard: React.FC<ElementCardProps> = ({
             <div
               aria-label={`Диаметр Элемента ${slot}`}
               className={`w-full px-2.5 py-1.5 border rounded text-xs font-mono tabular-nums font-bold ${
-                isFirst || diameterIsMatch
+                isMaterialMismatch
+                  ? 'bg-slate-100/90 border-slate-200 text-red-600'
+                  : isFirst || diameterIsMatch
                   ? 'bg-slate-100/90 border-slate-200 text-[#1e3799]'
                   : 'bg-red-50 border-red-400 text-red-700'
               }`}
@@ -657,7 +722,11 @@ const ElementCard: React.FC<ElementCardProps> = ({
             <label className="block text-[11px] text-slate-500 mb-0.5">
               Толщина S, мм
             </label>
-            <div className="w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs font-mono tabular-nums text-slate-800">
+            <div
+              className={`w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs font-mono tabular-nums ${
+                mismatchTextClass || 'text-slate-800'
+              }`}
+            >
               {wall > 0 ? wall : '—'}
             </div>
           </div>
@@ -665,7 +734,11 @@ const ElementCard: React.FC<ElementCardProps> = ({
             <label className="block text-[11px] text-slate-500 mb-0.5">
               Материал
             </label>
-            <div className="w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs font-mono text-slate-800">
+            <div
+              className={`w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs font-mono ${
+                mismatchTextClass || 'text-slate-800'
+              }`}
+            >
               {elemMaterial || '—'}
             </div>
           </div>
@@ -673,7 +746,11 @@ const ElementCard: React.FC<ElementCardProps> = ({
             <label className="block text-[11px] text-slate-500 mb-0.5">
               НТД
             </label>
-            <div className="w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs text-slate-800 truncate">
+            <div
+              className={`w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs truncate ${
+                mismatchTextClass || 'text-slate-800'
+              }`}
+            >
               {elemNtd || '—'}
             </div>
           </div>
@@ -683,7 +760,9 @@ const ElementCard: React.FC<ElementCardProps> = ({
             </label>
             <div
               aria-label={`Завод-поставщик Элемента ${slot}`}
-              className="w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs text-slate-800 truncate"
+              className={`w-full px-2.5 py-1.5 bg-slate-100/90 border border-slate-200 rounded text-xs truncate ${
+                mismatchTextClass || 'text-slate-800'
+              }`}
               title={elemManufacturer || selectedLrvItem?.manufacturer || ''}
             >
               {elemManufacturer || selectedLrvItem?.manufacturer || '—'}
@@ -715,10 +794,13 @@ const ElementCard: React.FC<ElementCardProps> = ({
               placeholder={`Зав. № детали ${slot}`}
               ariaLabel={`Заводской номер Элемента ${slot}`}
               emptyText="Нет сохранённых заводских номеров"
+              clearTitle="Очистить заводской номер"
               dropdownClassName="w-72"
               clearable
               disabled={disabled}
-              inputClassName="px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono tabular-nums font-semibold text-slate-900"
+              inputClassName={`px-2.5 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono tabular-nums font-semibold ${
+                mismatchTextClass || 'text-slate-900'
+              }`}
             />
           </div>
           <div className="col-span-5">
@@ -739,7 +821,9 @@ const ElementCard: React.FC<ElementCardProps> = ({
                 }
                 placeholder={isFirst ? 'Напр.: 11.8' : 'Напр.: 0.35'}
                 aria-label={`Длина Элемента ${slot}`}
-                className="w-full pl-2.5 pr-6 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono tabular-nums font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-[#1e3799]"
+                className={`w-full pl-2.5 pr-6 py-1.5 bg-white border border-[#1e3799]/50 rounded text-xs font-mono tabular-nums font-semibold focus:outline-none focus:ring-1 focus:ring-[#1e3799] ${
+                  mismatchTextClass || 'text-slate-900'
+                }`}
               />
               {!disabled && lengthVal && (
                 <button
@@ -752,8 +836,8 @@ const ElementCard: React.FC<ElementCardProps> = ({
                     )
                   }
                   aria-label={`Очистить длину Элемента ${slot}`}
-                  title="Очистить"
-                  className="p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 absolute right-1 cursor-pointer"
+                  title="Очистить длину"
+                  className="p-0.5 rounded text-slate-400 hover:text-rose-700 hover:bg-rose-50 absolute right-1 cursor-pointer"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -784,11 +868,14 @@ const ElementCard: React.FC<ElementCardProps> = ({
               placeholder="№ серт."
               ariaLabel={`Номер сертификата качества Элемента ${slot}`}
               emptyText="Нет сертификатов в АВК и истории"
+              clearTitle="Очистить номер сертификата"
               dropdownAlign="left"
               dropdownClassName="w-64 sm:w-72"
               clearable
               disabled={disabled}
-              inputClassName="px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono tabular-nums text-slate-900"
+              inputClassName={`px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono tabular-nums ${
+                mismatchTextClass || 'text-slate-900'
+              }`}
             />
           </div>
           <div>
@@ -811,11 +898,14 @@ const ElementCard: React.FC<ElementCardProps> = ({
               placeholder="№ плавки"
               ariaLabel={`Номер плавки Элемента ${slot}`}
               emptyText="Нет плавок в АВК и истории"
+              clearTitle="Очистить номер плавки"
               dropdownAlign="left"
               dropdownClassName="w-64 sm:w-72"
               clearable
               disabled={disabled}
-              inputClassName="px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono tabular-nums text-slate-900"
+              inputClassName={`px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono tabular-nums ${
+                mismatchTextClass || 'text-slate-900'
+              }`}
             />
           </div>
           <div>
@@ -838,11 +928,14 @@ const ElementCard: React.FC<ElementCardProps> = ({
               placeholder="№ партии"
               ariaLabel={`Номер партии Элемента ${slot}`}
               emptyText="Нет партий в АВК и истории"
+              clearTitle="Очистить номер партии"
               dropdownAlign="right"
               dropdownClassName="w-64 sm:w-72"
               clearable
               disabled={disabled}
-              inputClassName="px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono tabular-nums text-slate-900"
+              inputClassName={`px-2 py-1 bg-white border border-slate-300 rounded text-[11px] font-mono tabular-nums ${
+                mismatchTextClass || 'text-slate-900'
+              }`}
             />
           </div>
         </div>
@@ -881,7 +974,6 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
   elem1AvailableSizes,
   elem1SearchQuery,
   setElem1SearchQuery,
-  elem1AutoSelectedCode,
   elem2TypeFilter,
   setElem2TypeFilter,
   elem2SizeFilter,
@@ -889,7 +981,6 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
   elem2AvailableSizes,
   elem2SearchQuery,
   setElem2SearchQuery,
-  elem2AutoSelectedCode,
   filteredLrvOptionsElem1,
   filteredLrvOptionsElem2,
   selectedLrv1Item,
@@ -901,7 +992,6 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
   handleCopyElementsFromJoint,
   handleCopyElem1ToElem2,
   handleSwapElements,
-  formatLrvOptionLabel,
 }) => {
   const [selectedDonorId, setSelectedDonorId] = useState<string>(defaultDonorJointId);
   const [copiedDonorNotice, setCopiedDonorNotice] = useState<string | null>(null);
@@ -1126,13 +1216,11 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
             availableSizes={elem1AvailableSizes}
             searchQuery={elem1SearchQuery}
             setSearchQuery={setElem1SearchQuery}
-            autoSelectedCode={elem1AutoSelectedCode}
             lrvPoolForCodeSearch={availableLrvItems}
             filteredLrvOptions={filteredLrvOptionsElem1}
             selectedLrvItem={selectedLrv1Item}
             onSelectLrv={handleSelectLrv1}
             onClearElement={handleClearElem1}
-            formatLrvOptionLabel={formatLrvOptionLabel}
           />
 
           {/* ЦЕНТРАЛЬНАЯ КОЛОНКА: Копировать 1->2 и Поменять местами 1<->2 */}
@@ -1173,13 +1261,11 @@ export const PassportElementsTab: React.FC<PassportElementsTabProps> = ({
             availableSizes={elem2AvailableSizes}
             searchQuery={elem2SearchQuery}
             setSearchQuery={setElem2SearchQuery}
-            autoSelectedCode={elem2AutoSelectedCode}
             lrvPoolForCodeSearch={baseLrvOptionsForElem2}
             filteredLrvOptions={filteredLrvOptionsElem2}
             selectedLrvItem={selectedLrv2Item}
             onSelectLrv={handleSelectLrv2}
             onClearElement={handleClearElem2}
-            formatLrvOptionLabel={formatLrvOptionLabel}
           />
         </div>
       </div>
