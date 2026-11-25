@@ -438,10 +438,10 @@ export const ExecutiveDocsTable: React.FC<ExecutiveDocsTableProps> = ({
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <div className="overflow-x-auto max-h-[calc(100vh-280px)] overflow-y-auto">
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+      <div className="overflow-x-auto min-h-[380px] max-h-[calc(100vh-280px)] overflow-y-auto table-scroll-container">
         <table
-          className="border-collapse table-fixed text-left"
+          className="w-full text-xs border-collapse table-fixed text-left"
           style={{ width: `${Math.max(totalTableWidth, 800)}px`, minWidth: '100%' }}
         >
           <colgroup>
@@ -452,8 +452,8 @@ export const ExecutiveDocsTable: React.FC<ExecutiveDocsTableProps> = ({
               />
             ))}
           </colgroup>
-          <thead className="sticky top-0 z-20 bg-slate-50 border-b border-slate-200">
-            <tr>
+          <thead className="sticky top-0 z-20 shadow-xs">
+            <tr className="bg-[#1e3799] text-white text-left select-none">
               {activeColumnDefs.map((col) => {
                 const width = getColumnWidth(col.key, col.defaultWidth);
                 return (
@@ -472,7 +472,7 @@ export const ExecutiveDocsTable: React.FC<ExecutiveDocsTableProps> = ({
                     minWidth={col.minWidth}
                     onResizeStart={onResizeStart}
                     onAutoFit={onAutoFit}
-                    className="px-2.5 py-2.5 text-[11px] font-bold text-slate-700 border-r border-slate-200/80 last:border-r-0 select-none bg-slate-50"
+                    className="border-r border-white/15 last:border-r-0 hover:bg-[#192f85] transition-colors"
                   />
                 );
               })}
