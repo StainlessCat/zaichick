@@ -206,6 +206,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 aria-label="Технологическая карта на сварку"
                 className="w-full font-mono font-bold"
               >
+                <option value="">— Выберите техкарту —</option>
                 {techCards.map((tc) => (
                   <option key={tc.id} value={tc.number}>
                     {tc.number} · {tc.weldingType} (Ø{tc.minDiameterMm}–{tc.maxDiameterMm} мм)
@@ -255,6 +256,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                     : 'border-red-400 text-red-900 bg-red-50/40'
                 }`}
               >
+                <option value="">— Выберите способ —</option>
                 {WELDING_TYPE_OPTIONS.map((wt: WeldingType) => (
                   <option key={wt} value={wt}>
                     {wt}
@@ -549,6 +551,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 aria-label="Сварочные материалы"
                 className="w-full font-mono"
               >
+                <option value="">— Выберите сварочные материалы —</option>
                 {weldingMaterialsList.map((wm) => (
                   <option key={wm.id} value={wm.brandAndDiameter}>
                     {wm.brandAndDiameter} ({wm.certificateNumber} · ВК{' '}
@@ -650,7 +653,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
 
             <FormField label="Тип соединения по ГОСТ 16037 *">
               <Select
-                value={form.gostJointType || (form.jointKind === 'Угловое' ? 'У16' : 'С17')}
+                value={form.gostJointType || ''}
                 onChange={(e) =>
                   setForm((prev: WeldJoint) => ({
                     ...prev,
@@ -660,6 +663,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 aria-label="Тип сварного соединения"
                 className="w-full text-xs font-semibold"
               >
+                <option value="">— Выберите тип —</option>
                 {filteredGostOptions.map((gost) => (
                   <option key={gost.code} value={gost.code}>
                     {gost.description}
@@ -675,7 +679,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
 
             <FormField label="Положение при сварке *">
               <Select
-                value={form.weldingPosition || 'В1'}
+                value={form.weldingPosition || ''}
                 onChange={(e) =>
                   setForm((prev: WeldJoint) => ({
                     ...prev,
@@ -685,6 +689,7 @@ export const PassportWeldingTab: React.FC<PassportWeldingTabProps> = ({
                 aria-label="Положение"
                 className="w-full text-xs font-semibold"
               >
+                <option value="">— Выберите положение —</option>
                 {NAKS_WELDING_POSITIONS.map((pos) => (
                   <option key={pos.code} value={pos.code}>
                     {pos.description}

@@ -42,6 +42,14 @@ import {
   validateWeldJointComprehensive,
 } from '../../utils/dataIntegrityGuard';
 import { AppContext } from '../../context/AppContext';
+import {
+  clearElementFields,
+  copyBothElementsFromJoint,
+  createBlankJointForCreateMode,
+  findUniqueAutoSelectableLrv,
+  getCopyableLineJoints,
+  pickDefaultDonorJointId,
+} from '../../utils/passportSmartInput';
 import { PassportTab } from './PassportTabBar';
 
 export type { PassportTab };
@@ -166,11 +174,23 @@ export function useJointPassportForm({
     return 'welding';
   });
 
-  const [welder1Stamp, setWelder1Stamp] = useState<string>(
-    () => welders.find((w) => !w.isBrigade)?.stamp || ''
+  const [welder1Stamp, setWelder1Stamp] = useState<string>(() => {
+    if (!initialJoint) return '';
+    const stamps =
+      initialJoint.welderStampsList ||
+      (initialJoint.welderStamp ? [initialJoint.welderStamp] : []);
+    return stamps[0] || '';
+  });
+  const [welder2Stamp, setWelder2Stamp] = useState<string>(() => {
+    if (!initialJoint) return '';
+    const stamps =
+      initialJoint.welderStampsList ||
+      (initialJoint.welderStamp ? [initialJoint.welderStamp] : []);
+    return stamps[1] || '';
+  });
+  const [brigadeStamp, setBrigadeStamp] = useState<string>(
+    () => initialJoint?.brigadeStamp || ''
   );
-  const [welder2Stamp, setWelder2Stamp] = useState<string>('');
-  const [brigadeStamp, setBrigadeStamp] = useState<string>('');
 
   const [elem1SearchQuery, setElem1SearchQuery] = useState('');
   const [elem1TypeFilter, setElem1TypeFilter] =
@@ -180,78 +200,22 @@ export function useJointPassportForm({
   const [elem2TypeFilter, setElem2TypeFilter] =
     useState<LrvElementCategory>('Все типы');
   const [elem2SizeFilter, setElem2SizeFilter] = useState<string>('all');
+  const [elem1AutoSelectedCode, setElem1AutoSelectedCode] = useState<string | null>(null);
+  const [elem2AutoSelectedCode, setElem2AutoSelectedCode] = useState<string | null>(null);
   const initialSnapshotRef = useRef<string>('');
 
   const [form, setForm] = useState<WeldJoint>(() => {
     if (initialJoint) return { ...initialJoint };
-    const initLineNum = firstLineObj?.lineNumber || 'ФП1.2/1';
-    const initDate = '2026-06-15';
-    const archivedTemp = firstFac.weatherArchive?.[initDate] || '';
-    const defaultPersonalWelder = welders.find((w) => !w.isBrigade);
-    return {
-      id: `j-${Date.now()}`,
+    return createBlankJointForCreateMode({
       objectName: firstFac.name,
       rdCode: firstRd,
+      lineNumber: firstLineObj?.lineNumber || '',
       contour:
         firstLineObj?.testContour ||
         firstFac.rdCodes[0]?.contours[0] ||
-        'Контур испытания КИ-1',
-      lineNumber: initLineNum,
-      uniqueLineId: buildUniqueLineId(firstRd, initLineNum),
-      jointNumber: '010',
-      jointType: 'Монтажный',
-      diameterMm: 159,
-      diameterInch: '6"',
-      wallThickness: 8.0,
-      lrv1Code: '',
-      elem1Name: '',
-      elem1Material: '09Г2С',
-      elem1Ntd: 'ГОСТ 8732-78',
-      elem1DiameterMm: 159,
-      elem1WallThickness: 8.0,
-      elem1FactoryNumber: '',
-      elem1Length: '',
-      lrv2Code: '',
-      elem2Name: '',
-      elem2Material: '09Г2С',
-      elem2Ntd: 'ГОСТ 8732-78',
-      elem2DiameterMm: 159,
-      elem2WallThickness: 8.0,
-      elem2FactoryNumber: '',
-      elem2Length: '',
-      weldingType: 'РАД+РД',
-      gostJointType: 'С17',
-      jointKind: 'Стыковое',
-      preheatTemp: '0',
-      techCardNumber: techCards[0]?.number || 'ТК-01',
-      welderStamp: defaultPersonalWelder?.stamp || '01-ВК',
-      welderStampsList: [defaultPersonalWelder?.stamp || '01-ВК'],
-      brigadeStamp: '',
-      welderFullName: defaultPersonalWelder?.fullName || 'Иванов И.И.',
-      welderCertNumber: defaultPersonalWelder?.naksCerts?.[0]?.certNumber || 'НАКС-01',
-      weldingMaterials: weldingMaterialsList[0]?.brandAndDiameter || 'OK 48.00 d=3.0 мм',
-      ambientTemp: archivedTemp ? (Number(archivedTemp) > 0 ? `+${archivedTemp}` : String(archivedTemp)) : '',
-      weldingDate: initDate,
-      responsiblePerson: 'Прораб СМУ-1 Сидоров С.С.',
-      recordStatus: 'DRAFT',
-      vikReportNumber: '',
-      vikDate: '',
-      vikResult: 'Не проводился',
-      vikInspector: '',
-      ndtType: 'РК',
-      ndtReportNumber: '',
-      ndtDate: '',
-      ndtResult: 'Не проводился',
-      ndtInspector: '',
-      dupNdtType: 'Не требуется',
-      dupNdtReportNumber: '',
-      dupNdtDate: '',
-      dupNdtResult: 'Не проводился',
-      dupNdtInspector: '',
-      repairCount: 0,
-      updatedAt: new Date().toISOString(),
+        '',
       updatedBy: currentUser?.login || 'engineer',
-    };
+    });
   });
 
   const currentFacility = useMemo(() => {
@@ -351,89 +315,60 @@ export function useJointPassportForm({
     return matches;
   }, [baseLrvOptionsForElem2, elem2SearchQuery, elem2TypeFilter, elem2SizeFilter, selectedLrv2Item]);
 
-  // Sync form when initialJoint changes
+  // Sync & guaranteed reset when modal opens or switches joint/mode
   useEffect(() => {
     if (!isOpen) return;
-    if (initialJoint) {
+
+    setValidationError('');
+    setConfirmDeleteStep(false);
+    setAllowCrossRdLrv(false);
+    setFilterLrvBySameDiameter(true);
+    setElem1SearchQuery('');
+    setElem1TypeFilter('Все типы');
+    setElem1SizeFilter('all');
+    setElem2SearchQuery('');
+    setElem2TypeFilter('Все типы');
+    setElem2SizeFilter('all');
+    setElem1AutoSelectedCode(null);
+    setElem2AutoSelectedCode(null);
+
+    if (mode === 'edit' && initialJoint) {
       setForm({ ...initialJoint });
       initialSnapshotRef.current = JSON.stringify(initialJoint);
-      setValidationError('');
-      const stamps = initialJoint.welderStampsList || (initialJoint.welderStamp ? [initialJoint.welderStamp] : []);
+      setIsSupplementaryMode(Boolean(initialJoint.isSupplementary));
+      const stamps =
+        initialJoint.welderStampsList ||
+        (initialJoint.welderStamp ? [initialJoint.welderStamp] : []);
       setWelder1Stamp(stamps[0] || '');
       setWelder2Stamp(stamps[1] || '');
       setBrigadeStamp(initialJoint.brigadeStamp || '');
+      if (rbac.category === 'ndt') {
+        setActiveTab('control');
+      } else if (isJointDefective(initialJoint)) {
+        setActiveTab('repair');
+      }
       return;
     }
 
-    setForm(() => {
-      const initLineNum = firstLineObj?.lineNumber || 'ФП1.2/1';
-      const initDate = '2026-06-15';
-      const archivedTemp = firstFac.weatherArchive?.[initDate] || '';
-      const defaultPersonalWelder = welders.find((w) => !w.isBrigade);
-      const createdJoint: WeldJoint = {
-        id: `j-${Date.now()}`,
-        objectName: firstFac.name,
-        rdCode: firstRd,
-        contour: firstLineObj?.testContour || firstFac.rdCodes[0]?.contours[0] || 'Основной контур',
-        lineNumber: initLineNum,
-        uniqueLineId: buildUniqueLineId(firstRd, initLineNum),
-        jointNumber: '010',
-        jointType: 'Монтажный',
-        diameterMm: 159,
-        diameterInch: '6"',
-        wallThickness: 8.0,
-        lrv1Code: '',
-        elem1Name: '',
-        elem1Material: '09Г2С',
-        elem1Ntd: 'ГОСТ 8732-78',
-        elem1DiameterMm: 159,
-        elem1WallThickness: 8.0,
-        elem1FactoryNumber: '',
-        elem1Length: '',
-        lrv2Code: '',
-        elem2Name: '',
-        elem2Material: '09Г2С',
-        elem2Ntd: 'ГОСТ 8732-78',
-        elem2DiameterMm: 159,
-        elem2WallThickness: 8.0,
-        elem2FactoryNumber: '',
-        elem2Length: '',
-        weldingType: 'РАД+РД',
-        gostJointType: 'С17',
-        jointKind: 'Стыковое',
-        preheatTemp: '0',
-        techCardNumber: techCards[0]?.number || 'ТК-01',
-        welderStamp: defaultPersonalWelder?.stamp || '01-ВК',
-        welderStampsList: [defaultPersonalWelder?.stamp || '01-ВК'],
-        brigadeStamp: '',
-        welderFullName: defaultPersonalWelder?.fullName || 'Иванов И.И.',
-        welderCertNumber: defaultPersonalWelder?.naksCerts?.[0]?.certNumber || 'НАКС-01',
-        weldingMaterials: weldingMaterialsList[0]?.brandAndDiameter || 'OK 48.00 d=3.0 мм',
-        ambientTemp: archivedTemp ? (Number(archivedTemp) > 0 ? `+${archivedTemp}` : String(archivedTemp)) : '',
-        weldingDate: initDate,
-        responsiblePerson: 'Прораб СМУ-1 Сидоров С.С.',
-        recordStatus: 'DRAFT',
-        vikReportNumber: '',
-        vikDate: '',
-        vikResult: 'Не проводился',
-        vikInspector: '',
-        ndtType: 'РК',
-        ndtReportNumber: '',
-        ndtDate: '',
-        ndtResult: 'Не проводился',
-        ndtInspector: '',
-        dupNdtType: 'Не требуется',
-        dupNdtReportNumber: '',
-        dupNdtDate: '',
-        dupNdtResult: 'Не проводился',
-        dupNdtInspector: '',
-        repairCount: 0,
-        updatedAt: new Date().toISOString(),
-        updatedBy: currentUser?.login || 'engineer',
-      };
-      initialSnapshotRef.current = JSON.stringify(createdJoint);
-      return createdJoint;
+    // Режим создания: гарантированный полный сброс с сохранением только объекта, РД и линии
+    setIsSupplementaryMode(false);
+    setWelder1Stamp('');
+    setWelder2Stamp('');
+    setBrigadeStamp('');
+    setActiveTab(rbac.category === 'ndt' ? 'control' : 'welding');
+
+    const createdJoint = createBlankJointForCreateMode({
+      objectName: firstFac.name,
+      rdCode: firstRd,
+      lineNumber: firstLineObj?.lineNumber || '',
+      contour:
+        firstLineObj?.testContour ||
+        firstFac.rdCodes[0]?.contours[0] ||
+        '',
+      updatedBy: currentUser?.login || 'engineer',
     });
+    initialSnapshotRef.current = JSON.stringify(createdJoint);
+    setForm(createdJoint);
   }, [isOpen, mode, initialJoint]);
 
   // Ambient temp auto-fill
@@ -452,7 +387,7 @@ export function useJointPassportForm({
     setForm((prev) => (prev.ambientTemp === '' ? prev : { ...prev, ambientTemp: '' }));
   }, [form.objectName, form.weldingDate, facilities, isOpen, mode]);
 
-  // Navigation across line joints
+  // Navigation across line joints (edit mode)
   const lineJoints = useMemo(() => {
     if (mode !== 'edit' || !form.uniqueLineId) return [];
     return allJoints
@@ -466,6 +401,17 @@ export function useJointPassportForm({
         return a.jointNumber.localeCompare(b.jointNumber, undefined, { numeric: true });
       });
   }, [allJoints, form.uniqueLineId, mode]);
+
+  // Стыки текущей линии, доступные как источник для копирования элементов (и в create, и в edit)
+  const copyableLineJoints = useMemo(
+    () => getCopyableLineJoints(allJoints, form.uniqueLineId, form.id),
+    [allJoints, form.uniqueLineId, form.id]
+  );
+
+  const defaultDonorJointId = useMemo(
+    () => pickDefaultDonorJointId(copyableLineJoints, form.jointNumber),
+    [copyableLineJoints, form.jointNumber]
+  );
 
   const currentLineIndex = useMemo(() => {
     return lineJoints.findIndex((j) => j.id === form.id);
@@ -565,8 +511,26 @@ export function useJointPassportForm({
     }));
   };
 
-  const handleSelectLrv1 = (code: string) => {
+  const handleSelectLrv1 = (code: string, isAuto = false) => {
+    if (!code) {
+      setElem1AutoSelectedCode(null);
+      setForm((prev) => ({
+        ...prev,
+        lrv1Code: '',
+        elem1Name: '',
+        elem1Material: '',
+        elem1Ntd: '',
+        elem1Manufacturer: '',
+        elem1DiameterMm: 0,
+        elem1WallThickness: 0,
+        diameterMm: 0,
+        diameterInch: '',
+        wallThickness: 0,
+      }));
+      return;
+    }
     const item = lrvCatalog.find((i) => i.lrvCode === code);
+    setElem1AutoSelectedCode(isAuto && item ? item.lrvCode : null);
     if (!item) {
       setForm((prev) => ({ ...prev, lrv1Code: code }));
       return;
@@ -586,8 +550,23 @@ export function useJointPassportForm({
     }));
   };
 
-  const handleSelectLrv2 = (code: string) => {
+  const handleSelectLrv2 = (code: string, isAuto = false) => {
+    if (!code) {
+      setElem2AutoSelectedCode(null);
+      setForm((prev) => ({
+        ...prev,
+        lrv2Code: '',
+        elem2Name: '',
+        elem2Material: '',
+        elem2Ntd: '',
+        elem2Manufacturer: '',
+        elem2DiameterMm: 0,
+        elem2WallThickness: 0,
+      }));
+      return;
+    }
     const item = lrvCatalog.find((i) => i.lrvCode === code);
+    setElem2AutoSelectedCode(isAuto && item ? item.lrvCode : null);
     if (!item) {
       setForm((prev) => ({ ...prev, lrv2Code: code }));
       return;
@@ -609,7 +588,149 @@ export function useJointPassportForm({
     }));
   };
 
+  const handleClearElem1 = () => {
+    setForm((prev) => clearElementFields(prev, 1));
+    setElem1SearchQuery('');
+    setElem1TypeFilter('Все типы');
+    setElem1SizeFilter('all');
+    setElem1AutoSelectedCode(null);
+  };
+
+  const handleClearElem2 = () => {
+    setForm((prev) => clearElementFields(prev, 2));
+    setElem2SearchQuery('');
+    setElem2TypeFilter('Все типы');
+    setElem2SizeFilter('all');
+    setElem2AutoSelectedCode(null);
+  };
+
+  const tryAutoSelectElem1 = (
+    itemsPool: LRVItem[],
+    query: string,
+    typeFilter: LrvElementCategory,
+    sizeFilter: string
+  ) => {
+    const hasCriteria =
+      typeFilter !== 'Все типы' || sizeFilter !== 'all' || query.trim().length > 0;
+    if (!hasCriteria) {
+      setElem1AutoSelectedCode(null);
+      return;
+    }
+    const strictMatches = searchLrvCatalogItems(
+      itemsPool,
+      query,
+      typeFilter,
+      sizeFilter
+    );
+    const unique = findUniqueAutoSelectableLrv(strictMatches, form.lrv1Code);
+    if (unique) {
+      handleSelectLrv1(unique.lrvCode, true);
+    } else if (strictMatches.length !== 1) {
+      setElem1AutoSelectedCode(null);
+    }
+  };
+
+  const tryAutoSelectElem2 = (
+    itemsPool: LRVItem[],
+    query: string,
+    typeFilter: LrvElementCategory,
+    sizeFilter: string
+  ) => {
+    const hasCriteria =
+      typeFilter !== 'Все типы' || sizeFilter !== 'all' || query.trim().length > 0;
+    if (!hasCriteria) {
+      setElem2AutoSelectedCode(null);
+      return;
+    }
+    const strictMatches = searchLrvCatalogItems(
+      itemsPool,
+      query,
+      typeFilter,
+      sizeFilter
+    );
+    const unique = findUniqueAutoSelectableLrv(strictMatches, form.lrv2Code);
+    if (unique) {
+      handleSelectLrv2(unique.lrvCode, true);
+    } else if (strictMatches.length !== 1) {
+      setElem2AutoSelectedCode(null);
+    }
+  };
+
+  const handleElem1TypeFilterChange = (nextType: LrvElementCategory) => {
+    setElem1TypeFilter(nextType);
+    setElem1SizeFilter('all');
+    tryAutoSelectElem1(availableLrvItems, elem1SearchQuery, nextType, 'all');
+  };
+
+  const handleElem1SizeFilterChange = (nextSize: string) => {
+    setElem1SizeFilter(nextSize);
+    tryAutoSelectElem1(availableLrvItems, elem1SearchQuery, elem1TypeFilter, nextSize);
+  };
+
+  const handleElem1SearchQueryChange = (nextQuery: string) => {
+    setElem1SearchQuery(nextQuery);
+    tryAutoSelectElem1(availableLrvItems, nextQuery, elem1TypeFilter, elem1SizeFilter);
+  };
+
+  const handleElem2TypeFilterChange = (nextType: LrvElementCategory) => {
+    setElem2TypeFilter(nextType);
+    setElem2SizeFilter('all');
+    tryAutoSelectElem2(baseLrvOptionsForElem2, elem2SearchQuery, nextType, 'all');
+  };
+
+  const handleElem2SizeFilterChange = (nextSize: string) => {
+    setElem2SizeFilter(nextSize);
+    tryAutoSelectElem2(baseLrvOptionsForElem2, elem2SearchQuery, elem2TypeFilter, nextSize);
+  };
+
+  const handleElem2SearchQueryChange = (nextQuery: string) => {
+    setElem2SearchQuery(nextQuery);
+    tryAutoSelectElem2(baseLrvOptionsForElem2, nextQuery, elem2TypeFilter, elem2SizeFilter);
+  };
+
+  const handleToggleAllowCrossRdLrv = (nextVal: boolean) => {
+    setAllowCrossRdLrv(nextVal);
+    const nextAvailable = filterLrvCatalogByRd(lrvCatalog, form.rdCode, nextVal);
+    tryAutoSelectElem1(nextAvailable, elem1SearchQuery, elem1TypeFilter, elem1SizeFilter);
+    const nextBase2 =
+      filterLrvBySameDiameter && elem1Diam
+        ? (() => {
+            const byDiam = filterLrvByDiameter(nextAvailable, elem1Diam);
+            return byDiam.length > 0 ? byDiam : nextAvailable;
+          })()
+        : nextAvailable;
+    tryAutoSelectElem2(nextBase2, elem2SearchQuery, elem2TypeFilter, elem2SizeFilter);
+  };
+
+  const handleToggleFilterLrvBySameDiameter = (nextVal: boolean) => {
+    setFilterLrvBySameDiameter(nextVal);
+    const nextBase2 =
+      nextVal && elem1Diam
+        ? (() => {
+            const byDiam = filterLrvByDiameter(availableLrvItems, elem1Diam);
+            return byDiam.length > 0 ? byDiam : availableLrvItems;
+          })()
+        : availableLrvItems;
+    tryAutoSelectElem2(nextBase2, elem2SearchQuery, elem2TypeFilter, elem2SizeFilter);
+  };
+
+  const handleCopyElementsFromJoint = (donorJointId: string): WeldJoint | null => {
+    const donor = copyableLineJoints.find((j) => j.id === donorJointId);
+    if (!donor) return null;
+    setForm((prev) => copyBothElementsFromJoint(prev, donor));
+    setElem1SearchQuery('');
+    setElem1TypeFilter('Все типы');
+    setElem1SizeFilter('all');
+    setElem2SearchQuery('');
+    setElem2TypeFilter('Все типы');
+    setElem2SizeFilter('all');
+    setElem1AutoSelectedCode(null);
+    setElem2AutoSelectedCode(null);
+    return donor;
+  };
+
   const handleCopyElem1ToElem2 = () => {
+    setElem2AutoSelectedCode(null);
     setForm((prev) => ({
       ...prev,
       lrv2Code: prev.lrv1Code,
@@ -628,6 +749,8 @@ export function useJointPassportForm({
   };
 
   const handleSwapElements = () => {
+    setElem1AutoSelectedCode(null);
+    setElem2AutoSelectedCode(null);
     setForm((prev) => ({
       ...prev,
       lrv1Code: prev.lrv2Code,
@@ -663,35 +786,52 @@ export function useJointPassportForm({
       (l) => l.objectName === form.objectName && l.rdCode === newRdCode
     );
     const firstLine = linesForNewRd[0];
-    const nextLineNumber = firstLine?.lineNumber || form.lineNumber;
-    const newUid = buildUniqueLineId(newRdCode, nextLineNumber);
-    const strictLrvs = filterLrvCatalogByRd(lrvCatalog, newRdCode, false);
-    const firstLrv = strictLrvs[0];
-    const secondLrv = strictLrvs[1] || strictLrvs[0];
+    const nextLineNumber = firstLine?.lineNumber || '';
+    const newUid =
+      newRdCode || nextLineNumber ? buildUniqueLineId(newRdCode, nextLineNumber) : '';
+
+    setElem1SearchQuery('');
+    setElem1TypeFilter('Все типы');
+    setElem1SizeFilter('all');
+    setElem2SearchQuery('');
+    setElem2TypeFilter('Все типы');
+    setElem2SizeFilter('all');
+    setElem1AutoSelectedCode(null);
+    setElem2AutoSelectedCode(null);
 
     setForm((prev) => ({
       ...prev,
       rdCode: newRdCode,
       lineNumber: nextLineNumber,
-      contour: firstLine?.testContour || rdEntry?.contours[0] || prev.contour,
+      contour: firstLine?.testContour || rdEntry?.contours[0] || '',
       uniqueLineId: newUid,
-      diameterMm: firstLrv?.diameterMm || prev.diameterMm,
-      diameterInch: mmToInchDiameter(firstLrv?.diameterMm || prev.diameterMm),
-      wallThickness: firstLrv?.wallThickness || prev.wallThickness,
-      lrv1Code: firstLrv?.lrvCode || '',
-      elem1Name: firstLrv?.shortName || prev.elem1Name,
-      elem1Material: firstLrv?.material || prev.elem1Material,
-      elem1Ntd: firstLrv?.ntd || prev.elem1Ntd,
-      elem1Manufacturer: firstLrv?.manufacturer || '',
-      elem1DiameterMm: firstLrv?.diameterMm || prev.diameterMm,
-      elem1WallThickness: firstLrv?.wallThickness || prev.wallThickness,
-      lrv2Code: secondLrv?.lrvCode || '',
-      elem2Name: secondLrv?.shortName || prev.elem2Name,
-      elem2Material: secondLrv?.material || prev.elem2Material,
-      elem2Ntd: secondLrv?.ntd || prev.elem2Ntd,
-      elem2Manufacturer: secondLrv?.manufacturer || '',
-      elem2DiameterMm: firstLrv?.diameterMm || prev.diameterMm,
-      elem2WallThickness: firstLrv?.wallThickness || prev.wallThickness,
+      diameterMm: 0,
+      diameterInch: '',
+      wallThickness: 0,
+      lrv1Code: '',
+      elem1Name: '',
+      elem1Material: '',
+      elem1Ntd: '',
+      elem1Manufacturer: '',
+      elem1DiameterMm: 0,
+      elem1WallThickness: 0,
+      elem1FactoryNumber: '',
+      elem1Length: '',
+      elem1CertNumber: '',
+      elem1HeatNumber: '',
+      elem1BatchNumber: '',
+      lrv2Code: '',
+      elem2Name: '',
+      elem2Material: '',
+      elem2Ntd: '',
+      elem2Manufacturer: '',
+      elem2DiameterMm: 0,
+      elem2WallThickness: 0,
+      elem2FactoryNumber: '',
+      elem2Length: '',
+      elem2CertNumber: '',
+      elem2HeatNumber: '',
+      elem2BatchNumber: '',
     }));
   };
 
@@ -747,9 +887,9 @@ export function useJointPassportForm({
     isSupplementaryMode,
     setIsSupplementaryMode,
     allowCrossRdLrv,
-    setAllowCrossRdLrv,
+    setAllowCrossRdLrv: handleToggleAllowCrossRdLrv,
     filterLrvBySameDiameter,
-    setFilterLrvBySameDiameter,
+    setFilterLrvBySameDiameter: handleToggleFilterLrvBySameDiameter,
     confirmDeleteStep,
     setConfirmDeleteStep,
     elem1Diam,
@@ -760,16 +900,21 @@ export function useJointPassportForm({
     personalWelders,
     brigadeProfiles,
     availableLrvItems,
+    baseLrvOptionsForElem2,
     elem1AvailableSizes,
     elem2AvailableSizes,
     filteredLrvOptionsElem1,
     filteredLrvOptionsElem2,
+    elem1AutoSelectedCode,
+    elem2AutoSelectedCode,
     selectedTechCard,
     diameterValidation,
     weldingTypeValidation,
     preheatValidation,
     comprehensiveValidation,
     lineJoints,
+    copyableLineJoints,
+    defaultDonorJointId,
     currentLineIndex,
     prevJoint,
     nextJoint,
@@ -782,17 +927,17 @@ export function useJointPassportForm({
     brigadeStamp,
     setBrigadeStamp,
     elem1SearchQuery,
-    setElem1SearchQuery,
+    setElem1SearchQuery: handleElem1SearchQueryChange,
     elem1TypeFilter,
-    setElem1TypeFilter,
+    setElem1TypeFilter: handleElem1TypeFilterChange,
     elem1SizeFilter,
-    setElem1SizeFilter,
+    setElem1SizeFilter: handleElem1SizeFilterChange,
     elem2SearchQuery,
-    setElem2SearchQuery,
+    setElem2SearchQuery: handleElem2SearchQueryChange,
     elem2TypeFilter,
-    setElem2TypeFilter,
+    setElem2TypeFilter: handleElem2TypeFilterChange,
     elem2SizeFilter,
-    setElem2SizeFilter,
+    setElem2SizeFilter: handleElem2SizeFilterChange,
     availableLinesForRd,
     existingNumbersInLine,
     duplicateJointOnLine,
@@ -803,6 +948,9 @@ export function useJointPassportForm({
     canSaveAnyField,
     handleSelectLrv1,
     handleSelectLrv2,
+    handleClearElem1,
+    handleClearElem2,
+    handleCopyElementsFromJoint,
     handleCopyElem1ToElem2,
     handleSwapElements,
     handleWelder1Change,

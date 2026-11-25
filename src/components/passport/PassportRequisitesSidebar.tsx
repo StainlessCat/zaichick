@@ -458,15 +458,23 @@ export const PassportRequisitesSidebar: React.FC<PassportRequisitesSidebarProps>
 
           <div className="p-2.5 rounded-lg bg-white border border-slate-200/90">
             <div className="text-[10px] text-slate-400 mb-0.5">Диаметр и толщина стенки</div>
-            <div className="font-mono font-bold text-slate-900">
-              Ø{elem1Diam}×{form.elem1WallThickness ?? form.wallThickness} мм ({mmToInchDiameter(elem1Diam)})
-            </div>
-            <div className="text-[11px] font-mono text-[#1e3799] font-semibold mt-1 flex items-center justify-between">
-              <span>Экв. дюймы (EDI):</span>
-              <span title="Метод А: отраслевая шкала EPC по толщине стенки">
-                {calculateEquivalentDiaInch(elem1Diam, form.elem1WallThickness ?? form.wallThickness)}" (K={getEpcWallThicknessFactor(form.elem1WallThickness ?? form.wallThickness)})
-              </span>
-            </div>
+            {elem1Diam > 0 ? (
+              <>
+                <div className="font-mono tabular-nums font-bold text-slate-900">
+                  Ø{elem1Diam}×{form.elem1WallThickness ?? form.wallThickness} мм · {mmToInchDiameter(elem1Diam)}
+                </div>
+                <div className="text-[11px] font-mono tabular-nums text-[#1e3799] font-semibold mt-1 flex items-center justify-between">
+                  <span>Экв. дюймы:</span>
+                  <span title="Метод А: отраслевая шкала EPC по толщине стенки">
+                    {calculateEquivalentDiaInch(elem1Diam, form.elem1WallThickness ?? form.wallThickness)}" · K={getEpcWallThicknessFactor(form.elem1WallThickness ?? form.wallThickness)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="font-mono text-xs text-slate-400">
+                — · выберите элементы ЛРВ
+              </div>
+            )}
           </div>
 
           <div className="pt-2 border-t border-sky-200 space-y-2">

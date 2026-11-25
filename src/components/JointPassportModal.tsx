@@ -108,10 +108,13 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     personalWelders,
     brigadeProfiles,
     availableLrvItems,
+    baseLrvOptionsForElem2,
     elem1AvailableSizes,
     elem2AvailableSizes,
     filteredLrvOptionsElem1,
     filteredLrvOptionsElem2,
+    elem1AutoSelectedCode,
+    elem2AutoSelectedCode,
     selectedLrv1Item,
     selectedLrv2Item,
     selectedTechCard,
@@ -120,6 +123,8 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     preheatValidation,
     comprehensiveValidation,
     lineJoints,
+    copyableLineJoints,
+    defaultDonorJointId,
     currentLineIndex,
     prevJoint,
     nextJoint,
@@ -150,6 +155,9 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     canSaveAnyField,
     handleSelectLrv1,
     handleSelectLrv2,
+    handleClearElem1,
+    handleClearElem2,
+    handleCopyElementsFromJoint,
     handleCopyElem1ToElem2,
     handleSwapElements,
     handleWelder1Change,
@@ -183,6 +191,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (e.defaultPrevented) return;
         e.preventDefault();
         handleSafeClose();
       }
@@ -329,12 +338,16 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   <PassportElementsTab
                     form={form}
                     setForm={setForm}
+                    allJoints={allJoints}
+                    copyableLineJoints={copyableLineJoints}
+                    defaultDonorJointId={defaultDonorJointId}
                     rbac={effectiveRbac}
                     filterLrvBySameDiameter={filterLrvBySameDiameter}
                     setFilterLrvBySameDiameter={setFilterLrvBySameDiameter}
                     allowCrossRdLrv={allowCrossRdLrv}
                     setAllowCrossRdLrv={setAllowCrossRdLrv}
                     availableLrvItems={availableLrvItems}
+                    baseLrvOptionsForElem2={baseLrvOptionsForElem2}
                     elem1Diam={elem1Diam}
                     elem2Diam={elem2Diam}
                     diameterValidation={diameterValidation}
@@ -345,6 +358,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     elem1AvailableSizes={elem1AvailableSizes}
                     elem1SearchQuery={elem1SearchQuery}
                     setElem1SearchQuery={setElem1SearchQuery}
+                    elem1AutoSelectedCode={elem1AutoSelectedCode}
                     elem2TypeFilter={elem2TypeFilter}
                     setElem2TypeFilter={setElem2TypeFilter}
                     elem2SizeFilter={elem2SizeFilter}
@@ -352,12 +366,16 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                     elem2AvailableSizes={elem2AvailableSizes}
                     elem2SearchQuery={elem2SearchQuery}
                     setElem2SearchQuery={setElem2SearchQuery}
+                    elem2AutoSelectedCode={elem2AutoSelectedCode}
                     filteredLrvOptionsElem1={filteredLrvOptionsElem1}
                     filteredLrvOptionsElem2={filteredLrvOptionsElem2}
                     selectedLrv1Item={selectedLrv1Item}
                     selectedLrv2Item={selectedLrv2Item}
                     handleSelectLrv1={handleSelectLrv1}
                     handleSelectLrv2={handleSelectLrv2}
+                    handleClearElem1={handleClearElem1}
+                    handleClearElem2={handleClearElem2}
+                    handleCopyElementsFromJoint={handleCopyElementsFromJoint}
                     handleCopyElem1ToElem2={handleCopyElem1ToElem2}
                     handleSwapElements={handleSwapElements}
                     formatLrvOptionLabel={formatLrvOptionLabel}

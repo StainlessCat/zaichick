@@ -1,4 +1,5 @@
 export * from './WelderStampCombobox';
+export * from './SmartAutocompleteInput';
 export * from './PassportHeader';
 export * from './PassportValidationBanner';
 export * from './PassportTabBar';
