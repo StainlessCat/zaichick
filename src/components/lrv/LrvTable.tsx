@@ -1,10 +1,34 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { LRVItem, WeldJoint } from '../../types/welding';
 import { MaterialBatchAct } from '../../types/materialControl';
 import { TableColumnFilterHeader } from '../TableColumnFilterPopover';
+import { getCascadingFilterRows } from '../../utils/filters';
 import { ColumnResizeHandle } from '../../utils/useResizableColumns';
 import { LrvTableRow } from './LrvTableRow';
+
+const LRV_FILTER_COLUMN_KEYS = [
+  'lrvCode',
+  'rdCode',
+  'shortName',
+  'marking',
+  'fullName',
+  'category',
+  'pnMpa',
+  'connectionType',
+  'material',
+  'ntd',
+  'manufacturer',
+  'dn1',
+  'diameterMm',
+  'wallThickness',
+  'dn2',
+  'diameterMm2',
+  'wallThickness2',
+  'specQty',
+  'controlStatus',
+  'balance',
+] as const;
 
 interface LrvTableProps {
   items: LRVItem[];
@@ -80,6 +104,21 @@ export const LrvTable: React.FC<LrvTableProps> = ({
     allFilteredItems.length > 0 &&
     allFilteredItems.every((item) => selectedLrvIds.includes(item.id));
 
+  // Каскадная кросс-фильтрация: каждый столбец показывает только значения из строк,
+  // прошедших все остальные активные фильтры столбцов (как в Excel AutoFilter)
+  const cascadingRowsByColumn = useMemo(() => {
+    const map: Record<string, LRVItem[]> = {};
+    for (const colKey of LRV_FILTER_COLUMN_KEYS) {
+      map[colKey] = getCascadingFilterRows(
+        rdScopedCatalog,
+        columnFilters,
+        colKey,
+        lrvColumnGetters
+      );
+    }
+    return map;
+  }, [rdScopedCatalog, columnFilters, lrvColumnGetters]);
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
       <div className="overflow-x-auto overflow-y-auto min-h-[380px] max-h-[calc(100vh-250px)] table-scroll-container">
@@ -104,7 +143,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="lrvCode"
                 label="Код ЛРВ"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.lrvCode}
                 getValue={lrvColumnGetters.lrvCode}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -118,7 +157,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="rdCode"
                 label="Шифр РД"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.rdCode}
                 getValue={lrvColumnGetters.rdCode}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -132,7 +171,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="shortName"
                 label="Краткое наименование"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.shortName}
                 getValue={lrvColumnGetters.shortName}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -146,7 +185,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="marking"
                 label="Маркировка"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.marking}
                 getValue={lrvColumnGetters.marking}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -160,7 +199,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="fullName"
                 label="Полное наименование"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.fullName}
                 getValue={lrvColumnGetters.fullName}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -174,7 +213,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="category"
                 label="Категория"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.category}
                 getValue={lrvColumnGetters.category}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -188,7 +227,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="pnMpa"
                 label="Давление PN, МПа"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.pnMpa}
                 getValue={lrvColumnGetters.pnMpa}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -202,7 +241,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="connectionType"
                 label="Подсоединение"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.connectionType}
                 getValue={lrvColumnGetters.connectionType}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -216,7 +255,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="material"
                 label="Материал"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.material}
                 getValue={lrvColumnGetters.material}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -230,7 +269,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="ntd"
                 label="НТД"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.ntd}
                 getValue={lrvColumnGetters.ntd}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -244,7 +283,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="manufacturer"
                 label="Завод-изготовитель"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.manufacturer}
                 getValue={lrvColumnGetters.manufacturer}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -258,7 +297,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="dn1"
                 label="DN 1"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.dn1}
                 getValue={lrvColumnGetters.dn1}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -273,7 +312,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="diameterMm"
                 label="Диаметр Ø1, мм"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.diameterMm}
                 getValue={lrvColumnGetters.diameterMm}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -288,7 +327,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="wallThickness"
                 label="Толщина стенки S1, мм"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.wallThickness}
                 getValue={lrvColumnGetters.wallThickness}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -303,7 +342,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="dn2"
                 label="DN 2"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.dn2}
                 getValue={lrvColumnGetters.dn2}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -318,7 +357,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="diameterMm2"
                 label="Диаметр Ø2, мм"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.diameterMm2}
                 getValue={lrvColumnGetters.diameterMm2}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -333,7 +372,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="wallThickness2"
                 label="Толщина стенки S2, мм"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.wallThickness2}
                 getValue={lrvColumnGetters.wallThickness2}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -348,7 +387,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="specQty"
                 label="Кол-во по спец."
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.specQty}
                 getValue={lrvColumnGetters.specQty}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -363,7 +402,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="controlStatus"
                 label="Статус контроля"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.controlStatus}
                 getValue={lrvColumnGetters.controlStatus}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
@@ -378,7 +417,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
               <TableColumnFilterHeader
                 columnKey="balance"
                 label="Баланс допуска"
-                rows={rdScopedCatalog}
+                rows={cascadingRowsByColumn.balance}
                 getValue={lrvColumnGetters.balance}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}

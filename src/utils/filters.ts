@@ -296,3 +296,34 @@ export function resolveColumnFilterApplySelection(params: {
 
   return effectiveValues;
 }
+
+/**
+ * Каскадная кросс-фильтрация строк для меню фильтра конкретного столбца (как в Excel).
+ * Применяет все активные фильтры других столбцов, исключая сам целевой столбец targetColumnKey,
+ * чтобы в списке выбора отображались только актуальные позиции, не отсечённые другими фильтрами.
+ */
+export function getCascadingFilterRows<T>(
+  rows: T[],
+  activeFilters: Record<string, string[]>,
+  targetColumnKey: string,
+  valueGetters: Record<string, (row: T, index: number) => string>
+): T[] {
+  const otherFilterEntries = Object.entries(activeFilters).filter(
+    ([colKey]) => colKey !== targetColumnKey
+  );
+  if (otherFilterEntries.length === 0) {
+    return rows;
+  }
+
+  return rows.filter((row, idx) => {
+    for (const [colKey, allowedValues] of otherFilterEntries) {
+      const getter = valueGetters[colKey];
+      if (!getter) continue;
+      const val = String(getter(row, idx) ?? '').trim();
+      if (!allowedValues.includes(val)) {
+        return false;
+      }
+    }
+    return true;
+  });
+}

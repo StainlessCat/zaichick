@@ -659,7 +659,7 @@ $$q_L = \\eta \\cdot \\frac{U \\cdot I}{v_{св}} \\cdot 10^{-3} \\quad \\left[\
     faqs: [
       {
         question: 'Как восстановить доступ, если забыт пароль администратора?',
-        answer: 'На сервере хостинга или в консоли контейнера запустите утилиту сброса: RESET_ADMIN_PASSWORD=true python -m app.cli.bootstrap_admin. Пароль администратора будет сброшен на значение по умолчанию из конфигурации.',
+        answer: 'В консоли контейнера выполните одноразовую команду: RESET_ADMIN_PASSWORD="<новый_пароль>" python -m app.cli.bootstrap_admin --reset-password. Не сохраняйте RESET_ADMIN_PASSWORD в постоянных переменных хостинга.',
       },
     ],
   },

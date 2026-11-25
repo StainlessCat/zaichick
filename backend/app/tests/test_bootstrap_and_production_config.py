@@ -110,8 +110,10 @@ async def test_verify_schema_migrations_applied():
 
 
 @pytest.mark.asyncio
-async def test_bootstrap_admin_idempotency_and_forbidden_passwords():
-    """Verify bootstrap creates initial admin and is strictly idempotent."""
+async def test_bootstrap_admin_idempotency_and_forbidden_passwords(monkeypatch):
+    """Verify bootstrap creates initial admin, preserves password on redeploy, and guards explicit reset."""
+    from app.core.security import verify_password
+
     async with db_session_factory() as session:
         # Clean users table for clean test
         await session.execute(text("TRUNCATE TABLE users CASCADE"))
@@ -140,8 +142,11 @@ async def test_bootstrap_admin_idempotency_and_forbidden_passwords():
         assert created1 is True
         assert user1.login == random_login
         assert user1.role == RoleEnum.ADMIN
+        original_hash = user1.password_hash
+        original_session_num = user1.session_number
 
-        # 3. Repeat bootstrap call -> idempotent (does not create 2nd admin, does not alter password)
+        # 3. Repeat bootstrap call (redeploy simulation) -> strictly idempotent even if RESET_ADMIN_PASSWORD is left in env
+        monkeypatch.setenv("RESET_ADMIN_PASSWORD", "HostingStaleResetPass2026!")
         user2, pwd_used2, created2 = await bootstrap_admin(
             login=random_login,
             password="AnotherPassword999!",
@@ -152,6 +157,37 @@ async def test_bootstrap_admin_idempotency_and_forbidden_passwords():
         assert created2 is False
         assert user2.id == user1.id
         assert pwd_used2 == ""
+        assert user2.password_hash == original_hash
+        assert user2.session_number == original_session_num
+        assert verify_password("MyStrongPassword2026!", user2.password_hash)
+
+        # 4. Explicit reset rejects weak/boolean values
+        monkeypatch.setenv("RESET_ADMIN_PASSWORD", "true")
+        with pytest.raises(ValueError):
+            await bootstrap_admin(
+                login=random_login,
+                password=None,
+                full_name="Иванов И.И.",
+                department="Администрация",
+                allow_password_reset=True,
+                session=session,
+            )
+
+        # 5. Explicit reset with strong password updates hash and bumps session_number
+        monkeypatch.setenv("RESET_ADMIN_PASSWORD", "NewManualResetPass2026!")
+        user3, pwd_used3, created3 = await bootstrap_admin(
+            login=random_login,
+            password=None,
+            full_name="Иванов И.И.",
+            department="Администрация",
+            allow_password_reset=True,
+            session=session,
+        )
+        assert created3 is False
+        assert pwd_used3 == "NewManualResetPass2026!"
+        assert user3.password_hash != original_hash
+        assert user3.session_number == original_session_num + 1
+        assert verify_password("NewManualResetPass2026!", user3.password_hash)
 
 
 def test_database_url_cloud_normalization():

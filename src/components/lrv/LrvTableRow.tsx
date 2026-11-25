@@ -7,6 +7,7 @@ import {
   getLrvItemDn2,
   isLrvItemUsedInJoints,
   resolveLrvConnectionType,
+  resolveLrvFullName,
   resolveLrvItemCategory,
 } from '../../utils/weldingLogic';
 import {
@@ -55,6 +56,7 @@ export const LrvTableRow: React.FC<LrvTableRowProps> = ({
   const dn1Val = getLrvItemDn1(item);
   const dn2Val = getLrvItemDn2(item);
   const category = resolveLrvItemCategory(item);
+  const fullNameDisplay = resolveLrvFullName(item);
   const isUsed = Boolean(joints && isLrvItemUsedInJoints(item, joints));
 
   const handleRowClick = (e: React.MouseEvent) => {
@@ -193,8 +195,8 @@ export const LrvTableRow: React.FC<LrvTableRowProps> = ({
           }}
           className="py-2.5 px-3 border-r border-slate-200 text-slate-800"
         >
-          <div className="text-[11px] leading-tight line-clamp-2" title={item.fullName || item.shortName}>
-            {item.fullName || item.shortName}
+          <div className="text-[11px] leading-tight line-clamp-2" title={fullNameDisplay}>
+            {fullNameDisplay}
           </div>
         </td>
 

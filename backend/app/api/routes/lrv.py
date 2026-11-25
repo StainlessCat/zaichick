@@ -105,6 +105,8 @@ async def list_lrv_items(
             or_(
                 LrvItem.lrv_code.ilike(pat),
                 LrvItem.short_name.ilike(pat),
+                LrvItem.full_name.ilike(pat),
+                LrvItem.marking.ilike(pat),
                 LrvItem.material.ilike(pat),
                 LrvItem.rd_code.ilike(pat),
             )

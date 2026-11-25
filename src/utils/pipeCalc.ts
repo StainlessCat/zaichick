@@ -896,7 +896,8 @@ export function generateLrvFullName(params: GenerateLrvFullNameParams): string {
   // 2. ЗРА и Фланцы
   if (isZraOrFlange) {
     const rawDn = params.dn1 != null && params.dn1 !== '' ? String(params.dn1).trim() : '';
-    const dnPart = rawDn ? `DN ${rawDn.replace(/^DN\s*/i, '')}` : '';
+    const hasDnInShortName = /\b(?:DN|ДУ|Ду)\s*\d+/i.test(shortName);
+    const dnPart = rawDn && !hasDnInShortName ? `DN ${rawDn.replace(/^DN\s*/i, '')}` : '';
 
     let head = '';
     if (shortName && dnPart) {
@@ -912,7 +913,8 @@ export function generateLrvFullName(params: GenerateLrvFullNameParams): string {
       parts.push(head);
     }
 
-    if (params.pnMpa != null) {
+    const hasPnInShortName = /\b(?:PN|РУ|Ру)\s*[\d.,]+/i.test(shortName);
+    if (params.pnMpa != null && !hasPnInShortName) {
       let pnStr = String(params.pnMpa).trim();
       if (pnStr) {
         pnStr = pnStr.replace(/^PN\s*/i, '').replace(/\s*МПа$/i, '').trim();
@@ -948,6 +950,32 @@ export function generateLrvFullName(params: GenerateLrvFullNameParams): string {
   }
 
   return [head, params.marking?.trim(), params.material?.trim(), params.ntd?.trim()].filter(Boolean).join(', ');
+}
+
+/**
+ * Единая функция вычисления отображаемого и фильтруемого полного наименования позиции базы материалов.
+ * Если fullName не сохранено или пустое, формирует полное наименование по корпоративным правилам из реквизитов позиции.
+ */
+export function resolveLrvFullName(item: Partial<LRVItem>): string {
+  const explicit = (item.fullName || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+  const generated = generateLrvFullName({
+    category: item.category || (item.shortName ? detectLrvElementType(item.shortName) : undefined),
+    shortName: item.shortName,
+    dn1: item.dn1,
+    pnMpa: item.pnMpa,
+    marking: item.marking,
+    material: item.material,
+    ntd: item.ntd,
+    diameterMm: item.diameterMm,
+    wallThickness: item.wallThickness,
+    diameterMm2: item.diameterMm2,
+    wallThickness2: item.wallThickness2,
+  }).trim();
+
+  return generated || (item.shortName || '').trim();
 }
 
 export interface LrvSizeOption {

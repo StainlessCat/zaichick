@@ -20,6 +20,7 @@ import {
   getLrvItemDn2,
   isLrvItemUsedInJoints,
   resolveLrvConnectionType,
+  resolveLrvFullName,
   resolveLrvItemCategory,
 } from '../utils/weldingLogic';
 import { applyTableColumnFiltersAndSort } from './TableColumnFilterPopover';
@@ -217,7 +218,7 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
       rdCode: (item) => item.rdCode || '',
       shortName: (item) => item.shortName || '',
       marking: (item) => item.marking || '',
-      fullName: (item) => item.fullName || '',
+      fullName: (item) => resolveLrvFullName(item),
       category: (item) => resolveLrvItemCategory(item),
       pnMpa: (item) => (item.pnMpa ? `${item.pnMpa} МПа` : ''),
       connectionType: (item) =>

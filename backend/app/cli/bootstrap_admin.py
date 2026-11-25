@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory, verify_postgres_connection
@@ -21,6 +21,17 @@ from app.models.user import User
 FORBIDDEN_PASSWORDS = frozenset(
     {"123", "123456", "admin", "password", "zaychick", "qwerty", "root"}
 )
+BOOLEAN_ENV_VALUES = frozenset({"true", "false", "1", "0", "yes", "no"})
+
+
+def _validate_admin_password(candidate: str) -> None:
+    cleaned = candidate.strip()
+    lowered = cleaned.lower()
+    if len(cleaned) < 6 or lowered in FORBIDDEN_PASSWORDS or lowered in BOOLEAN_ENV_VALUES:
+        raise ValueError(
+            "Указанный пароль слишком слабый или является запрещённым значением по умолчанию. "
+            "Укажите стойкий пароль не короче 6 символов."
+        )
 
 
 def run_alembic_upgrade() -> None:
@@ -46,34 +57,53 @@ async def _execute_bootstrap(
     full_name: str,
     department: str,
     interactive: bool = False,
+    allow_password_reset: bool = False,
 ) -> tuple[User, str, bool]:
     # 1. Idempotency check: see if a SUPERADMIN user or matching login already exists
     existing_admin = (
         await session.execute(
-            select(User).where(User.role == SystemRoleEnum.SUPERADMIN)
+            select(User)
+            .where(User.role == SystemRoleEnum.SUPERADMIN)
+            .order_by(User.created_at.asc(), User.id.asc())
         )
     ).scalars().first()
 
+    normalized_login = login.strip().lower()
     existing_login = (
         await session.execute(
-            select(User).where(User.login == login.strip().lower())
+            select(User).where(func.lower(func.btrim(User.login)) == normalized_login)
         )
     ).scalar_one_or_none()
 
     if existing_admin is not None:
         reset_env = os.getenv("RESET_ADMIN_PASSWORD", "").strip()
-        if reset_env and len(reset_env) >= 6:
-            existing_admin.password_hash = hash_password(reset_env)
+        if allow_password_reset:
+            reset_password = (password or "").strip() or reset_env
+            if not reset_password and interactive and sys.stdin.isatty():
+                reset_password = getpass.getpass(
+                    f"Введите новый надёжный пароль для администратора '{existing_admin.login}': "
+                ).strip()
+            _validate_admin_password(reset_password)
+            existing_admin.password_hash = hash_password(reset_password)
             existing_admin.is_active = True
             existing_admin.session_number += 1
+            existing_admin.version += 1
             existing_admin.updated_at = datetime.now(timezone.utc)
             session.add(existing_admin)
             await session.commit()
             print(
                 f"[OK] Пароль существующего администратора '{existing_admin.login}' (id={existing_admin.id}) "
-                f"успешно сброшен из переменной RESET_ADMIN_PASSWORD."
+                f"успешно обновлён по явному флагу --reset-password."
             )
-            return existing_admin, reset_env, False
+            return existing_admin, reset_password, False
+
+        if reset_env:
+            print(
+                f"[WARN] Обнаружена переменная окружения RESET_ADMIN_PASSWORD, но она проигнорирована "
+                f"при штатном запуске, чтобы не сбрасывать пароль администратора '{existing_admin.login}' "
+                f"при повторном развёртывании. Удалите RESET_ADMIN_PASSWORD из переменных хостинга "
+                f"или запустите вручную с флагом --reset-password."
+            )
 
         print(
             f"[INFO] Администратор уже существует в системе: login='{existing_admin.login}', "
@@ -102,16 +132,12 @@ async def _execute_bootstrap(
             final_password = secrets.token_urlsafe(16)
             is_generated = True
 
-    if final_password.lower() in FORBIDDEN_PASSWORDS or len(final_password) < 6:
-        raise ValueError(
-            f"Пароль '{final_password}' слишком слабый или является запрещённым значением по умолчанию. "
-            "Укажите стойкий пароль не короче 6 символов."
-        )
+    _validate_admin_password(final_password)
 
     now = datetime.now(timezone.utc)
     admin = User(
         id=uuid.uuid4(),
-        login=login.strip().lower(),
+        login=normalized_login,
         password_hash=hash_password(final_password),
         full_name=full_name.strip(),
         role=SystemRoleEnum.SUPERADMIN,
@@ -149,12 +175,14 @@ async def bootstrap_admin(
     full_name: str,
     department: str,
     interactive: bool = False,
+    allow_password_reset: bool = False,
     session: AsyncSession | None = None,
 ) -> tuple[User, str, bool]:
     """
     Idempotent bootstrap of the initial Administrator account.
     Returns (user, password_used, was_created).
-    If an administrator already exists, returns (existing_user, "", False) without altering passwords.
+    If an administrator already exists, returns (existing_user, "", False) without altering passwords
+    unless allow_password_reset=True is explicitly requested.
     """
     if session is not None:
         return await _execute_bootstrap(
@@ -164,6 +192,7 @@ async def bootstrap_admin(
             full_name=full_name,
             department=department,
             interactive=interactive,
+            allow_password_reset=allow_password_reset,
         )
 
     await verify_postgres_connection()
@@ -175,6 +204,7 @@ async def bootstrap_admin(
             full_name=full_name,
             department=department,
             interactive=interactive,
+            allow_password_reset=allow_password_reset,
         )
 
 
@@ -212,6 +242,11 @@ def main() -> None:
         action="store_true",
         help="Запросить ввод пароля интерактивно через скрытый ввод терминала",
     )
+    parser.add_argument(
+        "--reset-password",
+        action="store_true",
+        help="Явно сбросить пароль существующего администратора (только для ручного запуска в консоли)",
+    )
 
     args = parser.parse_args()
 
@@ -226,6 +261,7 @@ def main() -> None:
                 full_name=args.full_name,
                 department=args.department,
                 interactive=args.interactive,
+                allow_password_reset=args.reset_password,
             )
         )
     except Exception as exc:

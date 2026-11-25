@@ -126,7 +126,8 @@ export function TableColumnFilterHeader<T>({
       if (selectedValues === undefined) {
         setDraftSelection(new Set(allValues));
       } else {
-        setDraftSelection(new Set(selectedValues));
+        const availableSet = new Set(allValues);
+        setDraftSelection(new Set(selectedValues.filter((val) => availableSet.has(val))));
       }
       setSearchQuery('');
       setSearchSelection(new Set());

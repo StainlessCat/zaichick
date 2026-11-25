@@ -8,12 +8,15 @@ import {
   filterJointsByScope,
   filterLrvCatalogByObject,
   filterLrvCatalogByRd,
+  getCascadingFilterRows,
   getJointFieldValue,
   normalizeFilterSearchText,
   resolveColumnFilterApplySelection,
   sortJoints,
   sortJointsChronologically,
 } from './filters';
+import { resolveLrvFullName } from './pipeCalc';
+import { normalizeLrvItem } from './entityNormalizers';
 import { FacilityObject, LRVItem, NdtLabRequest, WeldJoint } from '../types/welding';
 
 const mockJoints: WeldJoint[] = [
@@ -310,4 +313,114 @@ test('filters: normalizeFilterSearchText and resolveColumnFilterApplySelection a
     searchQuery: '',
   });
   assert.deepEqual(appliedSubset, ['Отвод 90°']);
+});
+
+test('filters: getCascadingFilterRows excludes rows filtered out by other columns while keeping own column options', () => {
+  const rows = [
+    { id: '1', category: 'Труба', material: '09Г2С', diameter: '159.0' },
+    { id: '2', category: 'Труба', material: 'К60', diameter: '530.0' },
+    { id: '3', category: 'ЗРА', material: '12Х18Н10Т', diameter: '219.0' },
+    { id: '4', category: 'Отвод', material: '09Г2С', diameter: '159.0' },
+  ];
+
+  const getters = {
+    category: (r: (typeof rows)[number]) => r.category,
+    material: (r: (typeof rows)[number]) => r.material,
+    diameter: (r: (typeof rows)[number]) => r.diameter,
+  };
+
+  // Фильтр по category = ['Труба'] -> в списке material должны остаться только 09Г2С и К60 (без 12Х18Н10Т)
+  const materialRows = getCascadingFilterRows(
+    rows,
+    { category: ['Труба'] },
+    'material',
+    getters
+  );
+  assert.deepEqual(
+    materialRows.map((r) => r.material),
+    ['09Г2С', 'К60']
+  );
+
+  // В собственном столбце category остаются все строки, чтобы пользователь мог расширить выбор
+  const categoryRows = getCascadingFilterRows(
+    rows,
+    { category: ['Труба'] },
+    'category',
+    getters
+  );
+  assert.equal(categoryRows.length, 4);
+
+  // При двух фильтрах (category = Труба и material = 09Г2С) в diameter остаётся только 159.0
+  const diameterRows = getCascadingFilterRows(
+    rows,
+    { category: ['Труба'], material: ['09Г2С'] },
+    'diameter',
+    getters
+  );
+  assert.deepEqual(
+    diameterRows.map((r) => r.diameter),
+    ['159.0']
+  );
+});
+
+test('lrv: resolveLrvFullName generates full name when missing and normalizeLrvItem preserves fullName/marking/pnMpa', () => {
+  const pipeWithoutFullName: LRVItem = {
+    id: 'lrv-1',
+    lrvCode: 'ЛРВ-001',
+    rdCode: '01-ГП',
+    objectName: 'УКПГ-1С',
+    shortName: 'Труба БШ 159х8',
+    category: 'Труба',
+    material: '09Г2С',
+    ntd: 'ГОСТ 8732-78',
+    diameterMm: 159,
+    wallThickness: 8,
+    specQty: 100,
+    unit: 'м',
+  };
+
+  assert.equal(
+    resolveLrvFullName(pipeWithoutFullName),
+    'Труба БШ 159х8, 09Г2С, ГОСТ 8732-78'
+  );
+
+  // ЗРА с DN и PN в кратком наименовании не дублирует DN и PN
+  const valveWithoutFullName: LRVItem = {
+    id: 'lrv-2',
+    lrvCode: 'ЛРВ-002',
+    rdCode: '01-ГП',
+    objectName: 'УКПГ-1С',
+    shortName: 'Кран шаровой фланцевый DN200 PN6.3',
+    category: 'ЗРА',
+    dn1: 200,
+    pnMpa: '6.3',
+    material: '09Г2С',
+    ntd: 'ТУ 3742-001-12345678',
+    diameterMm: 219,
+    wallThickness: 10,
+    specQty: 4,
+    unit: 'шт',
+  };
+
+  assert.equal(
+    resolveLrvFullName(valveWithoutFullName),
+    'Кран шаровой фланцевый DN200 PN6.3, 09Г2С, ТУ 3742-001-12345678'
+  );
+
+  // Явно заданное полное наименование сохраняется при нормализации
+  const normalized = normalizeLrvItem({
+    ...valveWithoutFullName,
+    marking: 'КШ-200-6,3',
+    fullName: 'Кран шаровой DN 200, PN 6,3 МПа, КШ-200-6,3, 09Г2С',
+  });
+  assert.equal(normalized.marking, 'КШ-200-6,3');
+  assert.equal(normalized.pnMpa, '6.3');
+  assert.equal(
+    normalized.fullName,
+    'Кран шаровой DN 200, PN 6,3 МПа, КШ-200-6,3, 09Г2С'
+  );
+  assert.equal(
+    resolveLrvFullName(normalized),
+    'Кран шаровой DN 200, PN 6,3 МПа, КШ-200-6,3, 09Г2С'
+  );
 });
