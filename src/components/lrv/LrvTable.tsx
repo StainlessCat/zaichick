@@ -364,7 +364,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
                 columnKey="controlStatus"
                 label="Статус контроля"
                 rows={rdScopedCatalog}
-                getValue={(i) => i.controlStatus || 'pending'}
+                getValue={lrvColumnGetters.controlStatus}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
                 sortConfig={sortConfig}
@@ -379,7 +379,7 @@ export const LrvTable: React.FC<LrvTableProps> = ({
                 columnKey="balance"
                 label="Баланс допуска"
                 rows={rdScopedCatalog}
-                getValue={(i) => `${i.acceptedQty || 0} / ${i.totalSpecQty ?? i.specQty}`}
+                getValue={lrvColumnGetters.balance}
                 activeFilters={columnFilters}
                 onApplyFilter={onApplyColumnFilter}
                 sortConfig={sortConfig}

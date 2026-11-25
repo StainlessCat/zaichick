@@ -6,12 +6,15 @@ import {
   filterJointsByDateRange,
   filterJointsByGlobalSearch,
   filterJointsByScope,
+  filterLrvCatalogByObject,
   filterLrvCatalogByRd,
   getJointFieldValue,
+  normalizeFilterSearchText,
+  resolveColumnFilterApplySelection,
   sortJoints,
   sortJointsChronologically,
 } from './filters';
-import { LRVItem, NdtLabRequest, WeldJoint } from '../types/welding';
+import { FacilityObject, LRVItem, NdtLabRequest, WeldJoint } from '../types/welding';
 
 const mockJoints: WeldJoint[] = [
   {
@@ -227,4 +230,84 @@ test('tech card matching: findMatchingTechCard and classifyJointElements filter 
     jointKind: 'Угловое',
   });
   assert.equal(matchFailKind, null);
+});
+
+test('filters: filterLrvCatalogByObject restricts materials strictly to selected facility', () => {
+  const facilities: FacilityObject[] = [
+    {
+      id: 'fac-1',
+      name: 'Объект А',
+      rdCodes: [{ code: 'RD-A1', title: 'Технология А' }],
+    } as unknown as FacilityObject,
+    {
+      id: 'fac-2',
+      name: 'Объект Б',
+      rdCodes: [{ code: 'RD-B1', title: 'Технология Б' }],
+    } as unknown as FacilityObject,
+  ];
+
+  const items: LRVItem[] = [
+    { id: '1', objectName: 'Объект А', rdCode: 'RD-A1', lrvCode: 'A-1' } as unknown as LRVItem,
+    { id: '2', objectName: 'Объект Б', rdCode: 'RD-B1', lrvCode: 'B-1' } as unknown as LRVItem,
+    { id: '3', objectName: '', facilityId: 'fac-1', rdCode: 'RD-X', lrvCode: 'A-LEGACY-ID' } as unknown as LRVItem,
+    { id: '4', objectName: '', rdCode: 'RD-A1', lrvCode: 'A-LEGACY-RD' } as unknown as LRVItem,
+    { id: '5', objectName: 'Объект Б', facilityId: 'fac-1', rdCode: 'RD-A1', lrvCode: 'B-EXPLICIT' } as unknown as LRVItem,
+  ];
+
+  assert.equal(filterLrvCatalogByObject(items, 'ALL', facilities).length, 5);
+
+  const onlyA = filterLrvCatalogByObject(items, 'Объект А', facilities);
+  assert.deepEqual(
+    onlyA.map((i) => i.id),
+    ['1', '3', '4']
+  );
+
+  const onlyB = filterLrvCatalogByObject(items, 'Объект Б', facilities);
+  assert.deepEqual(
+    onlyB.map((i) => i.id),
+    ['2', '5']
+  );
+});
+
+test('filters: normalizeFilterSearchText and resolveColumnFilterApplySelection apply search matches accurately', () => {
+  assert.equal(normalizeFilterSearchText('  ТрубА  ёлочка '), 'труба елочка');
+
+  const allValues = ['Кран DN50', 'Кран DN100', 'Отвод 90°', 'Труба 159'];
+  const filteredValues = ['Кран DN50', 'Кран DN100'];
+
+  // Режим поиска: даже если пользователь ничего не снимал, применяются только найденные значения
+  const appliedFromSearch = resolveColumnFilterApplySelection({
+    allValues,
+    filteredValues,
+    activeSelection: new Set(filteredValues),
+    searchQuery: 'кран',
+  });
+  assert.deepEqual(appliedFromSearch, ['Кран DN50', 'Кран DN100']);
+
+  // Режим поиска со снятой одной галочкой: остаётся только отмеченное найденное значение
+  const appliedPartialSearch = resolveColumnFilterApplySelection({
+    allValues,
+    filteredValues,
+    activeSelection: new Set(['Кран DN100']),
+    searchQuery: 'кран',
+  });
+  assert.deepEqual(appliedPartialSearch, ['Кран DN100']);
+
+  // Обычный режим без поиска: выделены все -> фильтр снимается (undefined)
+  const clearedAll = resolveColumnFilterApplySelection({
+    allValues,
+    filteredValues: allValues,
+    activeSelection: new Set(allValues),
+    searchQuery: '',
+  });
+  assert.equal(clearedAll, undefined);
+
+  // Обычный режим без поиска: выделена часть -> возвращается выбранное подмножество
+  const appliedSubset = resolveColumnFilterApplySelection({
+    allValues,
+    filteredValues: allValues,
+    activeSelection: new Set(['Отвод 90°']),
+    searchQuery: '',
+  });
+  assert.deepEqual(appliedSubset, ['Отвод 90°']);
 });

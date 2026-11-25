@@ -16,7 +16,6 @@ import {
   Plus,
   Redo2,
   RotateCw,
-  Shapes,
   Trash2,
   Undo2,
   UserCheck,
@@ -30,12 +29,6 @@ import {
   SYSTEM_ROLE_LABELS_RU,
 } from '../../utils/rbac';
 import { ZaychickLogo } from '../ZaychickLogo';
-import {
-  WeldBitLogo,
-  type WeldBitVariantId,
-  type WeldBitWordmarkMode,
-} from '../WeldBitLogo';
-import { WeldBitLogoPrototypeModal } from '../WeldBitLogoPrototypeModal';
 import { useAuth, useAppContext } from '../../context';
 
 export interface AppHeaderProps {
@@ -165,9 +158,6 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [isCreatingObj, setIsCreatingObj] = useState(false);
   const [newObjName, setNewObjName] = useState('');
-  const [isLogoPrototypeOpen, setIsLogoPrototypeOpen] = useState(false);
-  const [previewLogoId, setPreviewLogoId] = useState<WeldBitVariantId | null>(null);
-  const [previewWordmark, setPreviewWordmark] = useState<WeldBitWordmarkMode>('weldbit');
   const [confirmDeleteObj, setConfirmDeleteObj] = useState<string | null>(null);
 
   const facilityMenuRef = useRef<HTMLDivElement>(null);
@@ -244,42 +234,18 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
   const dbRevision = serverDbMeta?.globalRevision ?? 1;
 
   return (
-    <>
     <header className="sticky top-0 z-30 bg-[#1e3799] text-white border-b border-white/15 shadow-md no-print">
       {/* Верхняя строка: бренд, объект строительства, статус СУБД и аккаунт */}
       <div className="max-w-[1920px] mx-auto px-4 h-12 flex items-center justify-between gap-3">
-        {/* Левая зона: логотип + прототип + контекстное меню объекта */}
+        {/* Левая зона: логотип + контекстное меню объекта */}
         <div className="flex items-center gap-3 min-w-0">
           <div
             onClick={onLogoClick}
             className="flex items-center shrink-0 cursor-pointer select-none"
-            title={previewLogoId ? previewWordmark : 'zaychick'}
+            title="zaychick"
           >
-            {previewLogoId ? (
-              <WeldBitLogo
-                variantId={previewLogoId}
-                wordmark={previewWordmark}
-                tone="header"
-                size={34}
-              />
-            ) : (
-              <ZaychickLogo variant="header" size={34} />
-            )}
+            <ZaychickLogo variant="header" size={34} />
           </div>
-
-          <button
-            type="button"
-            onClick={() => setIsLogoPrototypeOpen(true)}
-            title="Открыть прототип логотипа weldbit"
-            className={`h-7 px-2 rounded-md border text-[11px] font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              previewLogoId
-                ? 'bg-white text-[#1e3799] border-white'
-                : 'bg-white/10 hover:bg-white/20 border-white/20 text-sky-100 hover:text-white'
-            }`}
-          >
-            <Shapes className="w-3.5 h-3.5 shrink-0" />
-            <span className="hidden md:inline">Логотип weldbit</span>
-          </button>
 
           <span className="hidden sm:block h-5 w-px bg-white/15 shrink-0" aria-hidden="true" />
 
@@ -782,18 +748,5 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
         </div>
       </nav>
     </header>
-
-    <WeldBitLogoPrototypeModal
-      isOpen={isLogoPrototypeOpen}
-      onClose={() => setIsLogoPrototypeOpen(false)}
-      activePreviewId={previewLogoId}
-      activeWordmark={previewWordmark}
-      onApplyPreview={(variantId, wordmark) => {
-        setPreviewLogoId(variantId);
-        setPreviewWordmark(wordmark);
-      }}
-      onChangeWordmark={setPreviewWordmark}
-    />
-    </>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Filter, RotateCcw } from 'lucide-react';
 import { FacilityObject, LRVItem, WeldJoint } from '../types/welding';
 import { MaterialBatchAct } from '../types/materialControl';
@@ -23,6 +23,7 @@ import {
   resolveLrvItemCategory,
 } from '../utils/weldingLogic';
 import { applyTableColumnFiltersAndSort } from './TableColumnFilterPopover';
+import { filterLrvCatalogByObject } from '../utils/filters';
 import { useResizableColumns } from '../utils/useResizableColumns';
 import { useAuth, useAppContext } from '../context';
 import {
@@ -36,6 +37,7 @@ import {
 interface LrvCatalogViewProps {
   catalog?: LRVItem[];
   facilities?: FacilityObject[];
+  selectedObjectName?: string;
   selectedRdCode?: string;
   onAddLrvItems: (items: LRVItem[]) => void;
   onUpdateLrvItem?: (item: LRVItem) => void;
@@ -50,21 +52,24 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
   const app = useAppContext();
 
   const joints = props.joints ?? app?.joints ?? [];
-  const catalog =
-    props.catalog ??
-    (app?.lrvCatalog
-      ? app.selectedObjectName !== 'ALL'
-        ? app.lrvCatalog.filter((item) => item.objectName === app.selectedObjectName)
-        : app.lrvCatalog
-      : []) ?? [];
-  const facilities =
-    props.facilities ??
-    (app?.derivedFacilities
-      ? app.selectedObjectName !== 'ALL'
-        ? app.derivedFacilities.filter((f) => f.name === app.selectedObjectName)
-        : app.derivedFacilities
-      : []) ?? [];
-  const selectedRdCode = props.selectedRdCode ?? app?.selectedRdCode ?? '';
+  const selectedObjectName = props.selectedObjectName ?? app?.selectedObjectName ?? 'ALL';
+  const rawCatalog = props.catalog ?? app?.lrvCatalog ?? [];
+  const rawFacilities = props.facilities ?? app?.derivedFacilities ?? [];
+
+  const facilities = useMemo(
+    () =>
+      selectedObjectName && selectedObjectName !== 'ALL'
+        ? rawFacilities.filter((f) => f.name.trim() === selectedObjectName.trim())
+        : rawFacilities,
+    [rawFacilities, selectedObjectName]
+  );
+
+  const catalog = useMemo(
+    () => filterLrvCatalogByObject(rawCatalog, selectedObjectName, rawFacilities),
+    [rawCatalog, selectedObjectName, rawFacilities]
+  );
+
+  const selectedRdCode = props.selectedRdCode ?? app?.selectedRdCode ?? 'ALL';
   const canEdit = props.canEdit ?? auth?.userPermissions?.canEditLrvCatalog ?? false;
 
   const { onAddLrvItems, onUpdateLrvItem, onDeleteLrvItems } = props;
@@ -81,7 +86,11 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
     [facilities]
   );
 
-  const [rdFilter, setRdFilter] = useState<string>(selectedRdCode);
+  const [rdFilter, setRdFilter] = useState<string>(() =>
+    selectedRdCode && selectedRdCode !== 'ALL' && allRds.some((r) => r.code === selectedRdCode)
+      ? selectedRdCode
+      : 'ALL'
+  );
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState<LRVItem | null>(null);
   const [selectedLrvIds, setSelectedLrvIds] = useState<string[]>([]);
@@ -153,9 +162,40 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
     });
   }, [catalog]);
 
+  const prevObjectRef = useRef<string>(selectedObjectName);
+
+  // Сбрасываем устаревшие фильтры и выделение при смене объекта строительства
+  useEffect(() => {
+    if (prevObjectRef.current !== selectedObjectName) {
+      prevObjectRef.current = selectedObjectName;
+      setColumnFilters({});
+      setSelectedLrvIds([]);
+      setRdFilter((prev) => {
+        if (
+          selectedRdCode &&
+          selectedRdCode !== 'ALL' &&
+          allRds.some((r) => r.code === selectedRdCode)
+        ) {
+          return selectedRdCode;
+        }
+        if (prev && prev !== 'ALL' && allRds.some((r) => r.code === prev)) {
+          return prev;
+        }
+        return 'ALL';
+      });
+    }
+  }, [selectedObjectName, selectedRdCode, allRds]);
+
+  // Синхронизируем фильтр шифра РД, если текущий шифр отсутствует в новом списке доступных РД
+  useEffect(() => {
+    if (rdFilter && rdFilter !== 'ALL' && !allRds.some((r) => r.code === rdFilter)) {
+      setRdFilter('ALL');
+    }
+  }, [rdFilter, allRds]);
+
   const rdScopedCatalog = useMemo(() => {
     return normalizedCatalog.filter((item) => {
-      if (rdFilter !== 'ALL' && item.rdCode !== rdFilter) return false;
+      if (rdFilter && rdFilter !== 'ALL' && item.rdCode !== rdFilter) return false;
       if (statusFilter === 'accepted' && item.controlStatus !== 'accepted') return false;
       if (statusFilter === 'partial' && item.controlStatus !== 'partial') return false;
       if (statusFilter === 'rejected' && item.controlStatus !== 'rejected') return false;
@@ -204,6 +244,8 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
       wallThickness2: (item) =>
         item.wallThickness2 !== undefined ? item.wallThickness2.toFixed(1) : '',
       specQty: (item) => `${item.specQty ?? 0} ${item.unit || 'шт'}`,
+      controlStatus: (item) => item.controlStatus || 'pending',
+      balance: (item) => `${item.acceptedQty || 0} / ${item.totalSpecQty ?? item.specQty}`,
     }),
     []
   );
@@ -227,6 +269,8 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
     diameterMm2: 'Диаметр Ø2, мм',
     wallThickness2: 'Толщина стенки S2, мм',
     specQty: 'Кол-во по спец.',
+    controlStatus: 'Статус контроля',
+    balance: 'Баланс допуска',
   };
 
   const filteredCatalog = useMemo(

@@ -3,7 +3,7 @@
  * Изолированные чистые функции без привязки к React для тестирования и переиспользования.
  */
 
-import { LRVItem, NdtLabRequest, WeldJoint, WeldJointFieldKey } from '../types/welding';
+import { FacilityObject, LRVItem, NdtLabRequest, WeldJoint, WeldJointFieldKey } from '../types/welding';
 import { ALL_COLUMNS } from './columns';
 import { formatDateDDMMYY } from './formatting';
 import { isDateColumnKey, isWeldingDateInRange } from './dates';
@@ -220,4 +220,79 @@ export function filterLrvCatalogByRd(
 ): LRVItem[] {
   if (allowOtherRdCodes) return catalog;
   return catalog.filter((item) => item.rdCode === rdCode);
+}
+
+/**
+ * Строгая фильтрация каталога материалов ЛРВ по выбранному объекту строительства.
+ * В режиме 'ALL' возвращает весь каталог. Для конкретного объекта допускает позиции
+ * с совпадающим objectName, а для старых записей без objectName — по facilityId или шифру РД объекта.
+ */
+export function filterLrvCatalogByObject(
+  catalog: LRVItem[],
+  selectedObjectName = 'ALL',
+  facilities: FacilityObject[] = []
+): LRVItem[] {
+  if (!selectedObjectName || selectedObjectName === 'ALL') {
+    return catalog;
+  }
+
+  const targetName = selectedObjectName.trim();
+  const matchedFacility = facilities.find((f) => f.name.trim() === targetName);
+  const facilityId = matchedFacility?.id;
+  const facilityRdCodes = new Set(
+    (matchedFacility?.rdCodes || []).map((r) => r.code.trim()).filter(Boolean)
+  );
+
+  return catalog.filter((item) => {
+    const itemObj = (item.objectName || '').trim();
+    if (itemObj) {
+      return itemObj === targetName;
+    }
+    if (facilityId && item.facilityId && item.facilityId === facilityId) {
+      return true;
+    }
+    if (item.rdCode && facilityRdCodes.has(item.rdCode.trim())) {
+      return true;
+    }
+    return false;
+  });
+}
+
+/**
+ * Нормализация строки для поиска в фильтре столбцов (регистр, лишние пробелы, е/ё)
+ */
+export function normalizeFilterSearchText(text: string): string {
+  return String(text ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Вычисление итогового массива разрешённых значений при нажатии «ОК» в окне фильтра столбца.
+ * В режиме непустого поиска применяются только отмеченные результаты поиска (как в Excel).
+ * Возвращает undefined, если выбраны абсолютно все уникальные значения столбца (фильтр снимается).
+ */
+export function resolveColumnFilterApplySelection(params: {
+  allValues: string[];
+  filteredValues: string[];
+  activeSelection: Set<string>;
+  searchQuery: string;
+}): string[] | undefined {
+  const { allValues, filteredValues, activeSelection, searchQuery } = params;
+  const hasSearch = searchQuery.trim().length > 0;
+  const effectiveValues = hasSearch
+    ? filteredValues.filter((v) => activeSelection.has(v))
+    : allValues.filter((v) => activeSelection.has(v));
+
+  if (
+    allValues.length > 0 &&
+    effectiveValues.length === allValues.length &&
+    allValues.every((v) => activeSelection.has(v))
+  ) {
+    return undefined;
+  }
+
+  return effectiveValues;
 }

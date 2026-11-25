@@ -415,6 +415,7 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
         <LrvCatalogView
           catalog={lrvCatalog}
           facilities={derivedFacilities}
+          selectedObjectName={selectedObjectName}
           selectedRdCode={selectedRdCode}
           onAddLrvItems={dirActions.handleAddLrvItems}
           onUpdateLrvItem={dirActions.handleUpdateLrvItem}
