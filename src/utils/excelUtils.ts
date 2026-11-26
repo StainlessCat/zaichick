@@ -112,13 +112,85 @@ export async function exportWeldingJournalToExcel(
 
 export async function exportReadinessReportToExcel(
   condition: ReadinessGroupCondition,
-  rdCode?: string
+  rdCode?: string,
+  facilityId?: string,
+  dateFrom?: string,
+  dateTo?: string
 ): Promise<void> {
   const { blob, filename } = await zaychickApi.downloadReadinessXlsx({
     condition,
     rdCode,
+    facilityId,
+    dateFrom,
+    dateTo,
   });
   triggerBlobDownload(blob, filename);
+}
+
+function escapeXml(val: unknown): string {
+  return String(val ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function buildSpreadsheetMlSheet(
+  name: string,
+  headers: string[],
+  rows: Array<Array<string | number>>
+): string {
+  const safeName = escapeXml(name.slice(0, 31));
+  const headerXml = `<Row>${headers
+    .map(
+      (h) =>
+        `<Cell ss:StyleID="hdr"><Data ss:Type="String">${escapeXml(h)}</Data></Cell>`
+    )
+    .join('')}</Row>`;
+  const rowsXml = rows
+    .map(
+      (row) =>
+        `<Row>${row
+          .map((cell) => {
+            const isNum = typeof cell === 'number' && Number.isFinite(cell);
+            return `<Cell><Data ss:Type="${isNum ? 'Number' : 'String'}">${escapeXml(cell)}</Data></Cell>`;
+          })
+          .join('')}</Row>`
+    )
+    .join('');
+  return `<Worksheet ss:Name="${safeName}"><Table>${headerXml}${rowsXml}</Table></Worksheet>`;
+}
+
+/**
+ * Локальная многолистовая выгрузка в Excel (SpreadsheetML .xls) при работе без подключения к серверу.
+ */
+export function exportReadinessOfflineExcel(params: {
+  fileName: string;
+  sheets: Array<{
+    name: string;
+    headers: string[];
+    rows: Array<Array<string | number>>;
+  }>;
+}): void {
+  const sheetsXml = params.sheets
+    .map((s) => buildSpreadsheetMlSheet(s.name, s.headers, s.rows))
+    .join('');
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="hdr">
+   <Font ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#1E3799" ss:Pattern="Solid"/>
+  </Style>
+ </Styles>
+ ${sheetsXml}
+</Workbook>`;
+  const blob = new Blob([xml], {
+    type: 'application/vnd.ms-excel;charset=utf-8;',
+  });
+  triggerBlobDownload(blob, params.fileName);
 }
 
 /**

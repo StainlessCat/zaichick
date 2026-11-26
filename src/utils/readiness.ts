@@ -1,6 +1,8 @@
 import {
   ProjectLineItem,
   ReadinessGroupCondition,
+  ReadinessTestAllowanceStatus,
+  TestCircuit,
   WeldJoint,
 } from '../types/welding';
 import { getJointEquivDiaInch, getJointNominalInch } from './pipeCalc';
@@ -13,6 +15,7 @@ export interface ReadinessRow {
   weldedCount: number;
   vikPassedCount: number;
   ndtPassedCount: number;
+  ndtNotRequiredCount: number;
   dupNdtPassedCount: number;
   repairCount: number;
   fullyCompletedCount: number;
@@ -23,6 +26,97 @@ export interface ReadinessRow {
   totalEquivInches: number;
   weldedEquivInches: number;
   equivWeldingPct: number;
+  totalLinesCount: number;
+  signedIdLinesCount: number;
+  idReadinessPct: number;
+  lineIdStatus?: 'SIGNED' | 'IN_WORK' | null;
+  testAllowanceStatus?: ReadinessTestAllowanceStatus | null;
+  testStatusLabel?: string | null;
+}
+
+export interface ExecutiveDocStatusLike {
+  idStatus?: string | null;
+}
+
+export interface ReadinessReportOptions {
+  lines?: ProjectLineItem[];
+  testCircuits?: TestCircuit[];
+  docByLineId?: Record<string, ExecutiveDocStatusLike>;
+  /** Исключить группы с 0 стыков (например, при активном фильтре по периоду дат сварки) */
+  excludeEmptyGroups?: boolean;
+}
+
+export const TEST_ALLOWANCE_STATUS_LABELS: Record<ReadinessTestAllowanceStatus, string> = {
+  allowed: 'Допуск к испытаниям',
+  welding_done_id_pending: 'Ждёт подписи ИД',
+  id_signed_welding_pending: 'ИД подписана',
+  in_work: 'В работе',
+  no_lines: 'Нет линий',
+};
+
+/**
+ * Определяет, подписана ли исполнительная документация по линии
+ * (приоритет — запись из раздела «Исполнительная документация», затем поле линии).
+ */
+export function isLineExecutiveDocSigned(
+  line: Pick<ProjectLineItem, 'id' | 'idStatus'>,
+  docByLineId?: Record<string, ExecutiveDocStatusLike>
+): boolean {
+  const fromDoc = docByLineId?.[line.id]?.idStatus;
+  if (fromDoc) {
+    const upper = fromDoc.trim().toUpperCase();
+    return upper === 'SIGNED' || upper === 'ПОДПИСАНА';
+  }
+  const fromLine = line.idStatus;
+  if (fromLine) {
+    const upper = fromLine.trim().toUpperCase();
+    return upper === 'SIGNED' || upper === 'ПОДПИСАНА';
+  }
+  return false;
+}
+
+function cleanContourText(raw?: string | null): string {
+  const trimmed = (raw || '').trim();
+  if (!trimmed || trimmed === '—' || trimmed === '-') return '';
+  return trimmed;
+}
+
+/**
+ * Определяет статус допуска контура к испытаниям на основе состояния сварки/НК и подписания ИД.
+ */
+export function resolveTestAllowanceStatus(params: {
+  totalJoints: number;
+  fullyCompletedCount: number;
+  repairCount: number;
+  totalLinesCount: number;
+  signedIdLinesCount: number;
+}): ReadinessTestAllowanceStatus {
+  const {
+    totalJoints,
+    fullyCompletedCount,
+    repairCount,
+    totalLinesCount,
+    signedIdLinesCount,
+  } = params;
+
+  if (totalLinesCount === 0 && totalJoints === 0) {
+    return 'no_lines';
+  }
+
+  const allIdSigned = totalLinesCount > 0 && signedIdLinesCount === totalLinesCount;
+  const weldingCompleted =
+    totalJoints > 0 && fullyCompletedCount === totalJoints && repairCount === 0;
+
+  if (allIdSigned && weldingCompleted) {
+    return 'allowed';
+  }
+  if (!allIdSigned && weldingCompleted) {
+    return 'welding_done_id_pending';
+  }
+  if (allIdSigned && !weldingCompleted) {
+    return 'id_signed_welding_pending';
+  }
+  return 'in_work';
 }
 
 /**
@@ -70,11 +164,27 @@ export function isJointDefective(
 }
 
 /**
+ * Единый критерий сваренного стыка для аналитики, лайнлиста и приёмки:
+ * заполнена дата сварки и указано хотя бы одно клеймо сварщика.
+ */
+export function isJointWeldedWithStamp(
+  joint: Pick<WeldJoint, 'weldingDate' | 'welderStamp' | 'welderStampsList'>
+): boolean {
+  const hasDate = Boolean(joint.weldingDate && joint.weldingDate.trim() !== '');
+  if (!hasDate) return false;
+  const hasStamp = Boolean(joint.welderStamp && joint.welderStamp.trim() !== '');
+  const hasStampsList = Boolean(
+    joint.welderStampsList && joint.welderStampsList.some((s) => Boolean(s && s.trim()))
+  );
+  return hasStamp || hasStampsList;
+}
+
+/**
  * Проверяет, полностью ли принят стык (либо с первого раза по ВИК и НК,
  * либо после первичного ремонта с успешным повторным контролем после ремонта).
  */
 export function isJointFullyAccepted(joint: WeldJoint): boolean {
-  if (!joint.weldingDate || !joint.welderStamp) return false;
+  if (!isJointWeldedWithStamp(joint)) return false;
 
   const hadDefect = isJointDefective(joint);
 
@@ -149,48 +259,296 @@ export function isJointCurrentlyInRepair(joint: WeldJoint): boolean {
 }
 
 /**
- * Расчёт отчётности по готовности по условиям: «Объект», «шифр РД», «линия», «контур»
+ * Расчёт отчётности по готовности по условиям: «Объект», «Контур испытаний», «Шифр РД», «Линия»
+ * с учётом количества линий и состояния исполнительной документации (ИД).
  */
 export function calculateReadinessReport(
   joints: WeldJoint[],
-  condition: ReadinessGroupCondition
+  condition: ReadinessGroupCondition,
+  options?: ReadinessReportOptions
 ): ReadinessRow[] {
-  const groups = new Map<string, WeldJoint[]>();
+  const lines = options?.lines ?? [];
+  const testCircuits = options?.testCircuits ?? [];
+  const docByLineId = options?.docByLineId;
 
+  // Индексы контуров испытаний и линий для быстрого O(1) сопоставления
+  const circuitById = new Map<string, TestCircuit>();
+  const circuitByName = new Map<string, TestCircuit>();
+  const contoursByLineId = new Map<string, Set<string>>();
+  const contoursByUniqueLineId = new Map<string, Set<string>>();
+  const contoursByRdLine = new Map<string, Set<string>>();
+
+  const registerLineContour = (
+    map: Map<string, Set<string>>,
+    key: string | undefined | null,
+    contourName: string
+  ) => {
+    if (!key || !contourName) return;
+    let set = map.get(key);
+    if (!set) {
+      set = new Set<string>();
+      map.set(key, set);
+    }
+    set.add(contourName);
+  };
+
+  for (const circuit of testCircuits) {
+    const cleanName = cleanContourText(circuit.name);
+    if (!cleanName) continue;
+    circuitById.set(circuit.id, circuit);
+    if (!circuitByName.has(cleanName)) {
+      circuitByName.set(cleanName, circuit);
+    }
+    for (const ls of circuit.linesSummary || []) {
+      registerLineContour(contoursByLineId, ls.lineId, cleanName);
+      registerLineContour(contoursByUniqueLineId, ls.uniqueLineId, cleanName);
+      if (ls.rdCode && ls.lineNumber) {
+        registerLineContour(contoursByRdLine, `${ls.rdCode}::${ls.lineNumber}`, cleanName);
+      }
+    }
+  }
+
+  const lineById = new Map<string, ProjectLineItem>();
+  const lineByUniqueId = new Map<string, ProjectLineItem>();
+  const lineByRdNumber = new Map<string, ProjectLineItem>();
+  for (const line of lines) {
+    if (line.id) lineById.set(line.id, line);
+    if (line.uniqueLineId) lineByUniqueId.set(line.uniqueLineId, line);
+    if (line.rdCode && line.lineNumber) {
+      lineByRdNumber.set(`${line.rdCode}::${line.lineNumber}`, line);
+    }
+  }
+
+  const findMatchedLine = (joint: WeldJoint): ProjectLineItem | undefined => {
+    if (joint.lineId && lineById.has(joint.lineId)) {
+      return lineById.get(joint.lineId);
+    }
+    if (joint.uniqueLineId && lineByUniqueId.has(joint.uniqueLineId)) {
+      return lineByUniqueId.get(joint.uniqueLineId);
+    }
+    if (joint.rdCode && joint.lineNumber) {
+      return lineByRdNumber.get(`${joint.rdCode}::${joint.lineNumber}`);
+    }
+    return undefined;
+  };
+
+  const resolveContoursForLine = (line: ProjectLineItem): string[] => {
+    const result = new Set<string>();
+    const fromId = contoursByLineId.get(line.id);
+    if (fromId) fromId.forEach((c) => result.add(c));
+    const fromUnique = contoursByUniqueLineId.get(line.uniqueLineId);
+    if (fromUnique) fromUnique.forEach((c) => result.add(c));
+    const fromRdNum = contoursByRdLine.get(`${line.rdCode}::${line.lineNumber}`);
+    if (fromRdNum) fromRdNum.forEach((c) => result.add(c));
+    if (result.size === 0) {
+      const fallback = cleanContourText(line.testContour);
+      if (fallback) result.add(fallback);
+    }
+    return Array.from(result);
+  };
+
+  const resolveJointContour = (joint: WeldJoint, matchedLine?: ProjectLineItem): string => {
+    if (joint.testCircuitId) {
+      const circuit = circuitById.get(joint.testCircuitId);
+      const cName = cleanContourText(circuit?.name);
+      if (cName) return cName;
+    }
+    const directContour = cleanContourText(joint.contour);
+    if (directContour) return directContour;
+    if (matchedLine) {
+      const lineContours = resolveContoursForLine(matchedLine);
+      if (lineContours.length > 0) return lineContours[0];
+    }
+    return 'Без контура';
+  };
+
+  // Привязка дополнительных контуров из стыков к линиям (на случай если linesSummary не заполнен)
+  const extraContoursByLineKey = new Map<string, Set<string>>();
   for (const j of joints) {
-    const key = j[condition] || 'Не указано';
-    const list = groups.get(key) || [];
-    list.push(j);
-    groups.set(key, list);
+    const matched = findMatchedLine(j);
+    const contourName = resolveJointContour(j, matched);
+    if (contourName && contourName !== 'Без контура') {
+      const canonicalKey = matched
+        ? matched.id || matched.uniqueLineId
+        : j.uniqueLineId || `${j.rdCode}::${j.lineNumber}`;
+      registerLineContour(extraContoursByLineKey, canonicalKey, contourName);
+    }
+  }
+
+  interface GroupBucket {
+    joints: WeldJoint[];
+    linesMap: Map<string, { isSigned: boolean; rdCode?: string; objectName?: string; lineNumber?: string; contour?: string }>;
+    rdCodes: Set<string>;
+    contours: Set<string>;
+    objectNames: Set<string>;
+    circuit?: TestCircuit;
+  }
+
+  const buckets = new Map<string, GroupBucket>();
+  const getOrCreateBucket = (key: string): GroupBucket => {
+    let b = buckets.get(key);
+    if (!b) {
+      b = {
+        joints: [],
+        linesMap: new Map(),
+        rdCodes: new Set(),
+        contours: new Set(),
+        objectNames: new Set(),
+      };
+      buckets.set(key, b);
+    }
+    return b;
+  };
+
+  // 1. Предзаполняем контуры испытаний (чтобы созданные контуры были видны даже без стыков)
+  if (condition === 'contour') {
+    for (const circuit of testCircuits) {
+      const cName = cleanContourText(circuit.name);
+      if (!cName) continue;
+      const b = getOrCreateBucket(cName);
+      b.circuit = circuit;
+      if (circuit.objectName) b.objectNames.add(circuit.objectName);
+    }
+  } else if (condition === 'objectName') {
+    for (const circuit of testCircuits) {
+      const cName = cleanContourText(circuit.name);
+      if (circuit.objectName && cName) {
+        const b = getOrCreateBucket(circuit.objectName);
+        b.contours.add(cName);
+      }
+    }
+  }
+
+  // 2. Распределяем линии из Лайнлиста (с учётом статуса ИД)
+  for (const line of lines) {
+    const canonicalLineKey = line.id || line.uniqueLineId || `${line.rdCode}::${line.lineNumber}`;
+    const isSigned = isLineExecutiveDocSigned(line, docByLineId);
+    const lineContours = new Set<string>(resolveContoursForLine(line));
+    const extraContours = extraContoursByLineKey.get(canonicalLineKey);
+    if (extraContours) extraContours.forEach((c) => lineContours.add(c));
+    const resolvedContours = Array.from(lineContours);
+    const primaryContour = resolvedContours[0] || '';
+
+    const lineMeta = {
+      isSigned,
+      rdCode: line.rdCode,
+      objectName: line.objectName,
+      lineNumber: line.lineNumber,
+      contour: primaryContour,
+    };
+
+    if (condition === 'objectName') {
+      const key = line.objectName || 'Не указано';
+      const b = getOrCreateBucket(key);
+      b.linesMap.set(canonicalLineKey, lineMeta);
+      if (line.rdCode) b.rdCodes.add(line.rdCode);
+      resolvedContours.forEach((c) => b.contours.add(c));
+    } else if (condition === 'rdCode') {
+      const key = line.rdCode || 'Не указано';
+      const b = getOrCreateBucket(key);
+      b.linesMap.set(canonicalLineKey, lineMeta);
+      if (line.objectName) b.objectNames.add(line.objectName);
+      resolvedContours.forEach((c) => b.contours.add(c));
+    } else if (condition === 'uniqueLineId') {
+      const key = line.uniqueLineId || `${line.rdCode}::${line.lineNumber}` || 'Не указано';
+      const b = getOrCreateBucket(key);
+      b.linesMap.set(canonicalLineKey, lineMeta);
+      if (line.rdCode) b.rdCodes.add(line.rdCode);
+      if (line.objectName) b.objectNames.add(line.objectName);
+      resolvedContours.forEach((c) => b.contours.add(c));
+    } else if (condition === 'contour') {
+      const targetContours = resolvedContours.length > 0 ? resolvedContours : ['Без контура'];
+      for (const cName of targetContours) {
+        const b = getOrCreateBucket(cName);
+        if (!b.circuit && circuitByName.has(cName)) {
+          b.circuit = circuitByName.get(cName);
+        }
+        b.linesMap.set(canonicalLineKey, lineMeta);
+        if (line.rdCode) b.rdCodes.add(line.rdCode);
+        if (line.objectName) b.objectNames.add(line.objectName);
+      }
+    }
+  }
+
+  // 3. Распределяем стыки
+  for (const j of joints) {
+    const matchedLine = findMatchedLine(j);
+    const contourName = resolveJointContour(j, matchedLine);
+
+    let key = 'Не указано';
+    if (condition === 'contour') {
+      key = contourName;
+    } else {
+      key = j[condition] || 'Не указано';
+    }
+
+    const b = getOrCreateBucket(key);
+    b.joints.push(j);
+
+    if (condition === 'contour' && !b.circuit && circuitByName.has(key)) {
+      b.circuit = circuitByName.get(key);
+    }
+
+    if (j.rdCode) b.rdCodes.add(j.rdCode);
+    if (j.objectName) b.objectNames.add(j.objectName);
+    if (contourName && contourName !== 'Без контура') {
+      b.contours.add(contourName);
+    }
+
+    const canonicalLineKey = matchedLine
+      ? matchedLine.id || matchedLine.uniqueLineId
+      : j.uniqueLineId || (j.rdCode && j.lineNumber ? `${j.rdCode}::${j.lineNumber}` : '');
+
+    if (canonicalLineKey && !b.linesMap.has(canonicalLineKey)) {
+      const isSigned = matchedLine ? isLineExecutiveDocSigned(matchedLine, docByLineId) : false;
+      b.linesMap.set(canonicalLineKey, {
+        isSigned,
+        rdCode: matchedLine?.rdCode || j.rdCode,
+        objectName: matchedLine?.objectName || j.objectName,
+        lineNumber: matchedLine?.lineNumber || j.lineNumber,
+        contour: contourName === 'Без контура' ? '' : contourName,
+      });
+    }
   }
 
   const rows: ReadinessRow[] = [];
-  for (const [groupKey, items] of groups.entries()) {
+  for (const [groupKey, bucket] of buckets.entries()) {
+    const items = bucket.joints;
     const totalJoints = items.length;
+    if (options?.excludeEmptyGroups && totalJoints === 0) {
+      continue;
+    }
     const supplementaryJoints = items.filter((i) => {
       const num = parseInt(i.jointNumber, 10);
       return !Number.isNaN(num) && num % 10 !== 0;
     }).length;
-    const weldedCount = items.filter((i) => Boolean(i.weldingDate && i.welderStamp)).length;
+    const weldedCount = items.filter((i) => isJointWeldedWithStamp(i)).length;
     const vikPassedCount = items.filter(
       (i) =>
-        i.vikResult === 'Годен' ||
-        (i.vikResult === 'Ремонт' &&
-          (i.repairVikResult === 'Годен' ||
-            (i.dupNdtType !== 'Не требуется' && i.dupNdtResult === 'Годен')))
+        isJointWeldedWithStamp(i) &&
+        (i.vikResult === 'Годен' ||
+          (i.vikResult === 'Ремонт' &&
+            (i.repairVikResult === 'Годен' ||
+              (i.dupNdtType !== 'Не требуется' && i.dupNdtResult === 'Годен'))))
     ).length;
     const ndtPassedCount = items.filter(
       (i) =>
-        i.ndtResult === 'Годен' ||
-        (i.ndtResult === 'Ремонт' &&
-          (i.repairNdtResult === 'Годен' ||
-            (i.dupNdtType !== 'Не требуется' && i.dupNdtResult === 'Годен')))
+        isJointWeldedWithStamp(i) &&
+        (i.ndtResult === 'Годен' ||
+          (i.ndtResult === 'Ремонт' &&
+            (i.repairNdtResult === 'Годен' ||
+              (i.dupNdtType !== 'Не требуется' && i.dupNdtResult === 'Годен'))))
+    ).length;
+    const ndtNotRequiredCount = items.filter(
+      (i) =>
+        isJointWeldedWithStamp(i) &&
+        (!i.ndtType || i.ndtType === 'Не требуется') &&
+        !isJointCurrentlyInRepair(i)
     ).length;
     const dupNdtPassedCount = items.filter(
       (i) => i.dupNdtResult === 'Годен' || i.dupNdtType === 'Не требуется'
     ).length;
     const repairCount = items.filter((i) => isJointCurrentlyInRepair(i)).length;
-
     const fullyCompletedCount = items.filter((i) => isJointFullyAccepted(i)).length;
 
     const weldingPct = totalJoints > 0 ? Math.round((weldedCount / totalJoints) * 100) : 0;
@@ -205,7 +563,7 @@ export function calculateReadinessReport(
     const weldedEquivInches =
       Math.round(
         items
-          .filter((j) => Boolean(j.weldingDate && j.welderStamp))
+          .filter((j) => isJointWeldedWithStamp(j))
           .reduce((acc, j) => acc + getJointEquivDiaInch(j), 0) * 10
       ) / 10;
     const equivWeldingPct =
@@ -213,17 +571,61 @@ export function calculateReadinessReport(
         ? Math.round((weldedEquivInches / totalEquivInches) * 100)
         : 0;
 
+    // Статистика линий и исполнительной документации (ИД)
+    const totalLinesCount = bucket.linesMap.size;
+    let signedIdLinesCount = 0;
+    for (const meta of bucket.linesMap.values()) {
+      if (meta.isSigned) signedIdLinesCount += 1;
+    }
+    const idReadinessPct =
+      totalLinesCount > 0 ? Math.round((signedIdLinesCount / totalLinesCount) * 100) : 0;
+
+    const lineIdStatus: 'SIGNED' | 'IN_WORK' | null =
+      condition === 'uniqueLineId'
+        ? signedIdLinesCount > 0
+          ? 'SIGNED'
+          : 'IN_WORK'
+        : null;
+
+    const testAllowanceStatus: ReadinessTestAllowanceStatus | null =
+      condition === 'contour'
+        ? resolveTestAllowanceStatus({
+            totalJoints,
+            fullyCompletedCount,
+            repairCount,
+            totalLinesCount,
+            signedIdLinesCount,
+          })
+        : null;
+
+    const testStatusLabel: string | null =
+      condition === 'contour' && bucket.circuit
+        ? bucket.circuit.testStatus === 'TESTED'
+          ? 'Испытан'
+          : 'Не испытан'
+        : null;
+
     const first = items[0];
+    const firstLineMeta = bucket.linesMap.values().next().value;
     let subLabel = '';
     if (condition === 'objectName') {
-      const uniqueRds = new Set(items.map((x) => x.rdCode)).size;
-      subLabel = `Шифров РД: ${uniqueRds}`;
-    } else if (condition === 'rdCode') {
-      subLabel = first?.objectName || '';
-    } else if (condition === 'uniqueLineId') {
-      subLabel = `Линия ${first?.lineNumber || ''} · ${first?.contour || ''}`;
+      const rdCount = bucket.rdCodes.size;
+      const contoursCount = bucket.contours.size;
+      subLabel =
+        contoursCount > 0
+          ? `Шифров РД: ${rdCount} · Контуров: ${contoursCount}`
+          : `Шифров РД: ${rdCount}`;
     } else if (condition === 'contour') {
-      subLabel = first?.objectName || '';
+      const obj = Array.from(bucket.objectNames)[0] || first?.objectName || '';
+      const parts = [obj, testStatusLabel].filter(Boolean);
+      subLabel = parts.join(' · ');
+    } else if (condition === 'rdCode') {
+      subLabel = Array.from(bucket.objectNames)[0] || first?.objectName || '';
+    } else if (condition === 'uniqueLineId') {
+      const ln = firstLineMeta?.lineNumber || first?.lineNumber || '';
+      const contour = Array.from(bucket.contours)[0] || firstLineMeta?.contour || first?.contour || '';
+      const parts = [ln ? `Линия ${ln}` : '', contour].filter(Boolean);
+      subLabel = parts.join(' · ');
     }
 
     rows.push({
@@ -234,6 +636,7 @@ export function calculateReadinessReport(
       weldedCount,
       vikPassedCount,
       ndtPassedCount,
+      ndtNotRequiredCount,
       dupNdtPassedCount,
       repairCount,
       fullyCompletedCount,
@@ -244,10 +647,25 @@ export function calculateReadinessReport(
       totalEquivInches,
       weldedEquivInches,
       equivWeldingPct,
+      totalLinesCount,
+      signedIdLinesCount,
+      idReadinessPct,
+      lineIdStatus,
+      testAllowanceStatus,
+      testStatusLabel,
     });
   }
 
-  return rows.sort((a, b) => b.totalJoints - a.totalJoints);
+  return rows.sort((a, b) => {
+    // «Без контура» всегда внизу списка контуров
+    if (condition === 'contour') {
+      if (a.groupKey === 'Без контура' && b.groupKey !== 'Без контура') return 1;
+      if (b.groupKey === 'Без контура' && a.groupKey !== 'Без контура') return -1;
+    }
+    if (b.totalJoints !== a.totalJoints) return b.totalJoints - a.totalJoints;
+    if (b.totalLinesCount !== a.totalLinesCount) return b.totalLinesCount - a.totalLinesCount;
+    return a.groupKey.localeCompare(b.groupKey, 'ru', { numeric: true });
+  });
 }
 
 export interface LineCompletionStatus {
@@ -321,7 +739,7 @@ export function computeLineListItemStatus(
     const jointEdi = getJointEquivDiaInch(j);
     totalEdiRaw += jointEdi;
 
-    const isWelded = Boolean(j.weldingDate && j.weldingDate.trim() !== '');
+    const isWelded = isJointWeldedWithStamp(j);
     if (isWelded) {
       weldedJoints += 1;
       weldedEdiRaw += jointEdi;
@@ -375,7 +793,7 @@ export function computeLineListItemStatus(
   // Анализ квотирования НК по каждому сварщику на данной конкретной линии (СТО Газпром 15-1.3-004-2023)
   const welderStats = new Map<string, { welded: number; controlled: number }>();
   for (const j of lineJoints) {
-    const isWelded = Boolean(j.weldingDate && j.weldingDate.trim() !== '');
+    const isWelded = isJointWeldedWithStamp(j);
     if (!isWelded) continue;
 
     const stamps = new Set<string>();

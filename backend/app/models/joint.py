@@ -48,6 +48,13 @@ class WeldJoint(Base):
             text("lower(btrim(joint_number))"),
             unique=True,
         ),
+        Index("ix_weld_joints_facility_welding_date", "facility_id", "welding_date"),
+        Index(
+            "ix_weld_joints_facility_rd_welding_date",
+            "facility_id",
+            "rd_code",
+            "welding_date",
+        ),
         CheckConstraint("diameter_mm >= 0", name="diameter_non_negative"),
         CheckConstraint("wall_thickness >= 0", name="wall_thickness_non_negative"),
         CheckConstraint("repair_count >= 0", name="repair_count_non_negative"),

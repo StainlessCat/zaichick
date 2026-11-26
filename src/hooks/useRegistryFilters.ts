@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   NdtLabRequest,
+  TestCircuit,
   WeldJoint,
   WeldJointFieldKey,
 } from '../types/welding';
@@ -15,6 +16,7 @@ export interface UseRegistryFiltersParams {
   selectedObjectName: string;
   selectedRdCode: string;
   labRequests: NdtLabRequest[];
+  testCircuits?: TestCircuit[];
   visibleColumns: WeldJointFieldKey[];
   setVisibleColumns: React.Dispatch<React.SetStateAction<WeldJointFieldKey[]>>;
   setColumnOrder: React.Dispatch<React.SetStateAction<WeldJointFieldKey[]>>;
@@ -27,6 +29,7 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
     selectedObjectName,
     selectedRdCode,
     labRequests,
+    testCircuits,
     visibleColumns,
     setVisibleColumns,
     setColumnOrder,
@@ -36,6 +39,7 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
   const [globalSearch, setGlobalSearch] = useState('');
   const [weldingDateFrom, setWeldingDateFrom] = useState('');
   const [weldingDateTo, setWeldingDateTo] = useState('');
+  const [onlyActiveRepairs, setOnlyActiveRepairs] = useState(false);
   const [columnFilters, setColumnFilters] = useState<
     Partial<Record<WeldJointFieldKey, string[]>>
   >({});
@@ -73,6 +77,8 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
       weldingDateTo,
       sortConfig,
       labRequests,
+      testCircuits,
+      onlyActiveRepairs,
     });
   }, [
     scopedJoints,
@@ -82,13 +88,15 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
     weldingDateTo,
     sortConfig,
     labRequests,
+    testCircuits,
+    onlyActiveRepairs,
   ]);
 
   const getUniqueValuesForColumn = useCallback(
     (colKey: WeldJointFieldKey) => {
-      return computeColumnUniqueValues(scopedJoints, colKey, labRequests);
+      return computeColumnUniqueValues(scopedJoints, colKey, labRequests, testCircuits);
     },
-    [scopedJoints, labRequests]
+    [scopedJoints, labRequests, testCircuits]
   );
 
   const activeFilterKeys = useMemo(
@@ -149,6 +157,7 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
     setGlobalSearch('');
     setWeldingDateFrom('');
     setWeldingDateTo('');
+    setOnlyActiveRepairs(false);
   }, []);
 
   const handleSetOpenFilterColumnKey = useCallback(
@@ -214,6 +223,8 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
     setGlobalSearch,
     weldingDateFrom,
     weldingDateTo,
+    onlyActiveRepairs,
+    setOnlyActiveRepairs,
     columnFilters,
     setColumnFilters,
     openFilterColumnKey,

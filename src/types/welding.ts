@@ -205,7 +205,14 @@ export interface NdtLabRequest {
 
 export type JournalStandard = 'СТО Газпром 15-1.1-002-2023' | 'ГОСТ 32569-2013';
 
-export type ReadinessGroupCondition = 'objectName' | 'rdCode' | 'uniqueLineId' | 'contour';
+export type ReadinessGroupCondition = 'objectName' | 'contour' | 'rdCode' | 'uniqueLineId';
+
+export type ReadinessTestAllowanceStatus =
+  | 'allowed'
+  | 'welding_done_id_pending'
+  | 'id_signed_welding_pending'
+  | 'in_work'
+  | 'no_lines';
 
 export interface ReadinessSummaryRow {
   groupKey: string;
@@ -215,6 +222,7 @@ export interface ReadinessSummaryRow {
   weldedCount: number;
   vikPassedCount: number;
   ndtPassedCount: number;
+  ndtNotRequiredCount: number;
   dupNdtPassedCount: number;
   repairCount: number;
   fullyCompletedCount: number;
@@ -225,6 +233,12 @@ export interface ReadinessSummaryRow {
   totalEquivInches: number;
   weldedEquivInches: number;
   equivWeldingPct: number;
+  totalLinesCount: number;
+  signedIdLinesCount: number;
+  idReadinessPct: number;
+  lineIdStatus?: 'SIGNED' | 'IN_WORK' | null;
+  testAllowanceStatus?: ReadinessTestAllowanceStatus | null;
+  testStatusLabel?: string | null;
 }
 
 export interface CustomWeatherStation {

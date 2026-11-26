@@ -68,6 +68,8 @@ export interface JointsRegistryViewProps {
   onOpenColumnsModal: () => void;
 
   // Excel-фильтры и сортировка
+  onlyActiveRepairs?: boolean;
+  onResetActiveRepairs?: () => void;
   columnFilters: Record<string, string[] | undefined>;
   activeFilterKeys: string[];
   onSetColumnFilter: (key: WeldJointFieldKey, values: string[] | undefined) => void;
@@ -129,6 +131,8 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
     activeColumnDefs,
     columnWidths,
     onOpenColumnsModal,
+    onlyActiveRepairs,
+    onResetActiveRepairs,
     columnFilters,
     activeFilterKeys,
     onSetColumnFilter,
@@ -230,7 +234,9 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
         visibleColumnsCount={visibleColumns.length}
         totalColumnsCount={ALL_COLUMNS.length}
         onOpenColumnsModal={onOpenColumnsModal}
-        hasActiveFilters={Boolean(weldingDateFrom || weldingDateTo || activeFilterKeys.length > 0)}
+        hasActiveFilters={Boolean(
+          weldingDateFrom || weldingDateTo || onlyActiveRepairs || activeFilterKeys.length > 0
+        )}
         onResetAllFilters={onResetAllFilters}
       />
 
@@ -239,6 +245,8 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
         weldingDateFrom={weldingDateFrom}
         weldingDateTo={weldingDateTo}
         onResetDateRange={onResetDateRange}
+        onlyActiveRepairs={onlyActiveRepairs}
+        onResetActiveRepairs={onResetActiveRepairs}
         activeFilterKeys={activeFilterKeys}
         columnFilters={columnFilters}
         onSetColumnFilter={onSetColumnFilter}

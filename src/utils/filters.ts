@@ -3,12 +3,13 @@
  * Изолированные чистые функции без привязки к React для тестирования и переиспользования.
  */
 
-import { FacilityObject, LRVItem, NdtLabRequest, WeldJoint, WeldJointFieldKey } from '../types/welding';
+import { FacilityObject, LRVItem, NdtLabRequest, TestCircuit, WeldJoint, WeldJointFieldKey } from '../types/welding';
 import { ALL_COLUMNS } from './columns';
 import { formatDateDDMMYY } from './formatting';
 import { isDateColumnKey, isWeldingDateInRange } from './dates';
 import { getJointEquivDiaInch } from './pipeCalc';
 import { getJointLabRequestStatus } from './laboratoryLogic';
+import { isJointCurrentlyInRepair } from './readiness';
 
 export interface FilterJointsOptions {
   selectedObjectName?: string;
@@ -19,6 +20,8 @@ export interface FilterJointsOptions {
   columnFilters?: Partial<Record<WeldJointFieldKey, string[]>>;
   sortConfig?: { key: WeldJointFieldKey; direction: 'asc' | 'desc' } | null;
   labRequests?: NdtLabRequest[];
+  testCircuits?: TestCircuit[];
+  onlyActiveRepairs?: boolean;
 }
 
 /**
@@ -27,13 +30,20 @@ export interface FilterJointsOptions {
 export function getJointFieldValue(
   joint: WeldJoint,
   colKey: WeldJointFieldKey | string,
-  labRequests: NdtLabRequest[] = []
+  labRequests: NdtLabRequest[] = [],
+  testCircuits?: TestCircuit[]
 ): string | number {
   if (colKey === 'equivDiameterInch') {
     return getJointEquivDiaInch(joint);
   }
   if (colKey === 'labRequestStatus') {
     return getJointLabRequestStatus(joint, labRequests);
+  }
+  if (colKey === 'contour' && joint.testCircuitId && testCircuits && testCircuits.length > 0) {
+    const found = testCircuits.find((c) => c.id === joint.testCircuitId);
+    if (found?.name?.trim()) {
+      return found.name.trim();
+    }
   }
   return joint[colKey as WeldJointFieldKey] ?? '';
 }
@@ -78,14 +88,15 @@ export function filterJointsByDateRange(
 export function filterJointsByGlobalSearch(
   joints: WeldJoint[],
   searchQuery: string,
-  labRequests: NdtLabRequest[] = []
+  labRequests: NdtLabRequest[] = [],
+  testCircuits?: TestCircuit[]
 ): WeldJoint[] {
   const q = searchQuery.trim().toLowerCase();
   if (!q) return joints;
 
   return joints.filter((joint) => {
     return ALL_COLUMNS.some((col) => {
-      const rawVal = getJointFieldValue(joint, col.key, labRequests);
+      const rawVal = getJointFieldValue(joint, col.key, labRequests, testCircuits);
       const rawStr = String(rawVal);
       const formattedStr = isDateColumnKey(col.key) ? formatDateDDMMYY(rawStr) : rawStr;
       return (
@@ -102,7 +113,8 @@ export function filterJointsByGlobalSearch(
 export function filterJointsByColumnFilters(
   joints: WeldJoint[],
   columnFilters: Partial<Record<WeldJointFieldKey, string[]>>,
-  labRequests: NdtLabRequest[] = []
+  labRequests: NdtLabRequest[] = [],
+  testCircuits?: TestCircuit[]
 ): WeldJoint[] {
   const activeFilters = Object.entries(columnFilters).filter(
     ([, allowed]) => allowed && allowed.length > 0
@@ -112,7 +124,7 @@ export function filterJointsByColumnFilters(
   return joints.filter((joint) => {
     for (const [colKey, allowedValues] of activeFilters) {
       if (!allowedValues) continue;
-      const rawVal = String(getJointFieldValue(joint, colKey, labRequests));
+      const rawVal = String(getJointFieldValue(joint, colKey, labRequests, testCircuits));
       if (!allowedValues.includes(rawVal)) {
         return false;
       }
@@ -127,12 +139,13 @@ export function filterJointsByColumnFilters(
 export function sortJoints(
   joints: WeldJoint[],
   sortConfig: { key: WeldJointFieldKey; direction: 'asc' | 'desc' },
-  labRequests: NdtLabRequest[] = []
+  labRequests: NdtLabRequest[] = [],
+  testCircuits?: TestCircuit[]
 ): WeldJoint[] {
   const { key, direction } = sortConfig;
   return [...joints].sort((a, b) => {
-    const valA = getJointFieldValue(a, key, labRequests);
-    const valB = getJointFieldValue(b, key, labRequests);
+    const valA = getJointFieldValue(a, key, labRequests, testCircuits);
+    const valB = getJointFieldValue(b, key, labRequests, testCircuits);
     const cmp = String(valA).localeCompare(String(valB), 'ru', {
       numeric: true,
     });
@@ -177,15 +190,20 @@ export function filterAndSortJoints(
     columnFilters = {},
     sortConfig = null,
     labRequests = [],
+    testCircuits,
+    onlyActiveRepairs = false,
   } = options;
 
   let result = filterJointsByScope(joints, selectedObjectName, selectedRdCode);
   result = filterJointsByDateRange(result, weldingDateFrom, weldingDateTo);
-  result = filterJointsByColumnFilters(result, columnFilters, labRequests);
-  result = filterJointsByGlobalSearch(result, globalSearch, labRequests);
+  result = filterJointsByColumnFilters(result, columnFilters, labRequests, testCircuits);
+  if (onlyActiveRepairs) {
+    result = result.filter((j) => isJointCurrentlyInRepair(j));
+  }
+  result = filterJointsByGlobalSearch(result, globalSearch, labRequests, testCircuits);
 
   if (sortConfig) {
-    result = sortJoints(result, sortConfig, labRequests);
+    result = sortJoints(result, sortConfig, labRequests, testCircuits);
   }
 
   return result;
@@ -197,11 +215,12 @@ export function filterAndSortJoints(
 export function computeColumnUniqueValues(
   joints: WeldJoint[],
   colKey: WeldJointFieldKey,
-  labRequests: NdtLabRequest[] = []
+  labRequests: NdtLabRequest[] = [],
+  testCircuits?: TestCircuit[]
 ): { value: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const j of joints) {
-    const raw = getJointFieldValue(j, colKey, labRequests);
+    const raw = getJointFieldValue(j, colKey, labRequests, testCircuits);
     const val = String(raw ?? '');
     counts.set(val, (counts.get(val) || 0) + 1);
   }

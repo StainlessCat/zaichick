@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HardDriveDownload } from 'lucide-react';
 import {
   AppSection,
@@ -30,7 +30,11 @@ import { LrvCatalogView } from '../LrvCatalogView';
 import { AuditHistoryView } from '../AuditHistoryView';
 import { WikiView } from '../wiki';
 import { TestCircuitsView } from '../TestCircuitsView';
-import { ExecutiveDocsView } from '../executiveDocs';
+import {
+  ExecutiveDocsView,
+  NO_CONTOUR_FILTER_VALUE,
+  type ExecutiveDocsFilterPreset,
+} from '../executiveDocs';
 import type { useTestCircuitActions } from '../../hooks/useTestCircuitActions';
 import { useAuth, useAppContext } from '../../context';
 
@@ -69,6 +73,8 @@ export interface AppMainContentProps {
   onWeldingDateFromChange: (v: string) => void;
   onWeldingDateToChange: (v: string) => void;
   onResetDateRange: () => void;
+  onlyActiveRepairs?: boolean;
+  setOnlyActiveRepairs?: (v: boolean) => void;
   confirmBulkDeleteJoints: boolean;
   onSetConfirmBulkDeleteJoints: (val: boolean) => void;
   onBulkDeleteSelectedJoints: () => Promise<void>;
@@ -201,6 +207,8 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
     onWeldingDateFromChange,
     onWeldingDateToChange,
     onResetDateRange,
+    onlyActiveRepairs = false,
+    setOnlyActiveRepairs,
     confirmBulkDeleteJoints,
     onSetConfirmBulkDeleteJoints,
     onBulkDeleteSelectedJoints,
@@ -242,6 +250,10 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
     dirActions,
     testCircuitActions,
   } = props;
+
+  const [execDocsPreset, setExecDocsPreset] =
+    useState<ExecutiveDocsFilterPreset | null>(null);
+
   return (
     <main className="flex-1 max-w-[1920px] w-full mx-auto p-3 sm:p-4 space-y-3">
       {selectedObjectName === 'УКПГ-1С Харасавэйское ГКМ' &&
@@ -310,6 +322,8 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
           activeColumnDefs={activeColumnDefs}
           columnWidths={columnWidths}
           onOpenColumnsModal={onOpenColumnsModal}
+          onlyActiveRepairs={onlyActiveRepairs}
+          onResetActiveRepairs={() => setOnlyActiveRepairs?.(false)}
           columnFilters={columnFilters}
           activeFilterKeys={activeFilterKeys}
           onSetColumnFilter={onSetColumnFilter}
@@ -354,9 +368,12 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
 
       {activeSection === 'executive_docs' && (
         <ExecutiveDocsView
+          initialFilterPreset={execDocsPreset}
+          onConsumeFilterPreset={() => setExecDocsPreset(null)}
           onOpenLineInRegistry={(uniqueLineId) => {
             setSelectedObjectName('ALL');
             setSelectedRdCode('ALL');
+            setOnlyActiveRepairs?.(false);
             setColumnFilters({ uniqueLineId: [uniqueLineId] });
             setActiveSection('registry');
           }}
@@ -410,16 +427,67 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
       {activeSection === 'readiness' && (
         <ReadinessReportView
           joints={scopedJoints}
-          onFilterRegistryByCondition={(cond: ReadinessGroupCondition, val: string) => {
+          onFilterRegistryByCondition={(cond, val, options) => {
+            onWeldingDateFromChange(options?.weldingDateFrom || '');
+            onWeldingDateToChange(options?.weldingDateTo || '');
+            setOnlyActiveRepairs?.(Boolean(options?.onlyActiveRepairs));
+
             if (cond === 'objectName') {
               setSelectedObjectName(val);
               setSelectedRdCode('ALL');
+              setColumnFilters({});
             } else if (cond === 'rdCode') {
               setSelectedRdCode(val);
+              setColumnFilters({});
+            } else if (cond === 'contour') {
+              setColumnFilters({
+                contour: [val === 'Без контура' ? '' : val],
+              });
             } else {
               setColumnFilters({ [cond]: [val] });
             }
             setActiveSection('registry');
+          }}
+          onFilterRegistryByWelderStamp={(stamp, options) => {
+            onWeldingDateFromChange(options?.weldingDateFrom || '');
+            onWeldingDateToChange(options?.weldingDateTo || '');
+            setOnlyActiveRepairs?.(false);
+            setColumnFilters({ welderStamp: [stamp] });
+            setActiveSection('registry');
+          }}
+          onOpenRegistryActiveRepairs={(options) => {
+            onWeldingDateFromChange(options?.weldingDateFrom || '');
+            onWeldingDateToChange(options?.weldingDateTo || '');
+            setOnlyActiveRepairs?.(true);
+            setColumnFilters({});
+            setActiveSection('registry');
+          }}
+          onOpenExecutiveDocs={() => {
+            setExecDocsPreset({ token: Date.now() });
+            setActiveSection('executive_docs');
+          }}
+          onOpenExecutiveDocsByCondition={(cond, val, meta) => {
+            if (cond === 'objectName') {
+              setSelectedObjectName(val);
+              setExecDocsPreset({ token: Date.now() });
+            } else if (cond === 'contour') {
+              setExecDocsPreset({
+                contour: val === 'Без контура' ? NO_CONTOUR_FILTER_VALUE : val,
+                token: Date.now(),
+              });
+            } else if (cond === 'rdCode') {
+              setExecDocsPreset({
+                rdCode: val,
+                token: Date.now(),
+              });
+            } else if (cond === 'uniqueLineId') {
+              setExecDocsPreset({
+                rdCode: meta?.rdCode,
+                lineNumber: meta?.lineNumber,
+                token: Date.now(),
+              });
+            }
+            setActiveSection('executive_docs');
           }}
         />
       )}

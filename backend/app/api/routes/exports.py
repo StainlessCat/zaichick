@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import date
 from typing import Literal
 from urllib.parse import quote
 
@@ -9,12 +10,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_client_ip, get_db_session, require_permission
+from app.api.routes.reports import (
+    READINESS_EXEC_DOC_PROJECTION,
+    READINESS_JOINT_PROJECTION,
+    READINESS_LINE_PROJECTION,
+)
 from app.api.routes.welding_journals import fetch_filtered_joints_and_lrv
+from app.models.executive_doc import ExecutiveDoc
 from app.models.joint import WeldJoint
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
+from app.models.test_circuit import TestCircuit
 from app.models.user import User
 from app.services.audit_service import record_audit_log
 from app.services.excel_export import (
@@ -117,29 +126,63 @@ async def export_welding_journal_xlsx(
 @router.get("/readiness.xlsx")
 async def export_readiness_xlsx(
     request: Request,
-    condition: Literal["objectName", "rdCode", "uniqueLineId"] = Query(default="uniqueLineId"),
+    condition: Literal["objectName", "contour", "rdCode", "uniqueLineId"] = Query(
+        default="objectName"
+    ),
     facility_id: uuid.UUID | None = Query(default=None),
     rd_code: str | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     current_user: User = Depends(require_permission("can_export_documents")),
     session: AsyncSession = Depends(get_db_session),
 ) -> Response:
-    j_stmt = select(WeldJoint)
-    l_stmt = select(ProjectLine)
+    j_stmt = select(WeldJoint).options(READINESS_JOINT_PROJECTION)
+    l_stmt = select(ProjectLine).options(READINESS_LINE_PROJECTION)
+    c_stmt = select(TestCircuit).options(selectinload(TestCircuit.facility))
     if facility_id is not None:
         j_stmt = j_stmt.where(WeldJoint.facility_id == facility_id)
         l_stmt = l_stmt.where(ProjectLine.facility_id == facility_id)
+        c_stmt = c_stmt.where(TestCircuit.facility_id == facility_id)
     if rd_code:
-        j_stmt = j_stmt.where(WeldJoint.rd_code == rd_code.strip())
-        l_stmt = l_stmt.where(ProjectLine.rd_code == rd_code.strip())
+        cleaned_rd = rd_code.strip()
+        j_stmt = j_stmt.where(WeldJoint.rd_code == cleaned_rd)
+        l_stmt = l_stmt.where(ProjectLine.rd_code == cleaned_rd)
+    if date_from is not None:
+        j_stmt = j_stmt.where(WeldJoint.welding_date >= date_from)
+    if date_to is not None:
+        j_stmt = j_stmt.where(WeldJoint.welding_date <= date_to)
 
     joints = list((await session.execute(j_stmt)).scalars().all())
     lines = list((await session.execute(l_stmt.order_by(ProjectLine.sort_order.asc()))).scalars().all())
+    circuits = list((await session.execute(c_stmt)).scalars().all())
+    line_ids = [ln.id for ln in lines]
+    exec_docs = (
+        list(
+            (
+                await session.execute(
+                    select(ExecutiveDoc)
+                    .options(READINESS_EXEC_DOC_PROJECTION)
+                    .where(ExecutiveDoc.line_id.in_(line_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if line_ids
+        else []
+    )
 
+    has_period = bool(date_from or date_to)
     payload = await asyncio.to_thread(
         build_readiness_and_quotas_workbook_bytes,
         joints,
         lines,
         condition=condition,
+        test_circuits=circuits,
+        executive_docs=exec_docs,
+        date_from=date_from.isoformat() if date_from else None,
+        date_to=date_to.isoformat() if date_to else None,
+        exclude_empty_groups=has_period,
     )
     await record_audit_log(
         session,
@@ -147,7 +190,13 @@ async def export_readiness_xlsx(
         entity_type="readiness_report_xlsx",
         entity_id=rd_code or "all",
         user=current_user,
-        new_data={"condition": condition, "joints": len(joints), "lines": len(lines)},
+        new_data={
+            "condition": condition,
+            "joints": len(joints),
+            "lines": len(lines),
+            "date_from": date_from.isoformat() if date_from else None,
+            "date_to": date_to.isoformat() if date_to else None,
+        },
         ip_address=get_client_ip(request),
         rd_code=rd_code,
         summary=f"Экспорт отчёта готовности и квот НК ({len(joints)} стыков)",

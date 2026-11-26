@@ -20,14 +20,25 @@ import {
 import { ExecutiveDocsTable } from './ExecutiveDocsTable';
 import { useExecutiveDocsState } from './useExecutiveDocsState';
 
+export interface ExecutiveDocsFilterPreset {
+  rdCode?: string;
+  lineNumber?: string;
+  contour?: string;
+  token: number;
+}
+
 export interface ExecutiveDocsViewProps {
   onOpenLineInRegistry?: (uniqueLineId: string) => void;
   onOpenLineList?: () => void;
+  initialFilterPreset?: ExecutiveDocsFilterPreset | null;
+  onConsumeFilterPreset?: () => void;
 }
 
 export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
   onOpenLineInRegistry,
   onOpenLineList,
+  initialFilterPreset,
+  onConsumeFilterPreset,
 }) => {
   const app = useAppContext();
   const auth = useAuth();
@@ -94,6 +105,16 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     setContourFilter('ALL');
     setColumnFilters({});
   }, [selectedObjectName]);
+
+  // Применение предустановленного фильтра при переходе из раздела «Аналитика»
+  useEffect(() => {
+    if (!initialFilterPreset) return;
+    setRdFilter(initialFilterPreset.rdCode || 'ALL');
+    setLineFilter(initialFilterPreset.lineNumber || 'ALL');
+    setContourFilter(initialFilterPreset.contour || 'ALL');
+    setColumnFilters({});
+    onConsumeFilterPreset?.();
+  }, [initialFilterPreset, onConsumeFilterPreset]);
 
   const {
     getColumnWidth,

@@ -11,6 +11,8 @@ import type {
   NdtLabRequest,
   ProjectLineItem,
   ReadinessGroupCondition,
+  ReadinessSummaryRow,
+  ReadinessTestAllowanceStatus,
   RecordStatus,
   SriStatus,
   SystemRole,
@@ -915,15 +917,68 @@ export const zaychickApi = {
     );
   },
 
+  async getReadinessReport(params: {
+    condition: ReadinessGroupCondition;
+    rdCode?: string;
+    facilityId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    signal?: AbortSignal;
+  }): Promise<ReadinessSummaryRow[]> {
+    const q = new URLSearchParams({ condition: params.condition });
+    if (params.rdCode && params.rdCode !== 'ALL') q.set('rd_code', params.rdCode);
+    if (params.facilityId) q.set('facility_id', params.facilityId);
+    if (params.dateFrom) q.set('date_from', params.dateFrom);
+    if (params.dateTo) q.set('date_to', params.dateTo);
+    const raw = await apiRequest<Array<Record<string, unknown>>>(
+      `/api/reports/readiness?${q.toString()}`,
+      { signal: params.signal }
+    );
+    return (Array.isArray(raw) ? raw : []).map((r) => ({
+      groupKey: String(r.group_key ?? ''),
+      subLabel: String(r.sub_label ?? ''),
+      totalJoints: Number(r.total_joints ?? 0),
+      supplementaryJoints: Number(r.supplementary_joints ?? 0),
+      weldedCount: Number(r.welded_count ?? 0),
+      vikPassedCount: Number(r.vik_passed_count ?? 0),
+      ndtPassedCount: Number(r.ndt_passed_count ?? 0),
+      ndtNotRequiredCount: Number(r.ndt_not_required_count ?? 0),
+      dupNdtPassedCount: Number(r.dup_ndt_passed_count ?? 0),
+      repairCount: Number(r.repair_count ?? 0),
+      fullyCompletedCount: Number(r.fully_completed_count ?? 0),
+      weldingPct: Number(r.welding_pct ?? 0),
+      readinessPct: Number(r.readiness_pct ?? 0),
+      totalEquivDiameterMm: Number(r.total_equiv_diameter_mm ?? 0),
+      totalNominalInches: Number(r.total_nominal_inches ?? 0),
+      totalEquivInches: Number(r.total_equiv_inches ?? 0),
+      weldedEquivInches: Number(r.welded_equiv_inches ?? 0),
+      equivWeldingPct: Number(r.equiv_welding_pct ?? 0),
+      totalLinesCount: Number(r.total_lines_count ?? 0),
+      signedIdLinesCount: Number(r.signed_id_lines_count ?? 0),
+      idReadinessPct: Number(r.id_readiness_pct ?? 0),
+      lineIdStatus:
+        r.line_id_status === 'SIGNED' || r.line_id_status === 'IN_WORK'
+          ? r.line_id_status
+          : null,
+      testAllowanceStatus:
+        typeof r.test_allowance_status === 'string'
+          ? (r.test_allowance_status as ReadinessTestAllowanceStatus)
+          : null,
+    }));
+  },
+
   async downloadReadinessXlsx(params: {
     condition: ReadinessGroupCondition;
     rdCode?: string;
     facilityId?: string;
+    dateFrom?: string;
+    dateTo?: string;
   }) {
-    const backendCond = params.condition === 'contour' ? 'uniqueLineId' : params.condition;
-    const q = new URLSearchParams({ condition: backendCond });
+    const q = new URLSearchParams({ condition: params.condition });
     if (params.rdCode && params.rdCode !== 'ALL') q.set('rd_code', params.rdCode);
     if (params.facilityId) q.set('facility_id', params.facilityId);
+    if (params.dateFrom) q.set('date_from', params.dateFrom);
+    if (params.dateTo) q.set('date_to', params.dateTo);
     return apiDownloadBlob(
       `/api/exports/readiness.xlsx?${q.toString()}`,
       'readiness_and_ndt_quotas.xlsx'

@@ -43,6 +43,8 @@ export interface RegistryActiveFilterBarProps {
   weldingDateFrom: string;
   weldingDateTo: string;
   onResetDateRange: () => void;
+  onlyActiveRepairs?: boolean;
+  onResetActiveRepairs?: () => void;
   activeFilterKeys: string[];
   columnFilters: Record<string, string[] | undefined>;
   onSetColumnFilter: (key: WeldJointFieldKey, values: string[] | undefined) => void;

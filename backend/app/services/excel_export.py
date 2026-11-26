@@ -229,50 +229,93 @@ def build_welding_journal_workbook_bytes(
     return _workbook_to_bytes(wb)
 
 
+_CONDITION_LABELS_RU = {
+    "objectName": "Объект строительства",
+    "contour": "Контур испытаний",
+    "rdCode": "Шифр РД",
+    "uniqueLineId": "Линия",
+}
+
+_TEST_ALLOWANCE_LABELS_RU = {
+    "allowed": "Допуск к испытаниям",
+    "welding_done_id_pending": "Ждёт подписи ИД",
+    "id_signed_welding_pending": "ИД подписана",
+    "in_work": "В работе",
+    "no_lines": "Нет линий",
+}
+
+
 def build_readiness_and_quotas_workbook_bytes(
     joints: list[Any],
     lines: list[Any],
     *,
-    condition: str = "uniqueLineId",
+    condition: str = "objectName",
+    test_circuits: list[Any] | None = None,
+    executive_docs: list[Any] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    exclude_empty_groups: bool = False,
 ) -> bytes:
-    """Generate multi-sheet Executive Readiness & Welder NDT Quotas XLSX report."""
+    """Generate multi-sheet Executive Readiness, Welder NDT Quotas & Test Allowance XLSX report."""
     wb = Workbook()
+
+    period_part = ""
+    if date_from or date_to:
+        period_part = f" | Период сварки: {date_from or '...'} — {date_to or '...'}"
 
     # Sheet 1: Readiness summary
     ws_ready = wb.active
     ws_ready.title = "Сводка готовности"
     headers_r = [
-        "Группа",
+        _CONDITION_LABELS_RU.get(condition, "Группа"),
         "Описание",
         "Всего стыков",
         "Доп. стыки",
         "Сварено",
         "ВИК годен",
         "НК годен",
+        "Без НК по проекту",
         "Дубл. НК годен",
         "В ремонте",
         "Полностью принято",
         "% сварки",
         "% готовности",
-        "Σ ЭДД (дюйм)",
-        "Сварено ЭДД (дюйм)",
+        "Σ ЭДД, дюйм",
+        "Сварено ЭДД, дюйм",
         "% по ЭДД",
+        "Всего линий",
+        "Подписано ИД",
+        "ИД, %",
     ]
+    if condition == "contour":
+        headers_r.append("Допуск к испытаниям")
+    elif condition == "uniqueLineId":
+        headers_r.append("Статус ИД")
+
+    cond_label = _CONDITION_LABELS_RU.get(condition, condition)
     start_r = _write_title_block(
         ws_ready,
         title="СВОДНЫЙ ОТЧЁТ О ГОТОВНОСТИ И ПРИЁМКЕ СВАРНЫХ СОЕДИНЕНИЙ",
-        subtitle=f"Группировка: {condition} | Стыков в выборке: {len(joints)}",
+        subtitle=f"Разрез: {cond_label}{period_part} | Стыков в выборке: {len(joints)} | Линий: {len(lines)}",
         total_cols=len(headers_r),
     )
     for col, h in enumerate(headers_r, start=1):
         ws_ready.cell(row=start_r, column=col, value=h)
-        ws_ready.column_dimensions[get_column_letter(col)].width = 18 if col <= 2 else 14
+        ws_ready.column_dimensions[get_column_letter(col)].width = 20 if col in (1, 2, len(headers_r)) else 14
     ws_ready.row_dimensions[start_r].height = 30
     _style_header_range(ws_ready, min_row=start_r, max_row=start_r, max_col=len(headers_r))
 
-    readiness_rows = calculate_readiness_report(joints, condition)
-    table_r = [
-        [
+    readiness_rows = calculate_readiness_report(
+        joints,
+        condition,
+        lines=lines,
+        test_circuits=test_circuits,
+        executive_docs=executive_docs,
+        exclude_empty_groups=exclude_empty_groups,
+    )
+    table_r = []
+    for r in readiness_rows:
+        row_vals: list[Any] = [
             r.group_key,
             r.sub_label,
             r.total_joints,
@@ -280,6 +323,7 @@ def build_readiness_and_quotas_workbook_bytes(
             r.welded_count,
             r.vik_passed_count,
             r.ndt_passed_count,
+            r.ndt_not_required_count,
             r.dup_ndt_passed_count,
             r.repair_count,
             r.fully_completed_count,
@@ -288,9 +332,15 @@ def build_readiness_and_quotas_workbook_bytes(
             r.total_equiv_inches,
             r.welded_equiv_inches,
             r.equiv_welding_pct,
+            r.total_lines_count,
+            r.signed_id_lines_count,
+            r.id_readiness_pct,
         ]
-        for r in readiness_rows
-    ]
+        if condition == "contour":
+            row_vals.append(_TEST_ALLOWANCE_LABELS_RU.get(r.test_allowance_status or "", ""))
+        elif condition == "uniqueLineId":
+            row_vals.append("Подписана" if r.line_id_status == "SIGNED" else "В работе")
+        table_r.append(row_vals)
     _write_table_rows(ws_ready, start_row=start_r + 1, rows=table_r, left_align_cols={1, 2})
     _configure_print_sheet(ws_ready, header_rows_end=start_r)
 
@@ -396,6 +446,77 @@ def build_readiness_and_quotas_workbook_bytes(
         )
     _write_table_rows(ws_l, start_row=start_l + 1, rows=table_l, left_align_cols={1, 3})
     _configure_print_sheet(ws_l, header_rows_end=start_l)
+
+    # Sheet 4: Contour test allowance & ID blockers
+    ws_c = wb.create_sheet("Допуск контуров и ИД")
+    headers_c = [
+        "Контур испытаний",
+        "Описание",
+        "Всего стыков",
+        "Готовность сварки, %",
+        "Всего линий",
+        "Подписано ИД",
+        "Готовность ИД, %",
+        "Допуск к испытаниям",
+        "Не доварено стыков",
+        "Дефицит НК",
+        "В ремонте",
+        "Линий с неподписанной ИД",
+    ]
+    contour_rows = calculate_readiness_report(
+        joints,
+        "contour",
+        lines=lines,
+        test_circuits=test_circuits,
+        executive_docs=executive_docs,
+        exclude_empty_groups=exclude_empty_groups,
+    )
+    start_c = _write_title_block(
+        ws_c,
+        title="СВОДКА ДОПУСКА КОНТУРОВ К ИСПЫТАНИЯМ И БЛОКЕРОВ ИД",
+        subtitle=f"Контуров: {len(contour_rows)}{period_part}",
+        total_cols=len(headers_c),
+    )
+    for col, h in enumerate(headers_c, start=1):
+        ws_c.cell(row=start_c, column=col, value=h)
+        ws_c.column_dimensions[get_column_letter(col)].width = 24 if col in (1, 2, 8) else 15
+    ws_c.row_dimensions[start_c].height = 30
+    _style_header_range(ws_c, min_row=start_c, max_row=start_c, max_col=len(headers_c))
+
+    table_c = []
+    for r in contour_rows:
+        unwelded = max(0, r.total_joints - r.welded_count)
+        ndt_deficit = max(
+            0,
+            r.welded_count - r.ndt_passed_count - r.ndt_not_required_count - r.repair_count,
+        )
+        unsigned_lines = max(0, r.total_lines_count - r.signed_id_lines_count)
+        table_c.append(
+            [
+                r.group_key,
+                r.sub_label,
+                r.total_joints,
+                r.readiness_pct,
+                r.total_lines_count,
+                r.signed_id_lines_count,
+                r.id_readiness_pct,
+                _TEST_ALLOWANCE_LABELS_RU.get(r.test_allowance_status or "", ""),
+                unwelded,
+                ndt_deficit,
+                r.repair_count,
+                unsigned_lines,
+            ]
+        )
+    _write_table_rows(ws_c, start_row=start_c + 1, rows=table_c, left_align_cols={1, 2, 8})
+    for idx, r in enumerate(contour_rows):
+        r_idx = start_c + 1 + idx
+        if r.test_allowance_status == "allowed":
+            ws_c.cell(row=r_idx, column=8).fill = _ALERT_GREEN_FILL
+        elif r.test_allowance_status == "welding_done_id_pending":
+            ws_c.cell(row=r_idx, column=8).fill = _ALERT_AMBER_FILL
+        elif r.repair_count > 0:
+            ws_c.cell(row=r_idx, column=8).fill = _ALERT_RED_FILL
+    _configure_print_sheet(ws_c, header_rows_end=start_c)
 
     return _workbook_to_bytes(wb)
 

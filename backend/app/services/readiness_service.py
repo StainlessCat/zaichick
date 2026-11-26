@@ -46,8 +46,17 @@ def is_joint_defective(joint: Any) -> bool:
     return False
 
 
+def is_joint_welded(joint: Any) -> bool:
+    if not getattr(joint, "welding_date", None):
+        return False
+    if _has_text(getattr(joint, "welder_stamp", None)):
+        return True
+    stamps_list = getattr(joint, "welder_stamps_list", None) or []
+    return any(_has_text(s) for s in stamps_list)
+
+
 def is_joint_fully_accepted(joint: Any) -> bool:
-    if not getattr(joint, "welding_date", None) or not _has_text(getattr(joint, "welder_stamp", None)):
+    if not is_joint_welded(joint):
         return False
 
     had_defect = is_joint_defective(joint)
@@ -105,7 +114,7 @@ class LineNdtProgress:
 def calculate_line_ndt_progress(joints: list[Any], line: Any) -> LineNdtProgress:
     line_joints = [j for j in joints if getattr(j, "unique_line_id", None) == line.unique_line_id]
     total_joints = len(line_joints)
-    welded_joints = sum(1 for j in line_joints if getattr(j, "welding_date", None) is not None)
+    welded_joints = sum(1 for j in line_joints if is_joint_welded(j))
     fit = ControlResultEnum.FIT.value
 
     inspected_rk = 0
@@ -379,11 +388,7 @@ def compute_line_list_item_status(line: Any, all_joints: list[Any]) -> LineCompl
         )
 
     total_joints = len(line_joints)
-    welded_joints_list = [
-        j
-        for j in line_joints
-        if getattr(j, "welding_date", None) is not None and _has_text(getattr(j, "welder_stamp", None))
-    ]
+    welded_joints_list = [j for j in line_joints if is_joint_welded(j)]
     welded_count = len(welded_joints_list)
     controlled_joints = sum(1 for j in welded_joints_list if is_joint_fully_accepted(j))
 
@@ -537,9 +542,136 @@ class ReadinessRow:
     total_equiv_inches: float
     welded_equiv_inches: float
     equiv_welding_pct: int
+    ndt_not_required_count: int = 0
+    total_lines_count: int = 0
+    signed_id_lines_count: int = 0
+    id_readiness_pct: int = 0
+    line_id_status: str | None = None
+    test_allowance_status: str | None = None
 
 
-def calculate_readiness_report(joints: list[Any], condition: str) -> list[ReadinessRow]:
+def _clean_contour_text(val: Any) -> str:
+    txt = str(val or "").strip()
+    if not txt or txt in ("—", "-"):
+        return ""
+    return txt
+
+
+def _is_line_id_signed(line: Any, doc_by_line_id: dict[str, Any]) -> bool:
+    line_id = str(getattr(line, "id", "") or "")
+    doc = doc_by_line_id.get(line_id)
+    if doc is not None:
+        st = _s(getattr(doc, "id_status", None)).strip().upper()
+        return st in ("SIGNED", "ПОДПИСАНА")
+    line_st = _s(getattr(line, "id_status", None)).strip().upper()
+    return line_st in ("SIGNED", "ПОДПИСАНА")
+
+
+def _resolve_test_allowance_status(
+    *,
+    total_joints: int,
+    fully_completed_count: int,
+    repair_count: int,
+    total_lines_count: int,
+    signed_id_lines_count: int,
+) -> str:
+    if total_lines_count == 0 and total_joints == 0:
+        return "no_lines"
+    all_id_signed = total_lines_count > 0 and signed_id_lines_count == total_lines_count
+    welding_completed = (
+        total_joints > 0 and fully_completed_count == total_joints and repair_count == 0
+    )
+    if all_id_signed and welding_completed:
+        return "allowed"
+    if not all_id_signed and welding_completed:
+        return "welding_done_id_pending"
+    if all_id_signed and not welding_completed:
+        return "id_signed_welding_pending"
+    return "in_work"
+
+
+def calculate_readiness_report(
+    joints: list[Any],
+    condition: str,
+    *,
+    lines: list[Any] | None = None,
+    test_circuits: list[Any] | None = None,
+    executive_docs: list[Any] | None = None,
+    exclude_empty_groups: bool = False,
+) -> list[ReadinessRow]:
+    lines_list = list(lines or [])
+    circuits_list = list(test_circuits or [])
+    doc_by_line_id: dict[str, Any] = {
+        str(getattr(d, "line_id", "")): d for d in (executive_docs or []) if getattr(d, "line_id", None)
+    }
+
+    circuit_by_id: dict[str, Any] = {}
+    circuit_by_name: dict[str, Any] = {}
+    for c in circuits_list:
+        cname = _clean_contour_text(getattr(c, "name", None))
+        if not cname:
+            continue
+        cid = str(getattr(c, "id", "") or "")
+        if cid:
+            circuit_by_id[cid] = c
+        circuit_by_name.setdefault(cname, c)
+
+    line_by_id: dict[str, Any] = {}
+    line_by_unique: dict[str, Any] = {}
+    line_by_rd_num: dict[str, Any] = {}
+    for ln in lines_list:
+        lid = str(getattr(ln, "id", "") or "")
+        ulid = getattr(ln, "unique_line_id", None) or ""
+        rd = getattr(ln, "rd_code", None) or ""
+        lnum = getattr(ln, "line_number", None) or ""
+        if lid:
+            line_by_id[lid] = ln
+        if ulid:
+            line_by_unique[ulid] = ln
+        if rd and lnum:
+            line_by_rd_num[f"{rd}::{lnum}"] = ln
+
+    def _find_line(j: Any) -> Any | None:
+        lid = str(getattr(j, "line_id", "") or "")
+        if lid and lid in line_by_id:
+            return line_by_id[lid]
+        ulid = getattr(j, "unique_line_id", None) or ""
+        if ulid and ulid in line_by_unique:
+            return line_by_unique[ulid]
+        rd = getattr(j, "rd_code", None) or ""
+        lnum = getattr(j, "line_number", None) or ""
+        if rd and lnum:
+            return line_by_rd_num.get(f"{rd}::{lnum}")
+        return None
+
+    def _joint_contour(j: Any, matched_line: Any | None) -> str:
+        tcid = str(getattr(j, "test_circuit_id", "") or "")
+        if tcid and tcid in circuit_by_id:
+            cname = _clean_contour_text(getattr(circuit_by_id[tcid], "name", None))
+            if cname:
+                return cname
+        direct = _clean_contour_text(getattr(j, "contour", None))
+        if direct:
+            return direct
+        if matched_line is not None:
+            l_contour = _clean_contour_text(getattr(matched_line, "test_contour", None))
+            if l_contour:
+                return l_contour
+        return "Без контура"
+
+    extra_contours_by_line: dict[str, set[str]] = {}
+    for j in joints:
+        matched = _find_line(j)
+        cname = _joint_contour(j, matched)
+        if cname and cname != "Без контура":
+            lkey = (
+                str(getattr(matched, "id", "") or getattr(matched, "unique_line_id", ""))
+                if matched is not None
+                else (getattr(j, "unique_line_id", None) or f"{getattr(j, 'rd_code', '')}::{getattr(j, 'line_number', '')}")
+            )
+            if lkey:
+                extra_contours_by_line.setdefault(lkey, set()).add(cname)
+
     attr_map = {
         "objectName": "object_name",
         "rdCode": "rd_code",
@@ -547,18 +679,126 @@ def calculate_readiness_report(joints: list[Any], condition: str) -> list[Readin
         "contour": "contour",
     }
     attr = attr_map.get(condition, "object_name")
-    groups: dict[str, list[Any]] = {}
+
+    buckets: dict[str, dict[str, Any]] = {}
+
+    def _get_bucket(key: str) -> dict[str, Any]:
+        b = buckets.get(key)
+        if b is None:
+            b = {
+                "joints": [],
+                "lines": {},  # line_key -> dict(is_signed, line_number, contour)
+                "rd_codes": set(),
+                "contours": set(),
+                "object_names": set(),
+            }
+            buckets[key] = b
+        return b
+
+    # 1. Seed test circuits so empty circuits appear in contour view
+    if condition == "contour":
+        for c in circuits_list:
+            cname = _clean_contour_text(getattr(c, "name", None))
+            if not cname:
+                continue
+            b = _get_bucket(cname)
+            fac = getattr(c, "facility", None)
+            obj_name = getattr(fac, "name", None) if fac is not None else getattr(c, "object_name", None)
+            if obj_name:
+                b["object_names"].add(obj_name)
+    elif condition == "objectName":
+        for c in circuits_list:
+            cname = _clean_contour_text(getattr(c, "name", None))
+            fac = getattr(c, "facility", None)
+            obj_name = getattr(fac, "name", None) if fac is not None else getattr(c, "object_name", None)
+            if obj_name and cname:
+                _get_bucket(obj_name)["contours"].add(cname)
+
+    # 2. Distribute ProjectLine items
+    for ln in lines_list:
+        lkey = str(getattr(ln, "id", "") or getattr(ln, "unique_line_id", ""))
+        is_signed = _is_line_id_signed(ln, doc_by_line_id)
+        l_contours: set[str] = set()
+        tc = _clean_contour_text(getattr(ln, "test_contour", None))
+        if tc:
+            l_contours.add(tc)
+        l_contours.update(extra_contours_by_line.get(lkey, set()))
+        primary_contour = sorted(l_contours)[0] if l_contours else ""
+        meta = {
+            "is_signed": is_signed,
+            "line_number": getattr(ln, "line_number", None) or "",
+            "contour": primary_contour,
+        }
+        obj_name = getattr(ln, "object_name", None) or ""
+        rd_code = getattr(ln, "rd_code", None) or ""
+
+        if condition == "objectName":
+            b = _get_bucket(obj_name or "Не указано")
+            b["lines"][lkey] = meta
+            if rd_code:
+                b["rd_codes"].add(rd_code)
+            b["contours"].update(l_contours)
+        elif condition == "rdCode":
+            b = _get_bucket(rd_code or "Не указано")
+            b["lines"][lkey] = meta
+            if obj_name:
+                b["object_names"].add(obj_name)
+            b["contours"].update(l_contours)
+        elif condition == "uniqueLineId":
+            ulid = getattr(ln, "unique_line_id", None) or "Не указано"
+            b = _get_bucket(ulid)
+            b["lines"][lkey] = meta
+            if rd_code:
+                b["rd_codes"].add(rd_code)
+            if obj_name:
+                b["object_names"].add(obj_name)
+            b["contours"].update(l_contours)
+        elif condition == "contour":
+            targets = sorted(l_contours) if l_contours else ["Без контура"]
+            for cname in targets:
+                b = _get_bucket(cname)
+                b["lines"][lkey] = meta
+                if rd_code:
+                    b["rd_codes"].add(rd_code)
+                if obj_name:
+                    b["object_names"].add(obj_name)
+
+    # 3. Distribute WeldJoint items
     for j in joints:
-        key = getattr(j, attr, None) or "Не указано"
-        groups.setdefault(key, []).append(j)
+        matched = _find_line(j)
+        cname = _joint_contour(j, matched)
+        key = cname if condition == "contour" else (getattr(j, attr, None) or "Не указано")
+        b = _get_bucket(key)
+        b["joints"].append(j)
+        if getattr(j, "rd_code", None):
+            b["rd_codes"].add(j.rd_code)
+        if getattr(j, "object_name", None):
+            b["object_names"].add(j.object_name)
+        if cname and cname != "Без контура":
+            b["contours"].add(cname)
+
+        lkey = (
+            str(getattr(matched, "id", "") or getattr(matched, "unique_line_id", ""))
+            if matched is not None
+            else (getattr(j, "unique_line_id", None) or f"{getattr(j, 'rd_code', '')}::{getattr(j, 'line_number', '')}")
+        )
+        if lkey and lkey not in b["lines"]:
+            b["lines"][lkey] = {
+                "is_signed": _is_line_id_signed(matched, doc_by_line_id) if matched is not None else False,
+                "line_number": getattr(j, "line_number", None) or "",
+                "contour": "" if cname == "Без контура" else cname,
+            }
 
     fit = ControlResultEnum.FIT.value
     rep = ControlResultEnum.REPAIR.value
     not_req = NdtMethodEnum.NOT_REQUIRED.value
 
     rows: list[ReadinessRow] = []
-    for group_key, items in groups.items():
+    for group_key, b in buckets.items():
+        items = b["joints"]
         total = len(items)
+        if exclude_empty_groups and total == 0:
+            continue
         supp = 0
         for i in items:
             try:
@@ -567,32 +807,43 @@ def calculate_readiness_report(joints: list[Any], condition: str) -> list[Readin
                     supp += 1
             except ValueError:
                 pass
-        welded = sum(
-            1 for i in items if getattr(i, "welding_date", None) is not None and _has_text(i.welder_stamp)
-        )
+        welded = sum(1 for i in items if is_joint_welded(i))
         vik_passed = sum(
             1
             for i in items
-            if _s(i.vik_result) == fit
-            or (
-                _s(i.vik_result) == rep
-                and (
-                    _s(i.repair_vik_result) == fit
-                    or (_s(i.dup_ndt_type) != not_req and _s(i.dup_ndt_result) == fit)
+            if is_joint_welded(i)
+            and (
+                _s(i.vik_result) == fit
+                or (
+                    _s(i.vik_result) == rep
+                    and (
+                        _s(i.repair_vik_result) == fit
+                        or (_s(i.dup_ndt_type) != not_req and _s(i.dup_ndt_result) == fit)
+                    )
                 )
             )
         )
         ndt_passed = sum(
             1
             for i in items
-            if _s(i.ndt_result) == fit
-            or (
-                _s(i.ndt_result) == rep
-                and (
-                    _s(i.repair_ndt_result) == fit
-                    or (_s(i.dup_ndt_type) != not_req and _s(i.dup_ndt_result) == fit)
+            if is_joint_welded(i)
+            and (
+                _s(i.ndt_result) == fit
+                or (
+                    _s(i.ndt_result) == rep
+                    and (
+                        _s(i.repair_ndt_result) == fit
+                        or (_s(i.dup_ndt_type) != not_req and _s(i.dup_ndt_result) == fit)
+                    )
                 )
             )
+        )
+        ndt_not_req = sum(
+            1
+            for i in items
+            if is_joint_welded(i)
+            and (not _s(i.ndt_type) or _s(i.ndt_type) == not_req)
+            and not is_joint_currently_in_repair(i)
         )
         dup_passed = sum(
             1 for i in items if _s(i.dup_ndt_result) == fit or _s(i.dup_ndt_type) == not_req
@@ -616,22 +867,47 @@ def calculate_readiness_report(joints: list[Any], condition: str) -> list[Readin
         total_nom_in = round(sum(_nom_inch(i) for i in items) * 10) / 10
         total_eq_in = round(sum(_edi(i) for i in items) * 10) / 10
         welded_eq_in = round(
-            sum(
-                _edi(i)
-                for i in items
-                if getattr(i, "welding_date", None) is not None and _has_text(i.welder_stamp)
-            )
-            * 10
+            sum(_edi(i) for i in items if is_joint_welded(i)) * 10
         ) / 10
         equiv_welding_pct = round((welded_eq_in / total_eq_in) * 100) if total_eq_in > 0 else 0
 
-        first = items[0]
+        total_lines_cnt = len(b["lines"])
+        signed_id_cnt = sum(1 for m in b["lines"].values() if m["is_signed"])
+        id_pct = round((signed_id_cnt / total_lines_cnt) * 100) if total_lines_cnt > 0 else 0
+
+        line_id_status = (
+            ("SIGNED" if signed_id_cnt > 0 else "IN_WORK")
+            if condition == "uniqueLineId"
+            else None
+        )
+        test_allowance = (
+            _resolve_test_allowance_status(
+                total_joints=total,
+                fully_completed_count=fully_done,
+                repair_count=repair_cnt,
+                total_lines_count=total_lines_cnt,
+                signed_id_lines_count=signed_id_cnt,
+            )
+            if condition == "contour"
+            else None
+        )
+
+        first = items[0] if items else None
+        first_meta = next(iter(b["lines"].values()), None)
         if condition == "objectName":
-            sub_label = f"Шифров РД: {len({i.rd_code for i in items})}"
+            c_cnt = len(b["contours"])
+            sub_label = (
+                f"Шифров РД: {len(b['rd_codes'])} · Контуров: {c_cnt}"
+                if c_cnt > 0
+                else f"Шифров РД: {len(b['rd_codes'])}"
+            )
         elif condition == "uniqueLineId":
-            sub_label = f"Линия {first.line_number or ''} · {first.contour or ''}"
+            ln_num = (first_meta["line_number"] if first_meta else "") or (getattr(first, "line_number", "") if first else "")
+            ln_cnt = (next(iter(b["contours"]), "") or (first_meta["contour"] if first_meta else "") or (getattr(first, "contour", "") if first else ""))
+            parts = [f"Линия {ln_num}" if ln_num else "", ln_cnt]
+            sub_label = " · ".join(p for p in parts if p)
         else:
-            sub_label = first.object_name or ""
+            sub_label = next(iter(b["object_names"]), "") or (getattr(first, "object_name", "") if first else "")
 
         rows.append(
             ReadinessRow(
@@ -652,10 +928,23 @@ def calculate_readiness_report(joints: list[Any], condition: str) -> list[Readin
                 total_equiv_inches=total_eq_in,
                 welded_equiv_inches=welded_eq_in,
                 equiv_welding_pct=equiv_welding_pct,
+                ndt_not_required_count=ndt_not_req,
+                total_lines_count=total_lines_cnt,
+                signed_id_lines_count=signed_id_cnt,
+                id_readiness_pct=id_pct,
+                line_id_status=line_id_status,
+                test_allowance_status=test_allowance,
             )
         )
 
-    rows.sort(key=lambda r: r.total_joints, reverse=True)
+    rows.sort(
+        key=lambda r: (
+            1 if (condition == "contour" and r.group_key == "Без контура") else 0,
+            -r.total_joints,
+            -r.total_lines_count,
+            r.group_key,
+        )
+    )
     return rows
 
 

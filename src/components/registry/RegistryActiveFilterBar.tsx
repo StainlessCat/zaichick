@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Filter, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Calendar, Filter, RotateCcw } from 'lucide-react';
 import { FIELD_LABELS_MAP, formatDateDDMMYY } from '../../utils/weldingLogic';
 import { WeldJointFieldKey } from '../../types/welding';
 import { RegistryActiveFilterBarProps } from './types';
@@ -8,6 +8,8 @@ export const RegistryActiveFilterBar: React.FC<RegistryActiveFilterBarProps> = (
   weldingDateFrom,
   weldingDateTo,
   onResetDateRange,
+  onlyActiveRepairs = false,
+  onResetActiveRepairs,
   activeFilterKeys,
   columnFilters,
   onSetColumnFilter,
@@ -18,7 +20,8 @@ export const RegistryActiveFilterBar: React.FC<RegistryActiveFilterBarProps> = (
   const hasFilters =
     activeFilterKeys.length > 0 ||
     Boolean(weldingDateFrom) ||
-    Boolean(weldingDateTo);
+    Boolean(weldingDateTo) ||
+    onlyActiveRepairs;
 
   if (!hasFilters && selectedJointIdsCount === 0) {
     return null;
@@ -30,6 +33,22 @@ export const RegistryActiveFilterBar: React.FC<RegistryActiveFilterBarProps> = (
         <span className="font-semibold text-[#1e3799]">
           Активные фильтры:
         </span>
+        {onlyActiveRepairs && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-50 border border-amber-300 text-amber-900 font-semibold">
+            <AlertTriangle className="w-3 h-3 text-amber-700" />
+            <span>Только в ремонте</span>
+            {onResetActiveRepairs && (
+              <button
+                type="button"
+                onClick={onResetActiveRepairs}
+                aria-label="Сбросить фильтр по ремонту"
+                className="text-amber-600 hover:text-red-600 font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </span>
+        )}
         {(weldingDateFrom || weldingDateTo) && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white border border-sky-300 text-[#1e3799] font-medium">
             <Calendar className="w-3 h-3" />

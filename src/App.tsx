@@ -259,6 +259,7 @@ export const App: React.FC = () => {
     selectedObjectName,
     selectedRdCode,
     labRequests,
+    testCircuits,
     visibleColumns,
     setVisibleColumns,
     setColumnOrder,
@@ -1272,6 +1273,8 @@ export const App: React.FC = () => {
         onWeldingDateFromChange={filters.handleWeldingDateFromChange}
         onWeldingDateToChange={filters.handleWeldingDateToChange}
         onResetDateRange={filters.handleResetDateRange}
+        onlyActiveRepairs={filters.onlyActiveRepairs}
+        setOnlyActiveRepairs={filters.setOnlyActiveRepairs}
         confirmBulkDeleteJoints={confirmBulkDeleteJoints}
         onSetConfirmBulkDeleteJoints={setConfirmBulkDeleteJoints}
         onBulkDeleteSelectedJoints={jointActions.handleBulkDeleteSelectedJoints}

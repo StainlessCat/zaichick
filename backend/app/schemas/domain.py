@@ -1037,6 +1037,12 @@ class ReadinessRowOut(BaseModel):
     total_equiv_inches: float
     welded_equiv_inches: float
     equiv_welding_pct: int
+    ndt_not_required_count: int = 0
+    total_lines_count: int = 0
+    signed_id_lines_count: int = 0
+    id_readiness_pct: int = 0
+    line_id_status: str | None = None
+    test_allowance_status: str | None = None
 
 
 class JournalCompletenessOut(BaseModel):
