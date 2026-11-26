@@ -4,8 +4,6 @@ import { NdtLineDeficitRow, NdtRdDeficitGroup } from '../../utils/laboratoryLogi
 import { LabMarkingCell } from './LabMarkingCell';
 
 interface LabDeficitTabProps {
-  onlyDeficitLines: boolean;
-  setOnlyDeficitLines: (val: boolean) => void;
   filteredRdGroups: NdtRdDeficitGroup[];
   expandedRdCodes: Record<string, boolean>;
   setExpandedRdCodes: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
@@ -14,8 +12,6 @@ interface LabDeficitTabProps {
 }
 
 export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
-  onlyDeficitLines,
-  setOnlyDeficitLines,
   filteredRdGroups,
   expandedRdCodes,
   setExpandedRdCodes,
@@ -26,26 +22,6 @@ export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-      <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h3 className="text-xs sm:text-sm font-bold text-slate-900">
-            Дефицитная ведомость неразрушающего контроля
-          </h3>
-          <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={onlyDeficitLines}
-              onChange={(e) => setOnlyDeficitLines(e.target.checked)}
-              className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
-            />
-            <span>Только линии с дефицитом</span>
-          </label>
-        </div>
-
-        <div className="text-[11px] text-slate-500">
-          Норматив по Лайнлисту: <span className="font-mono">Q_треб = ceil(N_свар × % / 100)</span>
-        </div>
-      </div>
 
       {filteredRdGroups.length === 0 ? (
         <div className="p-8 text-center space-y-2">

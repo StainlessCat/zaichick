@@ -7,7 +7,6 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
-  InspectorProfile,
   NdtLabRequest,
   NdtLabRequestStatus,
   WeldJoint,
@@ -29,9 +28,6 @@ interface LabRequestsTabProps {
   };
   requestStatusFilter: 'ALL' | NdtLabRequestStatus;
   setRequestStatusFilter: (val: 'ALL' | NdtLabRequestStatus) => void;
-  selectedInspectorForAccept: string;
-  setSelectedInspectorForAccept: (val: string) => void;
-  inspectors: InspectorProfile[];
   jointsById: Map<string, WeldJoint>;
   canDeleteRequest?: boolean;
   canAcceptRequest?: boolean;
@@ -47,9 +43,6 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
   requestCounts,
   requestStatusFilter,
   setRequestStatusFilter,
-  selectedInspectorForAccept,
-  setSelectedInspectorForAccept,
-  inspectors,
   jointsById,
   canDeleteRequest,
   canAcceptRequest = true,
@@ -61,8 +54,8 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
 }) => {
   return (
     <div className="space-y-3">
-      {/* Панель фильтрации заявок и выбора дежурного дефектоскописта */}
-      <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+      {/* Панель фильтрации заявок */}
+      <div className="bg-white rounded-xl border border-slate-200 px-3 py-2.5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
           {(
             [
@@ -92,24 +85,6 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
               </span>
             </button>
           ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-slate-600">
-            Дефектоскопист:
-          </span>
-          <select
-            value={selectedInspectorForAccept}
-            onChange={(e) => setSelectedInspectorForAccept(e.target.value)}
-            aria-label="Дефектоскопист, принимающий заявку в работу"
-            className="px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#1e3799]"
-          >
-            {inspectors.map((insp) => (
-              <option key={insp.fullName} value={insp.fullName}>
-                {insp.fullName} · {insp.certLevel}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 

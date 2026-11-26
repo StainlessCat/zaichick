@@ -893,7 +893,6 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     <div className="space-y-4">
       {/* Шапка раздела и сводная статистика */}
       <LabHeader
-        selectedObjectName={selectedObjectName}
         selectedRdCode={selectedRdCode}
         onSelectRdCode={onSelectRdCode}
         availableRdCodes={availableRdCodes}
@@ -928,6 +927,8 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         requestCounts={requestCounts}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        onlyDeficitLines={onlyDeficitLines}
+        setOnlyDeficitLines={setOnlyDeficitLines}
         conclusionsCount={conclusionTargetJoints.length}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
@@ -940,8 +941,6 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       {/* Вкладка 1: Дефицитная ведомость */}
       {activeTab === 'deficit' && (
         <LabDeficitTab
-          onlyDeficitLines={onlyDeficitLines}
-          setOnlyDeficitLines={setOnlyDeficitLines}
           filteredRdGroups={filteredRdGroups}
           expandedRdCodes={expandedRdCodes}
           setExpandedRdCodes={setExpandedRdCodes}
@@ -957,9 +956,6 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           requestCounts={requestCounts}
           requestStatusFilter={requestStatusFilter}
           setRequestStatusFilter={setRequestStatusFilter}
-          selectedInspectorForAccept={selectedInspectorForAccept}
-          setSelectedInspectorForAccept={setSelectedInspectorForAccept}
-          inspectors={inspectors}
           jointsById={jointsById}
           canDeleteRequest={
             auth.isAuthenticated &&

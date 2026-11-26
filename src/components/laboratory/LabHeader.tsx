@@ -17,7 +17,6 @@ import { LaboratorySubTab } from './types';
 import { Button, Input, Select } from '../ui';
 
 interface LabHeaderProps {
-  selectedObjectName: string;
   selectedRdCode: string;
   onSelectRdCode: (code: string) => void;
   availableRdCodes: { code: string; title: string; contours: string[] }[];
@@ -34,6 +33,8 @@ interface LabHeaderProps {
   };
   activeTab: LaboratorySubTab;
   setActiveTab: (tab: LaboratorySubTab) => void;
+  onlyDeficitLines: boolean;
+  setOnlyDeficitLines: (val: boolean) => void;
   conclusionsCount: number;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
@@ -44,7 +45,6 @@ interface LabHeaderProps {
 }
 
 export const LabHeader: React.FC<LabHeaderProps> = ({
-  selectedObjectName,
   selectedRdCode,
   onSelectRdCode,
   availableRdCodes,
@@ -56,6 +56,8 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
   requestCounts,
   activeTab,
   setActiveTab,
+  onlyDeficitLines,
+  setOnlyDeficitLines,
   conclusionsCount,
   searchQuery,
   setSearchQuery,
@@ -96,34 +98,8 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
 
   return (
     <>
-      <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs space-y-2.5">
-        {/* Верхняя строка: Наименование раздела и кнопка справочника кодов */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Radiation className="w-4 h-4 text-[#1e3799] shrink-0" />
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 truncate">
-              Лаборатория НК
-            </h2>
-            <span className="text-slate-300" aria-hidden="true">
-              ·
-            </span>
-            <span className="text-xs font-semibold text-slate-600 truncate">
-              {selectedObjectName === 'ALL' ? 'Все объекты' : selectedObjectName}
-            </span>
-          </div>
-
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onOpenCodeReference}
-            title="Открыть справочник кодов маркировки"
-          >
-            <BookOpen className="w-3.5 h-3.5 text-[#1e3799]" />
-            <span>Справочник кодов</span>
-          </Button>
-        </div>
-
-        {/* Компактная однострочная полоса KPI строго между заголовком и фильтром шифра РД */}
+      <div className="bg-white rounded-xl border border-slate-200 p-2.5 shadow-2xs space-y-2">
+        {/* Компактная однострочная полоса KPI над фильтром шифра РД */}
         <div className="grid grid-cols-3 sm:grid-cols-6 border border-slate-200 rounded-lg divide-x divide-y sm:divide-y-0 divide-slate-200 bg-slate-50/70 overflow-hidden">
           <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
             <span className="text-[11px] font-medium text-slate-500 truncate">
@@ -189,7 +165,7 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
         </div>
 
         {/* Строка фильтра «Шифр РД», поиска и действий */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[260px]">
             <div className="flex items-center gap-1.5">
               <label
@@ -202,7 +178,7 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
                 id="lab-rd-filter"
                 value={selectedRdCode}
                 onChange={(e) => onSelectRdCode(e.target.value)}
-                className="w-48 sm:w-56 h-8 text-xs font-medium text-slate-800"
+                className="w-44 sm:w-52 h-8 text-xs font-medium text-slate-800"
               >
                 <option value="ALL">Все шифры РД</option>
                 {availableRdCodes.map((r) => (
@@ -213,7 +189,7 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
               </Select>
             </div>
 
-            <div className="relative flex-1 min-w-[220px] max-w-md">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <Input
                 type="text"
@@ -233,6 +209,18 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
               )}
             </div>
 
+            {activeTab === 'deficit' && (
+              <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 cursor-pointer select-none whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={onlyDeficitLines}
+                  onChange={(e) => setOnlyDeficitLines(e.target.checked)}
+                  className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
+                />
+                <span>Только с дефицитом</span>
+              </label>
+            )}
+
             {hasActiveFilters && onResetAllFilters && (
               <Button
                 type="button"
@@ -241,7 +229,7 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
                 title="Сбросить все фильтры"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                <span>Сбросить все фильтры</span>
+                <span>Сбросить</span>
               </Button>
             )}
           </div>
@@ -259,6 +247,16 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
               </Button>
             )}
 
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onOpenCodeReference}
+              title="Открыть справочник кодов маркировки"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-[#1e3799]" />
+              <span>Справочник кодов</span>
+            </Button>
+
             <button
               type="button"
               onClick={onExportExcel}
@@ -271,8 +269,8 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
           </div>
         </div>
 
-        {/* Переключатель 3 рабочих вкладок Лаборатории НК (без скобок) */}
-        <div className="pt-2 border-t border-slate-200">
+        {/* Переключатель 3 рабочих вкладок Лаборатории НК */}
+        <div className="pt-1.5 border-t border-slate-200">
           <div
             className="inline-flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg"
             role="tablist"
