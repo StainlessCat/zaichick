@@ -45,6 +45,7 @@ class NdtLabRequestModel(Base):
         String(128), nullable=False, default="Первичный ВИК и НК"
     )
     requested_method: Mapped[str] = mapped_column(String(64), nullable=False, default="РК")
+    requested_methods: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     joint_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     status: Mapped[str] = mapped_column(
         String(64), nullable=False, default="Подана ПТО", index=True

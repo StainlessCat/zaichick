@@ -1,22 +1,22 @@
-import { useModalDismiss } from '../../hooks/useModalDismiss';
 import React from 'react';
-import { UserCheck, X } from 'lucide-react';
+import { AlertTriangle, UserCheck, X } from 'lucide-react';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 import {
+  LabConclusionMethodKey,
   NdtLabControlStage,
   NdtLabRequest,
   NdtMethod,
 } from '../../types/welding';
 import { formatDateDDMMYY } from '../../utils/weldingLogic';
 import {
-  getActiveLabRequestForJoint,
+  CANONICAL_LAB_METHODS,
+  getRequestMethodsList,
   NdtDeficitStatementResult,
   NdtLineDeficitRow,
+  resolveLineLabMethodAvailability,
 } from '../../utils/laboratoryLogic';
-import {
-  CONTROL_STAGES_LIST,
-  NDT_METHODS_LIST,
-  RequestModalState,
-} from './types';
+import { CONTROL_STAGES_LIST, RequestModalState } from './types';
+import { LabMarkingCell } from './LabMarkingCell';
 
 interface LabRequestModalProps {
   isOpen: boolean;
@@ -27,6 +27,22 @@ interface LabRequestModalProps {
   onOpenCreateRequestModal: (lineRow: NdtLineDeficitRow) => void;
   onSubmitNewRequest: () => void;
   onClose: () => void;
+}
+
+function findOverlappingActiveRequest(
+  jointId: string,
+  labRequests: NdtLabRequest[],
+  selectedMethods: LabConclusionMethodKey[]
+): NdtLabRequest | undefined {
+  const selectedSet = new Set(selectedMethods);
+  return labRequests.find((req) => {
+    if (req.status !== 'Подана ПТО' && req.status !== 'В работе ЛНК') {
+      return false;
+    }
+    if (!req.jointIds.includes(jointId)) return false;
+    const reqMethods = getRequestMethodsList(req);
+    return reqMethods.some((m) => selectedSet.has(m));
+  });
 }
 
 export const LabRequestModal: React.FC<LabRequestModalProps> = ({
@@ -47,29 +63,49 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
 
   if (!isOpen) return null;
 
+  const lineEval = resolveLineLabMethodAvailability(requestModalState.lineRow);
+  const selectedMethods =
+    requestModalState.requestedMethods.length > 0
+      ? requestModalState.requestedMethods
+      : (['ВИК'] as LabConclusionMethodKey[]);
+
+  const toggleMethod = (m: LabConclusionMethodKey) => {
+    if (lineEval.methods[m].disabled) return;
+    setRequestModalState((prev) => {
+      const current = prev.requestedMethods;
+      const next = current.includes(m)
+        ? current.filter((item) => item !== m)
+        : CANONICAL_LAB_METHODS.filter((item) => item === m || current.includes(item));
+      const safeNext: LabConclusionMethodKey[] = next.length > 0 ? next : [m];
+      return {
+        ...prev,
+        requestedMethods: safeNext,
+        requestedMethod: (safeNext.join('+') || 'РК') as NdtMethod,
+      };
+    });
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[1px]"
       role="dialog"
       aria-modal="true"
-      aria-label="Формирование заявки на неразрушающий контроль от инженера ПТО"
+      aria-label="Формирование пакетной заявки в Лабораторию НК"
     >
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         <div className="px-5 py-3.5 bg-[#1e3799] text-white flex items-center justify-between">
           <div>
             <div className="text-[11px] text-sky-200 font-mono">
               ПЕРЕДАЧА СВАРЕННЫХ СТЫКОВ В ЛАБОРАТОРИЮ НК
             </div>
-            <h3
-              className="text-base font-bold"
-              style={{ fontFamily: '"Jost", sans-serif' }}
-            >
-              Формирование заявки на проведение неразрушающего контроля (от ПТО)
+            <h3 className="text-base font-bold">
+              Формирование пакетной заявки в Лабораторию НК
             </h3>
           </div>
           <button
             type="button"
             onClick={handleRequestClose}
+            aria-label="Закрыть окно"
             className="p-1 rounded-lg hover:bg-white/10 text-sky-100 cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -77,9 +113,9 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
         </div>
 
         <div className="p-5 overflow-y-auto space-y-4 text-xs">
-          {/* Выбор линии из дефицитной ведомости */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
+          {/* Выбор линии и реквизитов заявки */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
               <label className="block font-semibold text-slate-700 mb-1">
                 Шифр РД и технологическая линия
               </label>
@@ -97,8 +133,7 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
               >
                 {deficitStatement.allLineRows.map((r: NdtLineDeficitRow) => (
                   <option key={r.uniqueLineId} value={r.uniqueLineId}>
-                    {r.rdCode} · Линия {r.lineNumber} (сварено: {r.weldedCount}, дефицит НК:{' '}
-                    {r.totalPhysicalDeficit} ст.)
+                    {r.rdCode} · Линия {r.lineNumber} · сварено {r.weldedCount} · дефицит {r.totalPhysicalDeficit}
                   </option>
                 ))}
               </select>
@@ -106,24 +141,7 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
 
             <div>
               <label className="block font-semibold text-slate-700 mb-1">
-                ФИО инженера ПТО (заявитель)
-              </label>
-              <input
-                type="text"
-                value={requestModalState.ptoEngineerName}
-                onChange={(e) =>
-                  setRequestModalState((prev) => ({
-                    ...prev,
-                    ptoEngineerName: e.target.value,
-                  }))
-                }
-                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-900 font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">
-                Этап неразрушающего контроля
+                Этап контроля
               </label>
               <select
                 value={requestModalState.controlStage}
@@ -143,55 +161,92 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
               </select>
             </div>
 
-            <div>
+            <div className="sm:col-span-3">
               <label className="block font-semibold text-slate-700 mb-1">
-                Запрашиваемый метод контроля
+                Заявитель
               </label>
-              <select
-                value={requestModalState.requestedMethod}
+              <input
+                type="text"
+                value={requestModalState.ptoEngineerName}
                 onChange={(e) =>
                   setRequestModalState((prev) => ({
                     ...prev,
-                    requestedMethod: e.target.value as NdtMethod,
+                    ptoEngineerName: e.target.value,
                   }))
                 }
-                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 font-mono font-bold text-slate-900"
-              >
-                {NDT_METHODS_LIST.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-900 font-medium"
+              />
             </div>
           </div>
 
-          {/* Справка по нормативу выбранной линии */}
-          {requestModalState.lineRow && (
-            <div className="p-3 rounded-lg bg-[#f4f8fe] border border-sky-200 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
-              <span>
-                Линия <strong>{requestModalState.lineRow.lineNumber}</strong> · Контур:{' '}
-                <strong>{requestModalState.lineRow.contour}</strong>
+          {/* Пакет методов контроля по нормативам Лайнлиста */}
+          <div className="p-3 rounded-lg bg-[#f4f8fe] border border-sky-200 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-bold text-slate-800">
+                Пакет методов контроля по Лайнлисту
               </span>
-              <span>
-                Норма РК: <strong>{requestModalState.lineRow.rkPlanPct}%</strong> (дефицит{' '}
-                <strong>{requestModalState.lineRow.rkDeficit}</strong> ст.) · УЗК:{' '}
-                <strong>{requestModalState.lineRow.uzkPlanPct}%</strong> (дефицит{' '}
-                <strong>{requestModalState.lineRow.uzkDeficit}</strong> ст.) · ПВК:{' '}
-                <strong>{requestModalState.lineRow.pvkPlanPct}%</strong> (дефицит{' '}
-                <strong>{requestModalState.lineRow.pvkDeficit}</strong> ст.)
-              </span>
+              {requestModalState.lineRow && (
+                <span className="font-mono text-[11px] text-slate-600">
+                  РК {requestModalState.lineRow.rkPlanPct}% · УЗК{' '}
+                  {requestModalState.lineRow.uzkPlanPct}% · ПВК{' '}
+                  {requestModalState.lineRow.pvkPlanPct}%
+                </span>
+              )}
             </div>
-          )}
 
-          {/* Выбор сваренных стыков линии для включения в заявку */}
+            {lineEval.warningMessage && (
+              <div className="px-2.5 py-1.5 rounded bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>{lineEval.warningMessage}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {CANONICAL_LAB_METHODS.map((m) => {
+                const avail = lineEval.methods[m];
+                const isChecked = selectedMethods.includes(m);
+                return (
+                  <label
+                    key={m}
+                    title={
+                      avail.disabled
+                        ? 'Не требуется по Лайнлисту'
+                        : `Метод ${m}`
+                    }
+                    className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-xs transition-colors ${
+                      avail.disabled
+                        ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                        : isChecked
+                        ? 'bg-white border-[#1e3799] text-[#1e3799] font-bold shadow-2xs cursor-pointer'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        disabled={avail.disabled}
+                        onChange={() => toggleMethod(m)}
+                        className="rounded border-slate-300 text-[#1e3799] disabled:opacity-40"
+                      />
+                      <span className="font-mono">{m}</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-500">
+                      {avail.disabled ? '0%' : m === 'ВИК' ? '100%' : avail.planPct > 0 ? `${avail.planPct}%` : '—'}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Выбор сваренных стыков линии для включения в пакетную заявку */}
           {requestModalState.lineRow && (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="font-bold text-slate-800">
-                  Выберите сваренные стыки для включения в заявку (выбрано:{' '}
-                  {requestModalState.selectedJointIds.length} из{' '}
-                  {requestModalState.lineRow.allWeldedJoints.length}):
+                  Стыки линии: выбрано {requestModalState.selectedJointIds.length} из{' '}
+                  {requestModalState.lineRow.allWeldedJoints.length}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -201,11 +256,7 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
                       if (!row) return;
                       const unrequested = row.allWeldedJoints.filter(
                         (j) =>
-                          !getActiveLabRequestForJoint(
-                            j.id,
-                            labRequests,
-                            requestModalState.requestedMethod
-                          ) &&
+                          !findOverlappingActiveRequest(j.id, labRequests, selectedMethods) &&
                           (row.candidateJoints.some((c) => c.id === j.id) ||
                             row.candidateJoints.length === 0)
                       );
@@ -216,17 +267,7 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
                     }}
                     className="text-[11px] font-semibold text-[#1e3799] hover:underline cursor-pointer"
                   >
-                    Выбрать все неохваченные ({
-                      requestModalState.lineRow.allWeldedJoints.filter(
-                        (j) =>
-                          !getActiveLabRequestForJoint(
-                            j.id,
-                            labRequests,
-                            requestModalState.requestedMethod
-                          ) &&
-                          (requestModalState.lineRow?.candidateJoints.some((c) => c.id === j.id) ?? true)
-                      ).length
-                    })
+                    Выбрать неохваченные
                   </button>
                   <span className="text-slate-300">|</span>
                   <button
@@ -235,12 +276,7 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
                       const row = requestModalState.lineRow;
                       if (!row) return;
                       const available = row.allWeldedJoints.filter(
-                        (j) =>
-                          !getActiveLabRequestForJoint(
-                            j.id,
-                            labRequests,
-                            requestModalState.requestedMethod
-                          )
+                        (j) => !findOverlappingActiveRequest(j.id, labRequests, selectedMethods)
                       );
                       setRequestModalState((prev) => ({
                         ...prev,
@@ -249,26 +285,17 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
                     }}
                     className="text-[11px] font-semibold text-slate-600 hover:underline cursor-pointer"
                   >
-                    Выбрать все доступные ({
-                      requestModalState.lineRow.allWeldedJoints.filter(
-                        (j) =>
-                          !getActiveLabRequestForJoint(
-                            j.id,
-                            labRequests,
-                            requestModalState.requestedMethod
-                          )
-                      ).length
-                    })
+                    Выбрать все доступные
                   </button>
                 </div>
               </div>
 
               <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
                 {requestModalState.lineRow.allWeldedJoints.map((j) => {
-                  const activeReq = getActiveLabRequestForJoint(
+                  const activeReq = findOverlappingActiveRequest(
                     j.id,
                     labRequests,
-                    requestModalState.requestedMethod
+                    selectedMethods
                   );
                   const checked = requestModalState.selectedJointIds.includes(j.id);
                   const isDisabled = Boolean(activeReq);
@@ -276,18 +303,18 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
                   return (
                     <label
                       key={j.id}
-                      className={`flex items-center justify-between gap-3 px-3 py-2 transition-colors ${
+                      className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 transition-colors ${
                         isDisabled
                           ? 'bg-amber-50/40 cursor-not-allowed opacity-90'
                           : 'hover:bg-slate-50 cursor-pointer'
                       }`}
                       title={
                         activeReq
-                          ? `Стык уже включен в активную заявку №${activeReq.requestNumber} (статус «${activeReq.status}») на метод ${activeReq.requestedMethod}`
+                          ? `Пересечение с активной заявкой №${activeReq.requestNumber} по методам ${activeReq.requestedMethod}`
                           : undefined
                       }
                     >
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex flex-wrap items-center gap-2.5 min-w-0">
                         <input
                           type="checkbox"
                           checked={checked}
@@ -301,22 +328,23 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
                                 : [...prev.selectedJointIds, j.id],
                             }));
                           }}
-                          className="rounded border-slate-300 text-[#1e3799] disabled:bg-slate-200 disabled:text-slate-400"
+                          className="rounded border-slate-300 text-[#1e3799] disabled:opacity-40"
                         />
                         <span className="font-mono font-bold text-slate-900">
-                          Стык № {j.jointNumber}
+                          № {j.jointNumber}
                         </span>
+                        <LabMarkingCell joint={j} compact />
                         {activeReq && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                            В заявке №{activeReq.requestNumber} ({activeReq.status})
+                            В заявке №{activeReq.requestNumber}
                           </span>
                         )}
-                        <span className="font-mono text-slate-600">
-                          {j.diameterMm}×{j.wallThickness} мм · Сварка{' '}
-                          {formatDateDDMMYY(j.weldingDate)} · Клеймо {j.welderStamp}
+                        <span className="font-mono text-[11px] text-slate-600">
+                          {j.diameterMm}×{j.wallThickness} мм · {formatDateDDMMYY(j.weldingDate)} ·{' '}
+                          {j.welderStamp}
                         </span>
                       </div>
-                      <span className="font-mono text-[11px] text-slate-500">
+                      <span className="font-mono text-[11px] text-slate-500 shrink-0">
                         ВИК: {j.vikResult} | НК: {j.ndtResult}
                       </span>
                     </label>
@@ -328,7 +356,7 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
 
           <div>
             <label className="block font-semibold text-slate-700 mb-1">
-              Примечание к заявке для дефектоскопистов ЛНК
+              Примечание к заявке
             </label>
             <input
               type="text"
@@ -360,7 +388,7 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
           >
             <UserCheck className="w-4 h-4" />
             <span>
-              Передать заявку в Лабораторию ({requestModalState.selectedJointIds.length} ст.)
+              Передать заявку в ЛНК · {requestModalState.selectedJointIds.length} ст.
             </span>
           </button>
         </div>

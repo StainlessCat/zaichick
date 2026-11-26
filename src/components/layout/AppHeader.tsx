@@ -83,7 +83,7 @@ const MAIN_NAV_ITEMS: MainNavItem[] = [
   },
   {
     id: 'laboratory',
-    shortLabel: 'Контроль НК',
+    shortLabel: 'Лаборатория НК',
     title: 'Лаборатория неразрушающего контроля',
   },
   {

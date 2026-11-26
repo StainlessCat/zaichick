@@ -45,7 +45,9 @@ export function getJointFieldValue(
       return found.name.trim();
     }
   }
-  return joint[colKey as WeldJointFieldKey] ?? '';
+  const raw = joint[colKey as WeldJointFieldKey];
+  if (typeof raw === 'number' || typeof raw === 'string') return raw;
+  return '';
 }
 
 /**

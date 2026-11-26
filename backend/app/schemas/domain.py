@@ -760,6 +760,7 @@ class WeldJointCreate(BaseModel):
     heat_treat_diagram_number: str | None = None
     hardness_test_info: str | None = None
     ferrite_phase_info: str | None = None
+    lab_conclusions: dict[str, Any] | None = None
 
     repair_action: str | None = None
     repair_date: date | None = None
@@ -878,6 +879,7 @@ class WeldJointUpdate(BaseModel):
     heat_treat_diagram_number: str | None = None
     hardness_test_info: str | None = None
     ferrite_phase_info: str | None = None
+    lab_conclusions: dict[str, Any] | None = None
 
     repair_action: str | None = None
     repair_date: date | None = None
@@ -1013,6 +1015,7 @@ class WeldJointOut(BaseModel):
     heat_treat_diagram_number: str | None = None
     hardness_test_info: str | None = None
     ferrite_phase_info: str | None = None
+    lab_conclusions: dict[str, Any] | None = None
 
     repair_action: str | None = None
     repair_date: date | None = None
@@ -1152,6 +1155,7 @@ class NdtLabRequestCreate(BaseModel):
     contour: str = Field(default="", max_length=255)
     control_stage: str = Field(default="Первичный ВИК и НК", max_length=128)
     requested_method: str = Field(default="РК", max_length=64)
+    requested_methods: list[str] = Field(default_factory=list)
     joint_ids: list[str] = Field(default_factory=list)
     status: str = Field(default="Подана ПТО", max_length=64)
     accepted_at: datetime | None = None
@@ -1171,6 +1175,7 @@ class NdtLabRequestUpdate(BaseModel):
     contour: str | None = None
     control_stage: str | None = None
     requested_method: str | None = None
+    requested_methods: list[str] | None = None
     joint_ids: list[str] | None = None
     status: str | None = None
     accepted_at: datetime | None = None
@@ -1193,6 +1198,7 @@ class NdtLabRequestOut(BaseModel):
     contour: str
     control_stage: str
     requested_method: str
+    requested_methods: list[str] = Field(default_factory=list)
     joint_ids: list[str]
     status: str
     accepted_at: datetime | None = None

@@ -299,3 +299,15 @@ export async function readLrvCatalogFromExcelFile(
     existingCodes
   );
 }
+
+/**
+ * Серверный экспорт многолистового отчёта «Лаборатория НК» (.xlsx)
+ */
+export async function exportLaboratoryToExcel(params?: {
+  objectName?: string;
+  rdCode?: string;
+  searchQuery?: string;
+}): Promise<void> {
+  const { blob, filename } = await zaychickApi.downloadLaboratoryXlsx(params);
+  triggerBlobDownload(blob, filename);
+}

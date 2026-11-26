@@ -21,6 +21,7 @@ from app.api.routes.reports import (
 from app.api.routes.welding_journals import fetch_filtered_joints_and_lrv
 from app.models.executive_doc import ExecutiveDoc
 from app.models.joint import WeldJoint
+from app.models.lab_request import NdtLabRequestModel
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
 from app.models.test_circuit import TestCircuit
@@ -34,6 +35,7 @@ from app.services.excel_export import (
     build_readiness_and_quotas_workbook_bytes,
     build_welding_journal_workbook_bytes,
 )
+from app.services.lab_excel_export import build_laboratory_workbook_bytes
 from app.services.readiness_service import validate_journal_completeness
 
 router = APIRouter(prefix="/api/exports", tags=["exports"])
@@ -337,4 +339,60 @@ async def export_lrv_xlsx(
         )
     payload = await asyncio.to_thread(build_lrv_workbook_bytes, items, is_template=template)
     filename = "ZAYCHICK_Shablon_LRV.xlsx" if template else "ZAYCHICK_Katalog_LRV.xlsx"
+    return _xlsx_response(payload, filename)
+
+
+@router.get("/laboratory.xlsx")
+async def export_laboratory_xlsx(
+    request: Request,
+    object_name: str | None = Query(default=None),
+    rd_code: str | None = Query(default=None),
+    search_query: str | None = Query(default=None),
+    current_user: User = Depends(require_permission("can_export_documents")),
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    obj_clean = object_name.strip() if object_name and object_name.strip().upper() != "ALL" else None
+    rd_clean = rd_code.strip() if rd_code and rd_code.strip().upper() != "ALL" else None
+
+    j_stmt = select(WeldJoint)
+    r_stmt = select(NdtLabRequestModel)
+    if obj_clean:
+        j_stmt = j_stmt.where(WeldJoint.object_name == obj_clean)
+        r_stmt = r_stmt.where(NdtLabRequestModel.object_name == obj_clean)
+    if rd_clean:
+        j_stmt = j_stmt.where(WeldJoint.rd_code == rd_clean)
+        r_stmt = r_stmt.where(NdtLabRequestModel.rd_code == rd_clean)
+
+    joints = list(
+        (await session.execute(j_stmt.order_by(WeldJoint.rd_code.asc(), WeldJoint.line_number.asc(), WeldJoint.joint_number.asc())))
+        .scalars()
+        .all()
+    )
+    lab_requests = list(
+        (await session.execute(r_stmt.order_by(NdtLabRequestModel.created_at.desc())))
+        .scalars()
+        .all()
+    )
+
+    await record_audit_log(
+        session,
+        action="EXPORT",
+        entity_type="laboratory_xlsx",
+        entity_id=rd_clean or obj_clean or "all",
+        user=current_user,
+        new_data={"joints": len(joints), "requests": len(lab_requests)},
+        ip_address=get_client_ip(request),
+        rd_code=rd_clean,
+        summary=f"Экспорт отчёта Лаборатории НК ({len(joints)} ст., {len(lab_requests)} заявок)",
+    )
+
+    payload = await asyncio.to_thread(
+        build_laboratory_workbook_bytes,
+        joints=joints,
+        lab_requests=lab_requests,
+        object_name=obj_clean,
+        rd_code=rd_clean,
+        search_query=search_query,
+    )
+    filename = f"ZAYCHICK_Laboratory_NK_{date.today().isoformat()}.xlsx"
     return _xlsx_response(payload, filename)

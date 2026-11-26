@@ -15,6 +15,7 @@ import type {
   InspectorProfile,
   JointKind,
   JointType,
+  LabConclusionsMap,
   LRVItem,
   LrvElementCategory,
   NdtLabControlStage,
@@ -752,6 +753,10 @@ export function mapJointDto(dto: Record<string, unknown>): WeldJoint {
       : undefined,
     hardnessTestInfo: dto.hardness_test_info ? String(dto.hardness_test_info) : undefined,
     ferritePhaseInfo: dto.ferrite_phase_info ? String(dto.ferrite_phase_info) : undefined,
+    labConclusions:
+      dto.lab_conclusions && typeof dto.lab_conclusions === 'object' && !Array.isArray(dto.lab_conclusions)
+        ? (dto.lab_conclusions as LabConclusionsMap)
+        : undefined,
     repairAction: dto.repair_action ? String(dto.repair_action) : undefined,
     repairDate: dto.repair_date ? String(dto.repair_date) : undefined,
     repairTechCard: dto.repair_tech_card ? String(dto.repair_tech_card) : undefined,
@@ -867,6 +872,7 @@ function buildJointBodyCommon(joint: Partial<WeldJoint>): Record<string, unknown
   setIf('heat_treat_diagram_number', joint.heatTreatDiagramNumber !== undefined ? asNullableStr(joint.heatTreatDiagramNumber) : undefined);
   setIf('hardness_test_info', joint.hardnessTestInfo !== undefined ? asNullableStr(joint.hardnessTestInfo) : undefined);
   setIf('ferrite_phase_info', joint.ferritePhaseInfo !== undefined ? asNullableStr(joint.ferritePhaseInfo) : undefined);
+  setIf('lab_conclusions', joint.labConclusions !== undefined ? joint.labConclusions : undefined);
   setIf('repair_action', joint.repairAction !== undefined ? asNullableStr(joint.repairAction) : undefined);
   if (joint.repairDate !== undefined) setIf('repair_date', asIsoDateOrNull(joint.repairDate));
   setIf('repair_tech_card', joint.repairTechCard !== undefined ? asNullableStr(joint.repairTechCard) : undefined);
@@ -1060,6 +1066,7 @@ export function mapLabRequestDto(dto: Record<string, unknown>): NdtLabRequest {
     contour: String(dto.contour || ''),
     controlStage: (dto.control_stage || 'Первичный ВИК и НК') as NdtLabControlStage,
     requestedMethod: (dto.requested_method || 'РК') as NdtMethod,
+    requestedMethods: Array.isArray(dto.requested_methods) ? (dto.requested_methods as string[]) : undefined,
     jointIds: Array.isArray(dto.joint_ids) ? (dto.joint_ids as string[]) : [],
     status: (dto.status || 'Подана ПТО') as NdtLabRequestStatus,
     acceptedAt: dto.accepted_at ? String(dto.accepted_at) : undefined,
@@ -1090,6 +1097,7 @@ export function mapLabRequestToCreatePayload(
     contour: req.contour || '',
     control_stage: req.controlStage,
     requested_method: req.requestedMethod,
+    requested_methods: req.requestedMethods && req.requestedMethods.length > 0 ? req.requestedMethods : undefined,
     joint_ids: req.jointIds || [],
     status: req.status || 'Подана ПТО',
     accepted_at: asIsoDate(req.acceptedAt),
@@ -1113,6 +1121,7 @@ export function mapLabRequestToUpdatePayload(
   if (patch.contour !== undefined) payload.contour = patch.contour;
   if (patch.controlStage !== undefined) payload.control_stage = patch.controlStage;
   if (patch.requestedMethod !== undefined) payload.requested_method = patch.requestedMethod;
+  if (patch.requestedMethods !== undefined) payload.requested_methods = patch.requestedMethods;
   if (patch.jointIds !== undefined) payload.joint_ids = patch.jointIds;
   if (patch.status !== undefined) payload.status = patch.status;
   if (patch.acceptedAt !== undefined) payload.accepted_at = asIsoDate(patch.acceptedAt);

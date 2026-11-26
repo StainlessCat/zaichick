@@ -1065,6 +1065,25 @@ export const zaychickApi = {
     return apiDownloadBlob(`/api/exports/joints.xlsx${suffix}`, 'weld_joints_registry.xlsx');
   },
 
+  async downloadLaboratoryXlsx(params?: {
+    objectName?: string;
+    rdCode?: string;
+    searchQuery?: string;
+  }) {
+    const q = new URLSearchParams();
+    if (params?.objectName && params.objectName !== 'ALL') {
+      q.set('object_name', params.objectName);
+    }
+    if (params?.rdCode && params.rdCode !== 'ALL') {
+      q.set('rd_code', params.rdCode);
+    }
+    if (params?.searchQuery && params.searchQuery.trim()) {
+      q.set('search_query', params.searchQuery.trim());
+    }
+    const suffix = q.toString() ? `?${q.toString()}` : '';
+    return apiDownloadBlob(`/api/exports/laboratory.xlsx${suffix}`, 'ZAYCHICK_Laboratory_NK.xlsx');
+  },
+
   async downloadJointsTemplateXlsx(rdCode?: string, lineNumber?: string) {
     const q = new URLSearchParams();
     if (rdCode) q.set('rd_code', rdCode);

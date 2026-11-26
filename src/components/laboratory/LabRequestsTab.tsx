@@ -13,7 +13,11 @@ import {
   WeldJoint,
 } from '../../types/welding';
 import { formatDateDDMMYY } from '../../utils/weldingLogic';
-import { isJointConclusionCompletedForRequest } from '../../utils/laboratoryLogic';
+import {
+  getRequestMethodsList,
+  isJointConclusionCompletedForRequest,
+} from '../../utils/laboratoryLogic';
+import { LabMarkingCell } from './LabMarkingCell';
 
 interface LabRequestsTabProps {
   filteredRequests: NdtLabRequest[];
@@ -62,30 +66,37 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
         <div className="flex flex-wrap items-center gap-1.5">
           {(
             [
-              { id: 'ALL', label: `Все заявки (${requestCounts.total})` },
-              { id: 'Подана ПТО', label: `Новые от ПТО (${requestCounts.submitted})` },
-              { id: 'В работе ЛНК', label: `В работе ЛНК (${requestCounts.inWork})` },
-              { id: 'Выполнена', label: `Выполнены (${requestCounts.completed})` },
+              { id: 'ALL', label: 'Все заявки', count: requestCounts.total },
+              { id: 'Подана ПТО', label: 'Новые от ПТО', count: requestCounts.submitted },
+              { id: 'В работе ЛНК', label: 'В работе ЛНК', count: requestCounts.inWork },
+              { id: 'Выполнена', label: 'Выполнены', count: requestCounts.completed },
             ] as const
           ).map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setRequestStatusFilter(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
                 requestStatusFilter === tab.id
                   ? 'bg-[#1e3799] text-white'
                   : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              <span
+                className={`px-1.5 py-0.2 rounded font-mono text-[10px] ${
+                  requestStatusFilter === tab.id ? 'bg-white/20 text-white' : 'bg-slate-200/80 text-slate-700'
+                }`}
+              >
+                {tab.count}
+              </span>
             </button>
           ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-slate-600">
-            Дефектоскопист при приёмке в работу:
+            Дефектоскопист:
           </span>
           <select
             value={selectedInspectorForAccept}
@@ -95,7 +106,7 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
           >
             {inspectors.map((insp) => (
               <option key={insp.fullName} value={insp.fullName}>
-                {insp.fullName} ({insp.certLevel})
+                {insp.fullName} · {insp.certLevel}
               </option>
             ))}
           </select>
@@ -105,7 +116,7 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
       {filteredRequests.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3">
           <div className="text-sm font-semibold text-slate-700">
-            Заявки на неразрушающий контроль по выбранному фильтру отсутствуют
+            Заявки в ЛНК по выбранному фильтру отсутствуют
           </div>
           <button
             type="button"
@@ -113,17 +124,18 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold cursor-pointer"
           >
             <FilePlus2 className="w-4 h-4" />
-            <span>Создать заявку на НК от инженера ПТО</span>
+            <span>Создать заявку в ЛНК</span>
           </button>
         </div>
       ) : (
         <div className="space-y-3">
           {filteredRequests.map((req) => {
+            const reqMethods = getRequestMethodsList(req);
             const reqJoints = req.jointIds
               .map((id) => jointsById.get(id))
               .filter((j): j is WeldJoint => Boolean(j));
             const completedCount = reqJoints.filter((j) =>
-              isJointConclusionCompletedForRequest(j, req.controlStage)
+              isJointConclusionCompletedForRequest(j, req.controlStage, reqMethods)
             ).length;
 
             return (
@@ -131,43 +143,49 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                 key={req.id}
                 className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden"
               >
-                {/* Верхняя строка карточки заявки */}
+                {/* Верхняя строка карточки пакетной заявки */}
                 <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                  <div className="space-y-0.5">
+                  <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
                       <span className="font-mono font-bold text-sm text-[#1e3799]">
                         {req.requestNumber}
                       </span>
                       <span className="text-slate-400">·</span>
                       <span className="font-semibold text-slate-800">
-                        Статус: {req.status}
+                        {req.status}
                       </span>
                       <span className="text-slate-400">·</span>
-                      <span className="font-mono text-slate-700">
-                        Метод: <strong>{req.requestedMethod}</strong> ({req.controlStage})
-                      </span>
+                      <div className="inline-flex flex-wrap items-center gap-1">
+                        {reqMethods.map((m) => (
+                          <span
+                            key={m}
+                            className="px-1.5 py-0.5 rounded bg-blue-50 border border-sky-200 font-mono text-[10px] font-bold text-[#1e3799]"
+                          >
+                            {m}
+                          </span>
+                        ))}
+                      </div>
+                      <span className="text-slate-500 text-[11px]">{req.controlStage}</span>
                       <span className="text-slate-400">·</span>
                       <span className="font-mono text-slate-700">
-                        Шифр РД: <strong>{req.rdCode}</strong> / Линия{' '}
-                        <strong>{req.lineNumber}</strong>
+                        {req.rdCode} / {req.lineNumber}
                       </span>
                     </div>
                     <div className="text-[11px] text-slate-500">
-                      Подал: <strong>{req.createdBy}</strong> ({req.createdAt})
+                      Подал: <strong>{req.createdBy}</strong> · {req.createdAt}
                       {req.acceptedBy && (
                         <>
                           {' '}
-                          · Принял в работу ЛНК: <strong>{req.acceptedBy}</strong> (
-                          {req.acceptedAt})
+                          · Принял: <strong>{req.acceptedBy}</strong> · {req.acceptedAt}
                         </>
                       )}
-                      {req.notes && <> · Примечание: {req.notes}</>}
+                      {req.notes && <> · {req.notes}</>}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-mono tabular-nums text-slate-700 mr-1">
-                      Оформлено заключений:{' '}
+                      Заключения:{' '}
                       <strong>
                         {completedCount}/{reqJoints.length}
                       </strong>
@@ -180,13 +198,13 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                         onClick={() => onAcceptRequestClick(req)}
                         title={
                           !canAcceptRequest
-                            ? 'Для приёмки заявки в работу требуется авторизация с ролью дефектоскописта ЛНК'
+                            ? 'Для приёмки заявки в работу требуется роль дефектоскописта ЛНК'
                             : undefined
                         }
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:bg-slate-200 disabled:text-slate-400 text-slate-950 text-xs font-bold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
                       >
                         <Play className="w-3.5 h-3.5" />
-                        <span>Принять заявку в работу ЛНК</span>
+                        <span>Принять в работу</span>
                       </button>
                     )}
 
@@ -198,8 +216,8 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                       <ClipboardCheck className="w-3.5 h-3.5" />
                       <span>
                         {req.status === 'Выполнена'
-                          ? 'Просмотреть заключения ведомости'
-                          : 'Оформить заключения по стыкам'}
+                          ? 'Просмотреть заключения'
+                          : 'Оформить заключения'}
                       </span>
                     </button>
 
@@ -216,33 +234,31 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                   </div>
                 </div>
 
-                {/* Таблица стыков внутри заявки */}
+                {/* Таблица стыков внутри пакетной заявки */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-[#1e3799] text-white select-none text-xs font-semibold shadow-xs">
                         <th className="py-2 px-3 border-r border-white/15">№ стыка</th>
+                        <th className="py-2 px-3 border-r border-white/15">Маркировка стыка</th>
                         <th className="py-2 px-3 border-r border-white/15">Линия</th>
-                        <th className="py-2 px-3 border-r border-white/15">Типоразмер D×S</th>
+                        <th className="py-2 px-3 border-r border-white/15">Типоразмер</th>
                         <th className="py-2 px-3 border-r border-white/15">Дата сварки</th>
-                        <th className="py-2 px-3 border-r border-white/15">Клеймо сварщика</th>
-                        <th className="py-2 px-3 border-r border-white/15">Свариваемые элементы (ЛРВ)</th>
-                        <th className="py-2 px-3 border-r border-white/15">Акт ВИК</th>
-                        <th className="py-2 px-3 border-r border-white/15">Заключение НК ({req.requestedMethod})</th>
+                        <th className="py-2 px-3 border-r border-white/15">Клеймо</th>
+                        <th className="py-2 px-3 border-r border-white/15">Заключения по методам</th>
                         <th className="py-2 px-3 border-r border-white/15">Дефектоскопист</th>
                         <th className="py-2 px-3 text-right">Паспорт</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {reqJoints.map((j) => {
-                        const isDone = isJointConclusionCompletedForRequest(
-                          j,
-                          req.controlStage
-                        );
                         return (
                           <tr key={j.id} className="hover:bg-slate-50">
                             <td className="py-2 px-3 font-mono font-bold text-[#1e3799]">
                               {j.jointNumber}
+                            </td>
+                            <td className="py-2 px-3">
+                              <LabMarkingCell joint={j} compact />
                             </td>
                             <td className="py-2 px-3 font-mono text-slate-800">
                               {j.lineNumber}
@@ -256,36 +272,44 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                             <td className="py-2 px-3 font-mono text-slate-800">
                               {j.welderStamp}
                             </td>
-                            <td className="py-2 px-3 text-slate-600 truncate max-w-[240px]">
-                              {j.elem1Name || j.lrv1Code} + {j.elem2Name || j.lrv2Code}
-                            </td>
-                            <td className="py-2 px-3 font-mono text-[11px]">
-                              <span className="font-semibold">{j.vikResult}</span>
-                              {j.vikReportNumber && (
-                                <span className="text-slate-500 ml-1">
-                                  (№ {j.vikReportNumber} от {formatDateDDMMYY(j.vikDate)})
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2 px-3 font-mono text-[11px]">
-                              <span
-                                className={
-                                  isDone
-                                    ? j.ndtResult === 'Годен'
-                                      ? 'text-emerald-700 font-bold'
-                                      : 'text-rose-700 font-bold'
-                                    : j.ndtResult === 'В работе'
-                                    ? 'text-amber-700 font-semibold'
-                                    : 'text-slate-500'
-                                }
-                              >
-                                {j.ndtType}: {j.ndtResult}
-                              </span>
-                              {j.ndtReportNumber && (
-                                <span className="text-slate-600 ml-1">
-                                  · № {j.ndtReportNumber} от {formatDateDDMMYY(j.ndtDate)}
-                                </span>
-                              )}
+                            <td className="py-2 px-3">
+                              <div className="flex flex-wrap gap-1.5 font-mono text-[11px]">
+                                {reqMethods.map((m) => {
+                                  const lcEntry = j.labConclusions?.[m];
+                                  const res =
+                                    lcEntry?.result ??
+                                    (m === 'ВИК'
+                                      ? j.vikResult
+                                      : j.ndtType === m
+                                      ? j.ndtResult
+                                      : 'Не проводился');
+                                  const num =
+                                    lcEntry?.reportNumber ??
+                                    (m === 'ВИК'
+                                      ? j.vikReportNumber
+                                      : j.ndtType === m
+                                      ? j.ndtReportNumber
+                                      : '');
+                                  const badgeColor =
+                                    res === 'Годен'
+                                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                      : res === 'Ремонт' || res === 'Вырезать'
+                                      ? 'bg-rose-50 border-rose-200 text-rose-800'
+                                      : res === 'В работе'
+                                      ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                      : 'bg-slate-50 border-slate-200 text-slate-500';
+                                  return (
+                                    <span
+                                      key={m}
+                                      className={`px-1.5 py-0.5 rounded border ${badgeColor}`}
+                                      title={num ? `№ ${num}` : undefined}
+                                    >
+                                      {m}: {res}
+                                      {num ? ` · ${num}` : ''}
+                                    </span>
+                                  );
+                                })}
+                              </div>
                             </td>
                             <td className="py-2 px-3 text-slate-700">
                               {j.ndtInspector || j.vikInspector || '—'}

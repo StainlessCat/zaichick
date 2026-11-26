@@ -32,6 +32,10 @@ from app.services.crud_helpers import (
     raise_duplicate_error,
 )
 from app.services.event_bus import event_bus
+from app.services.lab_conclusions import (
+    check_joint_methods_completed,
+    normalize_requested_methods,
+)
 from app.services.rbac import (
     assert_can_mutate_record,
     assert_can_transition_record_status,
@@ -54,6 +58,9 @@ def _build_lab_request(
     created_by_id: uuid.UUID | None = None,
 ) -> NdtLabRequestModel:
     now = datetime.now(timezone.utc)
+    methods_list, method_str = normalize_requested_methods(
+        payload.requested_methods, payload.requested_method
+    )
     return NdtLabRequestModel(
         id=payload.id or uuid.uuid4(),
         request_number=payload.request_number.strip(),
@@ -66,7 +73,8 @@ def _build_lab_request(
         unique_line_id=payload.unique_line_id.strip(),
         contour=payload.contour.strip(),
         control_stage=payload.control_stage.strip(),
-        requested_method=payload.requested_method.strip(),
+        requested_method=method_str[:64],
+        requested_methods=methods_list,
         joint_ids=payload.joint_ids,
         status="Подана ПТО",
         accepted_at=None,
@@ -231,22 +239,29 @@ async def create_lab_request(
         )
     )
     active_requests = active_reqs_res.scalars().all()
-    req_method_norm = payload.requested_method.strip().upper()
+    req_methods, _ = normalize_requested_methods(
+        payload.requested_methods, payload.requested_method
+    )
+    req_methods_set = set(req_methods)
     req_stage_norm = payload.control_stage.strip().upper()
     payload_joint_set = {str(jid) for jid in payload.joint_ids}
 
     for act_req in active_requests:
-        act_method_norm = act_req.requested_method.strip().upper()
+        act_methods, _ = normalize_requested_methods(
+            getattr(act_req, "requested_methods", None), act_req.requested_method
+        )
+        method_overlap = req_methods_set & set(act_methods)
         act_stage_norm = act_req.control_stage.strip().upper()
-        if act_method_norm == req_method_norm and act_stage_norm == req_stage_norm:
+        if method_overlap and act_stage_norm == req_stage_norm:
             act_joints = {str(x) for x in (act_req.joint_ids or [])}
             overlap = payload_joint_set & act_joints
             if overlap:
+                overlap_methods_str = ', '.join(sorted(method_overlap))
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
                         f"Стыки {list(overlap)} уже включены в активную заявку "
-                        f"№{act_req.request_number} (статус «{act_req.status}») на метод {payload.requested_method}."
+                        f"№{act_req.request_number} (статус «{act_req.status}») по методам: {overlap_methods_str}."
                     ),
                 )
 
@@ -375,14 +390,14 @@ async def update_lab_request(
                     joints = joints_res.scalars().all()
 
                     unverified: list[str] = []
-                    method_upper = (patch_data.get("requested_method") or lab_req.requested_method).upper()
+                    methods_to_check, _ = normalize_requested_methods(
+                        patch_data.get("requested_methods") or getattr(lab_req, "requested_methods", None),
+                        patch_data.get("requested_method") or lab_req.requested_method,
+                    )
                     for j in joints:
-                        if "ВИК" in method_upper or "VIK" in method_upper:
-                            if not j.vik_result or j.vik_result == ControlResultEnum.NOT_CONDUCTED:
-                                unverified.append(f"{j.joint_number} (нет ВИК)")
-                        else:
-                            if not j.ndt_result or j.ndt_result == ControlResultEnum.NOT_CONDUCTED:
-                                unverified.append(f"{j.joint_number} (нет заключения НК)")
+                        missing_for_j = check_joint_methods_completed(j, methods_to_check)
+                        if missing_for_j:
+                            unverified.append(f"{j.joint_number} ({', '.join(missing_for_j)})")
 
                     if unverified and not is_superadmin:
                         raise HTTPException(
@@ -401,6 +416,14 @@ async def update_lab_request(
         patch_data=patch_data,
         schema_cls=NdtLabRequestOut,
     )
+
+    if "requested_methods" in patch_data or "requested_method" in patch_data:
+        norm_methods, norm_str = normalize_requested_methods(
+            patch_data.get("requested_methods") if "requested_methods" in patch_data else getattr(lab_req, "requested_methods", None),
+            patch_data.get("requested_method") if "requested_method" in patch_data else lab_req.requested_method,
+        )
+        patch_data["requested_methods"] = norm_methods
+        patch_data["requested_method"] = norm_str[:64]
 
     old_snap = orm_snapshot(lab_req)
     apply_patch_fields(lab_req, patch_data)

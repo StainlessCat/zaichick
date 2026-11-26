@@ -73,6 +73,7 @@ PIL_EDITABLE_JOINT_FIELDS: frozenset[str] = frozenset(
         "steeloscopy_info",
         "hardness_test_info",
         "ferrite_phase_info",
+        "lab_conclusions",
         # Duplicate NDT
         "dup_ndt_type",
         "dup_ndt_result",

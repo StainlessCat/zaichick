@@ -3,6 +3,8 @@ import {
   ControlResult,
   FacilityObject,
   InspectorProfile,
+  LabConclusionMethodKey,
+  LabConclusionsMap,
   NdtLabControlStage,
   NdtLabRequest,
   NdtLabRequestStatus,
@@ -12,9 +14,14 @@ import {
   WeldJoint,
 } from '../types/welding';
 import { formatInspectorShortName, RolePermissions } from '../utils/rbac';
+import { exportLaboratoryToExcel } from '../utils/excelUtils';
+import { buildJointLabMarking, buildLabConclusionNumber } from '../utils/labMarking';
 import {
   buildAcceptIntoWorkJointPatch,
-  buildLabConclusionPatch,
+  buildMultiMethodLabConclusionPatch,
+  CANONICAL_LAB_METHODS,
+  getRequestMethodsList,
+  resolveLineLabMethodAvailability,
   calculateLaboratoryDeficitStatement,
   isJointConclusionCompletedForRequest,
   LabConclusionFormInput,
@@ -25,10 +32,12 @@ import {
 import {
   BatchPresetState,
   createDraftFromJoint,
+  LabCodeReferenceModal,
   LabConclusionsTab,
   LabDeficitTab,
   LabHeader,
   LabJointDraftRow,
+  LabMethodDraft,
   LaboratorySubTab,
   LabRequestModal,
   LabRequestsTab,
@@ -89,6 +98,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     onOpenJointPassport,
   } = props;
   const [activeTab, setActiveTab] = useState<LaboratorySubTab>('deficit');
+  const [isCodeRefOpen, setIsCodeRefOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyDeficitLines, setOnlyDeficitLines] = useState(false);
   const [expandedRdCodes, setExpandedRdCodes] = useState<Record<string, boolean>>({});
@@ -106,7 +116,8 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     lineRow: null,
     selectedJointIds: [],
     controlStage: 'Первичный ВИК и НК',
-    requestedMethod: 'РК',
+    requestedMethod: 'ВИК+РК' as NdtMethod,
+    requestedMethods: ['ВИК', 'РК'],
     ptoEngineerName: currentUser.fullName || 'Смирнов А.В. (Инженер ПТО)',
     notes: '',
   });
@@ -200,7 +211,12 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
             line.lineNumber.toLowerCase().includes(q) ||
             line.uniqueLineId.toLowerCase().includes(q) ||
             line.contour.toLowerCase().includes(q) ||
-            line.lineName.toLowerCase().includes(q)
+            line.lineName.toLowerCase().includes(q) ||
+            line.allWeldedJoints.some(
+              (j) =>
+                j.jointNumber.toLowerCase().includes(q) ||
+                buildJointLabMarking(j).marking.toLowerCase().includes(q)
+            )
           );
         });
         return {
@@ -231,7 +247,16 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         req.lineNumber.toLowerCase().includes(q) ||
         req.uniqueLineId.toLowerCase().includes(q) ||
         req.createdBy.toLowerCase().includes(q) ||
-        (req.acceptedBy || '').toLowerCase().includes(q)
+        (req.acceptedBy || '').toLowerCase().includes(q) ||
+        req.jointIds.some((id) => {
+          const j = jointsById.get(id);
+          if (!j) return false;
+          if (j.jointNumber.toLowerCase().includes(q)) return true;
+          if (buildJointLabMarking(j).marking.toLowerCase().includes(q)) return true;
+          return Object.values(j.labConclusions || {}).some((c) =>
+            (c?.reportNumber || '').toLowerCase().includes(q)
+          );
+        })
       );
     });
   }, [labRequests, requestStatusFilter, searchQuery, selectedObjectName, selectedRdCode]);
@@ -291,7 +316,8 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           : targetRow.vikDeficit > 0
           ? 'Первичный ВИК и НК'
           : 'Физический НК (РК/УЗК/ПВК)',
-      requestedMethod: targetRow.recommendedMethod,
+      requestedMethod: ((resolveLineLabMethodAvailability(targetRow).requiredMethods.join('+') || targetRow.recommendedMethod) as NdtMethod),
+      requestedMethods: resolveLineLabMethodAvailability(targetRow).requiredMethods.length > 0 ? resolveLineLabMethodAvailability(targetRow).requiredMethods : ['ВИК', 'РК'],
       ptoEngineerName:
         currentUser.fullName && currentUser.login
           ? `${currentUser.fullName}`
@@ -307,6 +333,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       selectedJointIds,
       controlStage,
       requestedMethod,
+      requestedMethods,
       ptoEngineerName,
       notes,
     } = requestModalState;
@@ -338,7 +365,8 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       uniqueLineId: lineRow.uniqueLineId,
       contour: lineRow.contour,
       controlStage,
-      requestedMethod,
+      requestedMethod: ((requestedMethods.length > 0 ? requestedMethods.join('+') : requestedMethod) as NdtMethod),
+      requestedMethods: requestedMethods.length > 0 ? requestedMethods : ['ВИК', 'РК'],
       jointIds: selectedJointIds,
       status: 'Подана ПТО',
       notes: notes.trim(),
@@ -445,16 +473,23 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       });
     }
 
+    const reqMethods = activeRequestObj ? getRequestMethodsList(activeRequestObj) : undefined;
     return baseList.filter((j) => {
-      const isCompleted = isJointConclusionCompletedForRequest(j, defaultStage);
+      const isCompleted = isJointConclusionCompletedForRequest(j, defaultStage, reqMethods);
       if (conclusionStateFilter === 'PENDING' && isCompleted) return false;
       if (conclusionStateFilter === 'COMPLETED' && !isCompleted) return false;
       if (!q) return true;
+      const marking = buildJointLabMarking(j).marking.toLowerCase();
+      const hasConclusionMatch = Object.values(j.labConclusions || {}).some((c) =>
+        (c?.reportNumber || '').toLowerCase().includes(q)
+      );
       return (
         j.jointNumber.toLowerCase().includes(q) ||
         j.lineNumber.toLowerCase().includes(q) ||
         j.rdCode.toLowerCase().includes(q) ||
         j.welderStamp.toLowerCase().includes(q) ||
+        marking.includes(q) ||
+        hasConclusionMatch ||
         (j.ndtReportNumber || '').toLowerCase().includes(q) ||
         (j.vikReportNumber || '').toLowerCase().includes(q)
       );
@@ -477,6 +512,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
   const [batchPreset, setBatchPreset] = useState<BatchPresetState>({
     stage: 'Первичный ВИК и НК',
     ndtMethod: 'РК',
+    selectedMethods: ['ВИК', 'РК'],
     baseReportNumber: '',
     autoIncrementNumber: true,
     ndtDate: new Date().toISOString().slice(0, 10),
@@ -490,6 +526,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         ...prev,
         stage: activeRequestObj.controlStage,
         ndtMethod: activeRequestObj.requestedMethod,
+        selectedMethods: getRequestMethodsList(activeRequestObj),
         inspectorName: activeRequestObj.acceptedBy || defaultInspectorName,
       }));
     }
@@ -524,42 +561,57 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     });
   };
 
-  // Оформление заключения по одному стыку в строке ведомости
+  const updateMethodDraft = (
+    joint: WeldJoint,
+    method: LabConclusionMethodKey,
+    patch: Partial<LabMethodDraft>
+  ) => {
+    setDraftRows((prev) => {
+      const current = prev[joint.id] || getRowDraft(joint);
+      return {
+        ...prev,
+        [joint.id]: {
+          ...current,
+          methods: {
+            ...current.methods,
+            [method]: {
+              ...current.methods[method],
+              ...patch,
+            },
+          },
+          isDirty: true,
+        },
+      };
+    });
+  };
+
+  // Оформление раздельных заключений по одному стыку в ведомости
   const handleCommitSingleJointConclusion = (joint: WeldJoint) => {
     const row = getRowDraft(joint);
-    const reportNum = row.ndtReportNumber.trim();
-    if (!reportNum && row.ndtResult !== 'Не проводился' && row.ndtResult !== 'В работе') {
-      showBanner(
-        'error',
-        `Стык № ${joint.jointNumber}: укажите официальный номер заключения/протокола ЛНК из первичного документа.`
-      );
-      return;
+    const conclusionsPayload: LabConclusionsMap = {};
+    for (const m of CANONICAL_LAB_METHODS) {
+      const mDraft = row.methods[m];
+      if (!mDraft) continue;
+      if (mDraft.result !== 'Не проводился' || mDraft.reportNumber.trim()) {
+        conclusionsPayload[m] = {
+          reportNumber: mDraft.reportNumber.trim(),
+          date: mDraft.date,
+          result: mDraft.result,
+          inspector: mDraft.inspector || defaultInspectorName,
+        };
+      }
     }
 
-    const input: LabConclusionFormInput = {
-      stage: row.stage,
-      includeVik: row.includeVik,
-      vikReportNumber: row.includeVik ? row.vikReportNumber.trim() : '',
-      vikDate: row.vikDate,
-      vikResult: row.vikResult,
-      vikInspector: row.vikInspector || row.ndtInspector || defaultInspectorName,
-      ndtMethod: row.ndtMethod,
-      ndtReportNumber: reportNum,
-      ndtDate: row.ndtDate,
-      ndtResult: row.ndtResult,
-      ndtInspector: row.ndtInspector || defaultInspectorName,
-    };
-
-    const res = buildLabConclusionPatch(joint, input);
+    const res = buildMultiMethodLabConclusionPatch(joint, row.stage, conclusionsPayload);
     if (!res.ok) {
-      showBanner('error', res.error || 'Ошибка проверки реквизитов заключения НК.');
+      showBanner('error', res.error || 'Ошибка проверки реквизитов заключения ЛНК.');
       return;
     }
 
     Promise.resolve(
       onSaveLabConclusions(
         [{ jointId: joint.id, patch: res.patch }],
-        `Оформлено заключение НК № ${reportNum} (${input.ndtMethod}: ${input.ndtResult}) по стыку № ${joint.jointNumber}`,
+        `Оформлены заключения ЛНК по стыку № ${joint.jointNumber}`,
         activeRequestObj?.id
       )
     )
@@ -572,24 +624,24 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           });
           showBanner(
             'success',
-            `Заключение № ${reportNum} (${input.ndtMethod} — «${input.ndtResult}») по стыку № ${joint.jointNumber} внесено в ведомость и синхронизировано во всех разделах программы.`
+            `Заключения по стыку № ${joint.jointNumber} сохранены и синхронизированы.`
           );
         } else {
           showBanner(
             'error',
-            `Сервер отклонил сохранение заключения по стыку № ${joint.jointNumber}. Проверьте подключение и ревизию стыка.`
+            `Сервер отклонил сохранение заключений по стыку № ${joint.jointNumber}.`
           );
         }
       })
       .catch(() => {
         showBanner(
           'error',
-          `Сетевая ошибка при отправке заключения по стыку № ${joint.jointNumber} на сервер.`
+          `Сетевая ошибка при отправке заключений по стыку № ${joint.jointNumber}.`
         );
       });
   };
 
-  // Пакетное применение и сохранение заключений по выбранным стыкам ведомости
+  // Пакетное применение заключений с автонумерацией Метод-Маркировка
   const handleApplyBatchConclusions = () => {
     const targetJoints =
       selectedConclusionJointIds.length > 0
@@ -603,53 +655,46 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       return;
     }
 
-    const baseNum = batchPreset.baseReportNumber.trim();
-    if (!baseNum && batchPreset.ndtResult !== 'Не проводился' && batchPreset.ndtResult !== 'В работе') {
-      showBanner(
-        'error',
-        'Для пакетного применения укажите номер официального заключения/протокола ЛНК (из первичного бланка).'
-      );
-      return;
-    }
+    const stageMode: 'primary' | 'repair' | 'duplicate' =
+      batchPreset.stage === 'Повторный НК после ремонта'
+        ? 'repair'
+        : batchPreset.stage === 'Дублирующий контроль'
+        ? 'duplicate'
+        : 'primary';
 
     const updates: { jointId: string; patch: Partial<WeldJoint> }[] = [];
 
-    for (let idx = 0; idx < targetJoints.length; idx++) {
-      const joint = targetJoints[idx];
-      let reportNumber = baseNum;
-      if (batchPreset.autoIncrementNumber && targetJoints.length > 1) {
-        const match = baseNum.match(/^(.*?)(\d+)$/);
-        if (match) {
-          const prefix = match[1];
-          const startSeq = parseInt(match[2], 10);
-          const padLen = match[2].length;
-          reportNumber = `${prefix}${String(startSeq + idx).padStart(padLen, '0')}`;
-        } else {
-          reportNumber = `${baseNum}-${idx + 1}`;
-        }
-      }
-
+    for (const joint of targetJoints) {
+      const lineRow = deficitStatement.allLineRows.find(
+        (r) => r.uniqueLineId === joint.uniqueLineId
+      );
+      const avail = resolveLineLabMethodAvailability(
+        lineRow,
+        activeRequestObj ? getRequestMethodsList(activeRequestObj) : undefined
+      );
+      const { marking, isComplete } = buildJointLabMarking(joint);
       const effectiveDate =
         batchPreset.ndtDate && joint.weldingDate && batchPreset.ndtDate < joint.weldingDate
           ? joint.weldingDate
           : batchPreset.ndtDate;
 
-      const input: LabConclusionFormInput = {
-        stage: batchPreset.stage,
-        includeVik: batchPreset.stage === 'Первичный ВИК и НК',
-        vikReportNumber: '',
-        vikDate: effectiveDate,
-        vikResult:
-          batchPreset.ndtResult === 'Годен' ? 'Годен' : batchPreset.ndtResult,
-        vikInspector: batchPreset.inspectorName || defaultInspectorName,
-        ndtMethod: batchPreset.ndtMethod,
-        ndtReportNumber: reportNumber,
-        ndtDate: effectiveDate,
-        ndtResult: batchPreset.ndtResult,
-        ndtInspector: batchPreset.inspectorName || defaultInspectorName,
-      };
+      const row = getRowDraft(joint);
+      const conclusionsPayload: LabConclusionsMap = { ...row.methods };
 
-      const built = buildLabConclusionPatch(joint, input);
+      for (const m of batchPreset.selectedMethods) {
+        if (avail.methods[m].disabled) continue;
+        const autoNum = isComplete
+          ? buildLabConclusionNumber(m, marking, stageMode, (joint.repairCount ?? 0) + 1)
+          : `${m}-${joint.jointNumber}`;
+        conclusionsPayload[m] = {
+          reportNumber: row.methods[m]?.reportNumber?.trim() || autoNum,
+          date: effectiveDate,
+          result: batchPreset.ndtResult,
+          inspector: batchPreset.inspectorName || defaultInspectorName,
+        };
+      }
+
+      const built = buildMultiMethodLabConclusionPatch(joint, batchPreset.stage, conclusionsPayload);
       if (!built.ok) {
         showBanner('error', built.error || 'Ошибка пакетного оформления заключений.');
         return;
@@ -657,10 +702,11 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       updates.push({ jointId: joint.id, patch: built.patch });
     }
 
+    const methodsLabel = batchPreset.selectedMethods.join('+');
     Promise.resolve(
       onSaveLabConclusions(
         updates,
-        `Пакетное оформление заключений ЛНК (${updates.length} ст., метод ${batchPreset.ndtMethod}, результат «${batchPreset.ndtResult}»)`,
+        `Пакетное оформление заключений ЛНК (${updates.length} ст., ${methodsLabel})`,
         activeRequestObj?.id
       )
     )
@@ -670,12 +716,12 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           setSelectedConclusionJointIds([]);
           showBanner(
             'success',
-            `Оформлено и внесено в ведомость ${updates.length} заключений НК (${batchPreset.ndtMethod} — «${batchPreset.ndtResult}»). Данные обновлены в Реестре, Лайнлисте, Журналах и Сводке готовности.`
+            `Оформлено ${updates.length} заключений ЛНК (${methodsLabel} — «${batchPreset.ndtResult}»).`
           );
         } else {
           showBanner(
             'error',
-            'Сервер отклонил сохранение пакета заключений. Данные на сервере не обновлены.'
+            'Сервер отклонил сохранение пакета заключений.'
           );
         }
       })
@@ -703,23 +749,20 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     const updates: { jointId: string; patch: Partial<WeldJoint> }[] = [];
     for (const joint of dirtyJoints) {
       const row = getRowDraft(joint);
-      const reportNum =
-        row.ndtReportNumber.trim() ||
-        suggestNextConclusionNumber(joints, row.ndtMethod);
-      const input: LabConclusionFormInput = {
-        stage: row.stage,
-        includeVik: row.includeVik,
-        vikReportNumber: row.includeVik ? row.vikReportNumber.trim() : '',
-        vikDate: row.vikDate,
-        vikResult: row.vikResult,
-        vikInspector: row.vikInspector || row.ndtInspector || defaultInspectorName,
-        ndtMethod: row.ndtMethod,
-        ndtReportNumber: reportNum,
-        ndtDate: row.ndtDate,
-        ndtResult: row.ndtResult,
-        ndtInspector: row.ndtInspector || defaultInspectorName,
-      };
-      const built = buildLabConclusionPatch(joint, input);
+      const conclusionsPayload: LabConclusionsMap = {};
+      for (const m of CANONICAL_LAB_METHODS) {
+        const mDraft = row.methods[m];
+        if (!mDraft) continue;
+        if (mDraft.result !== 'Не проводился' || mDraft.reportNumber.trim()) {
+          conclusionsPayload[m] = {
+            reportNumber: mDraft.reportNumber.trim(),
+            date: mDraft.date,
+            result: mDraft.result,
+            inspector: mDraft.inspector || defaultInspectorName,
+          };
+        }
+      }
+      const built = buildMultiMethodLabConclusionPatch(joint, row.stage, conclusionsPayload);
       if (!built.ok) {
         showBanner('error', built.error || 'Ошибка проверки строки ведомости.');
         return;
@@ -854,7 +897,33 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         selectedRdCode={selectedRdCode}
         onSelectRdCode={onSelectRdCode}
         availableRdCodes={availableRdCodes}
-        onExportDeficitCsv={handleExportDeficitCsv}
+        onExportExcel={async () => {
+          try {
+            await exportLaboratoryToExcel({
+              objectName: selectedObjectName,
+              rdCode: selectedRdCode,
+              searchQuery,
+            });
+            showBanner('success', 'Отчёт Лаборатории НК выгружен в Excel.');
+          } catch (err: unknown) {
+            showBanner(
+              'error',
+              `Ошибка выгрузки в Excel: ${(err instanceof Error ? err.message : String(err)) || 'Проверьте авторизацию'}`
+            );
+          }
+        }}
+        onOpenCodeReference={() => setIsCodeRefOpen(true)}
+        canCreateRequest={canCreateRequest}
+        onOpenCreateRequest={() => {
+          const firstLine =
+            deficitStatement.allLineRows.find((r) => r.hasDeficit && r.candidateJoints.length > 0) ||
+            deficitStatement.allLineRows.find((r) => r.allWeldedJoints.length > 0);
+          if (firstLine) {
+            handleOpenCreateRequestModal(firstLine);
+          } else {
+            showBanner('error', 'Нет сваренных стыков для создания заявки в ЛНК.');
+          }
+        }}
         deficitStatement={deficitStatement}
         requestCounts={requestCounts}
         activeTab={activeTab}
@@ -959,6 +1028,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           setSelectedConclusionJointIds={setSelectedConclusionJointIds}
           getRowDraft={getRowDraft}
           updateRowDraft={updateRowDraft}
+          updateMethodDraft={updateMethodDraft}
           onCommitSingleJointConclusion={handleCommitSingleJointConclusion}
           onOpenJointPassport={onOpenJointPassport}
           inspectors={inspectors}
@@ -977,6 +1047,12 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         onOpenCreateRequestModal={handleOpenCreateRequestModal}
         onSubmitNewRequest={handleSubmitNewRequest}
         onClose={() => setRequestModalState((prev) => ({ ...prev, isOpen: false }))}
+      />
+
+      {/* Справочник кодов маркировки */}
+      <LabCodeReferenceModal
+        isOpen={isCodeRefOpen}
+        onClose={() => setIsCodeRefOpen(false)}
       />
     </div>
   );

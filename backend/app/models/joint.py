@@ -18,7 +18,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -228,6 +228,7 @@ class WeldJoint(Base):
     heat_treat_diagram_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
     hardness_test_info: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ferrite_phase_info: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lab_conclusions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # 7. Repair records (STO Gazprom cols 32-37, GOST 32569 col 15)
     repair_action: Mapped[str | None] = mapped_column(String(64), nullable=True)

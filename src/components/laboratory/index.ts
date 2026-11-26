@@ -4,3 +4,5 @@ export * from './LabDeficitTab';
 export * from './LabRequestsTab';
 export * from './LabConclusionsTab';
 export * from './LabRequestModal';
+export * from './LabCodeReferenceModal';
+export * from './LabMarkingCell';

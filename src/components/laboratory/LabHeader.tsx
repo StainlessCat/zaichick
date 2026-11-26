@@ -1,24 +1,30 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   AlertTriangle,
+  BookOpen,
   CheckCircle2,
-  Download,
   FileCheck2,
+  FileSpreadsheet,
   Layers,
+  Plus,
   Radiation,
+  RotateCcw,
   Search,
   X,
 } from 'lucide-react';
 import { NdtDeficitStatementResult } from '../../utils/laboratoryLogic';
 import { LaboratorySubTab } from './types';
-import { Button, FormField, Input, Select } from '../ui';
+import { Button, Input, Select } from '../ui';
 
 interface LabHeaderProps {
   selectedObjectName: string;
   selectedRdCode: string;
   onSelectRdCode: (code: string) => void;
   availableRdCodes: { code: string; title: string; contours: string[] }[];
-  onExportDeficitCsv: () => void;
+  onExportExcel: () => void;
+  onOpenCodeReference: () => void;
+  onOpenCreateRequest?: () => void;
+  canCreateRequest?: boolean;
   deficitStatement: NdtDeficitStatementResult;
   requestCounts: {
     total: number;
@@ -42,7 +48,10 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
   selectedRdCode,
   onSelectRdCode,
   availableRdCodes,
-  onExportDeficitCsv,
+  onExportExcel,
+  onOpenCodeReference,
+  onOpenCreateRequest,
+  canCreateRequest = false,
   deficitStatement,
   requestCounts,
   activeTab,
@@ -52,35 +61,148 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
   setSearchQuery,
   statusBanner,
   onDismissStatusBanner,
+  hasActiveFilters = false,
+  onResetAllFilters,
 }) => {
+  const kpiMetrics = useMemo(() => {
+    let readyJoints = 0;
+    let repairJoints = 0;
+    let physRequired = 0;
+    let physCompleted = 0;
+
+    for (const row of deficitStatement.allLineRows) {
+      readyJoints += row.fullyAcceptedCount;
+      repairJoints += row.inRepairCount;
+      physRequired += row.rkRequired + row.uzkRequired + row.pvkRequired;
+      physCompleted += row.rkCompleted + row.uzkCompleted + row.pvkCompleted;
+    }
+
+    const coveragePct =
+      physRequired > 0
+        ? Math.min(100, Math.round((physCompleted / physRequired) * 1000) / 10)
+        : deficitStatement.totals.totalWelded > 0
+        ? 100
+        : 0;
+
+    return {
+      deficit: deficitStatement.totals.totalPhysicalDeficit,
+      inWork: requestCounts.inWork,
+      ready: readyJoints,
+      requests: requestCounts.total,
+      repair: repairJoints,
+      coveragePct,
+    };
+  }, [deficitStatement, requestCounts]);
+
   return (
     <>
-      {/* Шапка раздела «Лаборатория НК» и сквозная панель KPI */}
-      <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mb-1">
-              <Radiation className="w-3.5 h-3.5 text-[#1e3799] shrink-0" />
-              <span>Лаборатория НК</span>
-              <span aria-hidden="true">·</span>
-              <span className="font-semibold text-slate-700">
-                {selectedObjectName === 'ALL'
-                  ? 'Все объекты'
-                  : selectedObjectName}
-              </span>
-            </div>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900">
-              Контроль качества и выдача заключений НК
+      <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs space-y-2.5">
+        {/* Верхняя строка: Наименование раздела и кнопка справочника кодов */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Radiation className="w-4 h-4 text-[#1e3799] shrink-0" />
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 truncate">
+              Лаборатория НК
             </h2>
+            <span className="text-slate-300" aria-hidden="true">
+              ·
+            </span>
+            <span className="text-xs font-semibold text-slate-600 truncate">
+              {selectedObjectName === 'ALL' ? 'Все объекты' : selectedObjectName}
+            </span>
           </div>
 
-          {/* Селектор Шифра РД и экспорт дефицитной ведомости (strict-industrial-ui) */}
-          <div className="flex flex-wrap items-end gap-2">
-            <FormField label="Шифр РД" className="w-48 sm:w-56">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onOpenCodeReference}
+            title="Открыть справочник кодов маркировки"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-[#1e3799]" />
+            <span>Справочник кодов</span>
+          </Button>
+        </div>
+
+        {/* Компактная однострочная полоса KPI строго между заголовком и фильтром шифра РД */}
+        <div className="grid grid-cols-3 sm:grid-cols-6 border border-slate-200 rounded-lg divide-x divide-y sm:divide-y-0 divide-slate-200 bg-slate-50/70 overflow-hidden">
+          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-[11px] font-medium text-slate-500 truncate">
+              Дефицит
+            </span>
+            <span
+              className={`font-mono text-sm font-bold tabular-nums ${
+                kpiMetrics.deficit > 0 ? 'text-amber-700' : 'text-slate-900'
+              }`}
+            >
+              {kpiMetrics.deficit}
+            </span>
+          </div>
+
+          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-[11px] font-medium text-slate-500 truncate">
+              В работе
+            </span>
+            <span className="font-mono text-sm font-bold tabular-nums text-[#1e3799]">
+              {kpiMetrics.inWork}
+            </span>
+          </div>
+
+          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-[11px] font-medium text-slate-500 truncate">
+              Готово
+            </span>
+            <span className="font-mono text-sm font-bold tabular-nums text-emerald-700">
+              {kpiMetrics.ready}
+            </span>
+          </div>
+
+          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-[11px] font-medium text-slate-500 truncate">
+              Заявки
+            </span>
+            <span className="font-mono text-sm font-bold tabular-nums text-slate-900">
+              {kpiMetrics.requests}
+            </span>
+          </div>
+
+          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-[11px] font-medium text-slate-500 truncate">
+              Ремонт
+            </span>
+            <span
+              className={`font-mono text-sm font-bold tabular-nums ${
+                kpiMetrics.repair > 0 ? 'text-rose-700' : 'text-slate-900'
+              }`}
+            >
+              {kpiMetrics.repair}
+            </span>
+          </div>
+
+          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-[11px] font-medium text-slate-500 truncate">
+              Охват НК
+            </span>
+            <span className="font-mono text-sm font-bold tabular-nums text-[#1e3799]">
+              {kpiMetrics.coveragePct}%
+            </span>
+          </div>
+        </div>
+
+        {/* Строка фильтра «Шифр РД», поиска и действий */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[260px]">
+            <div className="flex items-center gap-1.5">
+              <label
+                htmlFor="lab-rd-filter"
+                className="text-xs font-semibold text-slate-600 whitespace-nowrap"
+              >
+                Шифр РД:
+              </label>
               <Select
+                id="lab-rd-filter"
                 value={selectedRdCode}
                 onChange={(e) => onSelectRdCode(e.target.value)}
-                className="w-full truncate font-medium text-slate-800"
+                className="w-48 sm:w-56 h-8 text-xs font-medium text-slate-800"
               >
                 <option value="ALL">Все шифры РД</option>
                 {availableRdCodes.map((r) => (
@@ -89,165 +211,16 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
                   </option>
                 ))}
               </Select>
-            </FormField>
+            </div>
 
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onExportDeficitCsv}
-              title="Выгрузить дефицитную ведомость в CSV"
-            >
-              <Download className="w-3.5 h-3.5 text-[#1e3799]" />
-              <span>Выгрузить в CSV</span>
-            </Button>
-          </div>
-        </div>
-
-        {/* Сводная полоса производственных показателей Лаборатории (tabular-nums) */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-2 border-t border-slate-100">
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80">
-            <div className="text-[11px] text-slate-500 font-medium">
-              Сварено стыков в контуре
-            </div>
-            <div className="mt-1 text-xl font-bold font-mono tabular-nums text-slate-900">
-              {deficitStatement.totals.totalWelded}
-              <span className="text-xs font-normal text-slate-500 ml-1">
-                шт. · {deficitStatement.totals.totalLines} лин.
-              </span>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200">
-            <div className="text-[11px] text-amber-900 font-medium">
-              Дефицит РК по квоте
-            </div>
-            <div className="mt-1 text-xl font-bold font-mono tabular-nums text-amber-800">
-              {deficitStatement.totals.rkDeficit}
-              <span className="text-xs font-normal text-amber-700 ml-1">ст.</span>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-lg bg-sky-50/70 border border-sky-200">
-            <div className="text-[11px] text-sky-900 font-medium">
-              Дефицит УЗК / ПВК
-            </div>
-            <div className="mt-1 text-xl font-bold font-mono tabular-nums text-sky-900">
-              {deficitStatement.totals.uzkDeficit}
-              <span className="text-xs font-normal text-sky-700 mx-1">/</span>
-              {deficitStatement.totals.pvkDeficit}
-              <span className="text-xs font-normal text-sky-700 ml-1">ст.</span>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-lg bg-indigo-50/70 border border-indigo-200">
-            <div className="text-[11px] text-indigo-900 font-medium">
-              Новые заявки от ПТО
-            </div>
-            <div className="mt-1 text-xl font-bold font-mono tabular-nums text-[#1e3799]">
-              {requestCounts.submitted}
-              <span className="text-xs font-normal text-slate-600 ml-1">
-                ожидают приёмки
-              </span>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-lg bg-amber-50/50 border border-amber-200">
-            <div className="text-[11px] text-slate-700 font-medium">
-              Принято в работу ЛНК
-            </div>
-            <div className="mt-1 text-xl font-bold font-mono tabular-nums text-slate-900">
-              {requestCounts.inWork}
-              <span className="text-xs font-normal text-slate-500 ml-1">
-                заявок в контроле
-              </span>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-lg bg-emerald-50/70 border border-emerald-200">
-            <div className="text-[11px] text-emerald-900 font-medium">
-              Выполнено заявок (с заключениями)
-            </div>
-            <div className="mt-1 text-xl font-bold font-mono tabular-nums text-emerald-800">
-              {requestCounts.completed}
-              <span className="text-xs font-normal text-emerald-700 ml-1">
-                закрыто ЛНК
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Переключатель 3 рабочих контуров раздела Лаборатории + Поиск */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200">
-          <div
-            className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg"
-            role="tablist"
-            aria-label="Рабочие вкладки раздела Лаборатория"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'deficit'}
-              onClick={() => setActiveTab('deficit')}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === 'deficit'
-                  ? 'bg-[#1e3799] text-white shadow-2xs'
-                  : 'text-slate-700 hover:text-slate-950 hover:bg-white/60'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>1. Дефицитная ведомость (по шифрам РД и линиям)</span>
-              <span className="font-mono tabular-nums text-[11px] opacity-85">
-                ({deficitStatement.totals.deficitLinesCount}/
-                {deficitStatement.totals.totalLines})
-              </span>
-            </button>
-
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'requests'}
-              onClick={() => setActiveTab('requests')}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === 'requests'
-                  ? 'bg-[#1e3799] text-white shadow-2xs'
-                  : 'text-slate-700 hover:text-slate-950 hover:bg-white/60'
-              }`}
-            >
-              <Radiation className="w-3.5 h-3.5" />
-              <span>2. Заявки на НК от ПТО и приёмка в работу</span>
-              <span className="font-mono tabular-nums text-[11px] opacity-85">
-                ({requestCounts.total})
-              </span>
-            </button>
-
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'conclusions'}
-              onClick={() => setActiveTab('conclusions')}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                activeTab === 'conclusions'
-                  ? 'bg-[#1e3799] text-white shadow-2xs'
-                  : 'text-slate-700 hover:text-slate-950 hover:bg-white/60'
-              }`}
-            >
-              <FileCheck2 className="w-3.5 h-3.5" />
-              <span>3. Выдача заключений НК и ведомость результатов</span>
-              <span className="font-mono tabular-nums text-[11px] opacity-85">
-                ({conclusionsCount} ст.)
-              </span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 flex-1 max-w-md min-w-[240px]">
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-[220px] max-w-md">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <Input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Шифр, линия, стык, клеймо..."
-                className="w-full pl-8 pr-7"
+                placeholder="Стык, линия, маркировка, № заключения..."
+                className="w-full h-8 pl-8 pr-7 text-xs"
               />
               {searchQuery && (
                 <button
@@ -259,6 +232,123 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
                 </button>
               )}
             </div>
+
+            {hasActiveFilters && onResetAllFilters && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onResetAllFilters}
+                title="Сбросить все фильтры"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Сбросить все фильтры</span>
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {canCreateRequest && onOpenCreateRequest && (
+              <Button
+                type="button"
+                variant="primary"
+                onClick={onOpenCreateRequest}
+                title="Создать заявку в ЛНК"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Заявка</span>
+              </Button>
+            )}
+
+            <button
+              type="button"
+              onClick={onExportExcel}
+              title="Выгрузить в Excel"
+              aria-label="Выгрузить в Excel"
+              className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-[#1e3799] transition-colors cursor-pointer shrink-0"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Переключатель 3 рабочих вкладок Лаборатории НК (без скобок) */}
+        <div className="pt-2 border-t border-slate-200">
+          <div
+            className="inline-flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg"
+            role="tablist"
+            aria-label="Вкладки Лаборатории НК"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'deficit'}
+              onClick={() => setActiveTab('deficit')}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'deficit'
+                  ? 'bg-[#1e3799] text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-950 hover:bg-white/60'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Дефицитная ведомость</span>
+              <span
+                className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[10px] ${
+                  activeTab === 'deficit'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200/80 text-slate-700'
+                }`}
+              >
+                {deficitStatement.totals.deficitLinesCount}/{deficitStatement.totals.totalLines}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'requests'}
+              onClick={() => setActiveTab('requests')}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'requests'
+                  ? 'bg-[#1e3799] text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-950 hover:bg-white/60'
+              }`}
+            >
+              <Radiation className="w-3.5 h-3.5" />
+              <span>Заявки в ЛНК</span>
+              <span
+                className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[10px] ${
+                  activeTab === 'requests'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200/80 text-slate-700'
+                }`}
+              >
+                {requestCounts.total}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'conclusions'}
+              onClick={() => setActiveTab('conclusions')}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'conclusions'
+                  ? 'bg-[#1e3799] text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-950 hover:bg-white/60'
+              }`}
+            >
+              <FileCheck2 className="w-3.5 h-3.5" />
+              <span>Заключения ЛНК</span>
+              <span
+                className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[10px] ${
+                  activeTab === 'conclusions'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-200/80 text-slate-700'
+                }`}
+              >
+                {conclusionsCount}
+              </span>
+            </button>
           </div>
         </div>
       </div>

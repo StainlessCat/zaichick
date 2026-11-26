@@ -48,6 +48,7 @@ from app.services.domain_validation import (
     validate_weld_joint_comprehensive,
 )
 from app.services.event_bus import event_bus, publish_domain_event
+from app.services.lab_conclusions import sync_lab_conclusions_to_joint_patch
 from app.services.pipe_calc import calculate_equivalent_dia_inch, mm_to_inch_diameter
 from app.services.rbac import (
     assert_can_mutate_record,
@@ -770,6 +771,7 @@ async def update_joint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Стык не найден.")
 
     patch_data = payload.model_dump(exclude_unset=True)
+    sync_lab_conclusions_to_joint_patch(patch_data)
     affected_circuits: set[uuid.UUID] = set()
     if "test_circuit_id" in patch_data:
         synced_contour, circuit_ids = await validate_and_sync_joint_circuit_change(

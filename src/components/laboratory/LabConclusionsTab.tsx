@@ -1,34 +1,42 @@
 import React from 'react';
 import {
+  AlertTriangle,
   Check,
   FileCheck2,
   Filter,
+  Lock,
   Sparkles,
 } from 'lucide-react';
 import {
   ControlResult,
   InspectorProfile,
+  LabConclusionMethodKey,
   NdtLabControlStage,
   NdtLabRequest,
   NdtMethod,
   WeldJoint,
 } from '../../types/welding';
 import { formatDateDDMMYY } from '../../utils/weldingLogic';
+import { buildJointLabMarking, buildLabConclusionNumber } from '../../utils/labMarking';
 import {
+  CANONICAL_LAB_METHODS,
+  getRequestMethodsList,
   isJointConclusionCompletedForRequest,
   NdtLineDeficitRow,
-  suggestNextConclusionNumber,
+  resolveLineLabMethodAvailability,
 } from '../../utils/laboratoryLogic';
 import {
   CONCLUSION_RESULTS_LIST,
   CONTROL_STAGES_LIST,
   LabJointDraftRow,
-  NDT_METHODS_LIST,
+  LabMethodDraft,
 } from './types';
+import { LabMarkingCell } from './LabMarkingCell';
 
 export interface BatchPresetState {
   stage: NdtLabControlStage;
   ndtMethod: NdtMethod;
+  selectedMethods: LabConclusionMethodKey[];
   baseReportNumber: string;
   autoIncrementNumber: boolean;
   ndtDate: string;
@@ -55,6 +63,11 @@ interface LabConclusionsTabProps {
   setSelectedConclusionJointIds: React.Dispatch<React.SetStateAction<string[]>>;
   getRowDraft: (joint: WeldJoint) => LabJointDraftRow;
   updateRowDraft: (joint: WeldJoint, patch: Partial<LabJointDraftRow>) => void;
+  updateMethodDraft: (
+    joint: WeldJoint,
+    method: LabConclusionMethodKey,
+    patch: Partial<LabMethodDraft>
+  ) => void;
   onCommitSingleJointConclusion: (joint: WeldJoint) => void;
   onOpenJointPassport: (joint: WeldJoint) => void;
   inspectors: InspectorProfile[];
@@ -80,13 +93,46 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
   selectedConclusionJointIds,
   setSelectedConclusionJointIds,
   getRowDraft,
-  updateRowDraft,
+  updateMethodDraft,
   onCommitSingleJointConclusion,
   onOpenJointPassport,
   inspectors,
-  joints,
   canProcessNdt = true,
 }) => {
+  const lineByUniqueId = React.useMemo(() => {
+    const map = new Map<string, NdtLineDeficitRow>();
+    for (const row of deficitAllLineRows) {
+      map.set(row.uniqueLineId, row);
+    }
+    return map;
+  }, [deficitAllLineRows]);
+
+  const activeRequest = React.useMemo(
+    () =>
+      activeRequestIdForConclusions !== 'ALL'
+        ? labRequests.find((r) => r.id === activeRequestIdForConclusions)
+        : undefined,
+    [activeRequestIdForConclusions, labRequests]
+  );
+
+  const activeReqMethods = React.useMemo(
+    () => (activeRequest ? getRequestMethodsList(activeRequest) : undefined),
+    [activeRequest]
+  );
+
+  const toggleBatchMethod = (m: LabConclusionMethodKey) => {
+    setBatchPreset((p) => {
+      const curr = p.selectedMethods;
+      const next = curr.includes(m)
+        ? curr.filter((item) => item !== m)
+        : CANONICAL_LAB_METHODS.filter((item) => item === m || curr.includes(item));
+      return {
+        ...p,
+        selectedMethods: next.length > 0 ? next : [m],
+      };
+    });
+  };
+
   return (
     <div className="space-y-3">
       {/* Фильтр рабочей ведомости по Заявке / Линии / Статусу */}
@@ -95,7 +141,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <Filter className="w-4 h-4 text-[#1e3799]" />
             <span className="text-xs font-bold text-slate-800">
-              Выборка ведомости контроля:
+              Выборка ведомости:
             </span>
 
             <select
@@ -104,15 +150,15 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
               aria-label="Выбор заявки на НК для оформления заключений"
               className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#1e3799]"
             >
-              <option value="ALL">
-                Все сваренные стыки контура (без фильтра по заявке)
-              </option>
-              {labRequests.map((r) => (
-                <option key={r.id} value={r.id}>
-                  Заявка {r.requestNumber} · Линия {r.lineNumber} ({r.requestedMethod},{' '}
-                  {r.jointIds.length} ст. — {r.status})
-                </option>
-              ))}
+              <option value="ALL">Все сваренные стыки контура</option>
+              {labRequests.map((r) => {
+                const mLabel = getRequestMethodsList(r).join('+');
+                return (
+                  <option key={r.id} value={r.id}>
+                    {r.requestNumber} · {r.lineNumber} · {mLabel} · {r.status}
+                  </option>
+                );
+              })}
             </select>
 
             {activeRequestIdForConclusions === 'ALL' && (
@@ -122,10 +168,10 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                 aria-label="Фильтр ведомости по линии"
                 className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-300 text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#1e3799]"
               >
-                <option value="ALL">Все линии ({deficitAllLineRows.length})</option>
+                <option value="ALL">Все линии · {deficitAllLineRows.length}</option>
                 {deficitAllLineRows.map((l) => (
                   <option key={l.uniqueLineId} value={l.uniqueLineId}>
-                    Линия {l.lineNumber} ({l.rdCode}) — сварено {l.weldedCount} ст.
+                    {l.lineNumber} · {l.rdCode} · {l.weldedCount} ст.
                   </option>
                 ))}
               </select>
@@ -134,9 +180,9 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
               {(
                 [
-                  { id: 'ALL', label: 'Все стыки' },
-                  { id: 'PENDING', label: 'Ожидают заключения / В работе' },
-                  { id: 'COMPLETED', label: 'Заключения оформлены' },
+                  { id: 'ALL', label: 'Все' },
+                  { id: 'PENDING', label: 'Ожидают / В работе' },
+                  { id: 'COMPLETED', label: 'Оформлены' },
                 ] as const
               ).map((st) => (
                 <button
@@ -162,51 +208,33 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
               onClick={onSaveAllDirtyRows}
               title={
                 !canProcessNdt
-                  ? 'Для сохранения заключений требуется авторизация с ролью дефектоскописта ЛНК'
+                  ? 'Для сохранения заключений требуется роль дефектоскописта ЛНК'
                   : undefined
               }
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white text-xs font-bold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white text-xs font-bold shadow-xs cursor-pointer disabled:cursor-not-allowed"
             >
               <Check className="w-4 h-4" />
-              <span>
-                Сохранить все изменённые заключения в ведомости ({dirtyJointsCount} ст.)
-              </span>
+              <span>Сохранить изменения · {dirtyJointsCount}</span>
             </button>
           )}
         </div>
 
-        {/* Панель быстрого пакетного присвоения номера заключения, даты и результата */}
-        <div className="p-3 rounded-lg bg-[#f4f8fe] border border-sky-200/90 space-y-2.5">
+        {/* Панель пакетного заполнения заключений с автонумерацией Метод-Маркировка */}
+        <div className="p-3 rounded-xl bg-[#f4f8fe] border border-sky-200 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs font-bold text-slate-900">
-              Пакетное оформление заключения НК и ВИК{' '}
-              <span className="font-normal text-slate-600">
-                (для отмеченных галочкой стыков:{' '}
-                <strong className="font-mono">
-                  {selectedConclusionJointIds.length > 0
-                    ? selectedConclusionJointIds.length
-                    : conclusionTargetJoints.length}
-                </strong>{' '}
-                шт.)
+            <div className="flex items-center gap-2 text-xs font-bold text-[#1e3799]">
+              <Sparkles className="w-4 h-4" />
+              <span>
+                Пакетное оформление заключений для выбранных стыков:{' '}
+                {selectedConclusionJointIds.length}
               </span>
             </div>
-            <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={batchPreset.autoIncrementNumber}
-                onChange={(e) =>
-                  setBatchPreset((p) => ({
-                    ...p,
-                    autoIncrementNumber: e.target.checked,
-                  }))
-                }
-                className="rounded border-slate-300 text-[#1e3799]"
-              />
-              <span>Автонумерация заключений по порядку (+1 для каждого стыка)</span>
-            </label>
+            <div className="text-[11px] text-slate-600 font-mono">
+              Автонумерация: Метод-Маркировка
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
             <div>
               <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                 Этап контроля
@@ -219,7 +247,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                     stage: e.target.value as NdtLabControlStage,
                   }))
                 }
-                className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-medium"
+                className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-semibold"
               >
                 {CONTROL_STAGES_LIST.map((st) => (
                   <option key={st} value={st}>
@@ -229,61 +257,28 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
               </select>
             </div>
 
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                Метод НК
-              </label>
-              <select
-                value={batchPreset.ndtMethod}
-                onChange={(e) =>
-                  setBatchPreset((p) => ({
-                    ...p,
-                    ndtMethod: e.target.value as NdtMethod,
-                  }))
-                }
-                className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-mono font-semibold"
-              >
-                {NDT_METHODS_LIST.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             <div className="lg:col-span-2">
-              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                № официального заключения ЛНК *
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                Методы пакета
               </label>
-              <div className="flex items-center gap-1">
-                <input
-                  type="text"
-                  value={batchPreset.baseReportNumber}
-                  onChange={(e) =>
-                    setBatchPreset((p) => ({
-                      ...p,
-                      baseReportNumber: e.target.value,
-                    }))
-                  }
-                  placeholder="№ из бланка ЛНК (напр. ЗАК-104)..."
-                  className="flex-1 min-w-0 px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-mono font-semibold"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setBatchPreset((p) => ({
-                      ...p,
-                      baseReportNumber: suggestNextConclusionNumber(
-                        joints,
-                        p.ndtMethod
-                      ),
-                    }))
-                  }
-                  title="Подставить черновой автоинкрементный номер"
-                  className="px-2 py-1.5 rounded bg-white border border-slate-300 hover:border-[#1e3799] text-[#1e3799] text-[11px] font-semibold cursor-pointer shrink-0"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                </button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {CANONICAL_LAB_METHODS.map((m) => {
+                  const active = batchPreset.selectedMethods.includes(m);
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => toggleBatchMethod(m)}
+                      className={`px-2.5 py-1.5 rounded border text-xs font-mono font-bold transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-[#1e3799] text-white border-[#1e3799]'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -303,7 +298,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
 
             <div>
               <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                Результат контроля
+                Результат
               </label>
               <select
                 value={batchPreset.ndtResult}
@@ -315,7 +310,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                 }
                 className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-bold"
               >
-                {CONCLUSION_RESULTS_LIST.map((r) => (
+                {CONCLUSION_RESULTS_LIST.filter((r) => r !== 'Не проводился').map((r) => (
                   <option key={r} value={r}>
                     {r}
                   </option>
@@ -328,22 +323,17 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                 type="button"
                 disabled={!canProcessNdt}
                 onClick={onApplyBatchConclusions}
-                title={
-                  !canProcessNdt
-                    ? 'Для пакетного внесения заключений требуется авторизация с ролью дефектоскописта ЛНК'
-                    : undefined
-                }
                 className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-300 disabled:text-slate-500 text-white text-xs font-bold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
               >
                 <FileCheck2 className="w-3.5 h-3.5" />
-                <span>Внести в ведомость</span>
+                <span>Заполнить выбранные</span>
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Рабочая таблица-ведомость выдачи заключений на каждый стык */}
+      {/* Рабочая таблица с раздельным вводом по методам ВИК / РК / УЗК / ПВК */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
@@ -371,21 +361,31 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                     className="rounded border-white/40 text-sky-400 focus:ring-sky-300 cursor-pointer"
                   />
                 </th>
-                <th className="py-2.5 px-2.5 border-r border-white/15">Линия / № стыка</th>
-                <th className="py-2.5 px-2.5 border-r border-white/15">D×S / Сварка</th>
-                <th className="py-2.5 px-2.5 border-r border-white/15">Акт ВИК (№, дата, итог)</th>
-                <th className="py-2.5 px-2.5 border-r border-white/15">Метод НК</th>
-                <th className="py-2.5 px-2.5 border-r border-white/15">№ заключения НК</th>
-                <th className="py-2.5 px-2.5 border-r border-white/15">Дата заключения</th>
-                <th className="py-2.5 px-2.5 border-r border-white/15">Результат НК</th>
-                <th className="py-2.5 px-2.5 border-r border-white/15">Дефектоскопист ЛНК</th>
+                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[160px]">
+                  Стык и линия
+                </th>
+                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[190px]">
+                  Маркировка стыка
+                </th>
+                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[205px]">
+                  ВИК
+                </th>
+                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[205px]">
+                  РК
+                </th>
+                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[205px]">
+                  УЗК
+                </th>
+                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[205px]">
+                  ПВК
+                </th>
                 <th className="py-2.5 px-3 text-right">Действие</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {conclusionTargetJoints.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-8 text-center text-slate-500">
+                  <td colSpan={8} className="py-8 text-center text-slate-500">
                     Нет сваренных стыков для отображения в ведомости по текущему фильтру.
                   </td>
                 </tr>
@@ -395,8 +395,18 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                   const isSelected = selectedConclusionJointIds.includes(joint.id);
                   const isCompleted = isJointConclusionCompletedForRequest(
                     joint,
-                    row.stage
+                    row.stage,
+                    activeReqMethods
                   );
+                  const lineRow = lineByUniqueId.get(joint.uniqueLineId);
+                  const lineEval = resolveLineLabMethodAvailability(lineRow, activeReqMethods);
+                  const markingInfo = buildJointLabMarking(joint);
+                  const stageMode: 'primary' | 'repair' | 'duplicate' =
+                    row.stage === 'Повторный НК после ремонта'
+                      ? 'repair'
+                      : row.stage === 'Дублирующий контроль'
+                      ? 'duplicate'
+                      : 'primary';
 
                   return (
                     <tr
@@ -405,11 +415,11 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                         row.isDirty
                           ? 'bg-sky-50/70'
                           : isCompleted
-                          ? 'bg-emerald-50/25 hover:bg-slate-50'
+                          ? 'bg-emerald-50/20 hover:bg-slate-50'
                           : 'bg-white hover:bg-slate-50'
                       }
                     >
-                      <td className="py-2 px-2.5 text-center">
+                      <td className="py-2 px-2.5 text-center align-top">
                         <input
                           type="checkbox"
                           checked={isSelected}
@@ -421,212 +431,185 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                             )
                           }
                           aria-label={`Выбрать стык ${joint.jointNumber}`}
-                          className="rounded border-slate-300 text-[#1e3799]"
+                          className="rounded border-slate-300 text-[#1e3799] mt-1"
                         />
                       </td>
 
-                      {/* Линия и номер стыка */}
-                      <td className="py-2 px-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onOpenJointPassport(joint)}
-                            className="font-mono font-bold text-[#1e3799] hover:underline cursor-pointer"
-                            title="Открыть полный паспорт стыка"
-                          >
-                            Стык № {joint.jointNumber}
-                          </button>
-                        </div>
-                        <div className="text-[11px] font-mono text-slate-500">
+                      {/* Стык и линия */}
+                      <td className="py-2 px-2.5 align-top">
+                        <button
+                          type="button"
+                          onClick={() => onOpenJointPassport(joint)}
+                          className="font-mono font-bold text-[#1e3799] hover:underline cursor-pointer"
+                          title="Открыть паспорт стыка"
+                        >
+                          Стык № {joint.jointNumber}
+                        </button>
+                        <div className="text-[11px] font-mono text-slate-600 mt-0.5">
                           {joint.lineNumber} · {joint.rdCode}
                         </div>
-                      </td>
-
-                      {/* D x S, дата сварки, клеймо */}
-                      <td className="py-2 px-2.5 font-mono tabular-nums text-[11px]">
-                        <div className="font-semibold text-slate-900">
-                          {joint.diameterMm}×{joint.wallThickness} мм ({joint.weldingType})
+                        <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                          {joint.diameterMm}×{joint.wallThickness} мм · {joint.weldingType}
                         </div>
-                        <div className="text-slate-500">
-                          Сварка: {formatDateDDMMYY(joint.weldingDate)} · Клеймо{' '}
-                          <strong className="text-slate-800">{joint.welderStamp}</strong>
+                        <div className="text-[11px] text-slate-500">
+                          {formatDateDDMMYY(joint.weldingDate)} · {joint.welderStamp}
                         </div>
-                      </td>
-
-                      {/* Блок ВИК */}
-                      <td className="py-2 px-2.5">
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            checked={row.includeVik}
-                            onChange={(e) =>
-                              updateRowDraft(joint, {
-                                includeVik: e.target.checked,
-                              })
-                            }
-                            title="Оформить одновременно акт ВИК"
-                            className="rounded border-slate-300 text-[#1e3799]"
-                          />
-                          <input
-                            type="text"
-                            value={row.vikReportNumber}
-                            onChange={(e) =>
-                              updateRowDraft(joint, {
-                                vikReportNumber: e.target.value,
-                                includeVik: true,
-                              })
-                            }
-                            placeholder="№ акта ВИК"
-                            className="w-24 px-2 py-1 rounded bg-white border border-slate-300 text-[11px] font-mono"
-                          />
-                          <select
-                            value={row.vikResult}
-                            onChange={(e) =>
-                              updateRowDraft(joint, {
-                                vikResult: e.target.value as ControlResult,
-                                includeVik: true,
-                              })
-                            }
-                            className="px-1.5 py-1 rounded bg-white border border-slate-300 text-[11px] font-semibold"
+                        {lineEval.warningMessage && (
+                          <div
+                            className="mt-1 inline-flex items-center gap-1 text-[10px] text-amber-700 font-medium"
+                            title={lineEval.warningMessage}
                           >
-                            {CONCLUSION_RESULTS_LIST.map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            <span>Нет норм НК</span>
+                          </div>
+                        )}
                       </td>
 
-                      {/* Метод НК */}
-                      <td className="py-2 px-2.5">
-                        <select
-                          value={row.ndtMethod}
-                          onChange={(e) =>
-                            updateRowDraft(joint, {
-                              ndtMethod: e.target.value as NdtMethod,
-                            })
-                          }
-                          aria-label={`Метод НК для стыка ${joint.jointNumber}`}
-                          className="px-2 py-1 rounded bg-white border border-slate-300 text-xs font-mono font-bold text-slate-900"
-                        >
-                          {NDT_METHODS_LIST.map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                        </select>
+                      {/* Маркировка стыка */}
+                      <td className="py-2 px-2.5 align-top">
+                        <LabMarkingCell joint={joint} />
                       </td>
 
-                      {/* № заключения НК */}
-                      <td className="py-2 px-2.5">
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={row.ndtReportNumber}
-                            onChange={(e) =>
-                              updateRowDraft(joint, {
-                                ndtReportNumber: e.target.value,
-                              })
-                            }
-                            placeholder="№ из бланка..."
-                            aria-label={`Номер заключения НК для стыка ${joint.jointNumber}`}
-                            className={`w-32 px-2 py-1 rounded bg-white border text-xs font-mono font-semibold text-slate-900 focus:border-[#1e3799] focus:outline-none ${
-                              !row.ndtReportNumber.trim() &&
-                              row.ndtResult !== 'Не проводился' &&
-                              row.ndtResult !== 'В работе'
-                                ? 'border-amber-400 bg-amber-50/40'
-                                : 'border-slate-300'
+                      {/* 4 раздельных блока заключений: ВИК, РК, УЗК, ПВК */}
+                      {CANONICAL_LAB_METHODS.map((method) => {
+                        const avail = lineEval.methods[method];
+                        const mDraft = row.methods[method];
+                        const isMethodDisabled = avail.disabled || !canProcessNdt;
+                        const autoNum = markingInfo.isComplete
+                          ? buildLabConclusionNumber(
+                              method,
+                              markingInfo.marking,
+                              stageMode,
+                              (joint.repairCount ?? 0) + 1
+                            )
+                          : '';
+
+                        return (
+                          <td
+                            key={method}
+                            className={`py-2 px-2 border-r border-slate-100 align-top ${
+                              avail.disabled ? 'bg-slate-50/80 opacity-60' : ''
                             }`}
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateRowDraft(joint, {
-                                ndtReportNumber: suggestNextConclusionNumber(
-                                  joints,
-                                  row.ndtMethod
-                                ),
-                              })
-                            }
-                            title="Подставить черновой номер заключения"
-                            className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-[#1e3799] cursor-pointer"
                           >
-                            <Sparkles className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </td>
+                            {avail.disabled ? (
+                              <div className="flex items-center gap-1 text-[11px] text-slate-400 font-mono py-1">
+                                <Lock className="w-3 h-3 shrink-0" />
+                                <span>0% по Лайнлисту</span>
+                              </div>
+                            ) : (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1">
+                                  <select
+                                    value={mDraft.result}
+                                    disabled={isMethodDisabled}
+                                    onChange={(e) => {
+                                      const nextRes = e.target.value as ControlResult;
+                                      const shouldAutoFill =
+                                        nextRes !== 'Не проводился' &&
+                                        !mDraft.reportNumber.trim() &&
+                                        Boolean(autoNum);
+                                      updateMethodDraft(joint, method, {
+                                        result: nextRes,
+                                        ...(shouldAutoFill ? { reportNumber: autoNum } : {}),
+                                      });
+                                    }}
+                                    aria-label={`Результат ${method} для стыка ${joint.jointNumber}`}
+                                    className={`w-full px-1.5 py-1 rounded border text-[11px] font-bold ${
+                                      mDraft.result === 'Годен'
+                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                        : mDraft.result === 'Ремонт' || mDraft.result === 'Вырезать'
+                                        ? 'bg-rose-50 border-rose-300 text-rose-800'
+                                        : mDraft.result === 'В работе'
+                                        ? 'bg-amber-50 border-amber-300 text-amber-800'
+                                        : 'bg-white border-slate-300 text-slate-600'
+                                    }`}
+                                  >
+                                    {CONCLUSION_RESULTS_LIST.map((r) => (
+                                      <option key={r} value={r}>
+                                        {r}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
 
-                      {/* Дата заключения НК */}
-                      <td className="py-2 px-2.5">
-                        <input
-                          type="date"
-                          value={row.ndtDate}
-                          min={joint.weldingDate || undefined}
-                          onChange={(e) =>
-                            updateRowDraft(joint, { ndtDate: e.target.value })
-                          }
-                          aria-label={`Дата заключения НК для стыка ${joint.jointNumber}`}
-                          className="px-2 py-1 rounded bg-white border border-slate-300 text-xs font-mono tabular-nums text-slate-900"
-                        />
-                      </td>
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="text"
+                                    value={mDraft.reportNumber}
+                                    disabled={isMethodDisabled}
+                                    onChange={(e) =>
+                                      updateMethodDraft(joint, method, {
+                                        reportNumber: e.target.value,
+                                      })
+                                    }
+                                    placeholder={autoNum || `${method}-...`}
+                                    aria-label={`Номер заключения ${method} для стыка ${joint.jointNumber}`}
+                                    className="w-full min-w-0 px-1.5 py-1 rounded bg-white border border-slate-300 text-[11px] font-mono text-slate-900 focus:border-[#1e3799] focus:outline-none"
+                                  />
+                                  {autoNum && (
+                                    <button
+                                      type="button"
+                                      disabled={isMethodDisabled}
+                                      onClick={() =>
+                                        updateMethodDraft(joint, method, {
+                                          reportNumber: autoNum,
+                                        })
+                                      }
+                                      title={`Подставить ${autoNum}`}
+                                      className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-[#1e3799] cursor-pointer shrink-0 disabled:opacity-40"
+                                    >
+                                      <Sparkles className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                </div>
 
-                      {/* Результат НК */}
-                      <td className="py-2 px-2.5">
-                        <select
-                          value={row.ndtResult}
-                          onChange={(e) =>
-                            updateRowDraft(joint, {
-                              ndtResult: e.target.value as ControlResult,
-                            })
-                          }
-                          aria-label={`Результат НК для стыка ${joint.jointNumber}`}
-                          className={`px-2 py-1 rounded border text-xs font-bold ${
-                            row.ndtResult === 'Годен'
-                              ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                              : row.ndtResult === 'Ремонт' ||
-                                row.ndtResult === 'Вырезать'
-                              ? 'bg-rose-50 border-rose-300 text-rose-800'
-                              : 'bg-amber-50 border-amber-300 text-amber-800'
-                          }`}
-                        >
-                          {CONCLUSION_RESULTS_LIST.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
+                                <div className="grid grid-cols-2 gap-1">
+                                  <input
+                                    type="date"
+                                    value={mDraft.date}
+                                    min={joint.weldingDate || undefined}
+                                    disabled={isMethodDisabled}
+                                    onChange={(e) =>
+                                      updateMethodDraft(joint, method, {
+                                        date: e.target.value,
+                                      })
+                                    }
+                                    aria-label={`Дата ${method} для стыка ${joint.jointNumber}`}
+                                    className="w-full px-1 py-0.5 rounded bg-white border border-slate-300 text-[10px] font-mono text-slate-800"
+                                  />
+                                  <select
+                                    value={mDraft.inspector}
+                                    disabled={isMethodDisabled}
+                                    onChange={(e) =>
+                                      updateMethodDraft(joint, method, {
+                                        inspector: e.target.value,
+                                      })
+                                    }
+                                    aria-label={`Дефектоскопист ${method} для стыка ${joint.jointNumber}`}
+                                    className="w-full px-1 py-0.5 rounded bg-white border border-slate-300 text-[10px] text-slate-800 truncate"
+                                  >
+                                    {inspectors.map((insp) => (
+                                      <option key={insp.fullName} value={insp.fullName}>
+                                        {insp.fullName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                        );
+                      })}
 
-                      {/* Дефектоскопист */}
-                      <td className="py-2 px-2.5">
-                        <select
-                          value={row.ndtInspector}
-                          onChange={(e) =>
-                            updateRowDraft(joint, {
-                              ndtInspector: e.target.value,
-                            })
-                          }
-                          aria-label={`Дефектоскопист для стыка ${joint.jointNumber}`}
-                          className="px-2 py-1 rounded bg-white border border-slate-300 text-xs text-slate-800 max-w-[140px]"
-                        >
-                          {inspectors.map((insp) => (
-                            <option key={insp.fullName} value={insp.fullName}>
-                              {insp.fullName}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      {/* Кнопка сохранения заключения по стыку */}
-                      <td className="py-2 px-3 text-right">
+                      {/* Действие */}
+                      <td className="py-2 px-3 text-right align-top">
                         <button
                           type="button"
                           disabled={!canProcessNdt}
                           onClick={() => onCommitSingleJointConclusion(joint)}
                           title={
                             !canProcessNdt
-                              ? 'Для оформления заключения требуется авторизация с ролью дефектоскописта ЛНК'
+                              ? 'Для оформления заключения требуется роль дефектоскописта ЛНК'
                               : undefined
                           }
                           className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 whitespace-nowrap ${
@@ -637,9 +620,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                         >
                           <Check className="w-3.5 h-3.5" />
                           <span>
-                            {isCompleted && !row.isDirty
-                              ? 'Обновить заключение'
-                              : 'Выдать заключение'}
+                            {isCompleted && !row.isDirty ? 'Обновить' : 'Сохранить'}
                           </span>
                         </button>
                       </td>

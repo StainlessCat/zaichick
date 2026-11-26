@@ -179,6 +179,18 @@ export type NdtLabControlStage =
   | 'Повторный НК после ремонта'
   | 'Дублирующий контроль';
 
+export type LabConclusionMethodKey = 'ВИК' | 'РК' | 'УЗК' | 'ПВК';
+
+export interface LabMethodConclusionEntry {
+  reportNumber: string;
+  date: string;
+  result: ControlResult;
+  inspector: string;
+  stage?: 'primary' | 'repair' | 'duplicate';
+}
+
+export type LabConclusionsMap = Partial<Record<LabConclusionMethodKey, LabMethodConclusionEntry>>;
+
 export interface NdtLabRequest {
   id: string;
   requestNumber: string; // напр. ЗНК-2026-001
@@ -192,6 +204,7 @@ export interface NdtLabRequest {
   contour: string;
   controlStage: NdtLabControlStage;
   requestedMethod: NdtMethod;
+  requestedMethods?: string[];
   jointIds: string[];
   status: NdtLabRequestStatus;
   acceptedAt?: string;
@@ -558,6 +571,7 @@ export interface WeldJoint {
   heatTreatDiagramNumber?: string; // Графа 13: № диаграммы по журналу термообработки сварных соединений
   hardnessTestInfo?: string; // Графа 14: Твердость металла шва, N заключения, дата
   ferritePhaseInfo?: string; // Графа 17: Результаты измерения ферритной фазы в металле шва, N заключения, дата
+  labConclusions?: LabConclusionsMap; // Раздельные заключения ЛНК по методам (ВИК/РК/УЗК/ПВК)
 
   // 7. Сведения о проведении ремонта (СТО Газпром графы 32–37, ГОСТ 32569 графа 15)
   repairAction?: 'Ремонт' | 'Вырезано' | string; // Графа 32: Отремонтировано, вырезано

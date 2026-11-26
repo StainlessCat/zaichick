@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildLabConclusionPatch,
+  buildMultiMethodLabConclusionPatch,
   calculateLaboratoryDeficitStatement,
   getActiveLabRequestForJoint,
+  getRequestMethodsList,
+  isJointConclusionCompletedForRequest,
+  resolveLineLabMethodAvailability,
 } from './laboratoryLogic';
 import type { NdtLabRequest, ProjectLineItem, WeldJoint } from '../types/welding';
 import { INITIAL_JOINTS } from '../data/seedData';
@@ -214,5 +218,65 @@ describe('Laboratory Logic — Stage 3 Enhancements', () => {
     expect(resValid.ok).toBe(true);
     expect(resValid.patch.ndtReportNumber).toBe('ЗАК-РК-2026-042');
     expect(resValid.patch.ndtResult).toBe('Годен');
+  });
+
+  it('resolveLineLabMethodAvailability блокирует методы 0% и оставляет доступными с предупреждением при отсутствии норм', () => {
+    const lineWithNorms = makeTestLine(); // rkPercent: 100, uzkPercent: 0, pvkPercent: 0
+    const resNorms = resolveLineLabMethodAvailability(lineWithNorms);
+    expect(resNorms.hasLineNorms).toBe(true);
+    expect(resNorms.warningMessage).toBeUndefined();
+    expect(resNorms.methods['ВИК'].disabled).toBe(false);
+    expect(resNorms.methods['РК'].disabled).toBe(false);
+    expect(resNorms.methods['УЗК'].disabled).toBe(true);
+    expect(resNorms.methods['ПВК'].disabled).toBe(true);
+    expect(resNorms.requiredMethods).toEqual(['ВИК', 'РК']);
+
+    // Если линия не привязана к Лайнлисту -> все методы доступны + предупреждение
+    const resUnlinked = resolveLineLabMethodAvailability(null);
+    expect(resUnlinked.hasLineNorms).toBe(false);
+    expect(resUnlinked.warningMessage).toContain('Лайнлисту');
+    expect(resUnlinked.methods['УЗК'].disabled).toBe(false);
+    expect(resUnlinked.methods['ПВК'].disabled).toBe(false);
+  });
+
+  it('getRequestMethodsList, buildMultiMethodLabConclusionPatch и isJointConclusionCompletedForRequest работают с пакетами методов', () => {
+    expect(
+      getRequestMethodsList({ requestedMethod: 'РК', requestedMethods: ['УЗК', 'ВИК', 'РК'] })
+    ).toEqual(['ВИК', 'РК', 'УЗК']);
+
+    const j = makeTestJoint('j-multi', '010');
+    const built = buildMultiMethodLabConclusionPatch(j, 'Первичный ВИК и НК', {
+      ВИК: {
+        reportNumber: 'ВИК-01-101-Л-1-010',
+        date: '2026-11-15',
+        result: 'Годен',
+        inspector: 'Иванов И.И.',
+      },
+      РК: {
+        reportNumber: 'РК-01-101-Л-1-010',
+        date: '2026-11-15',
+        result: 'Годен',
+        inspector: 'Петров П.П.',
+      },
+      УЗК: {
+        reportNumber: 'УЗК-01-101-Л-1-010',
+        date: '2026-11-15',
+        result: 'Ремонт',
+        inspector: 'Сидоров С.С.',
+      },
+    });
+    expect(built.ok).toBe(true);
+    expect(built.patch.vikResult).toBe('Годен');
+    // Приоритет статусов: Ремонт выше Годен -> агрегат берёт УЗК
+    expect(built.patch.ndtType).toBe('УЗК');
+    expect(built.patch.ndtResult).toBe('Ремонт');
+
+    const updatedJoint: WeldJoint = { ...j, ...built.patch };
+    expect(
+      isJointConclusionCompletedForRequest(updatedJoint, 'Первичный ВИК и НК', ['ВИК', 'РК', 'УЗК'])
+    ).toBe(true);
+    expect(
+      isJointConclusionCompletedForRequest(updatedJoint, 'Первичный ВИК и НК', ['ВИК', 'РК', 'УЗК', 'ПВК'])
+    ).toBe(false);
   });
 });
