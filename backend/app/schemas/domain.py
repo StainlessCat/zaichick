@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -186,8 +186,8 @@ class ProjectLineCreate(BaseModel):
     line_name: str = ""
     product: str = ""
     test_contour: str = ""
-    welding_ntd: str = "СТО Газпром 15-1.1-002-2023"
-    control_ntd: str = "СТО Газпром 15-1.1-002-2023"
+    welding_ntd: str = ""
+    control_ntd: str = ""
     quality_level: str = ""
     pipeline_category: str = ""
     working_pressure: str = ""
@@ -263,6 +263,40 @@ class ProjectLineOut(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     computed_status: LineCompletionStatusOut | None = None
+
+
+class ProjectLineBatchImportRequest(BaseModel):
+    items: list[ProjectLineCreate] = Field(min_length=1, max_length=2000)
+    duplicate_mode: Literal["skip", "update", "error"] = "skip"
+
+
+class ProjectLineBatchImportResponse(BaseModel):
+    created: list[ProjectLineOut] = Field(default_factory=list)
+    updated: list[ProjectLineOut] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+
+
+class ProjectLineBatchUpdateItem(ProjectLineUpdate):
+    id: uuid.UUID
+
+
+class ProjectLineBatchUpdateRequest(BaseModel):
+    items: list[ProjectLineBatchUpdateItem] = Field(min_length=1, max_length=2000)
+    cascade_joints: bool = True
+
+
+class ProjectLineBatchUpdateResponse(BaseModel):
+    items: list[ProjectLineOut] = Field(default_factory=list)
+    updated_joints_count: int = 0
+
+
+class ProjectLineBatchDeleteRequest(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=2000)
+
+
+class ProjectLineBatchDeleteResponse(BaseModel):
+    deleted_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class LineNdtProgressOut(BaseModel):

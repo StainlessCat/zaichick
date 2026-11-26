@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { ProjectLineItem, WeldJoint } from '../../types/welding';
 
@@ -26,6 +26,50 @@ export const LineListStructureManager: React.FC<LineListStructureManagerProps> =
   const [confirmDeleteObj, setConfirmDeleteObj] = useState<string | null>(null);
   const [confirmDeleteRd, setConfirmDeleteRd] = useState<string | null>(null);
 
+  const { objectStats, rdStats } = useMemo(() => {
+    const objMap = new Map<string, { lines: number; joints: number }>();
+    const rdMap = new Map<string, { lines: number; joints: number; parentObj: string }>();
+
+    if (!isOpen) {
+      return { objectStats: objMap, rdStats: rdMap };
+    }
+
+    for (const l of lineList) {
+      if (l.objectName) {
+        const cur = objMap.get(l.objectName);
+        if (cur) cur.lines += 1;
+        else objMap.set(l.objectName, { lines: 1, joints: 0 });
+      }
+      if (l.rdCode) {
+        const cur = rdMap.get(l.rdCode);
+        if (cur) {
+          cur.lines += 1;
+        } else {
+          rdMap.set(l.rdCode, {
+            lines: 1,
+            joints: 0,
+            parentObj: l.objectName || '—',
+          });
+        }
+      }
+    }
+
+    for (const j of joints) {
+      if (j.objectName) {
+        const cur = objMap.get(j.objectName);
+        if (cur) cur.joints += 1;
+        else objMap.set(j.objectName, { lines: 0, joints: 1 });
+      }
+      if (j.rdCode) {
+        const cur = rdMap.get(j.rdCode);
+        if (cur) cur.joints += 1;
+        else rdMap.set(j.rdCode, { lines: 0, joints: 1, parentObj: j.objectName || '—' });
+      }
+    }
+
+    return { objectStats: objMap, rdStats: rdMap };
+  }, [isOpen, lineList, joints]);
+
   if (!isOpen) return null;
 
   return (
@@ -34,10 +78,10 @@ export const LineListStructureManager: React.FC<LineListStructureManagerProps> =
         <div>
           <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
             <Trash2 className="w-4 h-4 text-red-600" />
-            <span>Управление объектами строительства и шифрами РД (Каскадное удаление)</span>
+            <span>Управление объектами строительства и шифрами РД</span>
           </h3>
           <p className="text-slate-500 mt-0.5">
-            При удалении объекта или шифра РД автоматически удаляются связанные с ним линии лайнлиста, позиции ЛРВ и сварные стыки (доступна отмена через Ctrl+Z).
+            При удалении объекта или шифра РД каскадно удаляются связанные с ним линии лайнлиста, позиции ЛРВ и сварные стыки. Операция необратима на сервере.
           </p>
         </div>
         <button
@@ -53,7 +97,7 @@ export const LineListStructureManager: React.FC<LineListStructureManagerProps> =
         {/* Список объектов */}
         <div className="space-y-2">
           <div className="font-bold text-[#1e3799]">
-            Объекты строительства ({uniqueObjectNames.length}):
+            Объекты строительства · {uniqueObjectNames.length}
           </div>
           {uniqueObjectNames.length === 0 ? (
             <div className="p-3 rounded-lg bg-slate-50 text-slate-400">
@@ -62,8 +106,9 @@ export const LineListStructureManager: React.FC<LineListStructureManagerProps> =
           ) : (
             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
               {uniqueObjectNames.map((objName) => {
-                const linesCount = lineList.filter((l) => l.objectName === objName).length;
-                const jointsCount = joints.filter((j) => j.objectName === objName).length;
+                const stat = objectStats.get(objName);
+                const linesCount = stat?.lines ?? 0;
+                const jointsCount = stat?.joints ?? 0;
                 const isConfirming = confirmDeleteObj === objName;
                 return (
                   <div
@@ -116,7 +161,7 @@ export const LineListStructureManager: React.FC<LineListStructureManagerProps> =
         {/* Список шифров РД */}
         <div className="space-y-2">
           <div className="font-bold text-[#1e3799]">
-            Шифры рабочей документации РД ({uniqueRdCodes.length}):
+            Шифры рабочей документации РД · {uniqueRdCodes.length}
           </div>
           {uniqueRdCodes.length === 0 ? (
             <div className="p-3 rounded-lg bg-slate-50 text-slate-400">
@@ -125,10 +170,10 @@ export const LineListStructureManager: React.FC<LineListStructureManagerProps> =
           ) : (
             <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
               {uniqueRdCodes.map((rd) => {
-                const parentObj =
-                  lineList.find((l) => l.rdCode === rd)?.objectName || '—';
-                const linesCount = lineList.filter((l) => l.rdCode === rd).length;
-                const jointsCount = joints.filter((j) => j.rdCode === rd).length;
+                const stat = rdStats.get(rd);
+                const parentObj = stat?.parentObj || '—';
+                const linesCount = stat?.lines ?? 0;
+                const jointsCount = stat?.joints ?? 0;
                 const isConfirming = confirmDeleteRd === rd;
                 return (
                   <div

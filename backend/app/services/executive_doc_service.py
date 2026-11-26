@@ -11,6 +11,7 @@ from app.models.enums import DepartmentEnum, ExecutiveDocStatusEnum
 from app.models.executive_doc import ExecutiveDoc
 from app.models.line import ProjectLine
 from app.models.user import User
+from app.schemas.domain import ProjectLineOut
 from app.schemas.executive_doc import ExecutiveDocOut, ExecutiveDocUpsert
 from app.services.audit_service import extract_changed_fields, record_audit_log
 from app.services.crud_helpers import enforce_optimistic_lock, orm_snapshot
@@ -20,6 +21,46 @@ EXECUTIVE_DOC_ALLOWED_DEPTS: tuple[DepartmentEnum, ...] = (
     DepartmentEnum.PTO,
     DepartmentEnum.SK,
 )
+
+
+async def _sync_line_from_executive_doc(
+    session: AsyncSession,
+    line: ProjectLine,
+    record: ExecutiveDoc,
+    *,
+    user: User,
+    now: datetime,
+) -> None:
+    """Keep ProjectLine.id_status and responsible_pto synchronized with ExecutiveDoc."""
+    next_pto = (record.pto_engineer or "").strip() or None
+    current_pto = (line.responsible_pto or "").strip() or None
+    line_changed = False
+
+    if line.id_status != record.id_status:
+        line.id_status = record.id_status
+        line_changed = True
+    if current_pto != next_pto:
+        line.responsible_pto = next_pto
+        line_changed = True
+
+    if not line_changed:
+        return
+
+    line.version = int(line.version) + 1
+    line.updated_by_id = user.id
+    line.updated_at = now
+    await session.flush()
+
+    line_snap = orm_snapshot(line, schema_cls=ProjectLineOut)
+    await publish_domain_event(
+        session,
+        event="line.updated",
+        entity_type="project_line",
+        entity_id=line.id,
+        data=line_snap,
+        version=line.version,
+        updated_by=user.login,
+    )
 
 
 async def list_executive_docs(
@@ -112,6 +153,7 @@ async def upsert_executive_doc(
             version=record.version,
             updated_by=user.full_name,
         )
+        await _sync_line_from_executive_doc(session, line, record, user=user, now=now)
         await session.commit()
         return out
 
@@ -212,5 +254,6 @@ async def upsert_executive_doc(
         version=existing.version,
         updated_by=user.full_name,
     )
+    await _sync_line_from_executive_doc(session, line, existing, user=user, now=now)
     await session.commit()
     return out

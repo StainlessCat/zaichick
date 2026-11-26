@@ -36,6 +36,10 @@ import {
   type ExecutiveDocsFilterPreset,
 } from '../executiveDocs';
 import type { useTestCircuitActions } from '../../hooks/useTestCircuitActions';
+import type {
+  LineBatchImportSummary,
+  LineImportDuplicateMode,
+} from '../../utils/linelistImportValidation';
 import { useAuth, useAppContext } from '../../context';
 
 export interface AppMainContentProps {
@@ -140,7 +144,10 @@ export interface AppMainContentProps {
     reason?: string
   ) => Promise<{ ok: boolean; message?: string }>;
   dirActions: {
-    handleAddLineItems: (items: ProjectLineItem[]) => Promise<void>;
+    handleAddLineItems: (
+      items: ProjectLineItem[],
+      duplicateMode?: LineImportDuplicateMode
+    ) => Promise<LineBatchImportSummary | void>;
     handleUpdateLineItem: (
       updated: ProjectLineItem,
       previousItem?: ProjectLineItem,

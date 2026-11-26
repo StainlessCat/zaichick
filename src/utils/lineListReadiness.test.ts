@@ -3,8 +3,11 @@ import type { ProjectLineItem, WeldJoint } from '../types/welding';
 import {
   applyBulkUpdateToLineList,
   computeLineListItemStatus,
+  computeLineListItemStatusFromLineJoints,
   formatExecutiveDocStatusLabel,
   getJointEquivDiaInch,
+  getJointsForLine,
+  indexJointsByLine,
   normalizeExecutiveDocStatus,
   parseProjectLineListRecords,
 } from './weldingLogic';
@@ -230,5 +233,81 @@ describe('Line list readiness (joints & EDI), ID status, and Responsible PTO', (
     });
     expect(roundTrip.idStatus).toBe('SIGNED');
     expect(roundTrip.responsiblePto).toBe('Сидоров С.С.');
+  });
+
+  it('keeps omitted optional fields empty and defaults omitted NDT percentages to 0 during import', () => {
+    const parsed = parseProjectLineListRecords(
+      [
+        {
+          'Название объекта': 'Новый объект',
+          'Шифр РД': 'РД-2026-01',
+          'Номер линии': 'Л-500',
+          'Наименование линии': 'Технологическая линия',
+        },
+      ],
+      '',
+      ''
+    );
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].product).toBe('');
+    expect(parsed[0].testContour).toBe('');
+    expect(parsed[0].weldingNtd).toBe('');
+    expect(parsed[0].controlNtd).toBe('');
+    expect(parsed[0].workingPressure).toBe('');
+    expect(parsed[0].workingTemperature).toBe('');
+    expect(parsed[0].rkPercent).toBe(0);
+    expect(parsed[0].uzkPercent).toBe(0);
+    expect(parsed[0].pvkPercent).toBe(0);
+  });
+
+  it('indexes joints by line in O(N+M) with deduplication and parity with computeLineListItemStatus', () => {
+    const line1 = makeLine({ id: 'l-1', lineNumber: 'Л-1', uniqueLineId: '001-ТХ3-Л-1' });
+    const line2 = makeLine({ id: 'l-2', lineNumber: 'Л-2', uniqueLineId: '001-ТХ3-Л-2' });
+    const line3 = makeLine({ id: 'l-3', lineNumber: 'Л-3', uniqueLineId: '001-ТХ3-Л-3' });
+
+    const joints: WeldJoint[] = [
+      // Совпадение и по uniqueLineId, и по rdCode + lineNumber
+      makeJoint({
+        id: 'j-1',
+        lineNumber: 'Л-1',
+        uniqueLineId: '001-ТХ3-Л-1',
+        weldingDate: '2026-06-10',
+        welderStamp: 'K101',
+        vikResult: 'Годен',
+        ndtType: 'РК+УЗК',
+        ndtResult: 'Годен',
+      }),
+      // Совпадение только по паре rdCode + lineNumber (устаревший uniqueLineId)
+      makeJoint({
+        id: 'j-2',
+        jointNumber: '020',
+        lineNumber: 'Л-1',
+        uniqueLineId: 'LEGACY-Л-1',
+        weldingDate: '',
+        welderStamp: '',
+      }),
+      // Стык второй линии
+      makeJoint({
+        id: 'j-3',
+        jointNumber: '010',
+        lineNumber: 'Л-2',
+        uniqueLineId: '001-ТХ3-Л-2',
+        weldingDate: '2026-06-11',
+        welderStamp: 'K202',
+      }),
+    ];
+
+    const index = indexJointsByLine(joints);
+
+    expect(getJointsForLine(line1, index).map((j) => j.id)).toEqual(['j-1', 'j-2']);
+    expect(getJointsForLine(line2, index).map((j) => j.id)).toEqual(['j-3']);
+    expect(getJointsForLine(line3, index)).toEqual([]);
+
+    for (const ln of [line1, line2, line3]) {
+      const expected = computeLineListItemStatus(ln, joints);
+      const actual = computeLineListItemStatusFromLineJoints(ln, getJointsForLine(ln, index));
+      expect(actual).toEqual(expected);
+    }
   });
 });

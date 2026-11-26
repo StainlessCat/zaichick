@@ -13,7 +13,43 @@ import {
 } from '../../utils/weldingLogic';
 import { getUserRolePermissions } from '../../utils/rbac';
 import type { FacilityGeoOverride } from '../useServerSync';
+import type {
+  LineBatchImportSummary,
+  LineImportDuplicateMode,
+} from '../../utils/linelistImportValidation';
 import { UUID_RE } from './common';
+
+const EXECUTIVE_DOCS_CACHE_KEY = 'zaychick_executive_docs_v1';
+
+function syncExecutiveDocsCache(updatedLines: ProjectLineItem[]): void {
+  if (typeof window === 'undefined' || updatedLines.length === 0) return;
+  try {
+    const raw = window.localStorage.getItem(EXECUTIVE_DOCS_CACHE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+    let mutated = false;
+    for (const line of updatedLines) {
+      const rec = parsed[line.id];
+      if (!rec || typeof rec !== 'object') continue;
+      const nextStatus = line.idStatus === 'SIGNED' ? 'SIGNED' : 'IN_WORK';
+      const nextPto = line.responsiblePto?.trim() || null;
+      if (rec.idStatus !== nextStatus || (rec.ptoEngineer ?? null) !== nextPto) {
+        parsed[line.id] = {
+          ...rec,
+          idStatus: nextStatus,
+          ptoEngineer: nextPto,
+        };
+        mutated = true;
+      }
+    }
+    if (mutated) {
+      window.localStorage.setItem(EXECUTIVE_DOCS_CACHE_KEY, JSON.stringify(parsed));
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export interface UseLineListActionsParams {
   currentUser: UserAccount;
@@ -75,29 +111,85 @@ export function useLineListActions(params: UseLineListActionsParams) {
     'Доступ запрещён: изменение объектов, шифров РД и лайнлиста доступно только администратору отдела ПТО.';
 
   const handleAddLineItems = useCallback(
-    async (newItems: ProjectLineItem[]) => {
+    async (
+      newItems: ProjectLineItem[],
+      duplicateMode: LineImportDuplicateMode = 'skip'
+    ): Promise<LineBatchImportSummary> => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
         notifyError('Действие запрещено: требуется авторизация на сервере FastAPI.');
-        return;
+        return { ok: false, createdCount: 0, updatedCount: 0, skippedCount: 0, errors: [] };
       }
       if (!canEditLineList) {
         notifyError(lineListPermissionError);
-        return;
+        return { ok: false, createdCount: 0, updatedCount: 0, skippedCount: 0, errors: [] };
       }
-      recordUndoSnapshot(`Добавление линий в лайнлист (${newItems.length} шт.)`);
+      if (newItems.length === 0) {
+        return { ok: true, createdCount: 0, updatedCount: 0, skippedCount: 0, errors: [] };
+      }
+      recordUndoSnapshot(`Добавление линий в лайнлист · ${newItems.length} шт.`);
       try {
         setIsDbSyncing(true);
-        const createdList: ProjectLineItem[] = [];
+        // Разрешаем facilityId один раз на каждое уникальное имя объекта
+        const facilityIdByName = new Map<string, string>();
+        const payloadEntries: Array<{ line: ProjectLineItem; facilityId: string }> = [];
         for (const item of newItems) {
-          const facId = await ensureFacilityId(item.objectName, item.facilityId);
-          const created = await zaychickApi.createLine(item, facId);
-          createdList.push(created);
+          const objKey = item.objectName.trim();
+          let facId = facilityIdByName.get(objKey);
+          if (!facId) {
+            facId = await ensureFacilityId(item.objectName, item.facilityId);
+            facilityIdByName.set(objKey, facId);
+          }
+          payloadEntries.push({ line: item, facilityId: facId });
         }
-        setProjectLineList((prev) => [...createdList, ...prev]);
-        bumpRevisionMeta(`Добавлено линий: ${createdList.length}`, currentUser.fullName);
+
+        if (payloadEntries.length === 1 && duplicateMode === 'skip') {
+          const created = await zaychickApi.createLine(
+            payloadEntries[0].line,
+            payloadEntries[0].facilityId
+          );
+          setProjectLineList((prev) => [created, ...prev]);
+          syncExecutiveDocsCache([created]);
+          bumpRevisionMeta(`Добавлена линия ${created.uniqueLineId}`, currentUser.fullName);
+          return {
+            ok: true,
+            createdCount: 1,
+            updatedCount: 0,
+            skippedCount: 0,
+            errors: [],
+          };
+        }
+
+        const batchRes = await zaychickApi.batchImportLines(
+          payloadEntries,
+          duplicateMode
+        );
+        const updatedMap = new Map(batchRes.updated.map((ln) => [ln.id, ln]));
+        setProjectLineList((prev) => {
+          const merged = prev.map((ln) => updatedMap.get(ln.id) || ln);
+          return [...batchRes.created, ...merged];
+        });
+        syncExecutiveDocsCache([...batchRes.created, ...batchRes.updated]);
+        bumpRevisionMeta(
+          `Импорт линий: создано ${batchRes.created.length}, обновлено ${batchRes.updated.length}`,
+          currentUser.fullName
+        );
+        return {
+          ok: true,
+          createdCount: batchRes.created.length,
+          updatedCount: batchRes.updated.length,
+          skippedCount: batchRes.skipped.length,
+          errors: batchRes.errors,
+        };
       } catch (err) {
         reportError(err, 'Ошибка добавления линий');
+        return {
+          ok: false,
+          createdCount: 0,
+          updatedCount: 0,
+          skippedCount: 0,
+          errors: [err instanceof Error ? err.message : 'Ошибка добавления линий'],
+        };
       } finally {
         setIsDbSyncing(false);
       }
@@ -194,6 +286,7 @@ export function useLineListActions(params: UseLineListActionsParams) {
           (it) => savedCascadedMap.get(it.id) || it
         );
         setProjectLineList(nextLineList);
+        syncExecutiveDocsCache([saved, ...savedCascadedMap.values()]);
 
         if (previousItem) {
           const prevLinesByUniqueId = new Map(
@@ -332,23 +425,69 @@ export function useLineListActions(params: UseLineListActionsParams) {
         notifyError(lineListPermissionError);
         return;
       }
-      recordUndoSnapshot(`Групповое ред. лайнлиста (${selectedIds.length} стр.)`);
+      if (selectedIds.length === 0) return;
+
+      recordUndoSnapshot(`Групповое ред. лайнлиста · ${selectedIds.length} стр.`);
+      const selectedSet = new Set(selectedIds);
+      const prevLinesById = new Map(projectLineList.map((l) => [l.id, l]));
       const nextLineList = applyBulkUpdateToLineList(
         projectLineList,
         selectedIds,
         patch
       );
+      const serverTargets = nextLineList.filter(
+        (item) => selectedSet.has(item.id) && UUID_RE.test(item.id)
+      );
+
       try {
         setIsDbSyncing(true);
         const updatedMap = new Map<string, ProjectLineItem>();
-        for (const item of nextLineList) {
-          if (selectedIds.includes(item.id) && UUID_RE.test(item.id)) {
-            const saved = await zaychickApi.updateLine(item);
+        if (serverTargets.length > 0) {
+          const batchRes = await zaychickApi.batchUpdateLines(serverTargets, true);
+          for (const saved of batchRes.items) {
             updatedMap.set(saved.id, saved);
           }
         }
-        setProjectLineList(
-          nextLineList.map((item) => updatedMap.get(item.id) || item)
+        const finalLineList = nextLineList.map(
+          (item) => updatedMap.get(item.id) || item
+        );
+        setProjectLineList(finalLineList);
+
+        // Синхронизируем локальные стыки, если у выбранных линий сменился объект, шифр РД или контур
+        const changedByOldUid = new Map<string, ProjectLineItem>();
+        for (const nextLine of finalLineList) {
+          if (!selectedSet.has(nextLine.id)) continue;
+          const prevLine = prevLinesById.get(nextLine.id);
+          if (
+            prevLine &&
+            (prevLine.objectName !== nextLine.objectName ||
+              prevLine.rdCode !== nextLine.rdCode ||
+              prevLine.uniqueLineId !== nextLine.uniqueLineId ||
+              prevLine.testContour !== nextLine.testContour)
+          ) {
+            changedByOldUid.set(prevLine.uniqueLineId, nextLine);
+          }
+        }
+        if (changedByOldUid.size > 0) {
+          setJoints((prevJoints) =>
+            prevJoints.map((j) => {
+              const updatedLine = changedByOldUid.get(j.uniqueLineId);
+              if (!updatedLine) return j;
+              return {
+                ...j,
+                objectName: updatedLine.objectName,
+                rdCode: updatedLine.rdCode,
+                lineNumber: updatedLine.lineNumber,
+                uniqueLineId: updatedLine.uniqueLineId,
+                contour: j.testCircuitId ? j.contour : updatedLine.testContour,
+                version: (j.version ?? 1) + 1,
+              };
+            })
+          );
+        }
+
+        syncExecutiveDocsCache(
+          finalLineList.filter((item) => selectedSet.has(item.id))
         );
         bumpRevisionMeta(`Обновлено линий: ${selectedIds.length}`, currentUser.fullName);
       } catch (err) {
@@ -369,6 +508,7 @@ export function useLineListActions(params: UseLineListActionsParams) {
       reportError,
       setIsDbSyncing,
       setIsLoginModalOpen,
+      setJoints,
       setProjectLineList,
     ]
   );
@@ -389,13 +529,16 @@ export function useLineListActions(params: UseLineListActionsParams) {
       const linesToDelete = projectLineList.filter((l) => idSet.has(l.id));
       if (linesToDelete.length === 0) return;
 
-      recordUndoSnapshot(`Удаление линий из лайнлиста (${linesToDelete.length} шт.)`);
+      recordUndoSnapshot(`Удаление линий из лайнлиста · ${linesToDelete.length} шт.`);
       try {
         setIsDbSyncing(true);
-        for (const l of linesToDelete) {
-          if (UUID_RE.test(l.id)) {
-            await zaychickApi.deleteLine(l.id);
-          }
+        const serverIds = linesToDelete
+          .map((l) => l.id)
+          .filter((id) => UUID_RE.test(id));
+        if (serverIds.length === 1) {
+          await zaychickApi.deleteLine(serverIds[0]);
+        } else if (serverIds.length > 1) {
+          await zaychickApi.batchDeleteLines(serverIds);
         }
         const uniqueLineIdsToDelete = new Set(
           linesToDelete.map((l) => l.uniqueLineId)

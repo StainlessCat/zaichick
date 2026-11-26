@@ -406,6 +406,71 @@ export const zaychickApi = {
     await apiRequest(`/api/lines/${lineId}`, { method: 'DELETE' });
   },
 
+  async batchImportLines(
+    items: Array<{ line: ProjectLineItem; facilityId: string }>,
+    duplicateMode: 'skip' | 'update' | 'error' = 'skip'
+  ): Promise<{
+    created: ProjectLineItem[];
+    updated: ProjectLineItem[];
+    skipped: string[];
+    errors: string[];
+  }> {
+    const res = await apiRequest<{
+      created?: Record<string, unknown>[];
+      updated?: Record<string, unknown>[];
+      skipped?: string[];
+      errors?: string[];
+    }>('/api/lines/batch', {
+      method: 'POST',
+      body: JSON.stringify({
+        items: items.map((entry) =>
+          mapLineToCreatePayload(entry.line, entry.facilityId)
+        ),
+        duplicate_mode: duplicateMode,
+      }),
+    });
+    return {
+      created: (res.created || []).map(mapLineDto),
+      updated: (res.updated || []).map(mapLineDto),
+      skipped: res.skipped || [],
+      errors: res.errors || [],
+    };
+  },
+
+  async batchUpdateLines(
+    lines: ProjectLineItem[],
+    cascadeJoints = true
+  ): Promise<{ items: ProjectLineItem[]; updatedJointsCount: number }> {
+    const res = await apiRequest<{
+      items?: Record<string, unknown>[];
+      updated_joints_count?: number;
+    }>('/api/lines/batch', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        items: lines.map((line) => ({
+          id: line.id,
+          ...mapLineToUpdatePayload(line),
+        })),
+        cascade_joints: cascadeJoints,
+      }),
+    });
+    return {
+      items: (res.items || []).map(mapLineDto),
+      updatedJointsCount: Number(res.updated_joints_count ?? 0),
+    };
+  },
+
+  async batchDeleteLines(lineIds: string[]): Promise<string[]> {
+    const res = await apiRequest<{ deleted_ids?: string[] }>(
+      '/api/lines/batch-delete',
+      {
+        method: 'POST',
+        body: JSON.stringify({ ids: lineIds }),
+      }
+    );
+    return res.deleted_ids || [];
+  },
+
   async changeLineStatus(
     lineId: string,
     recordStatus: RecordStatus,

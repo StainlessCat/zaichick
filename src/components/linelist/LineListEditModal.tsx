@@ -161,8 +161,8 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
           <div>
             <h2 className="font-display text-base font-bold">
               {mode === 'create'
-                ? 'Добавление новой линии в раздел «Проект (лайнлист)»'
-                : `Редактирование строки лайнлиста · Линия ${editForm.lineNumber} (${buildUniqueLineId(editForm.rdCode, editForm.lineNumber)})`}
+                ? 'Добавление новой линии в лайнлист'
+                : `Редактирование линии · ${editForm.lineNumber} · ${buildUniqueLineId(editForm.rdCode, editForm.lineNumber)}`}
             </h2>
             <p className="text-xs text-sky-200">
               Все данные по объектам, шифрам РД, контурам и названиям линий синхронизируются с остальными разделами системы
@@ -240,7 +240,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 <div className="w-full h-9 px-3 bg-slate-50 border border-slate-300 rounded-md text-xs font-semibold text-[#1e3799] flex items-center justify-between">
                   <span className="truncate">{selectedObjectName}</span>
                   <span className="text-[10px] text-slate-500 font-mono shrink-0 ml-1">
-                    (зафиксирован в меню)
+                    Зафиксирован в меню
                   </span>
                 </div>
               ) : isCustomObject || availableObjectOptions.length === 0 ? (
@@ -451,7 +451,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 aria-label="Контур испытания"
                 className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-semibold text-[#1e3799] focus:outline-none focus:ring-2 focus:ring-[#1e3799] cursor-pointer"
               >
-                <option value="">— Не выбран (пусто) —</option>
+                <option value="">— Не выбран —</option>
                 {relevantCircuits.map((c) => (
                   <option key={c.id} value={c.name}>
                     {c.name}
@@ -519,7 +519,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                 aria-label="Уровень качества"
                 className="w-full h-9 px-3 bg-white border border-slate-300 rounded-md text-xs font-semibold text-[#1e3799] focus:outline-none focus:ring-2 focus:ring-[#1e3799] cursor-pointer"
               >
-                <option value="">— Не указан (пусто) —</option>
+                <option value="">— Не указан —</option>
                 <option value="Уровень А">Уровень А</option>
                 <option value="Уровень В">Уровень В</option>
                 <option value="Уровень С">Уровень С</option>
@@ -562,7 +562,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                   type="text"
                   value={pressureFrom}
                   onChange={(e) => handlePressureFromChange(e.target.value)}
-                  placeholder="От (мин.)"
+                  placeholder="От"
                   aria-label="Давление от"
                   className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
                 />
@@ -570,14 +570,14 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                   type="text"
                   value={pressureTo}
                   onChange={(e) => handlePressureToChange(e.target.value)}
-                  placeholder="До (макс.)"
+                  placeholder="До"
                   aria-label="Давление до"
                   className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
                 />
               </div>
             </div>
 
-            {/* 12. ТЕМПЕРАТУРА, °C (ПАРНЫЕ ПОЛЯ ОТ И ДО) */}
+            {/* 12. ТЕМПЕРАТУРА, °C */}
             <div>
               <label
                 className="block text-xs font-semibold text-slate-700 mb-1 truncate whitespace-nowrap overflow-hidden"
@@ -590,7 +590,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                   type="text"
                   value={tempFrom}
                   onChange={(e) => handleTempFromChange(e.target.value)}
-                  placeholder="От (напр. -1,0)"
+                  placeholder="От, напр. -1,0"
                   aria-label="Температура от"
                   className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
                 />
@@ -598,7 +598,7 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
                   type="text"
                   value={tempTo}
                   onChange={(e) => handleTempToChange(e.target.value)}
-                  placeholder="До (напр. +21,8)"
+                  placeholder="До, напр. +21,8"
                   aria-label="Температура до"
                   className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
                 />
@@ -769,12 +769,12 @@ export const LineListEditModal: React.FC<LineListEditModalProps> = ({
               />
               <div className="text-xs text-slate-800">
                 <span className="font-bold text-[#1e3799]">
-                  Каскадно переименовать во всей системе (1 → N):
+                  Каскадно переименовать во всей системе:
                 </span>{' '}
                 если вы изменили <b>Название объекта</b>, <b>Шифр РД</b> или{' '}
                 <b>Контур испытания</b>, автоматически заменить старое название во всех остальных строках лайнлиста, в реестре сварных стыков и в каталоге ЛРВ.{' '}
                 <span className="text-slate-500">
-                  (Снимите галочку, если нужно перенести в другой шифр/контур только эту одну линию).
+                  Снимите галочку, если нужно перенести в другой шифр или контур только эту одну линию.
                 </span>
               </div>
             </label>

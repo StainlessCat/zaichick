@@ -66,6 +66,33 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     );
   }, [isAuthenticated, userPermissions]);
 
+  const handleSyncLineFields = useCallback(
+    (
+      lineId: string,
+      patch: { idStatus?: 'IN_WORK' | 'SIGNED'; responsiblePto?: string }
+    ) => {
+      app.setProjectLineList((prev) =>
+        prev.map((line) => {
+          if (line.id !== lineId) return line;
+          const nextIdStatus = patch.idStatus ?? line.idStatus;
+          const nextPto =
+            patch.responsiblePto !== undefined
+              ? patch.responsiblePto || undefined
+              : line.responsiblePto;
+          if (line.idStatus === nextIdStatus && line.responsiblePto === nextPto) {
+            return line;
+          }
+          return {
+            ...line,
+            idStatus: nextIdStatus,
+            responsiblePto: nextPto,
+          };
+        })
+      );
+    },
+    [app]
+  );
+
   const {
     docByLineId,
     visibleColumns,
@@ -82,6 +109,7 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     selectedObjectName,
     isDbConnected,
     isAuthenticated,
+    onSyncLineFields: handleSyncLineFields,
   });
 
   // Верхние фильтры перед таблицей

@@ -226,7 +226,7 @@ export function parseProjectLineListRecords(
     return '';
   };
 
-  const parsePercent = (val: string, defaultVal = 100): number => {
+  const parsePercent = (val: string, defaultVal = 0): number => {
     if (!val) return defaultVal;
     const cleaned = val.replace('%', '').replace(',', '.').trim();
     const num = Number(cleaned);
@@ -252,30 +252,25 @@ export function parseProjectLineListRecords(
       return;
     }
 
-    const product = getField(row, ['продукт', 'среда', 'рабочая среда'], 4) || 'Природный газ';
-    const testContour = getField(row, ['контур испытания', 'контур'], 5) || 'Контур КИ-1';
-    const weldingNtd =
-      getField(row, ['нтд на сварку', 'нтд сварка'], 6) || 'СТО Газпром 15-1.1-002-2023';
-    const controlNtd =
-      getField(row, ['нтд на контроль', 'нтд контроль', 'нтд нк'], 7) ||
-      'СТО Газпром 15-1.3-004-2023';
+    const product = getField(row, ['продукт', 'среда', 'рабочая среда'], 4);
+    const testContour = getField(row, ['контур испытания', 'контур'], 5);
+    const weldingNtd = getField(row, ['нтд на сварку', 'нтд сварка'], 6);
+    const controlNtd = getField(row, ['нтд на контроль', 'нтд контроль', 'нтд нк'], 7);
     const qualityLevel = getField(row, ['уровень качества', 'уровень'], 8);
     const pipelineCategory = getField(
       row,
       ['категория трубопровода', 'категория'],
       9
     );
-    const workingPressure =
-      getField(row, ['рабочее давление', 'давление'], 10) || '11.8 МПа';
-    const workingTemperature =
-      getField(row, ['температура', 'рабочая температура'], 11) || '-20...+60 °C';
+    const workingPressure = getField(row, ['рабочее давление', 'давление'], 10);
+    const workingTemperature = getField(row, ['температура', 'рабочая температура'], 11);
     const rkPercent = parsePercent(
       getField(row, ['процент контроля рк', 'рк, %', 'контроль рк', 'рк (%)'], 12),
-      100
+      0
     );
     const uzkPercent = parsePercent(
       getField(row, ['процент контроля узк', 'узк, %', 'контроль узк', 'узк (%)'], 13),
-      100
+      0
     );
     const pvkPercent = parsePercent(
       getField(row, ['процент контроля пвк', 'пвк, %', 'контроль пвк', 'пвк (%)'], 14),

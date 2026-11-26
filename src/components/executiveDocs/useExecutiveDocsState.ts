@@ -7,6 +7,7 @@ import type {
   ExecutiveDocRecord,
   ExecutiveDocRow,
 } from '../../types/executiveDocs';
+import type { ExecutiveDocStatus } from '../../types/welding';
 import {
   DEFAULT_EXECUTIVE_DOC_VISIBLE_COLUMNS,
   EXECUTIVE_DOC_COLUMNS,
@@ -53,12 +54,17 @@ export interface UseExecutiveDocsStateParams {
   selectedObjectName: string;
   isDbConnected: boolean;
   isAuthenticated: boolean;
+  onSyncLineFields?: (
+    lineId: string,
+    patch: { idStatus?: ExecutiveDocStatus; responsiblePto?: string }
+  ) => void;
 }
 
 export function useExecutiveDocsState({
   selectedObjectName,
   isDbConnected,
   isAuthenticated,
+  onSyncLineFields,
 }: UseExecutiveDocsStateParams) {
   const [docByLineId, setDocByLineId] = useState<Record<string, ExecutiveDocRecord>>(readStoredDocs);
   const [visibleColumns, setVisibleColumns] = useState<ExecutiveDocColumnKey[]>(
@@ -154,11 +160,29 @@ export function useExecutiveDocsState({
         updatedAt: nowIso,
       };
 
+      const syncLineIfNeeded = (
+        nextIdStatus: ExecutiveDocStatus,
+        nextPto: string | null | undefined
+      ) => {
+        if (!onSyncLineFields) return;
+        const linePatch: { idStatus?: ExecutiveDocStatus; responsiblePto?: string } = {};
+        if ('idStatus' in patch && patch.idStatus !== undefined) {
+          linePatch.idStatus = nextIdStatus;
+        }
+        if ('ptoEngineer' in patch) {
+          linePatch.responsiblePto = (nextPto ?? '').trim();
+        }
+        if (Object.keys(linePatch).length > 0) {
+          onSyncLineFields(lineId, linePatch);
+        }
+      };
+
       const prevRecord = existing;
       setDocByLineId((prev) => ({
         ...prev,
         [lineId]: optimisticRecord,
       }));
+      syncLineIfNeeded(optimisticRecord.idStatus, optimisticRecord.ptoEngineer);
       setErrorMessage(null);
 
       // В локальном режиме или при локальных идентификаторах линий сохраняем в localStorage
@@ -184,6 +208,7 @@ export function useExecutiveDocsState({
           ...prev,
           [lineId]: saved,
         }));
+        syncLineIfNeeded(saved.idStatus, saved.ptoEngineer);
         setConflictLineId((cur) => (cur === lineId ? null : cur));
         return true;
       } catch (err: unknown) {
@@ -197,6 +222,7 @@ export function useExecutiveDocsState({
           }
           return copy;
         });
+        syncLineIfNeeded(row.idStatus, row.ptoEngineer);
 
         if (err instanceof ApiError && err.status === 409) {
           setConflictLineId(lineId);
@@ -219,7 +245,7 @@ export function useExecutiveDocsState({
         });
       }
     },
-    [docByLineId, isAuthenticated, isDbConnected]
+    [docByLineId, isAuthenticated, isDbConnected, onSyncLineFields]
   );
 
   const toggleColumnVisibility = useCallback((colKey: ExecutiveDocColumnKey) => {

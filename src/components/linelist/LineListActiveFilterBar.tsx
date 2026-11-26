@@ -1,9 +1,11 @@
 import React from 'react';
-import { Filter, RotateCcw } from 'lucide-react';
+import { Filter, RotateCcw, Search } from 'lucide-react';
 import { LineListColumnKey } from '../../types/welding';
 
 interface LineListActiveFilterBarProps {
   selectedLineIdsCount: number;
+  searchQuery?: string;
+  onClearSearchQuery?: () => void;
   activeFilterKeys: LineListColumnKey[];
   columnFilters: Partial<Record<LineListColumnKey, string[]>>;
   columnLabelMap: Record<string, string>;
@@ -14,6 +16,8 @@ interface LineListActiveFilterBarProps {
 
 export const LineListActiveFilterBar: React.FC<LineListActiveFilterBarProps> = ({
   selectedLineIdsCount,
+  searchQuery = '',
+  onClearSearchQuery,
   activeFilterKeys,
   columnFilters,
   columnLabelMap,
@@ -21,7 +25,8 @@ export const LineListActiveFilterBar: React.FC<LineListActiveFilterBarProps> = (
   onClearSelection,
   onResetAllFilters,
 }) => {
-  if (activeFilterKeys.length === 0 && selectedLineIdsCount === 0) {
+  const hasSearch = searchQuery.trim().length > 0;
+  if (activeFilterKeys.length === 0 && selectedLineIdsCount === 0 && !hasSearch) {
     return null;
   }
 
@@ -31,6 +36,22 @@ export const LineListActiveFilterBar: React.FC<LineListActiveFilterBarProps> = (
         {selectedLineIdsCount > 0 && (
           <span className="font-bold text-[#1e3799]">
             Выделено строк лайнлиста: {selectedLineIdsCount} шт.
+          </span>
+        )}
+        {hasSearch && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white border border-sky-300 text-[#1e3799] font-medium">
+            <Search className="w-3 h-3" />
+            <span>Поиск: «{searchQuery.trim()}»</span>
+            {onClearSearchQuery && (
+              <button
+                type="button"
+                onClick={onClearSearchQuery}
+                aria-label="Сбросить текстовый поиск"
+                className="text-slate-400 hover:text-red-600 font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
           </span>
         )}
         {activeFilterKeys.map((k) => (
@@ -45,6 +66,7 @@ export const LineListActiveFilterBar: React.FC<LineListActiveFilterBarProps> = (
             <button
               type="button"
               onClick={() => onRemoveColumnFilter(k)}
+              aria-label={`Снять фильтр по столбцу ${columnLabelMap[k]}`}
               className="text-slate-400 hover:text-red-600 font-bold cursor-pointer"
             >
               ✕
@@ -63,7 +85,7 @@ export const LineListActiveFilterBar: React.FC<LineListActiveFilterBarProps> = (
             Снять выделение
           </button>
         )}
-        {activeFilterKeys.length > 0 && (
+        {(activeFilterKeys.length > 0 || hasSearch) && (
           <button
             type="button"
             onClick={onResetAllFilters}

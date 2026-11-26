@@ -687,21 +687,94 @@ export interface LineCompletionStatus {
   ediReadinessPct: number;
 }
 
-/**
- * Вычисляет статус линии для раздела «Проект (лайнлист)»:
- * проверяет выполнение объемов неразрушающего контроля (РК / УЗК) по линии
- * и готовность всех стыков на линии.
- */
-export function computeLineListItemStatus(
-  lineItem: ProjectLineItem,
-  allJoints: WeldJoint[]
-): LineCompletionStatus {
-  const lineJoints = allJoints.filter(
-    (j) =>
-      j.uniqueLineId === lineItem.uniqueLineId ||
-      (j.rdCode === lineItem.rdCode && j.lineNumber === lineItem.lineNumber)
-  );
+const EMPTY_LINE_JOINTS: WeldJoint[] = [];
 
+export interface LineJointsIndex {
+  byUniqueLineId: Map<string, WeldJoint[]>;
+  byRdAndLine: Map<string, WeldJoint[]>;
+}
+
+/**
+ * Индексирует массив стыков по uniqueLineId и паре (rdCode, lineNumber) за O(M),
+ * устраняя квадратичный перебор O(N × M) при расчёте статусов лайнлиста.
+ */
+export function indexJointsByLine(allJoints: WeldJoint[]): LineJointsIndex {
+  const byUniqueLineId = new Map<string, WeldJoint[]>();
+  const byRdAndLine = new Map<string, WeldJoint[]>();
+
+  for (const j of allJoints) {
+    if (j.uniqueLineId) {
+      const list = byUniqueLineId.get(j.uniqueLineId);
+      if (list) list.push(j);
+      else byUniqueLineId.set(j.uniqueLineId, [j]);
+    }
+    if (j.rdCode || j.lineNumber) {
+      const rdKey = `${j.rdCode}\u0000${j.lineNumber}`;
+      const list = byRdAndLine.get(rdKey);
+      if (list) list.push(j);
+      else byRdAndLine.set(rdKey, [j]);
+    }
+  }
+
+  return { byUniqueLineId, byRdAndLine };
+}
+
+/**
+ * Возвращает стыки конкретной линии из предрасчитанного индекса за O(1) (без дублирования).
+ */
+export function getJointsForLine(
+  lineItem: Pick<ProjectLineItem, 'uniqueLineId' | 'rdCode' | 'lineNumber'>,
+  index: LineJointsIndex
+): WeldJoint[] {
+  const byUid = lineItem.uniqueLineId
+    ? index.byUniqueLineId.get(lineItem.uniqueLineId)
+    : undefined;
+  const byRdLine =
+    lineItem.rdCode || lineItem.lineNumber
+      ? index.byRdAndLine.get(`${lineItem.rdCode}\u0000${lineItem.lineNumber}`)
+      : undefined;
+
+  if (!byUid && !byRdLine) return EMPTY_LINE_JOINTS;
+  if (byUid && !byRdLine) return byUid;
+  if (!byUid && byRdLine) return byRdLine;
+
+  // Частый случай: оба списка указывают на те же стыки в том же порядке
+  if (byUid!.length === byRdLine!.length) {
+    let identical = true;
+    for (let i = 0; i < byUid!.length; i += 1) {
+      if (byUid![i] !== byRdLine![i]) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) return byUid!;
+  }
+
+  const seen = new Set<string>();
+  const merged: WeldJoint[] = [];
+  for (const j of byUid!) {
+    if (!seen.has(j.id)) {
+      seen.add(j.id);
+      merged.push(j);
+    }
+  }
+  for (const j of byRdLine!) {
+    if (!seen.has(j.id)) {
+      seen.add(j.id);
+      merged.push(j);
+    }
+  }
+  return merged;
+}
+
+/**
+ * Вычисляет статус линии для раздела «Проект (лайнлист)» по заранее отфильтрованному
+ * списку стыков этой линии (сложность O(k) на линию).
+ */
+export function computeLineListItemStatusFromLineJoints(
+  lineItem: ProjectLineItem,
+  lineJoints: WeldJoint[]
+): LineCompletionStatus {
   const totalJoints = lineJoints.length;
   if (totalJoints === 0) {
     const manual = (lineItem.manualStatus || '').trim();
@@ -901,4 +974,21 @@ export function computeLineListItemStatus(
     weldedEdi,
     ediReadinessPct,
   };
+}
+
+/**
+ * Вычисляет статус линии для раздела «Проект (лайнлист)»:
+ * проверяет выполнение объемов неразрушающего контроля (РК / УЗК) по линии
+ * и готовность всех стыков на линии.
+ */
+export function computeLineListItemStatus(
+  lineItem: ProjectLineItem,
+  allJoints: WeldJoint[]
+): LineCompletionStatus {
+  const lineJoints = allJoints.filter(
+    (j) =>
+      j.uniqueLineId === lineItem.uniqueLineId ||
+      (j.rdCode === lineItem.rdCode && j.lineNumber === lineItem.lineNumber)
+  );
+  return computeLineListItemStatusFromLineJoints(lineItem, lineJoints);
 }

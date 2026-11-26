@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -33,6 +34,24 @@ class ProjectLine(Base):
     __tablename__ = "project_lines"
     __table_args__ = (
         UniqueConstraint("unique_line_id", name="uq_project_lines_unique_line_id"),
+        Index(
+            "ix_project_lines_facility_rd_sort_line",
+            "facility_id",
+            "rd_code",
+            "sort_order",
+            "line_number",
+        ),
+        Index(
+            "ix_project_lines_facility_sort_line",
+            "facility_id",
+            "sort_order",
+            "line_number",
+        ),
+        Index(
+            "ix_project_lines_facility_id_status",
+            "facility_id",
+            "id_status",
+        ),
         CheckConstraint("rk_percent >= 0 AND rk_percent <= 100", name="rk_percent_range"),
         CheckConstraint("uzk_percent >= 0 AND uzk_percent <= 100", name="uzk_percent_range"),
         CheckConstraint("pvk_percent >= 0 AND pvk_percent <= 100", name="pvk_percent_range"),
@@ -56,12 +75,8 @@ class ProjectLine(Base):
     line_name: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     product: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     test_contour: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    welding_ntd: Mapped[str] = mapped_column(
-        String(255), nullable=False, default="СТО Газпром 15-1.1-002-2023"
-    )
-    control_ntd: Mapped[str] = mapped_column(
-        String(255), nullable=False, default="СТО Газпром 15-1.1-002-2023"
-    )
+    welding_ntd: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    control_ntd: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     quality_level: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     pipeline_category: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     working_pressure: Mapped[str] = mapped_column(String(64), nullable=False, default="")

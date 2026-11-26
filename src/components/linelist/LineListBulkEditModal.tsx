@@ -1,7 +1,7 @@
 import { useModalDismiss } from '../../hooks/useModalDismiss';
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Layers, Lock, X } from 'lucide-react';
-import { ExecutiveDocStatus, ProjectLineItem } from '../../types/welding';
+import { ExecutiveDocStatus, ProjectLineItem, TestCircuit } from '../../types/welding';
 import { formatDateDDMMYY } from '../../utils/weldingLogic';
 
 interface LineListBulkEditModalProps {
@@ -9,6 +9,7 @@ interface LineListBulkEditModalProps {
   onClose: () => void;
   selectedLineIds: string[];
   lineList: ProjectLineItem[];
+  testCircuits?: TestCircuit[];
   onApplyBulk: (patch: Partial<ProjectLineItem>) => void;
 }
 
@@ -17,13 +18,14 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
   onClose,
   selectedLineIds,
   lineList,
+  testCircuits = [],
   onApplyBulk,
 }) => {
   const [bulkEnableQuality, setBulkEnableQuality] = useState(false);
-  const [bulkQualityLevel, setBulkQualityLevel] = useState('Уровень А');
+  const [bulkQualityLevel, setBulkQualityLevel] = useState('');
 
   const [bulkEnableCategory, setBulkEnableCategory] = useState(false);
-  const [bulkCategory, setBulkCategory] = useState('I (В)');
+  const [bulkCategory, setBulkCategory] = useState('');
 
   const [bulkEnableObject, setBulkEnableObject] = useState(false);
   const [bulkObjectName, setBulkObjectName] = useState('');
@@ -38,28 +40,77 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
   const [bulkProduct, setBulkProduct] = useState('');
 
   const [bulkEnableNtd, setBulkEnableNtd] = useState(false);
-  const [bulkWeldingNtd, setBulkWeldingNtd] = useState('СТО Газпром 15-1.1-002-2023');
-  const [bulkControlNtd, setBulkControlNtd] = useState('СТО Газпром 15-1.3-004-2023');
+  const [bulkWeldingNtd, setBulkWeldingNtd] = useState('');
+  const [bulkControlNtd, setBulkControlNtd] = useState('');
 
   const [bulkEnableParams, setBulkEnableParams] = useState(false);
-  const [bulkPressure, setBulkPressure] = useState('11.8 МПа');
-  const [bulkTemperature, setBulkTemperature] = useState('-40...+60 °C');
+  const [bulkPressure, setBulkPressure] = useState('');
+  const [bulkTemperature, setBulkTemperature] = useState('');
 
   const [bulkEnableNdtPct, setBulkEnableNdtPct] = useState(false);
-  const [bulkRkPct, setBulkRkPct] = useState(100);
-  const [bulkUzkPct, setBulkUzkPct] = useState(100);
+  const [bulkRkPct, setBulkRkPct] = useState(0);
+  const [bulkUzkPct, setBulkUzkPct] = useState(0);
   const [bulkPvkPct, setBulkPvkPct] = useState(0);
 
   const [bulkEnableTestDate, setBulkEnableTestDate] = useState(false);
-  const [bulkTestDate, setBulkTestDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
+  const [bulkTestDate, setBulkTestDate] = useState('');
 
   const [bulkEnableIdStatus, setBulkEnableIdStatus] = useState(false);
   const [bulkIdStatus, setBulkIdStatus] = useState<ExecutiveDocStatus>('IN_WORK');
 
   const [bulkEnableResponsiblePto, setBulkEnableResponsiblePto] = useState(false);
   const [bulkResponsiblePto, setBulkResponsiblePto] = useState('');
+
+  // Сброс всех чекбоксов и полей при каждом открытии окна
+  useEffect(() => {
+    if (!isOpen) return;
+    setBulkEnableQuality(false);
+    setBulkQualityLevel('');
+    setBulkEnableCategory(false);
+    setBulkCategory('');
+    setBulkEnableObject(false);
+    setBulkObjectName('');
+    setBulkEnableRd(false);
+    setBulkRdCode('');
+    setBulkEnableContour(false);
+    setBulkTestContour('');
+    setBulkEnableProduct(false);
+    setBulkProduct('');
+    setBulkEnableNtd(false);
+    setBulkWeldingNtd('');
+    setBulkControlNtd('');
+    setBulkEnableParams(false);
+    setBulkPressure('');
+    setBulkTemperature('');
+    setBulkEnableNdtPct(false);
+    setBulkRkPct(0);
+    setBulkUzkPct(0);
+    setBulkPvkPct(0);
+    setBulkEnableTestDate(false);
+    setBulkTestDate('');
+    setBulkEnableIdStatus(false);
+    setBulkIdStatus('IN_WORK');
+    setBulkEnableResponsiblePto(false);
+    setBulkResponsiblePto('');
+  }, [isOpen]);
+
+  const selectedLines = useMemo(() => {
+    const idSet = new Set(selectedLineIds);
+    return lineList.filter((l) => idSet.has(l.id));
+  }, [lineList, selectedLineIds]);
+
+  const relevantCircuits = useMemo(() => {
+    if (!testCircuits || testCircuits.length === 0) return [];
+    const objNames = Array.from(
+      new Set(selectedLines.map((l) => l.objectName).filter(Boolean))
+    );
+    if (objNames.length === 1) {
+      return testCircuits.filter(
+        (c) => !c.objectName || c.objectName === objNames[0]
+      );
+    }
+    return testCircuits;
+  }, [testCircuits, selectedLines]);
 
   const isDirty = Boolean(
     bulkEnableQuality ||
@@ -80,33 +131,38 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
     isOpen,
     isDirty,
     onClose,
-    confirmMessage: 'В форме массового редактирования есть не применённые параметры. Закрыть?',
+    confirmMessage: 'В форме массового редактирования есть неприменённые параметры. Закрыть?',
   });
 
   if (!isOpen) return null;
 
+  const clampPct = (val: number) =>
+    Math.max(0, Math.min(100, Number.isFinite(val) ? val : 0));
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isDirty || selectedLineIds.length === 0) return;
+
     const patch: Partial<ProjectLineItem> = {};
 
     if (bulkEnableQuality) patch.qualityLevel = bulkQualityLevel;
     if (bulkEnableCategory) patch.pipelineCategory = bulkCategory.trim();
     if (bulkEnableObject && bulkObjectName.trim()) patch.objectName = bulkObjectName.trim();
     if (bulkEnableRd && bulkRdCode.trim()) patch.rdCode = bulkRdCode.trim();
-    if (bulkEnableContour && bulkTestContour.trim()) patch.testContour = bulkTestContour.trim();
-    if (bulkEnableProduct && bulkProduct.trim()) patch.product = bulkProduct.trim();
+    if (bulkEnableContour) patch.testContour = bulkTestContour.trim();
+    if (bulkEnableProduct) patch.product = bulkProduct.trim();
     if (bulkEnableNtd) {
-      if (bulkWeldingNtd.trim()) patch.weldingNtd = bulkWeldingNtd.trim();
-      if (bulkControlNtd.trim()) patch.controlNtd = bulkControlNtd.trim();
+      patch.weldingNtd = bulkWeldingNtd.trim();
+      patch.controlNtd = bulkControlNtd.trim();
     }
     if (bulkEnableParams) {
-      if (bulkPressure.trim()) patch.workingPressure = bulkPressure.trim();
-      if (bulkTemperature.trim()) patch.workingTemperature = bulkTemperature.trim();
+      patch.workingPressure = bulkPressure.trim();
+      patch.workingTemperature = bulkTemperature.trim();
     }
     if (bulkEnableNdtPct) {
-      patch.rkPercent = Number(bulkRkPct);
-      patch.uzkPercent = Number(bulkUzkPct);
-      patch.pvkPercent = Number(bulkPvkPct);
+      patch.rkPercent = clampPct(Number(bulkRkPct));
+      patch.uzkPercent = clampPct(Number(bulkUzkPct));
+      patch.pvkPercent = clampPct(Number(bulkPvkPct));
     }
     if (bulkEnableTestDate) {
       patch.testDate = bulkTestDate;
@@ -117,6 +173,8 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
     if (bulkEnableResponsiblePto) {
       patch.responsiblePto = bulkResponsiblePto.trim();
     }
+
+    if (Object.keys(patch).length === 0) return;
 
     onApplyBulk(patch);
     onClose();
@@ -139,7 +197,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
             <Layers className="w-5 h-5 text-sky-300" />
             <div>
               <h2 className="font-display text-base font-bold">
-                Групповое редактирование строк лайнлиста ({selectedLineIds.length} лин.)
+                Групповое редактирование · {selectedLineIds.length} лин.
               </h2>
               <p className="text-xs text-sky-200">
                 Массовое обновление параметров выбранных линий трубопроводов
@@ -165,10 +223,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
             <div>
               Индивидуальные номера линий защищены от массовой перезаписи. Выбрано линий:{' '}
               <span className="font-mono font-bold text-[#1e3799]">
-                {lineList
-                  .filter((l) => selectedLineIds.includes(l.id))
-                  .map((l) => l.lineNumber)
-                  .join(', ')}
+                {selectedLines.map((l) => l.lineNumber).join(', ')}
               </span>
             </div>
           </div>
@@ -184,7 +239,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                   className="w-4 h-4 rounded border-slate-300 text-[#1e3799]"
                 />
                 <span className="text-xs font-bold text-slate-900">
-                  Изменить Уровень качества
+                  Уровень качества
                 </span>
               </label>
               {bulkEnableQuality && (
@@ -194,7 +249,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                   aria-label="Уровень качества для группового изменения"
                   className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold text-[#1e3799]"
                 >
-                  <option value="">— Не указан (пусто) —</option>
+                  <option value="">— Не указан —</option>
                   <option value="Уровень А">Уровень А</option>
                   <option value="Уровень В">Уровень В</option>
                   <option value="Уровень С">Уровень С</option>
@@ -211,7 +266,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                   className="w-4 h-4 rounded border-slate-300 text-[#1e3799]"
                 />
                 <span className="text-xs font-bold text-slate-900">
-                  Изменить Категорию трубопровода
+                  Категория трубопровода
                 </span>
               </label>
               {bulkEnableCategory && (
@@ -284,13 +339,19 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                 <span className="text-xs font-bold text-slate-900">Контур испытания</span>
               </label>
               {bulkEnableContour && (
-                <input
-                  type="text"
-                  list="ll-contours-list"
+                <select
                   value={bulkTestContour}
                   onChange={(e) => setBulkTestContour(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs"
-                />
+                  aria-label="Контур испытания для группового изменения"
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs font-semibold text-[#1e3799] cursor-pointer"
+                >
+                  <option value="">— Не выбран —</option>
+                  {relevantCircuits.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               )}
             </div>
           </div>
@@ -305,13 +366,14 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                   onChange={(e) => setBulkEnableProduct(e.target.checked)}
                   className="w-4 h-4 rounded border-slate-300 text-[#1e3799]"
                 />
-                <span className="text-xs font-bold text-slate-900">Изменить Продукт</span>
+                <span className="text-xs font-bold text-slate-900">Продукт</span>
               </label>
               {bulkEnableProduct && (
                 <input
                   type="text"
                   value={bulkProduct}
                   onChange={(e) => setBulkProduct(e.target.value)}
+                  placeholder="Оставьте пустым для очистки"
                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded text-xs"
                 />
               )}
@@ -361,7 +423,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                   className="w-4 h-4 rounded border-slate-300 text-[#1e3799]"
                 />
                 <span className="text-xs font-bold text-slate-900">
-                  Давление и Температура
+                  Давление и температура
                 </span>
               </label>
               {bulkEnableParams && (
@@ -370,14 +432,14 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                     type="text"
                     value={bulkPressure}
                     onChange={(e) => setBulkPressure(e.target.value)}
-                    placeholder="Давление"
+                    placeholder="Давление, МПа"
                     className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono"
                   />
                   <input
                     type="text"
                     value={bulkTemperature}
                     onChange={(e) => setBulkTemperature(e.target.value)}
-                    placeholder="Температура"
+                    placeholder="Температура, °C"
                     className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono"
                   />
                 </div>
@@ -404,6 +466,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                     max={100}
                     value={bulkRkPct}
                     onChange={(e) => setBulkRkPct(Number(e.target.value))}
+                    aria-label="Процент контроля РК"
                     className="px-1.5 py-1 bg-white border border-slate-300 rounded text-xs font-mono"
                   />
                   <input
@@ -412,6 +475,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                     max={100}
                     value={bulkUzkPct}
                     onChange={(e) => setBulkUzkPct(Number(e.target.value))}
+                    aria-label="Процент контроля УЗК"
                     className="px-1.5 py-1 bg-white border border-slate-300 rounded text-xs font-mono"
                   />
                   <input
@@ -420,6 +484,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
                     max={100}
                     value={bulkPvkPct}
                     onChange={(e) => setBulkPvkPct(Number(e.target.value))}
+                    aria-label="Процент контроля ПВК"
                     className="px-1.5 py-1 bg-white border border-slate-300 rounded text-xs font-mono"
                   />
                 </div>
@@ -439,7 +504,7 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
               {bulkEnableTestDate && (
                 <div className="space-y-1">
                   <div className="text-[11px] font-mono font-bold text-[#1e3799]">
-                    ДД.ММ.ГГ: {formatDateDDMMYY(bulkTestDate)}
+                    {bulkTestDate ? formatDateDDMMYY(bulkTestDate) : 'Очистить дату'}
                   </div>
                   <input
                     type="date"
@@ -515,10 +580,11 @@ export const LineListBulkEditModal: React.FC<LineListBulkEditModalProps> = ({
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] cursor-pointer"
+              disabled={!isDirty || selectedLineIds.length === 0}
+              className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer"
             >
               <Check className="w-4 h-4" />
-              <span>Применить к выбранным ({selectedLineIds.length} лин.)</span>
+              <span>Применить · {selectedLineIds.length} лин.</span>
             </button>
           </div>
         </form>
