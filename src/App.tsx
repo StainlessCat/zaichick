@@ -40,6 +40,7 @@ import {
 } from './hooks';
 import { buildSeedTestCircuitsFromJoints } from './utils/testCircuitCalc';
 import { useRegistryFilters } from './hooks/useRegistryFilters';
+import { clearAllSectionFilters } from './hooks/usePersistentState';
 import {
   AppHeader,
   AppMainContent,
@@ -1123,6 +1124,7 @@ export const App: React.FC = () => {
 
   const handleLogout = useCallback(async () => {
     await zaychickApi.logout(false).catch(() => {});
+    clearAllSectionFilters();
     setIsSessionsModalOpen(false);
     setIsAuthenticated(false);
     setCurrentUser(ANONYMOUS_USER);
@@ -1132,6 +1134,7 @@ export const App: React.FC = () => {
 
   const handleLogoutAllDevices = useCallback(async () => {
     await zaychickApi.logout(true).catch(() => {});
+    clearAllSectionFilters();
     setIsSessionsModalOpen(false);
     setIsAuthenticated(false);
     setCurrentUser(ANONYMOUS_USER);

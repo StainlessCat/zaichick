@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import {
   FileCheck2,
   Lock,
@@ -55,7 +56,7 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = (props) => {
     onSaveMaterial,
     onDeleteMaterial,
   } = props;
-  const [activeTab, setActiveTab] = useState<TechTab>('welders');
+  const [activeTab, setActiveTab] = usePersistentState<TechTab>('weldingTech:activeTab', 'welders');
 
   const usageCounts = useMemo(
     () => computeTechUsageCounts(joints, techCards, welders, materials),

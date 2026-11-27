@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import {
   Award,
   Check,
@@ -95,14 +96,20 @@ export const WeldersDirectoryView: React.FC<WeldersDirectoryViewProps> = ({
   const [isSaving, setIsSaving] = useState(false);
 
   // Поиск и быстрые фильтры
-  const [searchQuery, setSearchQuery] = useState('');
-  const [quickFilter, setQuickFilter] = useState<WelderQuickFilter>('ALL');
+  const [searchQuery, setSearchQuery] = usePersistentState('welders:searchQuery', '');
+  const [quickFilter, setQuickFilter] = usePersistentState<WelderQuickFilter>(
+    'welders:quickFilter',
+    'ALL'
+  );
 
-  const [welderFilters, setWelderFilters] = useState<Record<string, string[]>>({});
-  const [welderSort, setWelderSort] = useState<{
+  const [welderFilters, setWelderFilters] = usePersistentState<Record<string, string[]>>(
+    'welders:filters',
+    {}
+  );
+  const [welderSort, setWelderSort] = usePersistentState<{
     key: string;
     direction: 'asc' | 'desc';
-  } | null>(null);
+  } | null>('welders:sort', null);
 
   // Регулирование ширины столбцов таблицы сварщиков
   const {

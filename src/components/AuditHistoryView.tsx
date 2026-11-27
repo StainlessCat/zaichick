@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { History, Lock, RotateCcw, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { AuditLogEntry } from '../types/welding';
 import { formatDateDDMMYY, formatTimestampDDMMYY, isDateColumnKey } from '../utils/weldingLogic';
@@ -30,13 +31,16 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
   const logs = propLogs ?? app.auditLogs ?? [];
   const isAdmin = propIsAdmin ?? (auth.userPermissions.category === 'admin');
   const onClearAuditLog = propOnClearAuditLog ?? (() => app.setAuditLogs([]));
-  const [search, setSearch] = useState('');
-  const [opFilter, setOpFilter] = useState<string>('ALL');
-  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
-  const [sortConfig, setSortConfig] = useState<{
+  const [search, setSearch] = usePersistentState('audit:search', '');
+  const [opFilter, setOpFilter] = usePersistentState<string>('audit:opFilter', 'ALL');
+  const [columnFilters, setColumnFilters] = usePersistentState<Record<string, string[]>>(
+    'audit:columnFilters',
+    {}
+  );
+  const [sortConfig, setSortConfig] = usePersistentState<{
     key: string;
     direction: 'asc' | 'desc';
-  } | null>(null);
+  } | null>('audit:sortConfig', null);
   const [confirmClear, setConfirmClear] = useState(false);
 
   // Регулирование ширины столбцов журнала аудита с сохранением в localStorage

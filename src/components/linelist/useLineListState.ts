@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import {
   FacilityObject,
   LineListColumnKey,
@@ -65,16 +66,19 @@ export function useLineListState({
   selectedObjectName,
   selectedRdCode,
 }: UseLineListStateParams) {
-  const [columnFilters, setColumnFilters] = useState<
+  const [columnFilters, setColumnFilters] = usePersistentState<
     Partial<Record<LineListColumnKey, string[]>>
-  >({});
-  const [searchQuery, setSearchQuery] = useState('');
+  >('linelist:columnFilters', {});
+  const [searchQuery, setSearchQuery] = usePersistentState('linelist:searchQuery', '');
   const [visibleColumns, setVisibleColumns] = useState<LineListColumnKey[]>(
     readStoredLineListVisibleColumns
   );
   const [openFilterColumnKey, setOpenFilterColumnKey] =
     useState<LineListColumnKey | null>(null);
-  const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
+  const [sortConfig, setSortConfig] = usePersistentState<SortConfig | null>(
+    'linelist:sortConfig',
+    null
+  );
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([]);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
 

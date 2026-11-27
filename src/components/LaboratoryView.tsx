@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { AlertTriangle } from 'lucide-react';
 import {
   FacilityObject,
@@ -95,18 +96,32 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     onDeleteLabRequest,
     onOpenJointPassport,
   } = props;
-  const [activeTab, setActiveTab] = useState<LaboratorySubTab>('deficit');
+  const [activeTab, setActiveTab] = usePersistentState<LaboratorySubTab>(
+    'laboratory:activeTab',
+    'deficit'
+  );
   const [isCodeRefOpen, setIsCodeRefOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [onlyDeficitLines, setOnlyDeficitLines] = useState(false);
-  const [expandedRdCodes, setExpandedRdCodes] = useState<Record<string, boolean>>({});
-  const [requestStatusFilter, setRequestStatusFilter] = useState<'ALL' | NdtLabRequestStatus>('ALL');
+  const [searchQuery, setSearchQuery] = usePersistentState('laboratory:searchQuery', '');
+  const [onlyDeficitLines, setOnlyDeficitLines] = usePersistentState(
+    'laboratory:onlyDeficitLines',
+    false
+  );
+  const [expandedRdCodes, setExpandedRdCodes] = usePersistentState<Record<string, boolean>>(
+    'laboratory:expandedRdCodes',
+    {}
+  );
+  const [requestStatusFilter, setRequestStatusFilter] = usePersistentState<
+    'ALL' | NdtLabRequestStatus
+  >('laboratory:requestStatusFilter', 'ALL');
   const [activeRequestIdForConclusions, setActiveRequestIdForConclusions] =
-    useState<string>('ALL');
-  const [conclusionLineFilter, setConclusionLineFilter] = useState<string>('ALL');
-  const [conclusionStateFilter, setConclusionStateFilter] = useState<
+    usePersistentState<string>('laboratory:activeRequestIdForConclusions', 'ALL');
+  const [conclusionLineFilter, setConclusionLineFilter] = usePersistentState<string>(
+    'laboratory:conclusionLineFilter',
+    'ALL'
+  );
+  const [conclusionStateFilter, setConclusionStateFilter] = usePersistentState<
     'ALL' | 'PENDING' | 'COMPLETED'
-  >('ALL');
+  >('laboratory:conclusionStateFilter', 'ALL');
 
   const [pendingDeleteRequest, setPendingDeleteRequest] =
     useState<NdtLabRequest | null>(null);

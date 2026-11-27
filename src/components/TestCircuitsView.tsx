@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import {
   AlertTriangle,
   ArrowDown,
@@ -127,15 +128,26 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
 
   const canManage = canManageTestCircuits(currentUser);
 
-  const [search, setSearch] = useState('');
-  const [filterRdCode, setFilterRdCode] = useState<string>('ALL');
-  const [filterTestStatus, setFilterTestStatus] = useState<'ALL' | CircuitTestStatus>('ALL');
-  const [filterSriStatus, setFilterSriStatus] = useState<'ALL' | SriStatus>('ALL');
-  const [onlyWithDefects, setOnlyWithDefects] = useState(false);
-  const [sortConfig, setSortConfig] = useState<{
+  const [search, setSearch] = usePersistentState('testCircuits:search', '');
+  const [filterRdCode, setFilterRdCode] = usePersistentState<string>(
+    'testCircuits:filterRdCode',
+    'ALL'
+  );
+  const [filterTestStatus, setFilterTestStatus] = usePersistentState<
+    'ALL' | CircuitTestStatus
+  >('testCircuits:filterTestStatus', 'ALL');
+  const [filterSriStatus, setFilterSriStatus] = usePersistentState<'ALL' | SriStatus>(
+    'testCircuits:filterSriStatus',
+    'ALL'
+  );
+  const [onlyWithDefects, setOnlyWithDefects] = usePersistentState(
+    'testCircuits:onlyWithDefects',
+    false
+  );
+  const [sortConfig, setSortConfig] = usePersistentState<{
     key: SortKey;
     direction: 'asc' | 'desc';
-  } | null>(null);
+  } | null>('testCircuits:sortConfig', null);
 
   const [formModal, setFormModal] = useState<{
     isOpen: boolean;

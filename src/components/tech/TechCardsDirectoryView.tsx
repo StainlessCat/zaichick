@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import {
   Check,
   Copy,
@@ -55,14 +56,26 @@ export const TechCardsDirectoryView: React.FC<TechCardsDirectoryViewProps> = ({
   const [modalError, setModalError] = useState('');
 
   // Состояния поиска и фильтрации ТК
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterWeldingType, setFilterWeldingType] = useState<'ALL' | WeldingType>('ALL');
-  const [filterJointKind, setFilterJointKind] = useState<'ALL' | JointKind>('ALL');
-  const [filterElementCombination, setFilterElementCombination] = useState<
+  const [searchQuery, setSearchQuery] = usePersistentState('techCards:searchQuery', '');
+  const [filterWeldingType, setFilterWeldingType] = usePersistentState<'ALL' | WeldingType>(
+    'techCards:filterWeldingType',
+    'ALL'
+  );
+  const [filterJointKind, setFilterJointKind] = usePersistentState<'ALL' | JointKind>(
+    'techCards:filterJointKind',
+    'ALL'
+  );
+  const [filterElementCombination, setFilterElementCombination] = usePersistentState<
     'ALL' | ElementCombination
-  >('ALL');
-  const [filterDiameterMm, setFilterDiameterMm] = useState<string>('');
-  const [filterWallThicknessMm, setFilterWallThicknessMm] = useState<string>('');
+  >('techCards:filterElementCombination', 'ALL');
+  const [filterDiameterMm, setFilterDiameterMm] = usePersistentState<string>(
+    'techCards:filterDiameterMm',
+    ''
+  );
+  const [filterWallThicknessMm, setFilterWallThicknessMm] = usePersistentState<string>(
+    'techCards:filterWallThicknessMm',
+    ''
+  );
 
   const hasActiveFilters = Boolean(
     searchQuery.trim() ||

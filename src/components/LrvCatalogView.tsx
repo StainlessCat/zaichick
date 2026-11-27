@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import { FacilityObject, LRVItem, WeldJoint } from '../types/welding';
 import { MaterialBatchAct, MaterialItemWithControl } from '../types/materialControl';
@@ -110,13 +111,22 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
       ? selectedRdCode
       : 'ALL'
   );
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<LrvStatusFilter>('all');
+  const [searchQuery, setSearchQuery] = usePersistentState('lrv:searchQuery', '');
+  const [statusFilter, setStatusFilter] = usePersistentState<LrvStatusFilter>(
+    'lrv:statusFilter',
+    'all'
+  );
   const [visibleColumns, setVisibleColumns] = useState<LrvColumnKey[]>(() =>
     loadSavedLrvColumns()
   );
-  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
-  const [sortConfig, setSortConfig] = useState<LrvSortConfig | null>(null);
+  const [columnFilters, setColumnFilters] = usePersistentState<Record<string, string[]>>(
+    'lrv:columnFilters',
+    {}
+  );
+  const [sortConfig, setSortConfig] = usePersistentState<LrvSortConfig | null>(
+    'lrv:sortConfig',
+    null
+  );
 
   const [isItemFormOpen, setIsItemFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<LRVItem | null>(null);

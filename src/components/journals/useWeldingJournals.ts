@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { JournalStandard, WeldJoint } from '../../types/welding';
 import {
   extractRdSuffix,
@@ -101,16 +102,21 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
   const isDbConnected = props.isDbConnected ?? app.isDbConnected;
   const pendingSyncCount = props.pendingSyncCount ?? app.pendingSyncCount;
 
-  const [standard, setStandard] = useState<JournalStandard>(
+  const [standard, setStandard] = usePersistentState<JournalStandard>(
+    'journals:standard',
     'СТО Газпром 15-1.1-002-2023'
   );
-  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>(
+  const [columnFilters, setColumnFilters] = usePersistentState<Record<string, string[]>>(
+    'journals:columnFilters',
     {}
   );
-  const [searchQuery, setSearchQuery] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [quickFilter, setQuickFilter] = useState<JournalQuickFilter>('all');
+  const [searchQuery, setSearchQuery] = usePersistentState('journals:searchQuery', '');
+  const [dateFrom, setDateFrom] = usePersistentState('journals:dateFrom', '');
+  const [dateTo, setDateTo] = usePersistentState('journals:dateTo', '');
+  const [quickFilter, setQuickFilter] = usePersistentState<JournalQuickFilter>(
+    'journals:quickFilter',
+    'all'
+  );
   const [hideEmptyRepairCols, setHideEmptyRepairCols] = useState<boolean>(
     readHideEmptyRepairsPref
   );

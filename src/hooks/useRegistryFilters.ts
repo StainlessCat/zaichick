@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePersistentState } from './usePersistentState';
 import {
   NdtLabRequest,
   TestCircuit,
@@ -42,20 +43,26 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
     setIsColumnsModalOpen,
   } = params;
 
-  const [globalSearch, setGlobalSearch] = useState('');
-  const [weldingDateFrom, setWeldingDateFrom] = useState('');
-  const [weldingDateTo, setWeldingDateTo] = useState('');
-  const [onlyActiveRepairs, setOnlyActiveRepairsState] = useState(false);
-  const [quickFilter, setQuickFilterState] = useState<RegistryQuickFilter>('all');
-  const [columnFilters, setColumnFilters] = useState<
+  const [globalSearch, setGlobalSearch] = usePersistentState('registry:globalSearch', '');
+  const [weldingDateFrom, setWeldingDateFrom] = usePersistentState('registry:weldingDateFrom', '');
+  const [weldingDateTo, setWeldingDateTo] = usePersistentState('registry:weldingDateTo', '');
+  const [onlyActiveRepairs, setOnlyActiveRepairsState] = usePersistentState(
+    'registry:onlyActiveRepairs',
+    false
+  );
+  const [quickFilter, setQuickFilterState] = usePersistentState<RegistryQuickFilter>(
+    'registry:quickFilter',
+    'all'
+  );
+  const [columnFilters, setColumnFilters] = usePersistentState<
     Partial<Record<WeldJointFieldKey, string[]>>
-  >({});
+  >('registry:columnFilters', {});
   const [openFilterColumnKey, setOpenFilterColumnKey] =
     useState<WeldJointFieldKey | null>(null);
-  const [sortConfig, setSortConfig] = useState<{
+  const [sortConfig, setSortConfig] = usePersistentState<{
     key: WeldJointFieldKey;
     direction: 'asc' | 'desc';
-  } | null>(null);
+  } | null>('registry:sortConfig', null);
 
   const [selectedJointIds, setSelectedJointIds] = useState<string[]>([]);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);

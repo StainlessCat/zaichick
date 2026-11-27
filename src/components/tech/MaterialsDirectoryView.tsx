@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import {
   Check,
   Clock,
@@ -66,16 +67,22 @@ export const MaterialsDirectoryView: React.FC<MaterialsDirectoryViewProps> = ({
   const [isSaving, setIsSaving] = useState(false);
 
   // Быстрый поиск и фильтры
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePersistentState('materials:searchQuery', '');
   const [quickStatusFilter, setQuickStatusFilter] =
-    useState<MaterialQuickStatusFilter>('ALL');
-  const [methodFilter, setMethodFilter] = useState<'ALL' | WeldingType>('ALL');
+    usePersistentState<MaterialQuickStatusFilter>('materials:quickStatusFilter', 'ALL');
+  const [methodFilter, setMethodFilter] = usePersistentState<'ALL' | WeldingType>(
+    'materials:methodFilter',
+    'ALL'
+  );
 
-  const [materialFilters, setMaterialFilters] = useState<Record<string, string[]>>({});
-  const [materialSort, setMaterialSort] = useState<{
+  const [materialFilters, setMaterialFilters] = usePersistentState<Record<string, string[]>>(
+    'materials:filters',
+    {}
+  );
+  const [materialSort, setMaterialSort] = usePersistentState<{
     key: string;
     direction: 'asc' | 'desc';
-  } | null>(null);
+  } | null>('materials:sort', null);
 
   // Регулирование ширины столбцов таблицы сварочных материалов
   const {

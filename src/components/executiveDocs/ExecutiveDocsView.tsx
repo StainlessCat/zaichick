@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePersistentState } from '../../hooks/usePersistentState';
 import { AlertTriangle, FileCheck2, RotateCcw } from 'lucide-react';
 import { useAppContext, useAuth } from '../../context';
 import type {
@@ -144,19 +145,31 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
   });
 
   // Фильтры и поиск
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [quickFilter, setQuickFilter] = useState<ExecutiveDocQuickFilter>('all');
-  const [rdFilter, setRdFilter] = useState<string>('ALL');
-  const [lineFilter, setLineFilter] = useState<string>('ALL');
-  const [contourFilter, setContourFilter] = useState<string>('ALL');
+  const [searchQuery, setSearchQuery] = usePersistentState<string>(
+    'executiveDocs:searchQuery',
+    ''
+  );
+  const [quickFilter, setQuickFilter] = usePersistentState<ExecutiveDocQuickFilter>(
+    'executiveDocs:quickFilter',
+    'all'
+  );
+  const [rdFilter, setRdFilter] = usePersistentState<string>('executiveDocs:rdFilter', 'ALL');
+  const [lineFilter, setLineFilter] = usePersistentState<string>(
+    'executiveDocs:lineFilter',
+    'ALL'
+  );
+  const [contourFilter, setContourFilter] = usePersistentState<string>(
+    'executiveDocs:contourFilter',
+    'ALL'
+  );
 
-  const [columnFilters, setColumnFilters] = useState<
+  const [columnFilters, setColumnFilters] = usePersistentState<
     Partial<Record<ExecutiveDocColumnKey, string[]>>
-  >({});
-  const [sortConfig, setSortConfig] = useState<{
+  >('executiveDocs:columnFilters', {});
+  const [sortConfig, setSortConfig] = usePersistentState<{
     key: ExecutiveDocColumnKey;
     direction: 'asc' | 'desc';
-  } | null>(null);
+  } | null>('executiveDocs:sortConfig', null);
 
   // Выбор строк для массового редактирования
   const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(() => new Set());
