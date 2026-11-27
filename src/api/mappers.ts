@@ -43,6 +43,8 @@ import {
   SYSTEM_ROLE_LABELS_RU,
 } from '../utils/rbac';
 import { FIELD_LABELS_MAP } from '../utils/weldingLogic';
+import { calculateMaterialControlBalance } from '../utils/materialControlLogic';
+import type { MaterialBatchAct, MaterialReplacementNotice } from '../types/materialControl';
 import type { OptimisticConflictDto } from './client';
 
 export type BackendRole = SystemRole | 'ADMIN' | 'PTO' | 'OGS' | 'PIL' | 'VIEWER';
@@ -304,9 +306,62 @@ export function mapLineToUpdatePayload(line: ProjectLineItem): Record<string, un
   };
 }
 
-export function mapLrvDto(dto: Record<string, unknown>): LRVItem {
+function normalizeBatchActs(raw: unknown, materialId: string): MaterialBatchAct[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object'))
+    .map((entry, idx) => {
+      const verdictRaw = String(entry.verdict || 'accepted');
+      const verdict: MaterialBatchAct['verdict'] =
+        verdictRaw === 'rejected' || verdictRaw === 'replaced' || verdictRaw === 'pending'
+          ? verdictRaw
+          : 'accepted';
+      return {
+        id: String(entry.id || `batch-${materialId}-${idx + 1}`),
+        materialId: String(entry.materialId || materialId),
+        actNumber: String(entry.actNumber || ''),
+        actDate: String(entry.actDate || ''),
+        certificateNumber: String(entry.certificateNumber || ''),
+        heatNumber: entry.heatNumber ? String(entry.heatNumber) : undefined,
+        serialNumbers: Array.isArray(entry.serialNumbers)
+          ? entry.serialNumbers.map(String).filter(Boolean)
+          : undefined,
+        quantity: Number(entry.quantity ?? 0),
+        unit: entry.unit === 'м' ? 'м' : 'шт',
+        verdict,
+        inspectorName: entry.inspectorName ? String(entry.inspectorName) : undefined,
+        rejectionReason: entry.rejectionReason ? String(entry.rejectionReason) : undefined,
+        replacementLetter: entry.replacementLetter ? String(entry.replacementLetter) : undefined,
+        replacementDate: entry.replacementDate ? String(entry.replacementDate) : undefined,
+        replacedByBatchId: entry.replacedByBatchId ? String(entry.replacedByBatchId) : undefined,
+        notes: entry.notes ? String(entry.notes) : undefined,
+      };
+    });
+}
+
+function normalizeReplacementNotice(raw: unknown): MaterialReplacementNotice | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (!r.letterNumber) return undefined;
   return {
-    id: String(dto.id || ''),
+    letterNumber: String(r.letterNumber || ''),
+    letterDate: String(r.letterDate || ''),
+    approvedBy: String(r.approvedBy || ''),
+    originalMaterialId: String(r.originalMaterialId || ''),
+    originalMaterialCode: String(r.originalMaterialCode || ''),
+    replacedQuantity: Number(r.replacedQuantity ?? 0),
+    reason: String(r.reason || ''),
+  };
+}
+
+export function mapLrvDto(dto: Record<string, unknown>): LRVItem {
+  const id = String(dto.id || '');
+  const specQty = Number(dto.spec_qty ?? 0);
+  const batches = normalizeBatchActs(dto.batches, id);
+  const balance = calculateMaterialControlBalance(specQty, batches);
+
+  return {
+    id,
     facilityId: dto.facility_id ? String(dto.facility_id) : undefined,
     lrvCode: String(dto.lrv_code || ''),
     rdCode: String(dto.rd_code || ''),
@@ -326,11 +381,20 @@ export function mapLrvDto(dto: Record<string, unknown>): LRVItem {
     dn2: dto.dn2 != null ? Number(dto.dn2) : undefined,
     diameterMm2: dto.diameter_mm2 != null ? Number(dto.diameter_mm2) : undefined,
     wallThickness2: dto.wall_thickness2 != null ? Number(dto.wall_thickness2) : undefined,
-    specQty: Number(dto.spec_qty ?? 0),
+    specQty,
+    totalSpecQty: specQty,
     unit: (dto.unit === 'м' ? 'м' : 'шт') as 'шт' | 'м',
     status: (dto.status === 'superseded' || dto.status === 'archived' ? dto.status : 'active'),
     replacementLetter: dto.replacement_letter ? String(dto.replacement_letter) : undefined,
     replacementDate: dto.replacement_date ? String(dto.replacement_date) : undefined,
+    batches,
+    parentMaterialId: dto.parent_material_id ? String(dto.parent_material_id) : undefined,
+    replacementNotice: normalizeReplacementNotice(dto.replacement_notice),
+    controlStatus: balance.controlStatus,
+    acceptedQty: balance.acceptedQty,
+    rejectedQty: balance.rejectedQty,
+    replacedQty: balance.replacedQty,
+    pendingQty: balance.pendingQty,
     recordStatus: asRecordStatus(dto.record_status),
     createdById: dto.created_by_id ? String(dto.created_by_id) : null,
     version: Number(dto.version ?? 1),
@@ -364,6 +428,9 @@ export function mapLrvToCreatePayload(item: LRVItem, facilityId: string): Record
     status: item.status || 'active',
     replacement_letter: asNullableStr(item.replacementLetter),
     replacement_date: asIsoDateOrNull(item.replacementDate),
+    batches: Array.isArray(item.batches) ? item.batches : [],
+    parent_material_id: asNullableStr(item.parentMaterialId),
+    replacement_notice: item.replacementNotice ?? null,
   };
 }
 
@@ -393,6 +460,9 @@ export function mapLrvToUpdatePayload(item: LRVItem): Record<string, unknown> {
     status: item.status || 'active',
     replacement_letter: asNullableStr(item.replacementLetter),
     replacement_date: asIsoDateOrNull(item.replacementDate),
+    batches: Array.isArray(item.batches) ? item.batches : [],
+    parent_material_id: asNullableStr(item.parentMaterialId),
+    replacement_notice: item.replacementNotice ?? null,
   };
 }
 

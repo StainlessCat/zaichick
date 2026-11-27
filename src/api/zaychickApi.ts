@@ -579,6 +579,21 @@ export const zaychickApi = {
     return mapLrvDto(dto);
   },
 
+  async updateLrvBatches(
+    itemId: string,
+    version: number,
+    batches: NonNullable<LRVItem['batches']>
+  ): Promise<LRVItem> {
+    const dto = await apiRequest<Record<string, unknown>>(`/api/lrv/${itemId}/batches`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        version,
+        batches,
+      }),
+    });
+    return mapLrvDto(dto);
+  },
+
   async supersedeLrv(
     itemId: string,
     version: number,

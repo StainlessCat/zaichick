@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../api';
 import { listExecutiveDocsApi, upsertExecutiveDocApi } from '../../api/executiveDocsApi';
 import type {
@@ -14,7 +14,7 @@ import {
 } from '../../types/executiveDocs';
 
 const DOCS_LOCAL_STORAGE_KEY = 'zaychick_executive_docs_v1';
-const VISIBLE_COLS_STORAGE_KEY = 'zaychick_executive_docs_visible_cols_v1';
+const VISIBLE_COLS_STORAGE_KEY = 'zaychick_executive_docs_visible_cols_v2';
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -39,10 +39,14 @@ function readStoredVisibleColumns(): ExecutiveDocColumnKey[] {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       const validKeys = new Set<string>(EXECUTIVE_DOC_COLUMNS.map((c) => c.key));
-      const filtered = parsed.filter(
-        (k): k is ExecutiveDocColumnKey => typeof k === 'string' && validKeys.has(k)
+      const order = EXECUTIVE_DOC_COLUMNS.map((c) => c.key);
+      const selectedSet = new Set(
+        parsed.filter(
+          (k): k is ExecutiveDocColumnKey => typeof k === 'string' && validKeys.has(k)
+        )
       );
-      if (filtered.length > 0) return filtered;
+      const ordered = order.filter((k) => selectedSet.has(k));
+      if (ordered.length > 0) return ordered;
     }
   } catch {
     // ignore storage errors
@@ -52,6 +56,7 @@ function readStoredVisibleColumns(): ExecutiveDocColumnKey[] {
 
 export interface UseExecutiveDocsStateParams {
   selectedObjectName: string;
+  scopedLineIds: string[];
   isDbConnected: boolean;
   isAuthenticated: boolean;
   onSyncLineFields?: (
@@ -62,6 +67,7 @@ export interface UseExecutiveDocsStateParams {
 
 export function useExecutiveDocsState({
   selectedObjectName,
+  scopedLineIds,
   isDbConnected,
   isAuthenticated,
   onSyncLineFields,
@@ -71,9 +77,13 @@ export function useExecutiveDocsState({
     readStoredVisibleColumns
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [isBulkSaving, setIsBulkSaving] = useState(false);
   const [savingLineIds, setSavingLineIds] = useState<Record<string, boolean>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [conflictLineId, setConflictLineId] = useState<string | null>(null);
+
+  const scopedLineIdsRef = useRef<string[]>(scopedLineIds);
+  scopedLineIdsRef.current = scopedLineIds;
 
   useEffect(() => {
     try {
@@ -97,11 +107,24 @@ export function useExecutiveDocsState({
     setErrorMessage(null);
     setConflictLineId(null);
     try {
-      const list = await listExecutiveDocsApi({
-        objectName: selectedObjectName && selectedObjectName !== 'ALL' ? selectedObjectName : undefined,
-      });
+      const objectScope =
+        selectedObjectName && selectedObjectName !== 'ALL' ? selectedObjectName : undefined;
+      const list = await listExecutiveDocsApi({ objectName: objectScope });
+
       setDocByLineId((prev) => {
-        const next = { ...prev };
+        if (!objectScope) {
+          // Полная перезагрузка по всем объектам: очищаем устаревший кэш
+          const fresh: Record<string, ExecutiveDocRecord> = {};
+          for (const rec of list) {
+            fresh[rec.lineId] = rec;
+          }
+          return fresh;
+        }
+        // Перезагрузка по конкретному объекту: удаляем устаревшие ключи текущего объекта
+        const next: Record<string, ExecutiveDocRecord> = { ...prev };
+        for (const id of scopedLineIdsRef.current) {
+          delete next[id];
+        }
         for (const rec of list) {
           next[rec.lineId] = rec;
         }
@@ -185,7 +208,6 @@ export function useExecutiveDocsState({
       syncLineIfNeeded(optimisticRecord.idStatus, optimisticRecord.ptoEngineer);
       setErrorMessage(null);
 
-      // В локальном режиме или при локальных идентификаторах линий сохраняем в localStorage
       if (!isDbConnected || !isAuthenticated || !UUID_RE.test(lineId)) {
         setDocByLineId((prev) => ({
           ...prev,
@@ -212,7 +234,6 @@ export function useExecutiveDocsState({
         setConflictLineId((cur) => (cur === lineId ? null : cur));
         return true;
       } catch (err: unknown) {
-        // Откатываем оптимистичное изменение при ошибке сервера
         setDocByLineId((prev) => {
           const copy = { ...prev };
           if (prevRecord) {
@@ -248,6 +269,31 @@ export function useExecutiveDocsState({
     [docByLineId, isAuthenticated, isDbConnected, onSyncLineFields]
   );
 
+  const saveBulkPatch = useCallback(
+    async (
+      rows: ExecutiveDocRow[],
+      patch: ExecutiveDocPatch
+    ): Promise<{ updatedCount: number; failedCount: number }> => {
+      if (rows.length === 0 || Object.keys(patch).length === 0) {
+        return { updatedCount: 0, failedCount: 0 };
+      }
+      setIsBulkSaving(true);
+      let updatedCount = 0;
+      let failedCount = 0;
+      try {
+        for (const row of rows) {
+          const ok = await saveRowPatch(row, patch);
+          if (ok) updatedCount += 1;
+          else failedCount += 1;
+        }
+      } finally {
+        setIsBulkSaving(false);
+      }
+      return { updatedCount, failedCount };
+    },
+    [saveRowPatch]
+  );
+
   const toggleColumnVisibility = useCallback((colKey: ExecutiveDocColumnKey) => {
     setVisibleColumns((prev) => {
       if (prev.includes(colKey)) {
@@ -271,11 +317,13 @@ export function useExecutiveDocsState({
     toggleColumnVisibility,
     showAllColumns,
     isLoading,
+    isBulkSaving,
     savingLineIds,
     errorMessage,
     setErrorMessage,
     conflictLineId,
     reloadFromServer,
     saveRowPatch,
+    saveBulkPatch,
   };
 }

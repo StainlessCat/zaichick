@@ -178,6 +178,7 @@ export interface AppMainContentProps {
     handleDeleteWeldingMaterial: (id: string) => Promise<void>;
     handleAddLrvItems: (items: LRVItem[]) => Promise<void>;
     handleUpdateLrvItem: (item: LRVItem) => Promise<void>;
+    handleUpdateLrvBatches: (item: LRVItem) => Promise<void>;
     handleDeleteLrvItems: (ids: string[]) => Promise<void>;
     handleClearAuditLogs: () => void;
   };
@@ -397,13 +398,15 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
           initialFilterPreset={execDocsPreset}
           onConsumeFilterPreset={() => setExecDocsPreset(null)}
           onOpenLineInRegistry={(uniqueLineId) => {
-            setSelectedObjectName('ALL');
             setSelectedRdCode('ALL');
             setOnlyActiveRepairs?.(false);
             setColumnFilters({ uniqueLineId: [uniqueLineId] });
             setActiveSection('registry');
           }}
           onOpenLineList={() => setActiveSection('project_linelist')}
+          onOpenLaboratory={() => setActiveSection('laboratory')}
+          onOpenTestingCircuits={() => setActiveSection('testing_circuits')}
+          onOpenLrvCatalog={() => setActiveSection('lrv_catalog')}
         />
       )}
 
@@ -522,11 +525,24 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
         <LrvCatalogView
           catalog={lrvCatalog}
           facilities={derivedFacilities}
+          joints={joints}
           selectedObjectName={selectedObjectName}
           selectedRdCode={selectedRdCode}
+          canEdit={userPermissions.canEditLrvCatalog}
+          canManageIncomingControl={userPermissions.canManageIncomingControl}
           onAddLrvItems={dirActions.handleAddLrvItems}
           onUpdateLrvItem={dirActions.handleUpdateLrvItem}
+          onUpdateLrvBatches={dirActions.handleUpdateLrvBatches}
           onDeleteLrvItems={dirActions.handleDeleteLrvItems}
+          onOpenJointsByLrvCode={(lrvCode, rdCode) => {
+            if (rdCode) {
+              setSelectedRdCode(rdCode);
+            }
+            setOnlyActiveRepairs?.(false);
+            setColumnFilters({});
+            onGlobalSearchChange(lrvCode);
+            setActiveSection('registry');
+          }}
         />
       )}
 

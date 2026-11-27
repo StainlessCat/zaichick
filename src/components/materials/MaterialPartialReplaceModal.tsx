@@ -1,430 +1,408 @@
+import React, { useEffect, useState } from 'react';
+import { X, ArrowRightLeft, FileCheck2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useModalDismiss } from '../../hooks/useModalDismiss';
-import React, { useState } from 'react';
-import {
-  AlertTriangle,
-  FileCheck2,
-  FileText,
-  Package,
-  RefreshCw,
-  X,
-} from 'lucide-react';
-import { MaterialBatchAct } from '../../types/materialControl';
+import { MaterialBatchAct, MaterialItemWithControl } from '../../types/materialControl';
 import { LRVItem } from '../../types/welding';
-import { Button } from '../ui';
+import { splitMaterialForPartialReplacement } from '../../utils/materialControlLogic';
 
 interface MaterialPartialReplaceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  material: LRVItem;
-  batch: MaterialBatchAct;
-  onConfirmReplacement: (params: {
-    originalMaterial: LRVItem;
-    rejectedBatchId: string;
-    replacedQuantity: number;
-    letterNumber: string;
-    letterDate: string;
-    approvedBy: string;
-    reason: string;
-    replacementCustomFields: {
-      lrvCode: string;
-      shortName: string;
-      material: string;
-      ntd: string;
-      manufacturer?: string;
-      replacementBatch: {
-        actNumber: string;
-        actDate: string;
-        certificateNumber: string;
-        serialNumbers?: string[];
-        verdict: 'accepted';
-        inspectorName?: string;
-        notes?: string;
-      };
-    };
+  originalMaterial: LRVItem | MaterialItemWithControl;
+  rejectedBatch: MaterialBatchAct;
+  defaultInspectorName?: string;
+  onConfirmReplacement: (result: {
+    updatedOriginal: MaterialItemWithControl;
+    replacementItem: MaterialItemWithControl;
   }) => void;
 }
 
 export const MaterialPartialReplaceModal: React.FC<MaterialPartialReplaceModalProps> = ({
   isOpen,
   onClose,
-  material,
-  batch,
+  originalMaterial,
+  rejectedBatch,
+  defaultInspectorName = '',
   onConfirmReplacement,
 }) => {
-  // State definitions
-  const [replaceQty, setReplaceQty] = useState<number>(batch.quantity || 1);
-  const [letterNumber, setLetterNumber] = useState('Письмо 284/Т');
+  const [letterNumber, setLetterNumber] = useState('');
   const [letterDate, setLetterDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [approvedBy, setApprovedBy] = useState('Гл. технолог');
-  const [reason, setReason] = useState(
-    batch.rejectionReason || 'Брак при входном контроле. Требуется частичная замена партии.'
-  );
-  const defaultSuffix = '.Д1';
-  const [replLrvCode, setReplLrvCode] = useState(`${material.lrvCode}${defaultSuffix}`);
-  const [replShortName, setReplShortName] = useState(
-    `${material.shortName} (замена по письму)`
-  );
-  const [replMaterial, setReplMaterial] = useState(material.material);
-  const [replNtd, setReplNtd] = useState(material.ntd);
-  const [replManufacturer, setReplManufacturer] = useState('Завод-изготовитель');
-  const [replActNumber, setReplActNumber] = useState('АВК-122');
-  const [replActDate, setReplActDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [replCertNumber, setReplCertNumber] = useState('3310-П');
-  const [replSerialNumbers, setReplSerialNumbers] = useState('З-Д-07');
-  const [replInspectorName, setReplInspectorName] = useState('Орлова Е. В.');
-  const [formError, setFormError] = useState('');
+  const [approvedBy, setApprovedBy] = useState('');
+  const [reason, setReason] = useState('');
 
-  const isDirty = Boolean(letterNumber.trim() || (reason && reason !== 'other'));
+  const [newLrvCode, setNewLrvCode] = useState('');
+  const [newShortName, setNewShortName] = useState('');
+  const [newMaterial, setNewMaterial] = useState('');
+  const [newNtd, setNewNtd] = useState('');
+  const [newManufacturer, setNewManufacturer] = useState('');
+
+  const [newActNumber, setNewActNumber] = useState('');
+  const [newActDate, setNewActDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [newCertNumber, setNewCertNumber] = useState('');
+  const [newSerialNumber, setNewSerialNumber] = useState('');
+  const [inspectorName, setInspectorName] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setErrorMessage(null);
+    setLetterNumber('');
+    setLetterDate(new Date().toISOString().slice(0, 10));
+    setApprovedBy('');
+    setReason(rejectedBatch.rejectionReason || '');
+    setNewLrvCode(`${originalMaterial.lrvCode}.З1`);
+    setNewShortName(`${originalMaterial.shortName} — замена`);
+    setNewMaterial(originalMaterial.material || '');
+    setNewNtd(originalMaterial.ntd || '');
+    setNewManufacturer(originalMaterial.manufacturer || '');
+    setNewActNumber('');
+    setNewActDate(new Date().toISOString().slice(0, 10));
+    setNewCertNumber('');
+    setNewSerialNumber('');
+    setInspectorName(defaultInspectorName);
+  }, [isOpen, originalMaterial, rejectedBatch, defaultInspectorName]);
+
+  const isDirty = Boolean(
+    letterNumber.trim() ||
+      approvedBy.trim() ||
+      newActNumber.trim() ||
+      newCertNumber.trim() ||
+      newSerialNumber.trim()
+  );
+
   const { handleRequestClose } = useModalDismiss({
     isOpen,
     isDirty,
     onClose,
+    confirmMessage: 'В форме оформления замены есть несохранённые данные. Закрыть окно?',
   });
 
   if (!isOpen) return null;
 
-  const totalSpec = material.totalSpecQty ?? material.specQty;
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError('');
+    setErrorMessage(null);
 
-    if (replaceQty <= 0) {
-      setFormError('Количество на замену должно быть больше нуля');
-      return;
-    }
-    if (replaceQty > batch.quantity) {
-      setFormError(`Количество на замену не может превышать объём партии: ${batch.quantity} ${batch.unit}`);
-      return;
-    }
     if (!letterNumber.trim()) {
-      setFormError('Укажите номер официального письма согласования');
+      setErrorMessage('Укажите номер письма или акта пересогласования замены.');
       return;
     }
-    if (!letterDate.trim()) {
-      setFormError('Укажите дату письма согласования');
+    if (!newLrvCode.trim()) {
+      setErrorMessage('Укажите новый код ЛРВ для заменяемой позиции.');
       return;
     }
-    if (!replActNumber.trim()) {
-      setFormError('Укажите номер акта входного контроля на заменяющий элемент');
+    if (!newShortName.trim()) {
+      setErrorMessage('Укажите наименование нового элемента.');
+      return;
+    }
+    if (!newActNumber.trim()) {
+      setErrorMessage('Укажите номер акта входного контроля новой партии.');
       return;
     }
 
-    const serials = replSerialNumbers
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    onConfirmReplacement({
-      originalMaterial: material,
-      rejectedBatchId: batch.id,
-      replacedQuantity: replaceQty,
-      letterNumber: letterNumber.trim(),
-      letterDate: letterDate.trim(),
-      approvedBy: approvedBy.trim(),
-      reason: reason.trim(),
+    const result = splitMaterialForPartialReplacement({
+      originalMaterial,
+      rejectedBatchId: rejectedBatch.id,
+      replacedQuantity: rejectedBatch.quantity,
+      replacementNotice: {
+        letterNumber: letterNumber.trim(),
+        letterDate,
+        approvedBy: approvedBy.trim() || 'Проектная организация',
+        reason: reason.trim() || 'Отбраковка на входном контроле',
+      },
       replacementCustomFields: {
-        lrvCode: replLrvCode.trim(),
-        shortName: replShortName.trim(),
-        material: replMaterial.trim(),
-        ntd: replNtd.trim(),
-        manufacturer: replManufacturer.trim(),
+        lrvCode: newLrvCode.trim(),
+        shortName: newShortName.trim(),
+        material: newMaterial.trim() || originalMaterial.material,
+        ntd: newNtd.trim() || originalMaterial.ntd,
+        manufacturer: newManufacturer.trim() || originalMaterial.manufacturer,
         replacementBatch: {
-          actNumber: replActNumber.trim(),
-          actDate: replActDate.trim(),
-          certificateNumber: replCertNumber.trim(),
-          serialNumbers: serials.length > 0 ? serials : undefined,
+          actNumber: newActNumber.trim(),
+          actDate: newActDate,
+          certificateNumber: newCertNumber.trim(),
+          serialNumbers: newSerialNumber
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
           verdict: 'accepted',
-          inspectorName: replInspectorName.trim(),
-          notes: `Замена единицы по письму ${letterNumber.trim()}`,
+          inspectorName: inspectorName.trim() || undefined,
+          notes: `Поставлено взамен забракованной партии по акту ${rejectedBatch.actNumber}`,
         },
       },
     });
 
+    onConfirmReplacement(result);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Шапка диалога */}
-        <div className="bg-[#1e3799] text-white px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <RefreshCw className="w-5 h-5 text-blue-200" />
-            <div>
-              <h3 className="font-bold text-base">Согласование замены материала</h3>
-              <p className="text-xs text-blue-100">
-                Оформление частичной или полной замены позиции спецификации по официальному письму
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Оформление частичной замены материала"
+    >
+      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+        <div className="px-6 py-4 bg-[#1e3799] text-white flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 rounded-lg bg-white/15 shrink-0">
+              <ArrowRightLeft className="w-5 h-5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold leading-tight">
+                Оформление частичной замены забракованной партии
+              </h3>
+              <p className="text-xs text-blue-100 mt-0.5 truncate">
+                {originalMaterial.lrvCode} — {originalMaterial.shortName}
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={handleRequestClose}
-            className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Закрыть окно"
+            className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Форма */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 text-xs text-slate-800">
-          {formError && (
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+          <div className="rounded-lg bg-rose-50 border border-rose-200 p-3.5 flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div className="space-y-1 text-rose-900">
+              <div className="font-bold">
+                Забракованная партия: акт {rejectedBatch.actNumber} · объём {rejectedBatch.quantity}{' '}
+                {rejectedBatch.unit}
+              </div>
+              {rejectedBatch.serialNumbers && rejectedBatch.serialNumbers.length > 0 && (
+                <div>
+                  Заводские номера:{' '}
+                  <span className="font-mono font-semibold">
+                    {rejectedBatch.serialNumbers.join(', ')}
+                  </span>
+                </div>
+              )}
+              {rejectedBatch.rejectionReason && (
+                <div>Причина: {rejectedBatch.rejectionReason}</div>
+              )}
+            </div>
+          </div>
+
+          {errorMessage && (
             <div className="p-3 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{formError}</span>
+              <span>{errorMessage}</span>
             </div>
           )}
 
-          {/* Блок 1: Сведения об отбраковке */}
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <Package className="w-4 h-4 text-[#1e3799]" />
-                Исходная проектная позиция
-              </span>
-              <span className="font-mono font-bold text-[#1e3799]">{material.lrvCode}</span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-700">
-              <div>
-                <span className="text-slate-500 block text-[11px]">Элемент:</span>
-                <span className="font-semibold">{material.shortName}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[11px]">Шифр РД:</span>
-                <span className="font-mono">{material.rdCode}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[11px]">Забракованная партия / акт:</span>
-                <span className="font-mono font-semibold text-rose-700">
-                  {batch.actNumber} от {batch.actDate}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-500 block text-[11px]">Серийные номера:</span>
-                <span className="font-mono">{batch.serialNumbers?.join(', ') || '—'}</span>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-slate-200 flex items-center gap-4">
-              <label htmlFor="replaceQtyInput" className="font-semibold text-slate-900">
-                Количество на замену, {batch.unit}:
-              </label>
-              <input
-                id="replaceQtyInput"
-                type="number"
-                min={1}
-                max={batch.quantity}
-                value={replaceQty}
-                onChange={(e) => setReplaceQty(Number(e.target.value))}
-                className="w-24 px-2.5 py-1.5 text-xs font-mono font-bold rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799] focus:border-[#1e3799]"
-              />
-              <span className="text-slate-500 text-[11px]">
-                Остаток годных изделий по спецификации: {totalSpec - replaceQty} {material.unit}
-              </span>
-            </div>
-          </div>
-
-          {/* Блок 2: Официальное письмо согласования */}
-          <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
-            <span className="font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-              <FileText className="w-4 h-4 text-indigo-600" />
-              Реквизиты согласования
-            </span>
-
+          <div className="space-y-3">
+            <h4 className="font-bold text-slate-800 border-b border-slate-200 pb-1.5">
+              1. Основание для замены
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label htmlFor="letterNumberInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Номер письма:
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Номер письма согласования
                 </label>
                 <input
-                  id="letterNumberInput"
                   type="text"
+                  required
                   value={letterNumber}
                   onChange={(e) => setLetterNumber(e.target.value)}
-                  placeholder="Письмо № 284/ГИП"
-                  className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                  placeholder="Письмо 284/ПТО"
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 />
               </div>
-
               <div>
-                <label htmlFor="letterDateInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Дата письма:
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Дата согласования
                 </label>
                 <input
-                  id="letterDateInput"
                   type="date"
+                  required
                   value={letterDate}
                   onChange={(e) => setLetterDate(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 />
               </div>
-
               <div>
-                <label htmlFor="approvedByInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Согласующая сторона:
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Кем согласовано
                 </label>
                 <input
-                  id="approvedByInput"
                   type="text"
                   value={approvedBy}
                   onChange={(e) => setApprovedBy(e.target.value)}
-                  placeholder="ООО «ПроектИнжиниринг»"
-                  className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                  placeholder="Проектный институт / Заказчик"
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 />
               </div>
             </div>
-
             <div>
-              <label htmlFor="reasonInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                Причина и обоснование замены:
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                Обоснование замены
               </label>
-              <textarea
-                id="reasonInput"
-                rows={2}
+              <input
+                type="text"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                placeholder="Отбраковка при входном контроле, замена на аналог"
+                className="w-full px-2.5 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
               />
             </div>
           </div>
 
-          {/* Блок 3: Заменяющий элемент и его входной контроль */}
-          <div className="bg-emerald-50/50 border border-emerald-200 rounded-lg p-4 space-y-3">
-            <span className="font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
-              <FileCheck2 className="w-4 h-4 text-emerald-700" />
-              Заменяющий элемент из наличия и акт входного контроля
-            </span>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="space-y-3">
+            <h4 className="font-bold text-slate-800 border-b border-slate-200 pb-1.5">
+              2. Новая позиция спецификации
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label htmlFor="replLrvCodeInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Код заменяющей позиции:
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Новый код ЛРВ
                 </label>
                 <input
-                  id="replLrvCodeInput"
                   type="text"
-                  value={replLrvCode}
-                  onChange={(e) => setReplLrvCode(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs font-mono font-bold text-[#1e3799] rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                  required
+                  value={newLrvCode}
+                  onChange={(e) => setNewLrvCode(e.target.value)}
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg font-mono font-bold text-[#1e3799] focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 />
               </div>
-
-              <div>
-                <label htmlFor="replShortNameInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Наименование элемента:
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Краткое наименование
                 </label>
                 <input
-                  id="replShortNameInput"
                   type="text"
-                  value={replShortName}
-                  onChange={(e) => setReplShortName(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                  required
+                  value={newShortName}
+                  onChange={(e) => setNewShortName(e.target.value)}
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 />
               </div>
-
               <div>
-                <label htmlFor="replMaterialInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Марка стали:
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Марка стали
                 </label>
                 <input
-                  id="replMaterialInput"
                   type="text"
-                  value={replMaterial}
-                  onChange={(e) => setReplMaterial(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                  value={newMaterial}
+                  onChange={(e) => setNewMaterial(e.target.value)}
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 />
               </div>
-
               <div>
-                <label htmlFor="replManufacturerInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Завод-изготовитель:
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  НТД
                 </label>
                 <input
-                  id="replManufacturerInput"
                   type="text"
-                  value={replManufacturer}
-                  onChange={(e) => setReplManufacturer(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                  value={newNtd}
+                  onChange={(e) => setNewNtd(e.target.value)}
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 />
               </div>
-
               <div>
-                <label htmlFor="replActNumberInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Акт входного контроля заменяющего элемента:
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Завод-изготовитель
                 </label>
                 <input
-                  id="replActNumberInput"
                   type="text"
-                  value={replActNumber}
-                  onChange={(e) => setReplActNumber(e.target.value)}
-                  placeholder="АВК-122"
-                  className="w-full px-2.5 py-1.5 text-xs font-mono font-bold text-emerald-800 rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="replActDateInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Дата акта входного контроля:
-                </label>
-                <input
-                  id="replActDateInput"
-                  type="date"
-                  value={replActDate}
-                  onChange={(e) => setReplActDate(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="replCertNumberInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Сертификат / паспорт качества:
-                </label>
-                <input
-                  id="replCertNumberInput"
-                  type="text"
-                  value={replCertNumber}
-                  onChange={(e) => setReplCertNumber(e.target.value)}
-                  placeholder="3310-Р"
-                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="replSerialNumbersInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                  Заводской номер изделия:
-                </label>
-                <input
-                  id="replSerialNumbersInput"
-                  type="text"
-                  value={replSerialNumbers}
-                  onChange={(e) => setReplSerialNumbers(e.target.value)}
-                  placeholder="КШ-РЕЗЕРВ-07"
-                  className="w-full px-2.5 py-1.5 text-xs font-mono rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                  value={newManufacturer}
+                  onChange={(e) => setNewManufacturer(e.target.value)}
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 />
               </div>
             </div>
           </div>
 
-          {/* Подвал с кнопками */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-            <Button
+          <div className="space-y-3">
+            <h4 className="font-bold text-slate-800 border-b border-slate-200 pb-1.5 flex items-center gap-1.5">
+              <FileCheck2 className="w-4 h-4 text-emerald-600" />
+              <span>3. Акт входного контроля на заменяющую партию</span>
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Номер акта ВК
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newActNumber}
+                  onChange={(e) => setNewActNumber(e.target.value)}
+                  placeholder="АВК-122"
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Дата акта ВК
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={newActDate}
+                  onChange={(e) => setNewActDate(e.target.value)}
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Сертификат / паспорт
+                </label>
+                <input
+                  type="text"
+                  value={newCertNumber}
+                  onChange={(e) => setNewCertNumber(e.target.value)}
+                  placeholder="3310-П"
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Заводской серийный номер
+                </label>
+                <input
+                  type="text"
+                  value={newSerialNumber}
+                  onChange={(e) => setNewSerialNumber(e.target.value)}
+                  placeholder="КШ-РЕЗЕРВ-07"
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Контролёр входного контроля
+                </label>
+                <input
+                  type="text"
+                  value={inspectorName}
+                  onChange={(e) => setInspectorName(e.target.value)}
+                  placeholder="Фамилия И. О."
+                  className="w-full px-2.5 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-2.5">
+            <button
               type="button"
-              variant="secondary"
               onClick={handleRequestClose}
-              className="text-xs text-slate-700"
+              className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
             >
               Отмена
-            </Button>
-            <Button
+            </button>
+            <button
               type="submit"
-              variant="primary"
-              className="text-xs bg-[#1e3799] hover:bg-[#15286e] text-white flex items-center gap-1.5"
+              className="px-4 py-2 rounded-lg text-xs font-semibold text-white bg-[#1e3799] hover:bg-[#15286e] transition-colors flex items-center gap-1.5 cursor-pointer"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Утвердить замену</span>
-            </Button>
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Оформить замену</span>
+            </button>
           </div>
         </form>
       </div>

@@ -77,6 +77,7 @@ export interface RolePermissions {
   canEditWeldingTech: boolean;
   canEditLineList: boolean;
   canEditLrvCatalog: boolean;
+  canManageIncomingControl: boolean;
   canCreateOrDeleteJoints: boolean;
   canEditPrepAndWeldingFields: boolean;
   canEditNdtFields: boolean;
@@ -394,6 +395,7 @@ export function getUserRolePermissions(
       canEditWeldingTech: true,
       canEditLineList: true,
       canEditLrvCatalog: true,
+      canManageIncomingControl: true,
       canCreateOrDeleteJoints: true,
       canEditPrepAndWeldingFields: true,
       canEditNdtFields: true,
@@ -425,6 +427,7 @@ export function getUserRolePermissions(
       canEditWeldingTech: false,
       canEditLineList: false,
       canEditLrvCatalog: false,
+      canManageIncomingControl: false,
       canCreateOrDeleteJoints: false,
       canEditPrepAndWeldingFields: false,
       canEditNdtFields: false,
@@ -457,6 +460,7 @@ export function getUserRolePermissions(
       canEditWeldingTech: false,
       canEditLineList: false,
       canEditLrvCatalog: false,
+      canManageIncomingControl: true,
       canCreateOrDeleteJoints: false,
       canEditPrepAndWeldingFields: false,
       canEditNdtFields: false,
@@ -489,6 +493,7 @@ export function getUserRolePermissions(
       canEditWeldingTech: isDeptAdmin,
       canEditLineList: false,
       canEditLrvCatalog: false,
+      canManageIncomingControl: false,
       canCreateOrDeleteJoints: false,
       canEditPrepAndWeldingFields: false,
       canEditNdtFields: false,
@@ -521,6 +526,7 @@ export function getUserRolePermissions(
       canEditWeldingTech: false,
       canEditLineList: false,
       canEditLrvCatalog: false,
+      canManageIncomingControl: true,
       canCreateOrDeleteJoints: false,
       canEditPrepAndWeldingFields: false,
       canEditNdtFields: true,
@@ -553,6 +559,7 @@ export function getUserRolePermissions(
     canEditWeldingTech: false,
     canEditLineList: isDeptAdmin,
     canEditLrvCatalog: isDeptAdmin,
+    canManageIncomingControl: true,
     canCreateOrDeleteJoints: true,
     canEditPrepAndWeldingFields: true,
     canEditNdtFields: false,

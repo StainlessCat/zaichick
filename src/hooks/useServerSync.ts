@@ -276,7 +276,7 @@ export function useServerSync({
         setCurrentUser(ANONYMOUS_USER);
         if (err instanceof ApiError && err.status === 401) {
           setIsDbConnected(true);
-          setLastSyncError('Сессия не активна: требуется вход в систему');
+          setLastSyncError(null);
           setIsLoginModalOpen(true);
           return false;
         }

@@ -15,7 +15,7 @@ export const MaterialControlBadge: React.FC<MaterialControlBadgeProps> = ({
     case 'accepted':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 select-none ${className}`}
+          className={`inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 whitespace-nowrap select-none ${className}`}
         >
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span>Годен к монтажу</span>
@@ -24,7 +24,7 @@ export const MaterialControlBadge: React.FC<MaterialControlBadgeProps> = ({
     case 'partial':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-300 select-none ${className}`}
+          className={`inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 whitespace-nowrap select-none ${className}`}
         >
           <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
           <span>Частичный допуск</span>
@@ -33,7 +33,7 @@ export const MaterialControlBadge: React.FC<MaterialControlBadgeProps> = ({
     case 'rejected':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-300 select-none ${className}`}
+          className={`inline-flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 whitespace-nowrap select-none ${className}`}
         >
           <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
           <span>Выявлен брак</span>
@@ -42,19 +42,19 @@ export const MaterialControlBadge: React.FC<MaterialControlBadgeProps> = ({
     case 'replaced':
       return (
         <span
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-300 select-none ${className}`}
+          className={`inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-700 whitespace-nowrap select-none ${className}`}
         >
           <RefreshCw className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-          <span>Согласована замена</span>
+          <span>Заменена по письму</span>
         </span>
       );
     case 'pending':
     default:
       return (
         <span
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300 select-none ${className}`}
+          className={`inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500 whitespace-nowrap select-none ${className}`}
         >
-          <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           <span>Ожидает контроля</span>
         </span>
       );
@@ -66,6 +66,7 @@ interface MaterialBalanceIndicatorProps {
   totalSpecQty: number;
   unit: string;
   rejectedQty?: number;
+  replacedQty?: number;
 }
 
 export const MaterialBalanceIndicator: React.FC<MaterialBalanceIndicatorProps> = ({
@@ -73,46 +74,66 @@ export const MaterialBalanceIndicator: React.FC<MaterialBalanceIndicatorProps> =
   totalSpecQty,
   unit,
   rejectedQty = 0,
+  replacedQty = 0,
 }) => {
-  const percent = totalSpecQty > 0 ? Math.min(100, Math.round((acceptedQty / totalSpecQty) * 100)) : 0;
-  const isFull = acceptedQty >= totalSpecQty && rejectedQty === 0;
+  const coveredQty = acceptedQty + replacedQty;
+  const acceptedPct =
+    totalSpecQty > 0 ? Math.min(100, Math.round((acceptedQty / totalSpecQty) * 100)) : 0;
+  const replacedPct =
+    totalSpecQty > 0
+      ? Math.min(100 - acceptedPct, Math.round((replacedQty / totalSpecQty) * 100))
+      : 0;
+  const rejectedPct =
+    totalSpecQty > 0
+      ? Math.min(100 - acceptedPct - replacedPct, Math.round((rejectedQty / totalSpecQty) * 100))
+      : 0;
+  const totalCoveredPct = Math.min(100, acceptedPct + replacedPct);
+  const isFull = totalSpecQty > 0 && coveredQty >= totalSpecQty && rejectedQty === 0;
   const hasRejection = rejectedQty > 0;
 
   return (
-    <div className="flex flex-col gap-1 min-w-[130px]">
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-slate-700">
-          {acceptedQty} из {totalSpecQty} {unit}
+    <div className="flex flex-col gap-1 min-w-[116px]">
+      <div className="flex items-center justify-between gap-2 text-[11px] tabular-nums">
+        <span className="font-medium text-slate-700 whitespace-nowrap">
+          {coveredQty} / {totalSpecQty} {unit}
         </span>
         <span
-          className={`font-semibold ${
+          className={`font-semibold whitespace-nowrap ${
             isFull
               ? 'text-emerald-700'
               : hasRejection
               ? 'text-rose-700'
-              : 'text-slate-500'
+              : totalCoveredPct > 0
+              ? 'text-amber-700'
+              : 'text-slate-400'
           }`}
         >
-          {percent}%
+          {totalCoveredPct}%
         </span>
       </div>
       <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden flex">
-        <div
-          className={`h-full transition-all duration-300 ${
-            isFull
-              ? 'bg-emerald-500'
-              : hasRejection
-              ? 'bg-amber-500'
-              : 'bg-blue-600'
-          }`}
-          style={{ width: `${percent}%` }}
-        />
-        {hasRejection && (
+        {acceptedPct > 0 && (
           <div
-            className="h-full bg-rose-500"
-            style={{
-              width: `${Math.min(100 - percent, Math.round((rejectedQty / totalSpecQty) * 100))}%`,
-            }}
+            className={`h-full transition-all duration-200 ${
+              isFull
+                ? 'bg-emerald-500'
+                : hasRejection
+                ? 'bg-amber-500'
+                : 'bg-[#1e3799]'
+            }`}
+            style={{ width: `${acceptedPct}%` }}
+          />
+        )}
+        {replacedPct > 0 && (
+          <div
+            className="h-full bg-indigo-500 transition-all duration-200"
+            style={{ width: `${replacedPct}%` }}
+          />
+        )}
+        {rejectedPct > 0 && (
+          <div
+            className="h-full bg-rose-500 transition-all duration-200"
+            style={{ width: `${rejectedPct}%` }}
           />
         )}
       </div>

@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, FileCheck2, RefreshCw, RotateCcw } from 'lucide-react';
+import { AlertTriangle, FileCheck2, RotateCcw } from 'lucide-react';
 import { useAppContext, useAuth } from '../../context';
-import type { ExecutiveDocColumnKey } from '../../types/executiveDocs';
+import type {
+  ExecutiveDocColumnKey,
+  ExecutiveDocPatch,
+  ExecutiveDocQuickFilter,
+  ExecutiveDocRow,
+  ExecutiveDocStatus,
+} from '../../types/executiveDocs';
 import {
   DEFAULT_EXECUTIVE_DOC_COLUMN_WIDTHS,
   EXECUTIVE_DOC_COLUMNS,
@@ -9,14 +15,23 @@ import {
 import {
   buildExecutiveDocRows,
   compareExecutiveDocRows,
+  computeExecutiveDocsSummary,
   extractPersonSurname,
   getExecutiveDocColumnDisplayValue,
+  matchesExecutiveDocQuickAndSearch,
 } from '../../utils/executiveDocsLogic';
+import { exportExecutiveDocsToXlsx } from '../../utils/excelUtils';
 import { useResizableColumns } from '../../utils/useResizableColumns';
+import { ExecutiveDocsBulkBar } from './ExecutiveDocsBulkBar';
+import {
+  ExecutiveDocsDeficitModal,
+  type ExecutiveDocDeficitModalKind,
+} from './ExecutiveDocsDeficitModal';
 import {
   ExecutiveDocsFilterBar,
   NO_CONTOUR_FILTER_VALUE,
 } from './ExecutiveDocsFilterBar';
+import { ExecutiveDocsSignConfirmModal } from './ExecutiveDocsSignConfirmModal';
 import { ExecutiveDocsTable } from './ExecutiveDocsTable';
 import { useExecutiveDocsState } from './useExecutiveDocsState';
 
@@ -30,6 +45,9 @@ export interface ExecutiveDocsFilterPreset {
 export interface ExecutiveDocsViewProps {
   onOpenLineInRegistry?: (uniqueLineId: string) => void;
   onOpenLineList?: () => void;
+  onOpenLaboratory?: () => void;
+  onOpenTestingCircuits?: () => void;
+  onOpenLrvCatalog?: () => void;
   initialFilterPreset?: ExecutiveDocsFilterPreset | null;
   onConsumeFilterPreset?: () => void;
 }
@@ -37,6 +55,9 @@ export interface ExecutiveDocsViewProps {
 export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
   onOpenLineInRegistry,
   onOpenLineList,
+  onOpenLaboratory,
+  onOpenTestingCircuits,
+  onOpenLrvCatalog,
   initialFilterPreset,
   onConsumeFilterPreset,
 }) => {
@@ -54,7 +75,6 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
 
   const { currentUser, userAccounts, userPermissions, isAuthenticated } = auth;
 
-  // Права на редактирование: ПТО, СК (с уровнем не ниже OPERATOR), админы и суперадмин
   const canEdit = useMemo(() => {
     if (!isAuthenticated) return false;
     if (userPermissions.isSuperAdmin) return true;
@@ -65,6 +85,14 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
       userPermissions.department === 'SK'
     );
   }, [isAuthenticated, userPermissions]);
+
+  const scopedLineIds = useMemo(() => {
+    const scoped =
+      selectedObjectName && selectedObjectName !== 'ALL'
+        ? projectLineList.filter((l) => l.objectName === selectedObjectName)
+        : projectLineList;
+    return scoped.map((l) => l.id);
+  }, [projectLineList, selectedObjectName]);
 
   const handleSyncLineFields = useCallback(
     (
@@ -99,25 +127,29 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     toggleColumnVisibility,
     showAllColumns,
     isLoading,
+    isBulkSaving,
     savingLineIds,
     errorMessage,
     setErrorMessage,
     conflictLineId,
     reloadFromServer,
     saveRowPatch,
+    saveBulkPatch,
   } = useExecutiveDocsState({
     selectedObjectName,
+    scopedLineIds,
     isDbConnected,
     isAuthenticated,
     onSyncLineFields: handleSyncLineFields,
   });
 
-  // Верхние фильтры перед таблицей
+  // Фильтры и поиск
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [quickFilter, setQuickFilter] = useState<ExecutiveDocQuickFilter>('all');
   const [rdFilter, setRdFilter] = useState<string>('ALL');
   const [lineFilter, setLineFilter] = useState<string>('ALL');
   const [contourFilter, setContourFilter] = useState<string>('ALL');
 
-  // Табличные Excel-фильтры и сортировка
   const [columnFilters, setColumnFilters] = useState<
     Partial<Record<ExecutiveDocColumnKey, string[]>>
   >({});
@@ -126,21 +158,35 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     direction: 'asc' | 'desc';
   } | null>(null);
 
-  // Сброс верхних фильтров при смене объекта строительства
+  // Выбор строк для массового редактирования
+  const [selectedLineIds, setSelectedLineIds] = useState<Set<string>>(() => new Set());
+
+  // Модальные окна детализации дефицитов и подтверждения подписания
+  const [deficitModal, setDeficitModal] = useState<{
+    lineId: string;
+    kind: ExecutiveDocDeficitModalKind;
+  } | null>(null);
+  const [pendingSignLineId, setPendingSignLineId] = useState<string | null>(null);
+
   useEffect(() => {
+    setSearchQuery('');
+    setQuickFilter('all');
     setRdFilter('ALL');
     setLineFilter('ALL');
     setContourFilter('ALL');
     setColumnFilters({});
+    setSelectedLineIds(new Set());
   }, [selectedObjectName]);
 
-  // Применение предустановленного фильтра при переходе из раздела «Аналитика»
   useEffect(() => {
     if (!initialFilterPreset) return;
+    setSearchQuery('');
+    setQuickFilter('all');
     setRdFilter(initialFilterPreset.rdCode || 'ALL');
     setLineFilter(initialFilterPreset.lineNumber || 'ALL');
     setContourFilter(initialFilterPreset.contour || 'ALL');
     setColumnFilters({});
+    setSelectedLineIds(new Set());
     onConsumeFilterPreset?.();
   }, [initialFilterPreset, onConsumeFilterPreset]);
 
@@ -151,12 +197,11 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     handleResetWidths,
     hasCustomWidths,
   } = useResizableColumns({
-    storageKey: 'zaychick_executive_docs_col_widths_v1',
+    storageKey: 'zaychick_executive_docs_col_widths_v2',
     defaultWidths: DEFAULT_EXECUTIVE_DOC_COLUMN_WIDTHS,
-    minColumnWidth: 80,
+    minColumnWidth: 76,
   });
 
-  // Полный набор вычисленных строк для выбранного объекта строительства
   const allRows = useMemo(
     () =>
       buildExecutiveDocRows({
@@ -170,7 +215,6 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     [docByLineId, joints, lrvCatalog, projectLineList, selectedObjectName, testCircuits]
   );
 
-  // Опции для блока верхних фильтров
   const rdOptions = useMemo(() => {
     const set = new Set<string>();
     for (const r of allRows) {
@@ -198,7 +242,6 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru', { numeric: true }));
   }, [allRows]);
 
-  // Автосброс фильтра «Линия», если при смене «Шифра РД» линия больше не входит в список
   const handleRdFilterChange = useCallback(
     (nextRd: string) => {
       setRdFilter(nextRd);
@@ -214,8 +257,8 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     [allRows, lineFilter]
   );
 
-  // Применение верхнего блока фильтров
-  const topFilteredRows = useMemo(() => {
+  // Строки после основных выпадающих фильтров и поиска (база для счётчиков KPI)
+  const dropdownAndSearchRows = useMemo(() => {
     return allRows.filter((row) => {
       if (rdFilter !== 'ALL' && row.rdCode !== rdFilter) return false;
       if (lineFilter !== 'ALL' && row.lineNumber !== lineFilter) return false;
@@ -224,11 +267,18 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
       } else if (contourFilter !== 'ALL') {
         if (!row.testContoursList.includes(contourFilter)) return false;
       }
-      return true;
+      return matchesExecutiveDocQuickAndSearch(row, 'all', searchQuery);
     });
-  }, [allRows, contourFilter, lineFilter, rdFilter]);
+  }, [allRows, contourFilter, lineFilter, rdFilter, searchQuery]);
 
-  // Применение табличных фильтров и сортировки
+  // Строки после быстрого KPI-фильтра (база для каскадных табличных фильтров)
+  const topFilteredRows = useMemo(() => {
+    if (quickFilter === 'all') return dropdownAndSearchRows;
+    return dropdownAndSearchRows.filter((row) =>
+      matchesExecutiveDocQuickAndSearch(row, quickFilter, '')
+    );
+  }, [dropdownAndSearchRows, quickFilter]);
+
   const finalRows = useMemo(() => {
     const activeEntries = Object.entries(columnFilters).filter(
       ([, vals]) => vals !== undefined
@@ -250,7 +300,16 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     );
   }, [columnFilters, sortConfig, topFilteredRows]);
 
-  // Подсказки фамилий для «Производитель работ» и «Инженер ПТО»
+  const baseSummary = useMemo(
+    () => computeExecutiveDocsSummary(dropdownAndSearchRows),
+    [dropdownAndSearchRows]
+  );
+
+  const filteredSummary = useMemo(
+    () => computeExecutiveDocsSummary(finalRows),
+    [finalRows]
+  );
+
   const workProducerSuggestions = useMemo(() => {
     const set = new Set<string>();
     for (const row of allRows) {
@@ -297,6 +356,8 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
   }, [visibleColumns]);
 
   const hasAnyActiveFilter =
+    searchQuery.trim() !== '' ||
+    quickFilter !== 'all' ||
     rdFilter !== 'ALL' ||
     lineFilter !== 'ALL' ||
     contourFilter !== 'ALL' ||
@@ -304,6 +365,8 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     sortConfig !== null;
 
   const handleResetAllFilters = useCallback(() => {
+    setSearchQuery('');
+    setQuickFilter('all');
     setRdFilter('ALL');
     setLineFilter('ALL');
     setContourFilter('ALL');
@@ -346,50 +409,80 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
     [finalRows, handleAutoFit]
   );
 
-  // Сводные показатели по отфильтрованным строкам
-  const summaryStats = useMemo(() => {
-    let signed = 0;
-    let inWork = 0;
-    let pctSum = 0;
-    for (const r of finalRows) {
-      if (r.idStatus === 'SIGNED') signed += 1;
-      else inWork += 1;
-      pctSum += r.weldingReadinessPct;
-    }
-    const avgWeldingPct =
-      finalRows.length > 0 ? Math.round((pctSum / finalRows.length) * 10) / 10 : 0;
-    return { signed, inWork, avgWeldingPct };
+  // Выбор строк
+  const handleToggleSelectRow = useCallback((lineId: string) => {
+    setSelectedLineIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectAll = useCallback(() => {
+    setSelectedLineIds((prev) => {
+      const allInViewSelected =
+        finalRows.length > 0 && finalRows.every((r) => prev.has(r.lineId));
+      if (allInViewSelected) {
+        const next = new Set(prev);
+        for (const r of finalRows) next.delete(r.lineId);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const r of finalRows) next.add(r.lineId);
+      return next;
+    });
   }, [finalRows]);
 
+  const selectedRows = useMemo(
+    () => finalRows.filter((r) => selectedLineIds.has(r.lineId)),
+    [finalRows, selectedLineIds]
+  );
+
+  const handleBulkApply = useCallback(
+    async (patch: ExecutiveDocPatch) => {
+      if (selectedRows.length === 0) return;
+      const result = await saveBulkPatch(selectedRows, patch);
+      if (result.failedCount === 0) {
+        setSelectedLineIds(new Set());
+      }
+    },
+    [saveBulkPatch, selectedRows]
+  );
+
+  // Защищённое переключение статуса ИД
+  const handleRequestStatusChange = useCallback(
+    (row: ExecutiveDocRow, nextStatus: ExecutiveDocStatus) => {
+      if (nextStatus === 'SIGNED' && row.readinessBlockers.length > 0) {
+        setPendingSignLineId(row.lineId);
+        return;
+      }
+      void saveRowPatch(row, { idStatus: nextStatus });
+    },
+    [saveRowPatch]
+  );
+
+  const pendingSignRow = useMemo(
+    () => (pendingSignLineId ? allRows.find((r) => r.lineId === pendingSignLineId) ?? null : null),
+    [allRows, pendingSignLineId]
+  );
+
+  const activeDeficitRow = useMemo(
+    () => (deficitModal ? allRows.find((r) => r.lineId === deficitModal.lineId) ?? null : null),
+    [allRows, deficitModal]
+  );
+
+  const handleExportExcel = useCallback(() => {
+    exportExecutiveDocsToXlsx({
+      rows: finalRows,
+      visibleColumns,
+      selectedObjectName,
+      summary: filteredSummary,
+    });
+  }, [filteredSummary, finalRows, selectedObjectName, visibleColumns]);
+
   return (
-    <section className="space-y-3" aria-label="Исполнительная документация">
-      {/* Заголовок раздела */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1
-            className="text-lg font-bold text-slate-900 tracking-tight"
-            style={{ fontFamily: "'Jost', 'Century Gothic', sans-serif" }}
-          >
-            Исполнительная документация
-          </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Статус подготовки исполнительной документации по монтажу технологических трубопроводов
-          </p>
-        </div>
-
-        {isDbConnected && isAuthenticated && (
-          <button
-            type="button"
-            onClick={() => void reloadFromServer()}
-            disabled={isLoading}
-            className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-50 cursor-pointer transition-colors whitespace-nowrap shrink-0"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Обновить</span>
-          </button>
-        )}
-      </div>
-
+    <section className="space-y-2.5" aria-label="Исполнительная документация">
       {/* Уведомление об ошибке или конфликте версий */}
       {errorMessage && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs text-rose-800">
@@ -418,8 +511,12 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
         </div>
       )}
 
-      {/* Блок фильтров перед таблицей */}
+      {/* Единая KPI-панель и панель фильтров */}
       <ExecutiveDocsFilterBar
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        quickFilter={quickFilter}
+        onQuickFilterChange={setQuickFilter}
         rdFilter={rdFilter}
         onRdFilterChange={handleRdFilterChange}
         rdOptions={rdOptions}
@@ -436,12 +533,28 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
         onShowAllColumns={showAllColumns}
         hasCustomWidths={hasCustomWidths}
         onResetWidths={handleResetWidths}
+        onExportExcel={handleExportExcel}
+        canExport={finalRows.length > 0}
+        canRefresh={isDbConnected && isAuthenticated}
+        isLoading={isLoading}
+        onRefresh={() => void reloadFromServer()}
+        baseSummary={baseSummary}
+        filteredSummary={filteredSummary}
         totalRowsCount={allRows.length}
         filteredRowsCount={finalRows.length}
-        signedCount={summaryStats.signed}
-        inWorkCount={summaryStats.inWork}
-        avgWeldingPct={summaryStats.avgWeldingPct}
       />
+
+      {/* Панель массового назначения для выбранных строк */}
+      {canEdit && (
+        <ExecutiveDocsBulkBar
+          selectedCount={selectedRows.length}
+          isSaving={isBulkSaving}
+          workProducerSuggestions={workProducerSuggestions}
+          ptoEngineerSuggestions={ptoEngineerSuggestions}
+          onApply={handleBulkApply}
+          onClearSelection={() => setSelectedLineIds(new Set())}
+        />
+      )}
 
       {/* Состояние загрузки / Пустые состояния / Таблица */}
       {isLoading && allRows.length === 0 ? (
@@ -504,12 +617,41 @@ export const ExecutiveDocsView: React.FC<ExecutiveDocsViewProps> = ({
           onAutoFit={handleColumnAutoFit}
           canEdit={canEdit}
           savingLineIds={savingLineIds}
+          selectedLineIds={selectedLineIds}
+          onToggleSelectRow={handleToggleSelectRow}
+          onToggleSelectAll={handleToggleSelectAll}
           workProducerSuggestions={workProducerSuggestions}
           ptoEngineerSuggestions={ptoEngineerSuggestions}
           onSaveRowPatch={saveRowPatch}
+          onRequestStatusChange={handleRequestStatusChange}
+          onOpenNdtDeficit={(row) => setDeficitModal({ lineId: row.lineId, kind: 'ndt' })}
+          onOpenVkDeficit={(row) => setDeficitModal({ lineId: row.lineId, kind: 'vk' })}
           onOpenLineInRegistry={onOpenLineInRegistry}
+          onOpenTestingCircuits={onOpenTestingCircuits}
         />
       )}
+
+      {/* Детализация дефицита НК / ВК */}
+      <ExecutiveDocsDeficitModal
+        row={activeDeficitRow}
+        kind={deficitModal?.kind ?? 'ndt'}
+        onClose={() => setDeficitModal(null)}
+        onOpenLineInRegistry={onOpenLineInRegistry}
+        onOpenLaboratory={onOpenLaboratory}
+        onOpenLrvCatalog={onOpenLrvCatalog}
+      />
+
+      {/* Подтверждение подписания ИД при наличии блокеров */}
+      <ExecutiveDocsSignConfirmModal
+        row={pendingSignRow}
+        onCancel={() => setPendingSignLineId(null)}
+        onConfirm={() => {
+          if (pendingSignRow) {
+            void saveRowPatch(pendingSignRow, { idStatus: 'SIGNED' });
+          }
+          setPendingSignLineId(null);
+        }}
+      />
     </section>
   );
 };

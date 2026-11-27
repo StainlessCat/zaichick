@@ -7,20 +7,46 @@ export type PhysicsStatus = 'ACCEPTED' | 'NOT_ACCEPTED';
 export type GeodesyStatus = 'SIGNED' | 'NOT_SIGNED' | 'NOT_REQUIRED';
 
 export type ExecutiveDocColumnKey =
-  | 'testContour'
-  | 'rdCode'
   | 'lineNumber'
+  | 'rdCode'
+  | 'testContour'
   | 'priority'
   | 'idStatus'
   | 'weldingReadinessPct'
-  | 'workProducer'
-  | 'ptoEngineer'
-  | 'preStageStatus'
-  | 'physicsStatus'
   | 'ndtDeficitCount'
   | 'vkDeficitCount'
+  | 'preStageStatus'
+  | 'physicsStatus'
   | 'geodesyStatus'
+  | 'workProducer'
+  | 'ptoEngineer'
   | 'noteText';
+
+export type ExecutiveDocQuickFilter =
+  | 'all'
+  | 'signed'
+  | 'ready'
+  | 'ndt_deficit'
+  | 'vk_deficit'
+  | 'attention';
+
+export type ExecutiveDocNdtMethodCode = 'ВИК' | 'РК' | 'УЗК' | 'ПВК';
+
+export interface ExecutiveDocNdtMethodStat {
+  method: ExecutiveDocNdtMethodCode;
+  planPct: number;
+  required: number;
+  passed: number;
+  deficit: number;
+}
+
+export interface ExecutiveDocNdtDeficitDetail {
+  jointId: string;
+  jointNumber: string;
+  missingMethods: Array<ExecutiveDocNdtMethodCode | 'Ремонт'>;
+  reason: string;
+  isDefect: boolean;
+}
 
 export interface ExecutiveDocRecord {
   id?: string;
@@ -53,6 +79,27 @@ export interface ExecutiveDocVkDeficitItem {
   id: string;
   lrvCode: string;
   shortName: string;
+  reason?: 'no_act' | 'unlinked';
+  jointNumbers?: string[];
+}
+
+export interface ExecutiveDocReadinessBlocker {
+  key: 'welding' | 'ndt' | 'vk' | 'preStage' | 'physics' | 'geodesy';
+  label: string;
+  detail: string;
+}
+
+export interface ExecutiveDocsSummaryStats {
+  totalLines: number;
+  signedCount: number;
+  inWorkCount: number;
+  readyToSignCount: number;
+  ndtDeficitLinesCount: number;
+  vkDeficitLinesCount: number;
+  attentionLinesCount: number;
+  totalJoints: number;
+  weldedJoints: number;
+  weightedWeldingPct: number;
 }
 
 export interface ExecutiveDocRow {
@@ -73,13 +120,21 @@ export interface ExecutiveDocRow {
   preStageStatus: PreStageStatus;
   physicsStatus: PhysicsStatus;
   ndtDeficitCount: number;
+  ndtDeficitChecks: number;
   ndtDeficitJointNumbers: string[];
+  ndtDeficitDetails: ExecutiveDocNdtDeficitDetail[];
+  ndtMethodStats: ExecutiveDocNdtMethodStat[];
+  ndtDeficitSummary: string;
   vkDeficitCount: number;
+  unlinkedVkCount: number;
   vkDeficitItems: ExecutiveDocVkDeficitItem[];
   geodesyStatus: GeodesyStatus;
   noteText: string;
   noteUpdatedAt: string | null;
   version: number;
+  readinessBlockers: ExecutiveDocReadinessBlocker[];
+  isReadyToSign: boolean;
+  hasSignedAnomaly: boolean;
 }
 
 export interface ExecutiveDocColumnDef {
@@ -92,101 +147,101 @@ export interface ExecutiveDocColumnDef {
 
 export const EXECUTIVE_DOC_COLUMNS: ExecutiveDocColumnDef[] = [
   {
-    key: 'testContour',
-    label: 'Контур испытания',
-    defaultWidth: 160,
-    minWidth: 110,
+    key: 'lineNumber',
+    label: 'Линия',
+    defaultWidth: 124,
+    minWidth: 96,
     align: 'left',
   },
   {
     key: 'rdCode',
     label: 'Шифр РД',
-    defaultWidth: 155,
+    defaultWidth: 150,
     minWidth: 110,
     align: 'left',
   },
   {
-    key: 'lineNumber',
-    label: 'Линия',
-    defaultWidth: 135,
-    minWidth: 95,
+    key: 'testContour',
+    label: 'Контур испытания',
+    defaultWidth: 156,
+    minWidth: 110,
     align: 'left',
   },
   {
     key: 'priority',
     label: 'Приоритет',
-    defaultWidth: 108,
-    minWidth: 88,
+    defaultWidth: 88,
+    minWidth: 76,
     align: 'center',
   },
   {
     key: 'idStatus',
     label: 'Статус ИД',
-    defaultWidth: 126,
-    minWidth: 105,
+    defaultWidth: 124,
+    minWidth: 106,
     align: 'left',
   },
   {
     key: 'weldingReadinessPct',
-    label: 'Готовность по сварке, %',
-    defaultWidth: 138,
-    minWidth: 105,
+    label: 'Сварка, %',
+    defaultWidth: 110,
+    minWidth: 92,
     align: 'right',
-  },
-  {
-    key: 'workProducer',
-    label: 'Производитель работ',
-    defaultWidth: 158,
-    minWidth: 120,
-    align: 'left',
-  },
-  {
-    key: 'ptoEngineer',
-    label: 'Инженер ПТО',
-    defaultWidth: 150,
-    minWidth: 115,
-    align: 'left',
-  },
-  {
-    key: 'preStageStatus',
-    label: 'Предэтап',
-    defaultWidth: 128,
-    minWidth: 108,
-    align: 'left',
-  },
-  {
-    key: 'physicsStatus',
-    label: 'Физика',
-    defaultWidth: 124,
-    minWidth: 104,
-    align: 'left',
   },
   {
     key: 'ndtDeficitCount',
     label: 'Дефицит по НК',
-    defaultWidth: 118,
-    minWidth: 96,
-    align: 'right',
-  },
-  {
-    key: 'vkDeficitCount',
-    label: 'Дефицит ВК',
     defaultWidth: 112,
     minWidth: 92,
     align: 'right',
   },
   {
+    key: 'vkDeficitCount',
+    label: 'Дефицит ВК',
+    defaultWidth: 102,
+    minWidth: 86,
+    align: 'right',
+  },
+  {
+    key: 'preStageStatus',
+    label: 'Предэтап',
+    defaultWidth: 118,
+    minWidth: 102,
+    align: 'left',
+  },
+  {
+    key: 'physicsStatus',
+    label: 'Физика',
+    defaultWidth: 114,
+    minWidth: 98,
+    align: 'left',
+  },
+  {
     key: 'geodesyStatus',
     label: 'Геодезия',
-    defaultWidth: 138,
+    defaultWidth: 124,
+    minWidth: 106,
+    align: 'left',
+  },
+  {
+    key: 'workProducer',
+    label: 'Производитель работ',
+    defaultWidth: 142,
     minWidth: 115,
+    align: 'left',
+  },
+  {
+    key: 'ptoEngineer',
+    label: 'Инженер ПТО',
+    defaultWidth: 136,
+    minWidth: 110,
     align: 'left',
   },
   {
     key: 'noteText',
     label: 'Примечание',
-    defaultWidth: 260,
-    minWidth: 170,
+    defaultWidth: 230,
+    minWidth: 160,
     align: 'left',
   },
 ];

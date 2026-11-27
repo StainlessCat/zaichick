@@ -1,11 +1,27 @@
 import { LRVItem } from '../types/welding';
 import {
+  IncomingControlVerdict,
   MaterialBatchAct,
   MaterialControlStatus,
   MaterialItemWithControl,
   MaterialReplacementNotice,
   MaterialWeldingCheckResult,
 } from '../types/materialControl';
+
+export const MATERIAL_CONTROL_STATUS_LABELS: Record<MaterialControlStatus, string> = {
+  accepted: 'Годен к монтажу',
+  partial: 'Частичный допуск',
+  rejected: 'Выявлен брак',
+  pending: 'Ожидает контроля',
+  replaced: 'Заменена по письму',
+};
+
+export const INCOMING_CONTROL_VERDICT_LABELS: Record<IncomingControlVerdict, string> = {
+  accepted: 'Пройден',
+  rejected: 'Не пройден',
+  replaced: 'Заменена по письму',
+  pending: 'Ожидает контроля',
+};
 
 /**
  * Нормализация даты к формату YYYY-MM-DD
@@ -73,11 +89,15 @@ export function calculateMaterialControlBalance(
 
   if (batches.length === 0 || (acceptedQty === 0 && rejectedQty === 0 && replacedQty === 0)) {
     controlStatus = 'pending';
-  } else if (rejectedQty > 0 && replacedQty === 0) {
+  } else if (rejectedQty > 0) {
     controlStatus = 'rejected';
-  } else if (acceptedQty >= totalSpecQty && rejectedQty === 0) {
+  } else if (totalSpecQty > 0 && replacedQty >= totalSpecQty && acceptedQty === 0) {
+    controlStatus = 'replaced';
+  } else if (totalSpecQty > 0 && acceptedQty + replacedQty >= totalSpecQty) {
     controlStatus = 'accepted';
-  } else if (replacedQty >= totalSpecQty) {
+  } else if (totalSpecQty === 0 && acceptedQty > 0) {
+    controlStatus = 'accepted';
+  } else if (totalSpecQty === 0 && replacedQty > 0) {
     controlStatus = 'replaced';
   } else {
     controlStatus = 'partial';

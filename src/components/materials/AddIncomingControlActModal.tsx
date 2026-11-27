@@ -1,6 +1,6 @@
+import React, { useEffect, useState } from 'react';
+import { FilePlus2, Save, X, AlertTriangle } from 'lucide-react';
 import { useModalDismiss } from '../../hooks/useModalDismiss';
-import React, { useState } from 'react';
-import { FilePlus2, X, AlertTriangle } from 'lucide-react';
 import { MaterialBatchAct } from '../../types/materialControl';
 import { LRVItem } from '../../types/welding';
 import { Button } from '../ui';
@@ -9,37 +9,86 @@ interface AddIncomingControlActModalProps {
   isOpen: boolean;
   onClose: () => void;
   material: LRVItem;
-  onAddAct: (material: LRVItem, newBatch: MaterialBatchAct) => void;
+  editingBatch?: MaterialBatchAct | null;
+  defaultInspectorName?: string;
+  onSaveAct: (material: LRVItem, batch: MaterialBatchAct, isEdit: boolean) => void;
 }
 
 export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProps> = ({
   isOpen,
   onClose,
   material,
-  onAddAct,
+  editingBatch = null,
+  defaultInspectorName = '',
+  onSaveAct,
 }) => {
-  if (!isOpen) return null;
-
+  const isEditMode = Boolean(editingBatch);
   const totalSpec = material.totalSpecQty ?? material.specQty;
   const currentAccepted = material.acceptedQty ?? 0;
   const currentRejected = material.rejectedQty ?? 0;
   const currentReplaced = material.replacedQty ?? 0;
-  const remainingQty = Math.max(0, totalSpec - (currentAccepted + currentRejected + currentReplaced));
+  const remainingQty = Math.max(
+    0,
+    totalSpec - (currentAccepted + currentRejected + currentReplaced) + (editingBatch?.quantity ?? 0)
+  );
 
-  const [actNumber, setActNumber] = useState(`АВК-${Math.floor(100 + Math.random() * 900)}`);
+  const [actNumber, setActNumber] = useState('');
   const [actDate, setActDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [certificateNumber, setCertificateNumber] = useState('');
   const [heatNumber, setHeatNumber] = useState('');
-  const [quantity, setQuantity] = useState<number>(remainingQty > 0 ? remainingQty : 1);
-  const [unit, setUnit] = useState<'шт' | 'м'>(() => (material.unit === 'м' ? 'м' : 'шт'));
+  const [quantity, setQuantity] = useState<string>('');
+  const [unit, setUnit] = useState<'шт' | 'м'>('шт');
   const [serialNumbers, setSerialNumbers] = useState('');
-  const [verdict, setVerdict] = useState<'accepted' | 'rejected'>('accepted');
-  const [inspectorName, setInspectorName] = useState('Орлова Е. В.');
+  const [verdict, setVerdict] = useState<'accepted' | 'rejected' | 'pending'>('accepted');
+  const [inspectorName, setInspectorName] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState('');
 
-  const isDirty = Boolean(certificateNumber.trim() || heatNumber.trim() || serialNumbers.trim() || notes.trim());
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormError('');
+    if (editingBatch) {
+      setActNumber(editingBatch.actNumber || '');
+      setActDate(editingBatch.actDate || new Date().toISOString().slice(0, 10));
+      setCertificateNumber(editingBatch.certificateNumber || '');
+      setHeatNumber(editingBatch.heatNumber || '');
+      setQuantity(String(editingBatch.quantity ?? ''));
+      setUnit(editingBatch.unit === 'м' ? 'м' : 'шт');
+      setSerialNumbers((editingBatch.serialNumbers || []).join(', '));
+      setVerdict(
+        editingBatch.verdict === 'rejected'
+          ? 'rejected'
+          : editingBatch.verdict === 'pending'
+          ? 'pending'
+          : 'accepted'
+      );
+      setInspectorName(editingBatch.inspectorName || '');
+      setRejectionReason(editingBatch.rejectionReason || '');
+      setNotes(editingBatch.notes || '');
+    } else {
+      setActNumber('');
+      setActDate(new Date().toISOString().slice(0, 10));
+      setCertificateNumber('');
+      setHeatNumber('');
+      setQuantity(String(remainingQty > 0 ? remainingQty : 1));
+      setUnit(material.unit === 'м' ? 'м' : 'шт');
+      setSerialNumbers('');
+      setVerdict('accepted');
+      setInspectorName(defaultInspectorName);
+      setRejectionReason('');
+      setNotes('');
+    }
+  }, [isOpen, editingBatch, material.id, material.unit, remainingQty, defaultInspectorName]);
+
+  const isDirty = Boolean(
+    actNumber.trim() !== (editingBatch?.actNumber || '') ||
+      certificateNumber.trim() !== (editingBatch?.certificateNumber || '') ||
+      heatNumber.trim() !== (editingBatch?.heatNumber || '') ||
+      serialNumbers.trim() !== (editingBatch?.serialNumbers || []).join(', ') ||
+      notes.trim() !== (editingBatch?.notes || '') ||
+      rejectionReason.trim() !== (editingBatch?.rejectionReason || '')
+  );
 
   const { handleRequestClose } = useModalDismiss({
     isOpen,
@@ -48,10 +97,13 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
     confirmMessage: 'В форме акта входного контроля есть несохранённые данные. Закрыть без сохранения?',
   });
 
+  if (!isOpen) return null;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
+    const parsedQty = Number(String(quantity).replace(',', '.'));
     if (!actNumber.trim()) {
       setFormError('Укажите номер акта входного контроля');
       return;
@@ -60,7 +112,7 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
       setFormError('Укажите дату подписания акта входного контроля');
       return;
     }
-    if (quantity <= 0) {
+    if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
       setFormError('Количество в партии должно быть больше нуля');
       return;
     }
@@ -80,36 +132,43 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
       .filter(Boolean)
       .join(', ');
 
-    const newBatch: MaterialBatchAct = {
-      id: `batch-${Date.now()}`,
+    const savedBatch: MaterialBatchAct = {
+      ...(editingBatch || {}),
+      id: editingBatch?.id || `batch-${Date.now()}`,
       materialId: material.id,
       actNumber: actNumber.trim(),
       actDate: actDate.trim(),
       certificateNumber: certs || certificateNumber.trim(),
       heatNumber: heatNumber.trim() || undefined,
       serialNumbers: serials.length > 0 ? serials : undefined,
-      quantity,
+      quantity: parsedQty,
       unit,
-      verdict,
+      verdict: editingBatch?.verdict === 'replaced' ? 'replaced' : verdict,
       inspectorName: inspectorName.trim() || undefined,
       rejectionReason: verdict === 'rejected' ? rejectionReason.trim() : undefined,
       notes: notes.trim() || undefined,
     };
 
-    onAddAct(material, newBatch);
+    onSaveAct(material, savedBatch, isEditMode);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+      role="dialog"
+      aria-modal="true"
+      aria-label={isEditMode ? 'Редактирование акта входного контроля' : 'Внесение акта входного контроля'}
+    >
       <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden flex flex-col max-h-[92vh]">
-        {/* Шапка */}
         <div className="bg-[#1e3799] text-white px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <FilePlus2 className="w-5 h-5 text-blue-200" />
-            <div>
-              <h3 className="font-bold text-base">Внесение акта входного контроля</h3>
-              <p className="text-xs text-blue-100">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <FilePlus2 className="w-5 h-5 text-blue-200 shrink-0" />
+            <div className="min-w-0">
+              <h3 className="font-bold text-base">
+                {isEditMode ? 'Редактирование акта входного контроля' : 'Внесение акта входного контроля'}
+              </h3>
+              <p className="text-xs text-blue-100 truncate">
                 {material.lrvCode} — {material.shortName}
               </p>
             </div>
@@ -117,13 +176,13 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
           <button
             type="button"
             onClick={handleRequestClose}
-            className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            aria-label="Закрыть окно"
+            className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Форма */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs text-slate-800">
           {formError && (
             <div className="p-3 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 flex items-center gap-2">
@@ -132,10 +191,10 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             <div>
               <label htmlFor="modalActNumberInput" className="block text-slate-600 text-[11px] mb-1 font-semibold">
-                Номер акта входного контроля:
+                Номер акта входного контроля
               </label>
               <input
                 id="modalActNumberInput"
@@ -143,26 +202,26 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
                 value={actNumber}
                 onChange={(e) => setActNumber(e.target.value)}
                 placeholder="АВК-105"
-                className="w-full px-2.5 py-1.5 text-xs font-mono font-bold text-[#1e3799] rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                className="w-full px-2.5 py-2 text-xs font-mono font-semibold text-[#1e3799] rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none"
               />
             </div>
 
             <div>
               <label htmlFor="modalActDateInput" className="block text-slate-600 text-[11px] mb-1 font-semibold">
-                Дата подписания акта:
+                Дата подписания акта
               </label>
               <input
                 id="modalActDateInput"
                 type="date"
                 value={actDate}
                 onChange={(e) => setActDate(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs font-mono rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                className="w-full px-2.5 py-2 text-xs font-mono rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none"
               />
             </div>
 
             <div>
               <label htmlFor="modalCertNumberInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                Сертификаты и паспорта через запятую:
+                Сертификаты и паспорта
               </label>
               <input
                 id="modalCertNumberInput"
@@ -170,13 +229,13 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
                 value={certificateNumber}
                 onChange={(e) => setCertificateNumber(e.target.value)}
                 placeholder="4511/ТПА, 4512/ТПА"
-                className="w-full px-2.5 py-1.5 text-xs font-mono rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                className="w-full px-2.5 py-2 text-xs font-mono rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none"
               />
             </div>
 
             <div>
               <label htmlFor="modalHeatNumberInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                Номер плавки / партии:
+                Номер плавки или партии
               </label>
               <input
                 id="modalHeatNumberInput"
@@ -184,13 +243,13 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
                 value={heatNumber}
                 onChange={(e) => setHeatNumber(e.target.value)}
                 placeholder="Пл. 45802"
-                className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none"
               />
             </div>
 
             <div>
               <label htmlFor="modalQuantityInput" className="block text-slate-600 text-[11px] mb-1 font-semibold">
-                Количество в партии:
+                Количество в партии
               </label>
               <div className="flex gap-2">
                 <input
@@ -199,43 +258,45 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
                   min={0.01}
                   step="any"
                   value={quantity}
-                  onChange={(e) => setQuantity(Number(e.target.value))}
-                  className="flex-1 px-2.5 py-1.5 text-xs font-mono font-bold rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="flex-1 px-2.5 py-2 text-xs font-mono font-semibold tabular-nums rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none"
                 />
                 <select
                   id="modalUnitSelect"
                   aria-label="Единица измерения количества"
                   value={unit}
                   onChange={(e) => setUnit(e.target.value as 'шт' | 'м')}
-                  className="w-20 px-2.5 py-1.5 text-xs font-semibold rounded border border-slate-300 bg-white focus:ring-1 focus:ring-[#1e3799]"
+                  className="w-20 px-2.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 bg-white focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none"
                 >
                   <option value="шт">шт</option>
                   <option value="м">м</option>
                 </select>
               </div>
-              <span className="text-[10px] text-slate-500 mt-0.5 block">
-                Не закрыто актами по проекту: {remainingQty} {unit}
+              <span className="text-[11px] text-slate-500 mt-1 block tabular-nums">
+                Остаток по спецификации: {remainingQty} {unit}
               </span>
             </div>
 
             <div>
               <label htmlFor="modalVerdictSelect" className="block text-slate-600 text-[11px] mb-1 font-semibold">
-                Результат контроля:
+                Результат контроля
               </label>
               <select
                 id="modalVerdictSelect"
                 value={verdict}
-                onChange={(e) => setVerdict(e.target.value as 'accepted' | 'rejected')}
-                className="w-full px-2.5 py-1.5 text-xs font-semibold rounded border border-slate-300 bg-white focus:ring-1 focus:ring-[#1e3799]"
+                disabled={editingBatch?.verdict === 'replaced'}
+                onChange={(e) => setVerdict(e.target.value as 'accepted' | 'rejected' | 'pending')}
+                className="w-full px-2.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 bg-white focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none disabled:bg-slate-100"
               >
                 <option value="accepted">Пройден</option>
                 <option value="rejected">Не пройден</option>
+                <option value="pending">Ожидает проверки</option>
               </select>
             </div>
 
             <div className="col-span-1 md:col-span-2">
               <label htmlFor="modalSerialNumbersInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                Заводские серийные номера (через запятую):
+                Заводские серийные номера
               </label>
               <input
                 id="modalSerialNumbersInput"
@@ -243,55 +304,56 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
                 value={serialNumbers}
                 onChange={(e) => setSerialNumbers(e.target.value)}
                 placeholder="КШ-001, КШ-002, КШ-003"
-                className="w-full px-2.5 py-1.5 text-xs font-mono rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                className="w-full px-2.5 py-2 text-xs font-mono rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none"
               />
             </div>
 
             <div>
               <label htmlFor="modalInspectorNameInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                Контролёр / дефектоскопист:
+                Контролёр входного контроля
               </label>
               <input
                 id="modalInspectorNameInput"
                 type="text"
                 value={inspectorName}
                 onChange={(e) => setInspectorName(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                placeholder="Фамилия И. О."
+                className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none"
               />
             </div>
 
             <div>
               <label htmlFor="modalNotesInput" className="block text-slate-600 text-[11px] mb-1 font-medium">
-                Примечания:
+                Примечания
               </label>
               <input
                 id="modalNotesInput"
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Визуальный и измерительный контроль пройден"
-                className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 focus:ring-1 focus:ring-[#1e3799]"
+                placeholder="Визуальный и измерительный контроль выполнен"
+                className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799] outline-none"
               />
             </div>
 
             {verdict === 'rejected' && (
               <div className="col-span-1 md:col-span-2">
                 <label htmlFor="modalRejectionReasonInput" className="block text-rose-700 text-[11px] mb-1 font-semibold">
-                  Причина отбраковки:
+                  Причина отбраковки
                 </label>
                 <textarea
                   id="modalRejectionReasonInput"
                   rows={2}
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
-                  placeholder="Негерметичность уплотнения затвора при гидравлических испытаниях"
-                  className="w-full px-2.5 py-1.5 text-xs rounded border border-rose-300 bg-rose-50/50 focus:ring-1 focus:ring-rose-500"
+                  placeholder="Негерметичность уплотнения затвора при испытаниях"
+                  className="w-full px-2.5 py-2 text-xs rounded-lg border border-rose-300 bg-rose-50/50 focus:ring-2 focus:ring-rose-500/25 focus:border-rose-500 outline-none"
                 />
               </div>
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-200">
             <Button
               type="button"
               variant="secondary"
@@ -305,8 +367,8 @@ export const AddIncomingControlActModal: React.FC<AddIncomingControlActModalProp
               variant="primary"
               className="text-xs bg-[#1e3799] hover:bg-[#15286e] text-white flex items-center gap-1.5"
             >
-              <FilePlus2 className="w-3.5 h-3.5" />
-              <span>Сохранить акт</span>
+              {isEditMode ? <Save className="w-3.5 h-3.5" /> : <FilePlus2 className="w-3.5 h-3.5" />}
+              <span>{isEditMode ? 'Сохранить изменения' : 'Сохранить акт'}</span>
             </Button>
           </div>
         </form>

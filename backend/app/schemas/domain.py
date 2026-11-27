@@ -316,6 +316,42 @@ class LineNdtProgressOut(BaseModel):
 # ---------------------------------------------------------------------------
 # LRV Catalog
 # ---------------------------------------------------------------------------
+class MaterialBatchActSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(min_length=1, max_length=128)
+    materialId: str = Field(default="", max_length=128)
+    actNumber: str = Field(min_length=1, max_length=128)
+    actDate: str = Field(min_length=1, max_length=32)
+    certificateNumber: str = Field(default="", max_length=512)
+    heatNumber: str | None = Field(default=None, max_length=255)
+    serialNumbers: list[str] | None = None
+    quantity: float = Field(gt=0.0)
+    unit: Literal["шт", "м"] = "шт"
+    verdict: Literal["accepted", "rejected", "replaced", "pending"] = "accepted"
+    inspectorName: str | None = Field(default=None, max_length=255)
+    rejectionReason: str | None = Field(default=None, max_length=1024)
+    replacementLetter: str | None = Field(default=None, max_length=512)
+    replacementDate: str | None = Field(default=None, max_length=32)
+    replacedByBatchId: str | None = Field(default=None, max_length=128)
+    notes: str | None = Field(default=None, max_length=1024)
+
+
+class MaterialReplacementNoticeSchema(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    letterNumber: str = Field(min_length=1, max_length=255)
+    letterDate: str = Field(min_length=1, max_length=32)
+    approvedBy: str = Field(default="", max_length=255)
+    originalMaterialId: str = Field(default="", max_length=128)
+    originalMaterialCode: str = Field(default="", max_length=128)
+    replacedQuantity: float = Field(gt=0.0)
+    reason: str = Field(default="", max_length=1024)
+
+
+class LrvBatchesUpdateRequest(BaseModel):
+    version: int = Field(ge=1)
+    batches: list[MaterialBatchActSchema] = Field(default_factory=list, max_length=500)
+
+
 class LrvItemCreate(BaseModel):
     legacy_id: str | None = None
     facility_id: uuid.UUID
@@ -342,6 +378,9 @@ class LrvItemCreate(BaseModel):
     status: LrvStatusEnum = LrvStatusEnum.ACTIVE
     replacement_letter: str | None = None
     replacement_date: date | None = None
+    batches: list[MaterialBatchActSchema] = Field(default_factory=list, max_length=500)
+    parent_material_id: str | None = Field(default=None, max_length=128)
+    replacement_notice: MaterialReplacementNoticeSchema | None = None
     sort_order: int = 0
 
 
@@ -370,6 +409,9 @@ class LrvItemUpdate(BaseModel):
     status: LrvStatusEnum | None = None
     replacement_letter: str | None = None
     replacement_date: date | None = None
+    batches: list[MaterialBatchActSchema] | None = Field(default=None, max_length=500)
+    parent_material_id: str | None = Field(default=None, max_length=128)
+    replacement_notice: MaterialReplacementNoticeSchema | None = None
     sort_order: int | None = None
 
 
@@ -408,6 +450,9 @@ class LrvItemOut(BaseModel):
     status: LrvStatusEnum
     replacement_letter: str | None = None
     replacement_date: date | None = None
+    batches: list[dict[str, Any]] = Field(default_factory=list)
+    parent_material_id: str | None = None
+    replacement_notice: dict[str, Any] | None = None
     sort_order: int
     record_status: RecordStatusEnum = RecordStatusEnum.DRAFT
     created_by_id: uuid.UUID | None = None

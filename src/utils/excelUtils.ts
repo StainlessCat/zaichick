@@ -33,6 +33,19 @@ import {
 } from './testCircuitCalc';
 import { getJointNominalInch } from './jointDerived';
 import { RECORD_STATUS_LABELS_RU } from './rbac';
+import type {
+  ExecutiveDocColumnKey,
+  ExecutiveDocRow,
+  ExecutiveDocsSummaryStats,
+} from '../types/executiveDocs';
+import {
+  EXECUTIVE_DOC_COLUMNS,
+  EXECUTIVE_DOC_STATUS_LABELS,
+  GEODESY_STATUS_LABELS,
+  PHYSICS_STATUS_LABELS,
+  PRE_STAGE_STATUS_LABELS,
+} from '../types/executiveDocs';
+import { formatExecutiveNoteDate } from './executiveDocsLogic';
 
 export function triggerBlobDownload(blob: Blob, filename: string): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -760,4 +773,371 @@ export function exportTestCircuitsFilteredToXlsx(params: {
   });
   triggerBlobDownload(blob, `ZAYCHICK_Ispytaniya_${dateStamp}.xlsx`);
 }
+
+/**
+ * Нативный клиентский экспорт раздела «Исполнительная документация» в .xlsx (2 листа):
+ * 1) Ведомость ИД — отфильтрованные строки и активные столбцы + статус готовности и строка итогов
+ * 2) Дефициты НК и ВК — детализация по незакрытым стыкам и позициям материалов
+ */
+export function exportExecutiveDocsToXlsx(params: {
+  rows: ExecutiveDocRow[];
+  visibleColumns: ExecutiveDocColumnKey[];
+  selectedObjectName: string;
+  summary: ExecutiveDocsSummaryStats;
+}): void {
+  const { rows, visibleColumns, selectedObjectName, summary } = params;
+  const visibleSet = new Set(visibleColumns);
+  const activeCols = EXECUTIVE_DOC_COLUMNS.filter((c) => visibleSet.has(c.key));
+
+  const mainHeaders: string[] = [
+    ...activeCols.map((c) => c.label),
+    'Готовность комплекта ИД',
+  ];
+
+  const mainColumnWidths: number[] = [
+    ...activeCols.map((c) => {
+      switch (c.key) {
+        case 'lineNumber':
+          return 16;
+        case 'rdCode':
+          return 28;
+        case 'testContour':
+          return 28;
+        case 'priority':
+          return 11;
+        case 'idStatus':
+          return 14;
+        case 'weldingReadinessPct':
+          return 14;
+        case 'ndtDeficitCount':
+          return 18;
+        case 'vkDeficitCount':
+          return 14;
+        case 'preStageStatus':
+        case 'physicsStatus':
+        case 'geodesyStatus':
+          return 15;
+        case 'workProducer':
+        case 'ptoEngineer':
+          return 18;
+        case 'noteText':
+          return 34;
+      }
+    }),
+    26,
+  ];
+
+  const getCellExportValue = (
+    row: ExecutiveDocRow,
+    key: ExecutiveDocColumnKey
+  ): string | number => {
+    switch (key) {
+      case 'lineNumber':
+        return row.lineNumber;
+      case 'rdCode':
+        return row.rdCode;
+      case 'testContour':
+        return row.testContour === '—' ? '' : row.testContour;
+      case 'priority':
+        return row.priority !== null ? row.priority : '';
+      case 'idStatus':
+        return EXECUTIVE_DOC_STATUS_LABELS[row.idStatus];
+      case 'weldingReadinessPct':
+        return Number(row.weldingReadinessPct.toFixed(1));
+      case 'ndtDeficitCount':
+        return row.ndtDeficitCount;
+      case 'vkDeficitCount':
+        return row.vkDeficitCount;
+      case 'preStageStatus':
+        return PRE_STAGE_STATUS_LABELS[row.preStageStatus];
+      case 'physicsStatus':
+        return PHYSICS_STATUS_LABELS[row.physicsStatus];
+      case 'geodesyStatus':
+        return GEODESY_STATUS_LABELS[row.geodesyStatus];
+      case 'workProducer':
+        return row.workProducer;
+      case 'ptoEngineer':
+        return row.ptoEngineer;
+      case 'noteText': {
+        const dt = formatExecutiveNoteDate(row.noteUpdatedAt);
+        if (!row.noteText) return '';
+        return dt ? `${row.noteText} [${dt}]` : row.noteText;
+      }
+    }
+  };
+
+  const mainRows: Array<Array<string | number>> = rows.map((row) => {
+    const readinessLabel = row.hasSignedAnomaly
+      ? `Подписана с замечаниями · ${row.readinessBlockers.map((b) => b.label).join(', ')}`
+      : row.idStatus === 'SIGNED'
+      ? 'Подписана'
+      : row.isReadyToSign
+      ? 'Готова к подписанию'
+      : `Блокеры: ${row.readinessBlockers.map((b) => b.label).join(', ')}`;
+
+    return [
+      ...activeCols.map((col) => getCellExportValue(row, col.key)),
+      readinessLabel,
+    ];
+  });
+
+  // Строка итогов по отфильтрованной выборке
+  const totalRow: Array<string | number> = activeCols.map((col, idx) => {
+    if (idx === 0) {
+      return `ИТОГО · линий: ${summary.totalLines}`;
+    }
+    if (col.key === 'idStatus') {
+      return `Подписано: ${summary.signedCount}`;
+    }
+    if (col.key === 'weldingReadinessPct') {
+      return Number(summary.weightedWeldingPct.toFixed(1));
+    }
+    if (col.key === 'ndtDeficitCount') {
+      return rows.reduce((s, r) => s + r.ndtDeficitCount, 0);
+    }
+    if (col.key === 'vkDeficitCount') {
+      return rows.reduce((s, r) => s + r.vkDeficitCount, 0);
+    }
+    return '';
+  });
+  totalRow.push(
+    `Сварка: ${summary.weldedJoints}/${summary.totalJoints} стыков · Готово к сдаче: ${summary.readyToSignCount}`
+  );
+  mainRows.push(totalRow);
+
+  // Лист 2: детализация дефицитов НК и ВК
+  const deficitHeaders = [
+    'Шифр РД',
+    'Линия',
+    'Контур испытания',
+    'Тип дефицита',
+    'Объект / позиция',
+    'Детализация',
+  ];
+  const deficitRows: Array<Array<string | number>> = [];
+
+  for (const row of rows) {
+    for (const ndtItem of row.ndtDeficitDetails) {
+      deficitRows.push([
+        row.rdCode,
+        row.lineNumber,
+        row.testContour === '—' ? '' : row.testContour,
+        'Дефицит НК',
+        `Стык ${ndtItem.jointNumber}`,
+        ndtItem.reason,
+      ]);
+    }
+    for (const vkItem of row.vkDeficitItems) {
+      const reasonText =
+        vkItem.reason === 'unlinked'
+          ? 'Не найдена в Базе материалов'
+          : 'Отсутствует утверждённый акт входного контроля';
+      const jointsSuffix =
+        vkItem.jointNumbers && vkItem.jointNumbers.length > 0
+          ? ` · стыки: ${vkItem.jointNumbers.join(', ')}`
+          : '';
+      deficitRows.push([
+        row.rdCode,
+        row.lineNumber,
+        row.testContour === '—' ? '' : row.testContour,
+        'Дефицит ВК',
+        `${vkItem.lrvCode} — ${vkItem.shortName}`,
+        `${reasonText}${jointsSuffix}`,
+      ]);
+    }
+  }
+
+  if (deficitRows.length === 0) {
+    deficitRows.push([
+      selectedObjectName === 'ALL' ? 'Все объекты' : selectedObjectName,
+      '—',
+      '—',
+      'Нет дефицитов',
+      '—',
+      'По всем отфильтрованным линиям дефициты НК и ВК отсутствуют',
+    ]);
+  }
+
+  const bytes = buildXlsxBinary([
+    {
+      name: 'Ведомость ИД',
+      headers: mainHeaders,
+      rows: mainRows,
+      columnWidths: mainColumnWidths,
+    },
+    {
+      name: 'Дефициты НК и ВК',
+      headers: deficitHeaders,
+      rows: deficitRows,
+      columnWidths: [28, 16, 28, 16, 30, 44],
+    },
+  ]);
+
+  const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
+  const blob = new Blob([bytes.buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  triggerBlobDownload(blob, `ZAYCHICK_Ispolnitelnaya_${dateStamp}.xlsx`);
+}
+
+/**
+ * Многолистовой экспорт раздела «База материалов» в .xlsx по текущим фильтрам:
+ * Лист 1 «База материалов» (включая статус контроля, баланс допуска и число стыков)
+ * Лист 2 «Акты входного контроля» (детализация всех партий, сертификатов и плавок)
+ */
+export function exportLrvFilteredToXlsx(params: {
+  items: Array<LRVItem & { linkedJointsCount?: number }>;
+  statusLabels: Record<string, string>;
+  verdictLabels: Record<string, string>;
+  resolveCategory: (item: LRVItem) => string;
+  computeBalance: (item: LRVItem) => {
+    controlStatus: string;
+    acceptedQty: number;
+    rejectedQty: number;
+    replacedQty: number;
+    pendingQty: number;
+  };
+}): void {
+  const { items, statusLabels, verdictLabels, resolveCategory, computeBalance } = params;
+
+  const mainHeaders = [
+    'Код ЛРВ',
+    'Шифр РД',
+    'Объект',
+    'Краткое наименование',
+    'Маркировка',
+    'Полное наименование',
+    'Категория',
+    'Давление PN, МПа',
+    'Подсоединение',
+    'Материал',
+    'НТД',
+    'Завод-изготовитель',
+    'DN 1',
+    'Ø1, мм',
+    'S1, мм',
+    'DN 2',
+    'Ø2, мм',
+    'S2, мм',
+    'Кол-во по спец.',
+    'Ед. изм.',
+    'Привязано стыков',
+    'Статус контроля',
+    'Допущено',
+    'Брак',
+    'Заменено',
+    'Остаток',
+    'Актов ВК',
+  ];
+  const mainWidths = [
+    20, 34, 26, 30, 18, 38, 14, 16, 16, 16, 22, 22, 10, 12, 12, 10, 12, 12, 14, 10, 16, 20, 12, 10, 12, 12, 10,
+  ];
+
+  const mainRows: Array<Array<string | number>> = [];
+  const actRows: Array<Array<string | number>> = [];
+
+  for (const item of items) {
+    const bal = computeBalance(item);
+    const batches = item.batches || [];
+    const statusLabel =
+      item.status === 'superseded'
+        ? 'Аннулирована'
+        : statusLabels[bal.controlStatus] || bal.controlStatus;
+
+    mainRows.push([
+      item.lrvCode,
+      item.rdCode,
+      item.objectName || '',
+      item.shortName,
+      item.marking || '',
+      item.fullName || '',
+      resolveCategory(item),
+      item.pnMpa || '',
+      item.connectionType || '',
+      item.material || '',
+      item.ntd || '',
+      item.manufacturer || '',
+      item.dn1 ?? '',
+      item.diameterMm ?? '',
+      item.wallThickness ?? '',
+      item.dn2 ?? '',
+      item.diameterMm2 ?? '',
+      item.wallThickness2 ?? '',
+      item.totalSpecQty ?? item.specQty ?? 0,
+      item.unit || 'шт',
+      item.linkedJointsCount ?? 0,
+      statusLabel,
+      bal.acceptedQty,
+      bal.rejectedQty,
+      bal.replacedQty,
+      bal.pendingQty,
+      batches.length,
+    ]);
+
+    for (const batch of batches) {
+      actRows.push([
+        item.lrvCode,
+        item.rdCode,
+        item.shortName,
+        batch.actNumber || '',
+        batch.actDate ? formatDateDDMMYY(batch.actDate) : '',
+        batch.certificateNumber || '',
+        batch.heatNumber || '',
+        (batch.serialNumbers || []).join(', '),
+        batch.quantity ?? 0,
+        batch.unit || item.unit || 'шт',
+        verdictLabels[batch.verdict] || batch.verdict,
+        batch.inspectorName || '',
+        batch.rejectionReason || '',
+        batch.replacementLetter || '',
+        batch.notes || '',
+      ]);
+    }
+  }
+
+  const actHeaders = [
+    'Код ЛРВ',
+    'Шифр РД',
+    'Наименование',
+    'Номер акта ВК',
+    'Дата акта',
+    'Сертификаты, паспорта',
+    'Плавка / партия',
+    'Заводские номера',
+    'Кол-во',
+    'Ед. изм.',
+    'Результат контроля',
+    'Контролёр',
+    'Причина отбраковки',
+    'Письмо замены',
+    'Примечания',
+  ];
+  const actWidths = [20, 34, 28, 16, 14, 24, 18, 26, 10, 10, 20, 20, 30, 22, 30];
+
+  const bytes = buildXlsxBinary([
+    {
+      name: 'База материалов',
+      headers: mainHeaders,
+      rows: mainRows,
+      columnWidths: mainWidths,
+    },
+    {
+      name: 'Акты входного контроля',
+      headers: actHeaders,
+      rows:
+        actRows.length > 0
+          ? actRows
+          : [['—', '—', 'По выбранным позициям акты входного контроля отсутствуют', '', '', '', '', '', '', '', '', '', '', '', '']],
+      columnWidths: actWidths,
+    },
+  ]);
+
+  const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
+  const blob = new Blob([bytes.buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  triggerBlobDownload(blob, `ZAYCHICK_Baza_Materialov_${dateStamp}.xlsx`);
+}
+
+
 

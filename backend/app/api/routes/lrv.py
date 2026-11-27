@@ -19,6 +19,7 @@ from app.models.lrv import LrvItem
 from app.models.user import User
 from app.schemas.auth import RecordStatusChangeRequest
 from app.schemas.domain import (
+    LrvBatchesUpdateRequest,
     LrvItemCreate,
     LrvItemOut,
     LrvItemUpdate,
@@ -41,6 +42,33 @@ from app.services.rbac import (
 
 router = APIRouter(prefix="/api/lrv", tags=["lrv"])
 LRV_ALLOWED_DEPTS = (DepartmentEnum.PTO,)
+LRV_INCOMING_CONTROL_DEPTS = (
+    DepartmentEnum.PTO,
+    DepartmentEnum.SK,
+    DepartmentEnum.PIL,
+)
+
+
+def _serialize_batches(batches: list | None) -> list[dict]:
+    if not batches:
+        return []
+    result: list[dict] = []
+    for batch in batches:
+        if hasattr(batch, "model_dump"):
+            result.append(batch.model_dump(mode="json", exclude_none=True))
+        elif isinstance(batch, dict):
+            result.append(batch)
+    return result
+
+
+def _serialize_replacement_notice(notice: object | None) -> dict | None:
+    if notice is None:
+        return None
+    if hasattr(notice, "model_dump"):
+        return notice.model_dump(mode="json", exclude_none=True)
+    if isinstance(notice, dict):
+        return notice
+    return None
 
 
 def _build_lrv_item(payload: LrvItemCreate, created_by_id: uuid.UUID | None = None) -> LrvItem:
@@ -72,6 +100,9 @@ def _build_lrv_item(payload: LrvItemCreate, created_by_id: uuid.UUID | None = No
         status=payload.status,
         replacement_letter=payload.replacement_letter,
         replacement_date=payload.replacement_date,
+        batches=_serialize_batches(payload.batches),
+        parent_material_id=payload.parent_material_id,
+        replacement_notice=_serialize_replacement_notice(payload.replacement_notice),
         sort_order=payload.sort_order,
         record_status=RecordStatusEnum.DRAFT,
         created_by_id=created_by_id,
@@ -205,6 +236,31 @@ async def update_lrv_item(
     )
 
     patch_data = payload.model_dump(exclude_unset=True)
+    if "batches" in patch_data and patch_data["batches"] is not None:
+        patch_data["batches"] = _serialize_batches(payload.batches)
+    if "replacement_notice" in patch_data:
+        patch_data["replacement_notice"] = _serialize_replacement_notice(payload.replacement_notice)
+
+    next_rd_code = str(patch_data.get("rd_code", item.rd_code)).strip()
+    next_lrv_code = str(patch_data.get("lrv_code", item.lrv_code)).strip()
+    if next_rd_code != item.rd_code or next_lrv_code != item.lrv_code:
+        duplicate = (
+            await session.execute(
+                select(LrvItem).where(
+                    and_(
+                        LrvItem.id != item.id,
+                        LrvItem.rd_code == next_rd_code,
+                        LrvItem.lrv_code == next_lrv_code,
+                    )
+                )
+            )
+        ).scalar_one_or_none()
+        if duplicate is not None:
+            raise_duplicate_error(
+                "DUPLICATE_LRV_CODE",
+                f"Позиция ЛРВ «{next_lrv_code}» уже зарегистрирована в шифре РД «{next_rd_code}».",
+            )
+
     enforce_optimistic_lock(
         entity_type="lrv_item",
         entity_obj=item,
@@ -231,6 +287,68 @@ async def update_lrv_item(
         ip_address=get_client_ip(request),
         rd_code=item.rd_code,
         summary=f"Обновлена позиция ЛРВ «{item.lrv_code}» (v{item.version})",
+    )
+    await event_bus.emit_delta(
+        session,
+        event="lrv.updated",
+        entity_type="lrv_item",
+        entity_id=item.id,
+        version=item.version,
+        updated_by=current_user.login,
+        data=new_snap,
+    )
+    return LrvItemOut.model_validate(item)
+
+
+@router.patch("/{item_id}/batches", response_model=LrvItemOut)
+async def update_lrv_batches(
+    item_id: uuid.UUID,
+    payload: LrvBatchesUpdateRequest,
+    request: Request,
+    current_user: User = Depends(
+        require_dept_access(LRV_INCOMING_CONTROL_DEPTS, SystemRoleEnum.OPERATOR)
+    ),
+    session: AsyncSession = Depends(get_db_session),
+) -> LrvItemOut:
+    """Update incoming control batch acts for an LRV item (PTO / SK / PIL operators & admins)."""
+    item = (await session.execute(select(LrvItem).where(LrvItem.id == item_id))).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Позиция ЛРВ не найдена.")
+
+    if item.record_status == RecordStatusEnum.LOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Запись закрыта для изменений. Требуется разблокировка суперадмином.",
+        )
+
+    serialized_batches = _serialize_batches(payload.batches)
+    enforce_optimistic_lock(
+        entity_type="lrv_item",
+        entity_obj=item,
+        expected_version=payload.version,
+        patch_data={"batches": serialized_batches},
+        schema_cls=LrvItemOut,
+    )
+
+    old_snap = orm_snapshot(item, LrvItemOut)
+    item.batches = serialized_batches
+    item.version += 1
+    item.updated_at = datetime.now(timezone.utc)
+    await session.flush()
+
+    new_snap = orm_snapshot(item, LrvItemOut)
+    old_diff, new_diff = extract_changed_fields(old_snap, new_snap)
+    await record_audit_log(
+        session,
+        action="UPDATE",
+        entity_type="lrv_item",
+        entity_id=str(item.id),
+        user=current_user,
+        old_data=old_diff,
+        new_data=new_diff,
+        ip_address=get_client_ip(request),
+        rd_code=item.rd_code,
+        summary=f"Обновлены акты входного контроля позиции ЛРВ «{item.lrv_code}» ({len(serialized_batches)} шт.)",
     )
     await event_bus.emit_delta(
         session,

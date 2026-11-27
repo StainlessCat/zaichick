@@ -134,6 +134,54 @@ export function useLrvActions(params: UseLrvActionsParams) {
     ]
   );
 
+  const handleUpdateLrvBatches = useCallback(
+    async (updatedItem: LRVItem) => {
+      if (!isAuthenticated || !currentUser.login) {
+        setIsLoginModalOpen(true);
+        notifyError(
+          '[Ошибка доступа] Внесение актов входного контроля запрещено: требуется авторизация.'
+        );
+        return;
+      }
+      recordUndoSnapshot(`Акты входного контроля ЛРВ ${updatedItem.lrvCode}`);
+      const prevItem = lrvCatalog.find((x) => x.id === updatedItem.id);
+      try {
+        setIsDbSyncing(true);
+        let saved: LRVItem;
+        if (UUID_RE.test(updatedItem.id)) {
+          saved = await zaychickApi.updateLrvBatches(
+            updatedItem.id,
+            prevItem?.version ?? updatedItem.version ?? 1,
+            updatedItem.batches || []
+          );
+        } else {
+          saved = updatedItem;
+        }
+        setLrvCatalog((prev) =>
+          prev.map((item) => (item.id === saved.id ? saved : item))
+        );
+        bumpRevisionMeta(`Акты ВК ЛРВ ${saved.lrvCode}`, currentUser.fullName);
+      } catch (err) {
+        reportError(err, 'Ошибка сохранения актов входного контроля');
+      } finally {
+        setIsDbSyncing(false);
+      }
+    },
+    [
+      bumpRevisionMeta,
+      currentUser.fullName,
+      currentUser.login,
+      isAuthenticated,
+      lrvCatalog,
+      notifyError,
+      recordUndoSnapshot,
+      reportError,
+      setIsDbSyncing,
+      setIsLoginModalOpen,
+      setLrvCatalog,
+    ]
+  );
+
   const handleDeleteLrvItems = useCallback(
     async (ids: string[]) => {
       if (!isAuthenticated || !currentUser.login) {
@@ -180,6 +228,7 @@ export function useLrvActions(params: UseLrvActionsParams) {
   return {
     handleAddLrvItems,
     handleUpdateLrvItem,
+    handleUpdateLrvBatches,
     handleDeleteLrvItems,
   };
 }

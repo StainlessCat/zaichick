@@ -1,52 +1,59 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Filter, RotateCcw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, X } from 'lucide-react';
 import { FacilityObject, LRVItem, WeldJoint } from '../types/welding';
-import { MaterialBatchAct } from '../types/materialControl';
-import {
-  calculateMaterialControlBalance,
-  splitMaterialForPartialReplacement,
-} from '../utils/materialControlLogic';
-import {
-  MaterialPartialReplaceModal,
-  AddIncomingControlActModal,
-} from './materials';
-import {
-  exportLrvCatalogToExcel,
-  readLrvCatalogFromExcelFile,
-} from '../utils/excelUtils';
-import { getJointsUsingLrvItem } from '../utils/pipeCalc';
-import {
-  getLrvItemDn1,
-  getLrvItemDn2,
-  isLrvItemUsedInJoints,
-  resolveLrvConnectionType,
-  resolveLrvFullName,
-  resolveLrvItemCategory,
-} from '../utils/weldingLogic';
-import { applyTableColumnFiltersAndSort } from './TableColumnFilterPopover';
-import { filterLrvCatalogByObject } from '../utils/filters';
-import { useResizableColumns } from '../utils/useResizableColumns';
+import { MaterialBatchAct, MaterialItemWithControl } from '../types/materialControl';
 import { useAuth, useAppContext } from '../context';
 import {
-  LrvItemFormModal,
-  LrvStatusFilter,
-  LrvSupersedeModal,
-  LrvTable,
-  LrvToolbar,
-} from './lrv';
+  exportLrvCatalogToExcel,
+  exportLrvFilteredToXlsx,
+  readLrvCatalogFromExcelFile,
+} from '../utils/excelUtils';
+import {
+  filterLrvCatalogByObject,
+  getJointsUsingLrvItem,
+} from '../utils/weldingLogic';
+import { resolveLrvItemCategory } from '../utils/pipeCalc';
+import {
+  INCOMING_CONTROL_VERDICT_LABELS,
+  MATERIAL_CONTROL_STATUS_LABELS,
+  calculateMaterialControlBalance,
+} from '../utils/materialControlLogic';
+import { formatInspectorShortName } from '../utils/rbac';
+import { useResizableColumns } from '../utils/useResizableColumns';
+import { MaterialPartialReplaceModal } from './materials/MaterialPartialReplaceModal';
+import { AddIncomingControlActModal } from './materials/AddIncomingControlActModal';
+import { LrvToolbar, LrvStatusCounts, LrvStatusFilter } from './lrv/LrvToolbar';
+import { LrvItemFormModal } from './lrv/LrvItemFormModal';
+import { LrvSupersedeModal } from './lrv/LrvSupersedeModal';
+import { LrvSortConfig, LrvTable } from './lrv/LrvTable';
+import {
+  LRV_COLUMN_DEFINITIONS,
+  LRV_FULL_COLUMNS,
+  LRV_OPERATIONAL_COLUMNS,
+  LrvColumnKey,
+  LrvColumnPreset,
+  loadSavedLrvColumns,
+  saveLrvColumns,
+} from './lrv/lrvColumns';
 
 interface LrvCatalogViewProps {
   catalog?: LRVItem[];
   facilities?: FacilityObject[];
   selectedObjectName?: string;
   selectedRdCode?: string;
-  onAddLrvItems: (items: LRVItem[]) => void;
+  onAddLrvItems?: (items: LRVItem[]) => void;
   onUpdateLrvItem?: (item: LRVItem) => void;
+  onUpdateLrvBatches?: (item: LRVItem) => void;
   onDeleteLrvItems?: (ids: string[]) => void;
+  onOpenJointsByLrvCode?: (lrvCode: string, rdCode?: string) => void;
   canEdit?: boolean;
-  currentUserRoleLabel?: string;
+  canManageIncomingControl?: boolean;
   joints?: WeldJoint[];
 }
+
+const DEFAULT_COL_WIDTHS: Record<string, number> = Object.fromEntries(
+  LRV_COLUMN_DEFINITIONS.map((c) => [c.key, c.defaultWidth])
+);
 
 export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
   const auth = useAuth();
@@ -71,9 +78,20 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
   );
 
   const selectedRdCode = props.selectedRdCode ?? app?.selectedRdCode ?? 'ALL';
-  const canEdit = props.canEdit ?? auth?.userPermissions?.canEditLrvCatalog ?? false;
+  const canEditCatalog = props.canEdit ?? auth?.userPermissions?.canEditLrvCatalog ?? false;
+  const canManageIncomingControl =
+    props.canManageIncomingControl ??
+    auth?.userPermissions?.canManageIncomingControl ??
+    canEditCatalog;
+  const defaultInspectorName = formatInspectorShortName(auth?.currentUser?.fullName);
 
-  const { onAddLrvItems, onUpdateLrvItem, onDeleteLrvItems } = props;
+  const {
+    onAddLrvItems,
+    onUpdateLrvItem,
+    onUpdateLrvBatches,
+    onDeleteLrvItems,
+    onOpenJointsByLrvCode,
+  } = props;
 
   const allRds = useMemo(
     () =>
@@ -92,16 +110,26 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
       ? selectedRdCode
       : 'ALL'
   );
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<LrvStatusFilter>('all');
+  const [visibleColumns, setVisibleColumns] = useState<LrvColumnKey[]>(() =>
+    loadSavedLrvColumns()
+  );
+  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
+  const [sortConfig, setSortConfig] = useState<LrvSortConfig | null>(null);
+
+  const [isItemFormOpen, setIsItemFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<LRVItem | null>(null);
   const [selectedLrvIds, setSelectedLrvIds] = useState<string[]>([]);
-  const [statusFilter, setStatusFilter] = useState<LrvStatusFilter>('all');
   const [expandedMaterialIds, setExpandedMaterialIds] = useState<Record<string, boolean>>({});
   const [activeReplaceTarget, setActiveReplaceTarget] = useState<{
     material: LRVItem;
     batch: MaterialBatchAct;
   } | null>(null);
-  const [activeAddActMaterial, setActiveAddActMaterial] = useState<LRVItem | null>(null);
+  const [activeActModal, setActiveActModal] = useState<{
+    material: LRVItem;
+    editingBatch: MaterialBatchAct | null;
+  } | null>(null);
   const [supersedeModalItem, setSupersedeModalItem] = useState<LRVItem | null>(null);
   const [bulkDeleteBlockMessage, setBulkDeleteBlockMessage] = useState<string | null>(null);
   const [confirmDeleteLrvId, setConfirmDeleteLrvId] = useState<string | null>(null);
@@ -111,513 +139,592 @@ export const LrvCatalogView: React.FC<LrvCatalogViewProps> = (props) => {
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Column filters & sort
-  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
-  const [sortConfig, setSortConfig] = useState<{
-    key: string;
-    direction: 'asc' | 'desc';
-  } | null>(null);
-
-  const {
-    getColumnWidth,
-    handleResizeStart,
-    handleAutoFit,
-    handleResetWidths,
-    hasCustomWidths,
-  } = useResizableColumns({
-    storageKey: 'zaychick_col_widths_lrv',
-    defaultWidths: {
-      lrvCode: 140,
-      rdCode: 180,
-      shortName: 200,
-      marking: 150,
-      fullName: 240,
-      category: 110,
-      pnMpa: 120,
-      connectionType: 120,
-      material: 130,
-      ntd: 140,
-      manufacturer: 160,
-      dn1: 90,
-      diameterMm: 110,
-      wallThickness: 110,
-      dn2: 90,
-      diameterMm2: 110,
-      wallThickness2: 110,
-      specQty: 110,
-      controlStatus: 140,
-      balance: 140,
-      action: 95,
-    },
+  const { getColumnWidth, handleResizeStart, handleAutoFit } = useResizableColumns({
+    storageKey: 'zaychick_col_widths_lrv_v2',
+    defaultWidths: DEFAULT_COL_WIDTHS,
+    minColumnWidth: 64,
   });
 
-  const normalizedCatalog = useMemo(() => {
-    return catalog.map((item) => {
-      const totalSpec = item.totalSpecQty ?? item.specQty;
-      const balance = calculateMaterialControlBalance(totalSpec, item.batches || []);
-      return {
-        ...item,
-        totalSpecQty: totalSpec,
-        ...balance,
-      };
-    });
-  }, [catalog]);
-
-  const prevObjectRef = useRef<string>(selectedObjectName);
-
-  // Сбрасываем устаревшие фильтры и выделение при смене объекта строительства
   useEffect(() => {
-    if (prevObjectRef.current !== selectedObjectName) {
-      prevObjectRef.current = selectedObjectName;
-      setColumnFilters({});
-      setSelectedLrvIds([]);
-      setRdFilter((prev) => {
-        if (
-          selectedRdCode &&
-          selectedRdCode !== 'ALL' &&
-          allRds.some((r) => r.code === selectedRdCode)
-        ) {
-          return selectedRdCode;
-        }
-        if (prev && prev !== 'ALL' && allRds.some((r) => r.code === prev)) {
-          return prev;
-        }
-        return 'ALL';
-      });
-    }
-  }, [selectedObjectName, selectedRdCode, allRds]);
+    saveLrvColumns(visibleColumns);
+  }, [visibleColumns]);
 
-  // Синхронизируем фильтр шифра РД, если текущий шифр отсутствует в новом списке доступных РД
   useEffect(() => {
-    if (rdFilter && rdFilter !== 'ALL' && !allRds.some((r) => r.code === rdFilter)) {
-      setRdFilter('ALL');
-    }
-  }, [rdFilter, allRds]);
-
-  const rdScopedCatalog = useMemo(() => {
-    return normalizedCatalog.filter((item) => {
-      if (rdFilter && rdFilter !== 'ALL' && item.rdCode !== rdFilter) return false;
-      if (statusFilter === 'accepted' && item.controlStatus !== 'accepted') return false;
-      if (statusFilter === 'partial' && item.controlStatus !== 'partial') return false;
-      if (statusFilter === 'rejected' && item.controlStatus !== 'rejected') return false;
-      if (statusFilter === 'pending' && item.controlStatus !== 'pending') return false;
-      if (
-        statusFilter === 'superseded' &&
-        item.status !== 'superseded' &&
-        item.status !== 'archived'
-      ) {
-        return false;
+    if (selectedRdCode && selectedRdCode !== 'ALL') {
+      if (allRds.some((r) => r.code === selectedRdCode)) {
+        setRdFilter(selectedRdCode);
+        return;
       }
-      return true;
-    });
-  }, [normalizedCatalog, rdFilter, statusFilter]);
+    }
+    setRdFilter('ALL');
+  }, [selectedRdCode, selectedObjectName, allRds]);
 
-  const lrvColumnGetters = useMemo<Record<string, (item: LRVItem) => string>>(
+  const linkedJointsCountById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of catalog) {
+      map.set(item.id, getJointsUsingLrvItem(item, joints).length);
+    }
+    return map;
+  }, [catalog, joints]);
+
+  const computeBalance = (item: LRVItem) =>
+    calculateMaterialControlBalance(item.totalSpecQty ?? item.specQty, item.batches || []);
+
+  // Базовая выборка по шифру РД и текстовому поиску (для счётчиков KPI и вкладок)
+  const rdAndSearchItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return catalog.filter((item) => {
+      if (rdFilter !== 'ALL' && item.rdCode !== rdFilter) return false;
+      if (!q) return true;
+      const inBasic = [
+        item.lrvCode,
+        item.rdCode,
+        item.shortName,
+        item.fullName,
+        item.marking,
+        item.material,
+        item.ntd,
+        item.manufacturer,
+        resolveLrvItemCategory(item),
+      ]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(q));
+      if (inBasic) return true;
+      return (item.batches || []).some((b) =>
+        [
+          b.actNumber,
+          b.certificateNumber,
+          b.heatNumber,
+          b.inspectorName,
+          ...(b.serialNumbers || []),
+        ]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q))
+      );
+    });
+  }, [catalog, rdFilter, searchQuery]);
+
+  const statusCounts: LrvStatusCounts = useMemo(() => {
+    let accepted = 0;
+    let partial = 0;
+    let rejected = 0;
+    let pending = 0;
+    let superseded = 0;
+    let totalActs = 0;
+
+    for (const item of rdAndSearchItems) {
+      totalActs += (item.batches || []).length;
+      if (item.status === 'superseded') {
+        superseded += 1;
+        continue;
+      }
+      const bal = computeBalance(item);
+      if (bal.controlStatus === 'accepted' || bal.controlStatus === 'replaced') {
+        accepted += 1;
+      } else if (bal.controlStatus === 'partial') {
+        partial += 1;
+      } else if (bal.controlStatus === 'rejected') {
+        rejected += 1;
+      } else {
+        pending += 1;
+      }
+    }
+
+    return {
+      all: rdAndSearchItems.length,
+      accepted,
+      partial,
+      rejected,
+      pending,
+      superseded,
+      totalActs,
+    };
+  }, [rdAndSearchItems]);
+
+  const baseFilteredItems = useMemo(() => {
+    return rdAndSearchItems.filter((item) => {
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'superseded') return item.status === 'superseded';
+      if (item.status === 'superseded') return false;
+      const bal = computeBalance(item);
+      if (statusFilter === 'accepted') {
+        return bal.controlStatus === 'accepted' || bal.controlStatus === 'replaced';
+      }
+      return bal.controlStatus === statusFilter;
+    });
+  }, [rdAndSearchItems, statusFilter]);
+
+  const lrvColumnGetters: Record<string, (item: LRVItem, _idx?: number) => string> = useMemo(
     () => ({
-      lrvCode: (item) => item.lrvCode || '',
-      rdCode: (item) => item.rdCode || '',
-      shortName: (item) => item.shortName || '',
-      marking: (item) => item.marking || '',
-      fullName: (item) => resolveLrvFullName(item),
-      category: (item) => resolveLrvItemCategory(item),
-      pnMpa: (item) => (item.pnMpa ? `${item.pnMpa} МПа` : ''),
-      connectionType: (item) =>
-        resolveLrvItemCategory(item) === 'ЗРА'
-          ? resolveLrvConnectionType(item) === 'фланцевый'
-            ? 'фланцевый'
-            : 'приварной'
-          : '',
-      material: (item) => item.material || '',
-      ntd: (item) => item.ntd || '',
-      manufacturer: (item) => item.manufacturer || '',
-      dn1: (item) => {
-        const val = getLrvItemDn1(item);
-        return val !== undefined ? String(val) : '';
+      lrvCode: (i) => i.lrvCode || '',
+      rdCode: (i) => i.rdCode || '',
+      shortName: (i) => i.shortName || '',
+      marking: (i) => i.marking || '',
+      fullName: (i) =>
+        i.fullName || [i.shortName, i.material, i.ntd].filter(Boolean).join(', '),
+      category: (i) => resolveLrvItemCategory(i),
+      pnMpa: (i) => i.pnMpa || '',
+      connectionType: (i) => i.connectionType || '',
+      material: (i) => i.material || '',
+      ntd: (i) => i.ntd || '',
+      manufacturer: (i) => i.manufacturer || '',
+      sizeSummary: (i) => {
+        const dn =
+          i.dn1 !== undefined ? `DN${i.dn1}${i.dn2 !== undefined ? `/${i.dn2}` : ''}` : '';
+        const d1 = i.diameterMm > 0 ? `Ø${i.diameterMm}×${i.wallThickness}` : '';
+        return [dn, d1].filter(Boolean).join(' ');
       },
-      diameterMm: (item) => (item.diameterMm !== undefined ? item.diameterMm.toFixed(1) : ''),
-      wallThickness: (item) => (item.wallThickness !== undefined ? item.wallThickness.toFixed(1) : ''),
-      dn2: (item) => {
-        const val = getLrvItemDn2(item);
-        return val !== undefined ? String(val) : '';
+      dn1: (i) => (i.dn1 !== undefined ? String(i.dn1) : ''),
+      diameterMm: (i) => (i.diameterMm > 0 ? String(i.diameterMm) : ''),
+      wallThickness: (i) => (i.wallThickness > 0 ? String(i.wallThickness) : ''),
+      dn2: (i) => (i.dn2 !== undefined ? String(i.dn2) : ''),
+      diameterMm2: (i) => (i.diameterMm2 !== undefined ? String(i.diameterMm2) : ''),
+      wallThickness2: (i) => (i.wallThickness2 !== undefined ? String(i.wallThickness2) : ''),
+      specQty: (i) => `${i.totalSpecQty ?? i.specQty} ${i.unit}`,
+      linkedJoints: (i) => String(linkedJointsCountById.get(i.id) ?? 0),
+      controlStatus: (i) => {
+        if (i.status === 'superseded') return 'Аннулирована';
+        const bal = computeBalance(i);
+        return MATERIAL_CONTROL_STATUS_LABELS[bal.controlStatus] || bal.controlStatus;
       },
-      diameterMm2: (item) =>
-        item.diameterMm2 !== undefined ? item.diameterMm2.toFixed(1) : '',
-      wallThickness2: (item) =>
-        item.wallThickness2 !== undefined ? item.wallThickness2.toFixed(1) : '',
-      specQty: (item) => `${item.specQty ?? 0} ${item.unit || 'шт'}`,
-      controlStatus: (item) => item.controlStatus || 'pending',
-      balance: (item) => `${item.acceptedQty || 0} / ${item.totalSpecQty ?? item.specQty}`,
+      balance: (i) => {
+        const bal = computeBalance(i);
+        return `${bal.acceptedQty + bal.replacedQty}/${i.totalSpecQty ?? i.specQty}`;
+      },
     }),
-    []
+    [linkedJointsCountById]
   );
 
-  const lrvColumnLabels: Record<string, string> = {
-    lrvCode: 'Код ЛРВ',
-    rdCode: 'Шифр РД',
-    shortName: 'Краткое наименование',
-    marking: 'Маркировка',
-    fullName: 'Полное наименование',
-    category: 'Категория',
-    pnMpa: 'Давление PN, МПа',
-    connectionType: 'Подсоединение',
-    material: 'Материал',
-    ntd: 'НТД',
-    manufacturer: 'Завод-изготовитель',
-    dn1: 'DN 1',
-    diameterMm: 'Диаметр Ø1, мм',
-    wallThickness: 'Толщина стенки S1, мм',
-    dn2: 'DN 2',
-    diameterMm2: 'Диаметр Ø2, мм',
-    wallThickness2: 'Толщина стенки S2, мм',
-    specQty: 'Кол-во по спец.',
-    controlStatus: 'Статус контроля',
-    balance: 'Баланс допуска',
+  const filteredItems = useMemo(() => {
+    const activeEntries = Object.entries(columnFilters);
+    let rows =
+      activeEntries.length === 0
+        ? baseFilteredItems
+        : baseFilteredItems.filter((row, idx) =>
+            activeEntries.every(([colKey, allowed]) => {
+              const getter = lrvColumnGetters[colKey];
+              if (!getter) return true;
+              const val = String(getter(row, idx) ?? '').trim();
+              return allowed.includes(val);
+            })
+          );
+
+    if (sortConfig) {
+      const getter = lrvColumnGetters[sortConfig.key];
+      if (getter) {
+        const dir = sortConfig.direction === 'asc' ? 1 : -1;
+        rows = [...rows].sort((a, b) => {
+          const av = getter(a) ?? '';
+          const bv = getter(b) ?? '';
+          const an = Number(av.replace(',', '.'));
+          const bn = Number(bv.replace(',', '.'));
+          if (av !== '' && bv !== '' && Number.isFinite(an) && Number.isFinite(bn)) {
+            return (an - bn) * dir;
+          }
+          return av.localeCompare(bv, 'ru', { numeric: true }) * dir;
+        });
+      }
+    }
+    return rows;
+  }, [baseFilteredItems, columnFilters, sortConfig, lrvColumnGetters]);
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() ||
+      rdFilter !== 'ALL' ||
+      statusFilter !== 'all' ||
+      Object.keys(columnFilters).length > 0 ||
+      sortConfig !== null
+  );
+
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    setRdFilter('ALL');
+    setStatusFilter('all');
+    setColumnFilters({});
+    setSortConfig(null);
   };
 
-  const filteredCatalog = useMemo(
-    () =>
-      applyTableColumnFiltersAndSort(
-        rdScopedCatalog,
-        columnFilters,
-        lrvColumnGetters,
-        sortConfig
-      ),
-    [rdScopedCatalog, columnFilters, lrvColumnGetters, sortConfig]
-  );
+  const handleApplyPreset = (preset: LrvColumnPreset) => {
+    setVisibleColumns(preset === 'operational' ? LRV_OPERATIONAL_COLUMNS : LRV_FULL_COLUMNS);
+  };
 
-  const handleApplyColumnFilter = (colKey: string, vals: string[] | undefined) => {
+  const handleApplyColumnFilter = (colKey: string, selectedValues: string[] | undefined) => {
     setColumnFilters((prev) => {
       const next = { ...prev };
-      if (vals === undefined) {
+      if (selectedValues === undefined) {
         delete next[colKey];
       } else {
-        next[colKey] = vals;
+        next[colKey] = selectedValues;
       }
       return next;
     });
   };
 
-  const handleSortColumn = (colKey: string, direction: 'asc' | 'desc') => {
-    setSortConfig({ key: colKey, direction });
+  const handleSaveItemForm = (item: LRVItem, isEdit: boolean) => {
+    if (isEdit) {
+      onUpdateLrvItem?.(item);
+    } else {
+      onAddLrvItems?.([item]);
+    }
+    setIsItemFormOpen(false);
+    setEditingItem(null);
   };
 
-  const handleExcelFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const defaultObjectName = facilities[0]?.name || app.selectedObjectName || '';
-      const defaultRd = rdFilter || selectedRdCode || '';
-      const existingCodes = new Set(catalog.map((i) => i.lrvCode.trim().toUpperCase()));
-      const parsedItems = await readLrvCatalogFromExcelFile(file, defaultObjectName, defaultRd, existingCodes);
-      if (parsedItems.length === 0) {
-        setExcelUploadMessage({
-          type: 'error',
-          text: `В файле «${file.name}» не найдено корректных строк материалов.`,
-        });
-      } else {
-        onAddLrvItems(parsedItems);
-        setExcelUploadMessage({
-          type: 'success',
-          text: `Из файла «${file.name}» успешно загружено ${parsedItems.length} поз. материалов.`,
-        });
-      }
-    } catch {
-      setExcelUploadMessage({
-        type: 'error',
-        text: `Ошибка чтения файла «${file.name}». Проверьте формат (.xlsx, .xls, .csv).`,
-      });
-    } finally {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+  const persistBatchesForMaterial = (material: LRVItem, nextBatches: MaterialBatchAct[]) => {
+    const totalSpec = material.totalSpecQty ?? material.specQty;
+    const balance = calculateMaterialControlBalance(totalSpec, nextBatches);
+    const updatedItem: LRVItem = {
+      ...material,
+      totalSpecQty: totalSpec,
+      batches: nextBatches,
+      ...balance,
+    };
+    if (onUpdateLrvBatches) {
+      onUpdateLrvBatches(updatedItem);
+    } else {
+      onUpdateLrvItem?.(updatedItem);
     }
   };
 
-  const handleDeleteRequest = (item: LRVItem) => {
-    const usedJoints = joints ? getJointsUsingLrvItem(item, joints) : [];
-    if (usedJoints.length > 0) {
+  const handleSaveBatchAct = (
+    material: LRVItem,
+    savedBatch: MaterialBatchAct,
+    isEdit: boolean
+  ) => {
+    const currentBatches = material.batches || [];
+    const nextBatches = isEdit
+      ? currentBatches.map((b) => (b.id === savedBatch.id ? savedBatch : b))
+      : [...currentBatches, savedBatch];
+    persistBatchesForMaterial(material, nextBatches);
+    setExpandedMaterialIds((prev) => ({ ...prev, [material.id]: true }));
+  };
+
+  const handleDeleteBatchAct = (material: LRVItem, batchId: string) => {
+    const nextBatches = (material.batches || []).filter((b) => b.id !== batchId);
+    persistBatchesForMaterial(material, nextBatches);
+  };
+
+  const handleConfirmPartialReplace = (result: {
+    updatedOriginal: MaterialItemWithControl;
+    replacementItem: MaterialItemWithControl;
+  }) => {
+    if (onUpdateLrvBatches && !canEditCatalog) {
+      onUpdateLrvBatches(result.updatedOriginal);
+    } else {
+      onUpdateLrvItem?.(result.updatedOriginal);
+    }
+    onAddLrvItems?.([result.replacementItem]);
+    setExpandedMaterialIds((prev) => ({
+      ...prev,
+      [result.updatedOriginal.id]: true,
+      [result.replacementItem.id]: true,
+    }));
+  };
+
+  const handleExcelFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setExcelUploadMessage(null);
+    try {
+      const effectiveDefaultRd =
+        rdFilter !== 'ALL' ? rdFilter : allRds[0]?.code || '';
+      const defaultObj =
+        (selectedObjectName !== 'ALL' ? selectedObjectName : '') ||
+        allRds.find((r) => r.code === effectiveDefaultRd)?.objectName ||
+        allRds[0]?.objectName ||
+        '';
+      const existingCodes = new Set(
+        catalog
+          .filter((i) => !effectiveDefaultRd || i.rdCode === effectiveDefaultRd)
+          .map((i) => i.lrvCode)
+      );
+      const parsedItems = await readLrvCatalogFromExcelFile(
+        file,
+        defaultObj,
+        effectiveDefaultRd,
+        existingCodes
+      );
+      if (parsedItems.length === 0) {
+        setExcelUploadMessage({
+          type: 'error',
+          text: 'Новые позиции для импорта не обнаружены или все коды ЛРВ уже присутствуют в каталоге.',
+        });
+      } else {
+        onAddLrvItems?.(parsedItems);
+        setExcelUploadMessage({
+          type: 'success',
+          text: `Успешно импортировано позиций ЛРВ: ${parsedItems.length}`,
+        });
+      }
+    } catch (err) {
+      setExcelUploadMessage({
+        type: 'error',
+        text:
+          err instanceof Error
+            ? `Ошибка чтения файла Excel: ${err.message}`
+            : 'Не удалось прочитать файл Excel.',
+      });
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleExportFilteredExcel = () => {
+    exportLrvFilteredToXlsx({
+      items: filteredItems.map((it) => ({
+        ...it,
+        linkedJointsCount: linkedJointsCountById.get(it.id) ?? 0,
+      })),
+      statusLabels: MATERIAL_CONTROL_STATUS_LABELS,
+      verdictLabels: INCOMING_CONTROL_VERDICT_LABELS,
+      resolveCategory: (it) => resolveLrvItemCategory(it),
+      computeBalance,
+    });
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      await exportLrvCatalogToExcel(
+        [],
+        true,
+        rdFilter !== 'ALL' ? rdFilter : undefined
+      );
+    } catch {
+      setExcelUploadMessage({
+        type: 'error',
+        text: 'Не удалось скачать шаблон Excel. Выполните вход в систему.',
+      });
+    }
+  };
+
+  const handleRequestDeleteOrSupersede = (item: LRVItem) => {
+    const linked = getJointsUsingLrvItem(item, joints);
+    if (linked.length > 0) {
       setSupersedeModalItem(item);
+      setConfirmDeleteLrvId(null);
     } else {
       setConfirmDeleteLrvId(item.id);
     }
   };
 
-  const activeFilterKeys = Object.keys(columnFilters);
+  const handleBulkDelete = () => {
+    if (!onDeleteLrvItems || selectedLrvIds.length === 0) return;
+    const selectedItems = catalog.filter((i) => selectedLrvIds.includes(i.id));
+    const blocked = selectedItems.filter((i) => (linkedJointsCountById.get(i.id) ?? 0) > 0);
+    const deletableIds = selectedItems
+      .filter((i) => (linkedJointsCountById.get(i.id) ?? 0) === 0 && i.status !== 'superseded')
+      .map((i) => i.id);
+
+    if (blocked.length > 0) {
+      const codes = blocked.map((b) => b.lrvCode).slice(0, 5).join(', ');
+      setBulkDeleteBlockMessage(
+        `Позиции ${codes}${blocked.length > 5 ? ' и др.' : ''} привязаны к сварным стыкам и не могут быть удалены физически. Для них используйте аннулирование в строке таблицы.`
+      );
+    } else {
+      setBulkDeleteBlockMessage(null);
+    }
+
+    if (deletableIds.length > 0) {
+      onDeleteLrvItems(deletableIds);
+      setSelectedLrvIds((prev) => prev.filter((id) => !deletableIds.includes(id)));
+    }
+  };
+
+  const handleConfirmSupersede = (item: LRVItem, letter: string, date: string) => {
+    onUpdateLrvItem?.({
+      ...item,
+      status: 'superseded',
+      replacementLetter: letter.trim() || 'Письмо согласования',
+      replacementDate: date || new Date().toISOString().slice(0, 10),
+    });
+    setSupersedeModalItem(null);
+  };
+
+  const handleToggleSelectAll = () => {
+    const visibleIds = filteredItems.map((i) => i.id);
+    const allSelected =
+      visibleIds.length > 0 && visibleIds.every((id) => selectedLrvIds.includes(id));
+    if (allSelected) {
+      setSelectedLrvIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedLrvIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleToggleSelectRow = (id: string) => {
+    setSelectedLrvIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
 
   return (
-    <div className="space-y-4">
-      {bulkDeleteBlockMessage && (
-        <div className="px-4 py-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start justify-between gap-3 shadow-xs">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">{bulkDeleteBlockMessage}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setBulkDeleteBlockMessage(null)}
-            className="text-amber-800 hover:text-amber-950 font-bold text-xs cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Верхняя панель каталога ЛРВ */}
+    <div className="space-y-3">
       <LrvToolbar
+        canEdit={canEditCatalog}
         statusFilter={statusFilter}
         onStatusFilterChange={setStatusFilter}
-        canEdit={canEdit}
-        onExportExcel={() => exportLrvCatalogToExcel(filteredCatalog, false)}
-        onDownloadTemplate={() => exportLrvCatalogToExcel([], true)}
-        onImportClick={() => fileInputRef.current?.click()}
-        fileInputRef={fileInputRef}
-        onFileUpload={handleExcelFileUpload}
-        onToggleAddForm={() => {
+        statusCounts={statusCounts}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        rdFilter={rdFilter}
+        onRdFilterChange={setRdFilter}
+        allRds={allRds}
+        visibleColumns={visibleColumns}
+        onVisibleColumnsChange={setVisibleColumns}
+        onApplyPreset={handleApplyPreset}
+        selectedCount={selectedLrvIds.length}
+        hasActiveFilters={hasActiveFilters}
+        onResetAllFilters={handleResetAllFilters}
+        onBulkDelete={handleBulkDelete}
+        onOpenAddForm={() => {
           setEditingItem(null);
-          setShowAddForm((v) => !v);
+          setIsItemFormOpen(true);
         }}
-        selectedLrvIds={selectedLrvIds}
-        onClearSelection={() => setSelectedLrvIds([])}
-        onDeleteSelected={onDeleteLrvItems}
-        catalog={catalog}
-        joints={joints}
-        onBlockMessage={setBulkDeleteBlockMessage}
+        onDownloadTemplate={handleDownloadTemplate}
+        onExportExcel={handleExportFilteredExcel}
+        onExcelFileChange={handleExcelFileChange}
+        fileInputRef={fileInputRef}
       />
 
       {excelUploadMessage && (
         <div
-          className={`px-4 py-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 ${
+          className={`px-4 py-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 ${
             excelUploadMessage.type === 'success'
-              ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-              : 'bg-red-50 border-red-300 text-red-900'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border-rose-200 text-rose-900'
           }`}
         >
-          <span>{excelUploadMessage.text}</span>
-          <button
-            type="button"
-            onClick={() => setExcelUploadMessage(null)}
-            className="text-slate-500 hover:text-slate-800 font-bold cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Форма добавления/редактирования */}
-      {showAddForm && (
-        <LrvItemFormModal
-          isOpen={showAddForm}
-          onClose={() => setShowAddForm(false)}
-          editingItem={editingItem}
-          allRds={allRds}
-          existingItems={catalog}
-          onSave={(savedItem) => {
-            if (editingItem && onUpdateLrvItem) {
-              onUpdateLrvItem(savedItem);
-            } else {
-              onAddLrvItems([savedItem]);
-            }
-            setShowAddForm(false);
-            setEditingItem(null);
-          }}
-        />
-      )}
-
-      {/* Фильтр по Шифру РД */}
-      <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold text-slate-700">
-            Фильтр по Шифру РД:
-          </span>
-          <select
-            value={rdFilter}
-            onChange={(e) => setRdFilter(e.target.value)}
-            aria-label="Фильтр по Шифру РД"
-            className="px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-xs font-mono"
-          >
-            <option value="ALL">Все шифры РД ({catalog.length} поз.)</option>
-            {allRds.map((r) => (
-              <option key={r.code} value={r.code}>
-                {r.code} — {r.objectName}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Индикатор активных Excel-фильтров */}
-      {activeFilterKeys.length > 0 && (
-        <div className="bg-[#e8f1fc] rounded-xl border border-sky-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            {activeFilterKeys.map((k) => (
-              <span
-                key={k}
-                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white border border-sky-300 text-[#1e3799] font-medium"
-              >
-                <Filter className="w-3 h-3" />
-                <span>
-                  {lrvColumnLabels[k] || k}: {columnFilters[k]?.length} знач.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => handleApplyColumnFilter(k, undefined)}
-                  className="text-slate-400 hover:text-red-600 font-bold cursor-pointer"
-                >
-                  ✕
-                </button>
-              </span>
-            ))}
+          <div className="flex items-center gap-2">
+            {excelUploadMessage.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{excelUploadMessage.text}</span>
           </div>
           <button
             type="button"
-            onClick={() => setColumnFilters({})}
-            className="inline-flex items-center gap-1 text-[#1e3799] hover:underline font-semibold cursor-pointer"
+            onClick={() => setExcelUploadMessage(null)}
+            className="p-1 rounded hover:bg-black/5 cursor-pointer"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Сбросить фильтры столбцов</span>
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* Таблица позиций ЛРВ */}
+      {bulkDeleteBlockMessage && (
+        <div className="px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-900 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{bulkDeleteBlockMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBulkDeleteBlockMessage(null)}
+            className="p-1 rounded hover:bg-black/5 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       <LrvTable
-        items={filteredCatalog}
-        allFilteredItems={filteredCatalog}
-        rdScopedCatalog={rdScopedCatalog}
+        items={filteredItems}
+        baseItems={baseFilteredItems}
+        allFilteredCount={filteredItems.length}
         totalCatalogCount={catalog.length}
+        totalActsCount={statusCounts.totalActs}
+        canEditCatalog={canEditCatalog}
+        canManageIncomingControl={canManageIncomingControl}
+        visibleColumns={visibleColumns}
+        linkedJointsCountById={linkedJointsCountById}
         selectedLrvIds={selectedLrvIds}
-        onToggleSelectAll={() => {
-          const visIds = filteredCatalog.map((i) => i.id);
-          const allChecked =
-            visIds.length > 0 && visIds.every((id) => selectedLrvIds.includes(id));
-          if (allChecked) {
-            setSelectedLrvIds((prev) => prev.filter((id) => !visIds.includes(id)));
-          } else {
-            setSelectedLrvIds((prev) => Array.from(new Set([...prev, ...visIds])));
-          }
-        }}
-        onToggleSelectRow={(id) => {
-          setSelectedLrvIds((prev) =>
-            prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-          );
-        }}
         expandedMaterialIds={expandedMaterialIds}
-        onToggleExpand={(id) => {
-          setExpandedMaterialIds((prev) => ({ ...prev, [id]: !prev[id] }));
-        }}
-        canEdit={canEdit}
-        onEdit={(item) => {
-          setEditingItem(item);
-          setShowAddForm(true);
-        }}
-        onDeleteRequest={handleDeleteRequest}
-        confirmDeleteId={confirmDeleteLrvId}
-        onConfirmDelete={(id) => {
-          if (onDeleteLrvItems) {
-            onDeleteLrvItems([id]);
-          }
-          setConfirmDeleteLrvId(null);
-        }}
-        onCancelDelete={() => setConfirmDeleteLrvId(null)}
-        onAddAct={(item) => setActiveAddActMaterial(item)}
-        onInitiateReplacement={(mat, batch) => {
-          setActiveReplaceTarget({ material: mat, batch });
-        }}
-        onDeleteLrvItems={onDeleteLrvItems}
-        joints={joints}
-        getColumnWidth={getColumnWidth}
-        handleResizeStart={handleResizeStart}
-        handleAutoFit={handleAutoFit}
-        handleResetWidths={handleResetWidths}
-        hasCustomWidths={hasCustomWidths}
+        confirmDeleteLrvId={confirmDeleteLrvId}
         columnFilters={columnFilters}
-        onApplyColumnFilter={handleApplyColumnFilter}
         sortConfig={sortConfig}
-        onSortColumn={handleSortColumn}
-        lrvColumnGetters={lrvColumnGetters}
-      />
-
-      {/* Модальное окно аннулирования (пересогласования) */}
-      <LrvSupersedeModal
-        item={supersedeModalItem}
-        onClose={() => setSupersedeModalItem(null)}
-        onConfirm={(item, letter, date) => {
-          if (onUpdateLrvItem) {
-            onUpdateLrvItem({
-              ...item,
-              status: 'superseded',
-              replacementLetter: letter.trim() || 'Письмо пересогласования',
-              replacementDate: date,
-            });
-          }
-          setSupersedeModalItem(null);
+        columnValueGetters={lrvColumnGetters}
+        getColumnWidth={getColumnWidth}
+        onResizeStart={handleResizeStart}
+        onAutoFitCol={(colKey) => handleAutoFit(colKey, DEFAULT_COL_WIDTHS[colKey])}
+        onApplyColumnFilter={handleApplyColumnFilter}
+        onApplySort={(colKey, direction) => setSortConfig({ key: colKey, direction })}
+        onToggleSelectAll={handleToggleSelectAll}
+        onToggleSelectRow={handleToggleSelectRow}
+        onToggleExpandRow={(id) =>
+          setExpandedMaterialIds((prev) => ({ ...prev, [id]: !prev[id] }))
+        }
+        onStartEdit={(item) => {
+          setEditingItem(item);
+          setIsItemFormOpen(true);
         }}
-        joints={joints}
+        onOpenAddAct={(item) =>
+          setActiveActModal({ material: item, editingBatch: null })
+        }
+        onOpenEditAct={(item, batch) =>
+          setActiveActModal({ material: item, editingBatch: batch })
+        }
+        onDeleteAct={handleDeleteBatchAct}
+        onOpenReplaceBatch={(item, batch) =>
+          setActiveReplaceTarget({ material: item, batch })
+        }
+        onOpenJointsByLrvCode={onOpenJointsByLrvCode}
+        onRequestDeleteOrSupersede={handleRequestDeleteOrSupersede}
+        onConfirmDeleteSingle={(id) => {
+          onDeleteLrvItems?.([id]);
+          setConfirmDeleteLrvId(null);
+          setSelectedLrvIds((prev) => prev.filter((x) => x !== id));
+        }}
+        onCancelConfirmDelete={() => setConfirmDeleteLrvId(null)}
+        hasDeleteHandler={Boolean(onDeleteLrvItems)}
       />
 
-      {/* Модальное окно согласования замены партии */}
+      <LrvItemFormModal
+        isOpen={isItemFormOpen}
+        editingItem={editingItem}
+        allRds={allRds}
+        defaultRdCode={rdFilter}
+        catalog={catalog}
+        onSave={handleSaveItemForm}
+        onCancel={() => {
+          setIsItemFormOpen(false);
+          setEditingItem(null);
+        }}
+      />
+
+      {activeActModal && (
+        <AddIncomingControlActModal
+          isOpen={Boolean(activeActModal)}
+          onClose={() => setActiveActModal(null)}
+          material={{
+            ...activeActModal.material,
+            ...computeBalance(activeActModal.material),
+            totalSpecQty:
+              activeActModal.material.totalSpecQty ?? activeActModal.material.specQty,
+          }}
+          editingBatch={activeActModal.editingBatch}
+          defaultInspectorName={defaultInspectorName}
+          onSaveAct={handleSaveBatchAct}
+        />
+      )}
+
       {activeReplaceTarget && (
         <MaterialPartialReplaceModal
           isOpen={Boolean(activeReplaceTarget)}
           onClose={() => setActiveReplaceTarget(null)}
-          material={activeReplaceTarget.material}
-          batch={activeReplaceTarget.batch}
-          onConfirmReplacement={(params) => {
-            const { updatedOriginal, replacementItem } = splitMaterialForPartialReplacement({
-              originalMaterial: params.originalMaterial,
-              rejectedBatchId: params.rejectedBatchId,
-              replacedQuantity: params.replacedQuantity,
-              replacementNotice: {
-                letterNumber: params.letterNumber,
-                letterDate: params.letterDate,
-                approvedBy: params.approvedBy,
-                reason: params.reason,
-              },
-              replacementCustomFields: params.replacementCustomFields,
-            });
-            if (onUpdateLrvItem) {
-              onUpdateLrvItem(updatedOriginal);
-            }
-            onAddLrvItems([replacementItem]);
-            setExpandedMaterialIds((prev) => ({
-              ...prev,
-              [updatedOriginal.id]: true,
-              [replacementItem.id]: true,
-            }));
-          }}
+          originalMaterial={activeReplaceTarget.material}
+          rejectedBatch={activeReplaceTarget.batch}
+          defaultInspectorName={defaultInspectorName}
+          onConfirmReplacement={handleConfirmPartialReplace}
         />
       )}
 
-      {/* Модальное окно внесения акта входного контроля */}
-      {activeAddActMaterial && (
-        <AddIncomingControlActModal
-          isOpen={Boolean(activeAddActMaterial)}
-          onClose={() => setActiveAddActMaterial(null)}
-          material={activeAddActMaterial}
-          onAddAct={(mat, newBatch) => {
-            if (onUpdateLrvItem) {
-              const updatedBatches = [
-                ...(mat.batches || []),
-                newBatch,
-              ];
-              const balance = calculateMaterialControlBalance(
-                mat.totalSpecQty ?? mat.specQty,
-                updatedBatches
-              );
-              onUpdateLrvItem({
-                ...mat,
-                batches: updatedBatches,
-                ...balance,
-              });
-              setExpandedMaterialIds((prev) => ({
-                ...prev,
-                [activeAddActMaterial.id]: true,
-              }));
-            }
-            setActiveAddActMaterial(null);
-          }}
-        />
-      )}
+      <LrvSupersedeModal
+        item={supersedeModalItem}
+        onClose={() => setSupersedeModalItem(null)}
+        onConfirm={handleConfirmSupersede}
+        joints={joints}
+      />
     </div>
   );
 };

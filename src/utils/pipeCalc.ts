@@ -602,9 +602,8 @@ export function validateWeldingTypeWithTechCard(
 export function detectLrvElementType(shortName: string): LrvElementCategory {
   const s = (shortName || '').toLowerCase();
   if (s.includes('труб')) return 'Труба';
-  if (s.includes('отвод')) return 'Отвод';
-  if (s.includes('переход')) return 'Переход';
   if (s.includes('тройник')) return 'Тройник';
+  if (s.includes('отвод')) return 'Отвод';
   if (
     s.includes('кран') ||
     s.includes('задвижк') ||
@@ -623,7 +622,20 @@ export function detectLrvElementType(shortName: string): LrvElementCategory {
   if (s.includes('заглуш') || s.includes('днищ')) return 'Заглушка';
   if (s.includes('штуцер')) return 'Штуцер';
   if (s.includes('бобышк')) return 'Бобышка';
+  if (s.includes('переход')) return 'Переход';
   return 'Прочее';
+}
+
+/**
+ * Проверяет, может ли элемент трубопровода иметь два диаметра (переход, тройник, крестовина)
+ */
+export function isDualDimensionElement(
+  shortName?: string | null,
+  category?: LrvElementCategory | string | null
+): boolean {
+  if (category === 'Переход' || category === 'Тройник') return true;
+  const s = (shortName || '').toLowerCase();
+  return s.includes('переход') || s.includes('тройник') || s.includes('крестовин');
 }
 
 /**

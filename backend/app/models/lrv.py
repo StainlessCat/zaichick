@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     CheckConstraint,
@@ -14,8 +14,9 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -87,6 +88,14 @@ class LrvItem(Base):
     )
     replacement_letter: Mapped[str | None] = mapped_column(String(512), nullable=True)
     replacement_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    batches: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    parent_material_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    replacement_notice: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     record_status: Mapped[RecordStatusEnum] = mapped_column(
         pg_enum(RecordStatusEnum, "record_status_enum"),

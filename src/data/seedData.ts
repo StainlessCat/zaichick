@@ -374,7 +374,7 @@ export const INITIAL_LRV_CATALOG: LRVItem[] = [
   },
   {
     id: 'lrv-8a',
-    lrvCode: 'ЛРВ-001ТХ3-0501',
+    lrvCode: 'ЛРВ-001ТХ3-0502',
     rdCode: '0092.049.Р.13/1 0004 УКПГ.045.0077.001-TX3',
     objectName: 'УКПГ-2В Бованенковское НГКМ',
     shortName: 'Кран шаровый DN150 159х8',

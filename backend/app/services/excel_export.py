@@ -736,12 +736,39 @@ def build_linelist_workbook_bytes(
     return _workbook_to_bytes(wb)
 
 
+def _summarize_lrv_batches(spec_qty: float, batches: list[dict[str, Any]]) -> tuple[str, float, float, float, float]:
+    accepted = 0.0
+    rejected = 0.0
+    replaced = 0.0
+    for b in batches:
+        verdict = str(b.get("verdict") or "")
+        qty = float(b.get("quantity") or 0.0)
+        if verdict == "accepted":
+            accepted += qty
+        elif verdict == "rejected":
+            rejected += qty
+        elif verdict == "replaced":
+            replaced += qty
+    pending = max(0.0, float(spec_qty or 0.0) - (accepted + rejected + replaced))
+    if not batches or (accepted == 0 and rejected == 0 and replaced == 0):
+        status_label = "Ожидает контроля"
+    elif rejected > 0:
+        status_label = "Выявлен брак"
+    elif spec_qty > 0 and replaced >= spec_qty:
+        status_label = "Заменена по письму"
+    elif spec_qty > 0 and (accepted + replaced) >= spec_qty:
+        status_label = "Годен к монтажу"
+    else:
+        status_label = "Частичный допуск"
+    return status_label, accepted, rejected, replaced, pending
+
+
 def build_lrv_workbook_bytes(items: list[Any], *, is_template: bool = False) -> bytes:
     """Export LRV catalog or Excel template to XLSX."""
     wb = Workbook()
     ws = wb.active
     ws.title = "База материалов"
-    headers = [
+    base_headers = [
         "Код ЛРВ",
         "Шифр РД",
         "Объект",
@@ -763,7 +790,21 @@ def build_lrv_workbook_bytes(items: list[Any], *, is_template: bool = False) -> 
         "Кол-во",
         "Ед. изм.",
     ]
-    widths = [20, 36, 26, 30, 20, 38, 16, 18, 18, 18, 20, 22, 12, 14, 14, 12, 14, 14, 12, 10]
+    base_widths = [20, 36, 26, 30, 20, 38, 16, 18, 18, 18, 20, 22, 12, 14, 14, 12, 14, 14, 12, 10]
+    if is_template:
+        headers = base_headers
+        widths = base_widths
+    else:
+        headers = base_headers + [
+            "Статус контроля",
+            "Допущено",
+            "Брак",
+            "Заменено",
+            "Остаток",
+            "Актов ВК",
+        ]
+        widths = base_widths + [20, 12, 10, 12, 12, 10]
+
     for col, (h, w) in enumerate(zip(headers, widths), start=1):
         ws.cell(row=1, column=col, value=h)
         ws.column_dimensions[get_column_letter(col)].width = w
@@ -796,30 +837,103 @@ def build_lrv_workbook_bytes(items: list[Any], *, is_template: bool = False) -> 
             ]
         ]
     else:
-        rows = [
-            [
-                it.lrv_code,
-                it.rd_code,
-                it.object_name,
-                it.short_name,
-                getattr(it, "marking", None) or "",
-                getattr(it, "full_name", None) or "",
-                _ev(it.category),
-                getattr(it, "pn_mpa", None) or "",
-                it.connection_type or "",
-                it.material,
-                it.ntd,
-                it.manufacturer or "",
-                it.dn1 if it.dn1 is not None else "",
-                it.diameter_mm,
-                it.wall_thickness,
-                it.dn2 if it.dn2 is not None else "",
-                it.diameter_mm2 if it.diameter_mm2 is not None else "",
-                it.wall_thickness2 if it.wall_thickness2 is not None else "",
-                it.spec_qty,
-                _ev(it.unit),
-            ]
-            for it in items
+        rows = []
+        act_rows: list[list[Any]] = []
+        verdict_map = {
+            "accepted": "Пройден",
+            "rejected": "Не пройден",
+            "replaced": "Заменена по письму",
+            "pending": "Ожидает контроля",
+        }
+        for it in items:
+            raw_batches = getattr(it, "batches", None) or []
+            batches = raw_batches if isinstance(raw_batches, list) else []
+            status_label, acc, rej, repl, pend = _summarize_lrv_batches(float(it.spec_qty or 0.0), batches)
+            rows.append(
+                [
+                    it.lrv_code,
+                    it.rd_code,
+                    it.object_name,
+                    it.short_name,
+                    getattr(it, "marking", None) or "",
+                    getattr(it, "full_name", None) or "",
+                    _ev(it.category),
+                    getattr(it, "pn_mpa", None) or "",
+                    it.connection_type or "",
+                    it.material,
+                    it.ntd,
+                    it.manufacturer or "",
+                    it.dn1 if it.dn1 is not None else "",
+                    it.diameter_mm,
+                    it.wall_thickness,
+                    it.dn2 if it.dn2 is not None else "",
+                    it.diameter_mm2 if it.diameter_mm2 is not None else "",
+                    it.wall_thickness2 if it.wall_thickness2 is not None else "",
+                    it.spec_qty,
+                    _ev(it.unit),
+                    status_label,
+                    acc,
+                    rej,
+                    repl,
+                    pend,
+                    len(batches),
+                ]
+            )
+            for b in batches:
+                if not isinstance(b, dict):
+                    continue
+                serials = b.get("serialNumbers")
+                serials_str = ", ".join(str(s) for s in serials) if isinstance(serials, list) else ""
+                act_rows.append(
+                    [
+                        it.lrv_code,
+                        it.rd_code,
+                        it.short_name,
+                        b.get("actNumber") or "",
+                        b.get("actDate") or "",
+                        b.get("certificateNumber") or "",
+                        b.get("heatNumber") or "",
+                        serials_str,
+                        b.get("quantity") or 0,
+                        b.get("unit") or _ev(it.unit),
+                        verdict_map.get(str(b.get("verdict") or ""), str(b.get("verdict") or "")),
+                        b.get("inspectorName") or "",
+                        b.get("rejectionReason") or "",
+                        b.get("replacementLetter") or "",
+                        b.get("notes") or "",
+                    ]
+                )
+
+        ws_acts = wb.create_sheet(title="Акты входного контроля")
+        act_headers = [
+            "Код ЛРВ",
+            "Шифр РД",
+            "Наименование",
+            "Номер акта ВК",
+            "Дата акта",
+            "Сертификаты, паспорта",
+            "Плавка / партия",
+            "Заводские номера",
+            "Кол-во",
+            "Ед. изм.",
+            "Результат контроля",
+            "Контролёр",
+            "Причина отбраковки",
+            "Письмо замены",
+            "Примечания",
         ]
-    _write_table_rows(ws, start_row=2, rows=rows, left_align_cols={1, 2, 3, 4, 5, 6, 10, 11, 12})
+        act_widths = [18, 34, 28, 16, 14, 24, 18, 26, 10, 10, 20, 20, 30, 22, 30]
+        for col, (h, w) in enumerate(zip(act_headers, act_widths), start=1):
+            ws_acts.cell(row=1, column=col, value=h)
+            ws_acts.column_dimensions[get_column_letter(col)].width = w
+        _style_header_range(ws_acts, min_row=1, max_row=1, max_col=len(act_headers))
+        ws_acts.row_dimensions[1].height = 28
+        _write_table_rows(
+            ws_acts,
+            start_row=2,
+            rows=act_rows,
+            left_align_cols={1, 2, 3, 4, 6, 7, 8, 11, 12, 13, 14, 15},
+        )
+
+    _write_table_rows(ws, start_row=2, rows=rows, left_align_cols={1, 2, 3, 4, 5, 6, 10, 11, 12, 21})
     return _workbook_to_bytes(wb)
