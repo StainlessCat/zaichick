@@ -170,12 +170,16 @@ export interface AppMainContentProps {
     handleDeleteObject: (objectName: string) => Promise<void>;
     handleDeleteRdCode: (rdCode: string, objectName?: string) => Promise<void>;
     handleCreateStandaloneObject: (objectName: string) => Promise<void>;
-    handleSaveWelder: (w: WelderProfile) => Promise<void>;
-    handleDeleteWelder: (stamp: string) => Promise<void>;
-    handleSaveTechCard: (tc: TechCardItem) => Promise<void>;
-    handleDeleteTechCard: (id: string) => Promise<void>;
-    handleSaveMaterial: (mat: WeldingMaterialCertificate) => Promise<void>;
-    handleDeleteWeldingMaterial: (id: string) => Promise<void>;
+    handleSaveWelder: (w: WelderProfile) => Promise<{ ok: boolean; error?: string } | void>;
+    handleDeleteWelder: (stamp: string) => Promise<{ ok: boolean; error?: string } | void>;
+    handleSaveTechCard: (tc: TechCardItem) => Promise<{ ok: boolean; error?: string } | void>;
+    handleDeleteTechCard: (id: string) => Promise<{ ok: boolean; error?: string } | void>;
+    handleSaveMaterial: (
+      mat: WeldingMaterialCertificate
+    ) => Promise<{ ok: boolean; error?: string } | void>;
+    handleDeleteWeldingMaterial: (
+      id: string
+    ) => Promise<{ ok: boolean; error?: string } | void>;
     handleAddLrvItems: (items: LRVItem[]) => Promise<void>;
     handleUpdateLrvItem: (item: LRVItem) => Promise<void>;
     handleUpdateLrvBatches: (item: LRVItem) => Promise<void>;

@@ -38,6 +38,33 @@ router = APIRouter(prefix="/api/wps", tags=["wps"])
 WPS_ALLOWED_DEPTS = (DepartmentEnum.OGS,)
 
 
+def _validate_tech_card_ranges(
+    min_d: float,
+    max_d: float,
+    min_s: float,
+    max_s: float,
+    preheat_rules: list | None = None,
+) -> None:
+    if min_d > max_d:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Минимальный диаметр не может превышать максимальный диаметр.",
+        )
+    if min_s > max_s:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Минимальная толщина стенки не может превышать максимальную толщину.",
+        )
+    if preheat_rules:
+        for rule in preheat_rules:
+            if rule.ambient_min_c > rule.ambient_max_c:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="В режиме подогрева нижний предел температуры воздуха не может превышать верхний.",
+                )
+
+
+
 @router.get("", response_model=PaginatedResponse[TechCardOut])
 async def list_tech_cards(
     search: str | None = Query(default=None),
@@ -93,6 +120,14 @@ async def create_tech_card(
             "DUPLICATE_TECH_CARD",
             f"Техкарта «{payload.number.strip()}» уже существует.",
         )
+
+    _validate_tech_card_ranges(
+        payload.min_diameter_mm,
+        payload.max_diameter_mm,
+        payload.min_wall_thickness_mm,
+        payload.max_wall_thickness_mm,
+        payload.preheat_rules,
+    )
 
     now = datetime.now(timezone.utc)
     tc_id = uuid.uuid4()
@@ -191,6 +226,55 @@ async def update_tech_card(
     )
 
     old_snap = orm_snapshot(tc, TechCardOut)
+
+    if "number" in patch_data and patch_data["number"] is not None:
+        clean_num = str(patch_data["number"]).strip()
+        if not clean_num:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Шифр технологической карты не может быть пустым.",
+            )
+        if clean_num != tc.number:
+            dup = (
+                await session.execute(
+                    select(TechCard).where(TechCard.number == clean_num, TechCard.id != tc.id)
+                )
+            ).scalar_one_or_none()
+            if dup is not None:
+                raise_duplicate_error(
+                    "DUPLICATE_TECH_CARD",
+                    f"Техкарта «{clean_num}» уже существует.",
+                )
+        patch_data["number"] = clean_num
+
+    next_min_d = (
+        patch_data["min_diameter_mm"]
+        if "min_diameter_mm" in patch_data and patch_data["min_diameter_mm"] is not None
+        else tc.min_diameter_mm
+    )
+    next_max_d = (
+        patch_data["max_diameter_mm"]
+        if "max_diameter_mm" in patch_data and patch_data["max_diameter_mm"] is not None
+        else tc.max_diameter_mm
+    )
+    next_min_s = (
+        patch_data["min_wall_thickness_mm"]
+        if "min_wall_thickness_mm" in patch_data and patch_data["min_wall_thickness_mm"] is not None
+        else tc.min_wall_thickness_mm
+    )
+    next_max_s = (
+        patch_data["max_wall_thickness_mm"]
+        if "max_wall_thickness_mm" in patch_data and patch_data["max_wall_thickness_mm"] is not None
+        else tc.max_wall_thickness_mm
+    )
+    _validate_tech_card_ranges(
+        next_min_d,
+        next_max_d,
+        next_min_s,
+        next_max_s,
+        payload.preheat_rules,
+    )
+
     apply_patch_fields(tc, patch_data, skip={"preheat_rules"})
     if payload.preheat_rules is not None:
         tc.preheat_rules = [

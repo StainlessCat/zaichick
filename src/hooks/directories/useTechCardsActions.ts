@@ -1,7 +1,12 @@
 import { useCallback } from 'react';
-import { zaychickApi } from '../../api';
+import { ApiError, zaychickApi } from '../../api';
 import { TechCardItem, UserAccount } from '../../types/welding';
 import { UUID_RE } from './common';
+
+export interface TechActionResult {
+  ok: boolean;
+  error?: string;
+}
 
 export interface UseTechCardsActionsParams {
   currentUser: UserAccount;
@@ -14,6 +19,12 @@ export interface UseTechCardsActionsParams {
   setIsLoginModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   notifyError: (msg: string) => void;
   reportError: (err: unknown, contextLabel: string) => void;
+}
+
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.message) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
 }
 
 export function useTechCardsActions(params: UseTechCardsActionsParams) {
@@ -31,11 +42,13 @@ export function useTechCardsActions(params: UseTechCardsActionsParams) {
   } = params;
 
   const handleSaveTechCard = useCallback(
-    async (tc: TechCardItem) => {
+    async (tc: TechCardItem): Promise<TechActionResult> => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        notifyError('[Ошибка доступа] Сохранение техкарты запрещено: требуется авторизация на сервере FastAPI.');
-        return;
+        const msg =
+          'Сохранение техкарты запрещено: требуется авторизация на сервере.';
+        notifyError(`[Ошибка доступа] ${msg}`);
+        return { ok: false, error: msg };
       }
       recordUndoSnapshot(`Сохранение техкарты ${tc.number}`);
       try {
@@ -49,8 +62,13 @@ export function useTechCardsActions(params: UseTechCardsActionsParams) {
             : [saved, ...prev]
         );
         bumpRevisionMeta(`Техкарта ${saved.number}`, currentUser.fullName);
+        return { ok: true };
       } catch (err) {
         reportError(err, 'Ошибка сохранения техкарты');
+        return {
+          ok: false,
+          error: extractErrorMessage(err, 'Не удалось сохранить техкарту.'),
+        };
       } finally {
         setIsDbSyncing(false);
       }
@@ -70,14 +88,16 @@ export function useTechCardsActions(params: UseTechCardsActionsParams) {
   );
 
   const handleDeleteTechCard = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<TechActionResult> => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        notifyError('[Ошибка доступа] Удаление техкарты запрещено: требуется авторизация на сервере FastAPI.');
-        return;
+        const msg =
+          'Удаление техкарты запрещено: требуется авторизация на сервере.';
+        notifyError(`[Ошибка доступа] ${msg}`);
+        return { ok: false, error: msg };
       }
       const target = techCards.find((tc) => tc.id === id);
-      if (!target) return;
+      if (!target) return { ok: false, error: 'Техкарта не найдена.' };
       recordUndoSnapshot(`Удаление техкарты «${target.number}»`);
       try {
         setIsDbSyncing(true);
@@ -85,9 +105,17 @@ export function useTechCardsActions(params: UseTechCardsActionsParams) {
           await zaychickApi.deleteTechCard(target.id);
         }
         setTechCards((prev) => prev.filter((tc) => tc.id !== id));
-        bumpRevisionMeta(`Удалена техкарта ${target.number}`, currentUser.fullName);
+        bumpRevisionMeta(
+          `Удалена техкарта ${target.number}`,
+          currentUser.fullName
+        );
+        return { ok: true };
       } catch (err) {
         reportError(err, 'Ошибка удаления техкарты');
+        return {
+          ok: false,
+          error: extractErrorMessage(err, 'Не удалось удалить техкарту.'),
+        };
       } finally {
         setIsDbSyncing(false);
       }

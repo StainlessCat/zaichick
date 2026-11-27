@@ -234,7 +234,28 @@ async def update_welder(
         schema_cls=WelderOut,
     )
 
+    if "stamp" in patch_data and patch_data["stamp"] is not None:
+        clean_stamp = str(patch_data["stamp"]).strip()
+        if not clean_stamp:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Клеймо сварщика не может быть пустым.",
+            )
+        patch_data["stamp"] = clean_stamp
+        if clean_stamp != welder.stamp:
+            dup = (
+                await session.execute(
+                    select(Welder).where(Welder.stamp == clean_stamp, Welder.id != welder.id)
+                )
+            ).scalar_one_or_none()
+            if dup is not None:
+                raise_duplicate_error(
+                    "DUPLICATE_WELDER_STAMP",
+                    f"Сварщик/бригада с клеймом «{clean_stamp}» уже существует.",
+                )
+
     old_snap = orm_snapshot(welder, WelderOut)
+
     apply_patch_fields(welder, patch_data, skip={"naks_certs"})
     if payload.naks_certs is not None:
         welder.naks_certs = [
@@ -538,6 +559,15 @@ async def delete_material(
         old_data=old_snap,
         ip_address=get_client_ip(request),
         summary=f"Удалён сварочный материал «{mat.brand_and_diameter}»",
+    )
+    await event_bus.emit_delta(
+        session,
+        event="naks.material.deleted",
+        entity_type="welding_material",
+        entity_id=material_id,
+        version=mat.version,
+        updated_by=current_user.login,
+        data={"id": str(material_id)},
     )
 
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   FileCheck2,
   Lock,
@@ -9,22 +9,27 @@ import {
   TechCardItem,
   WelderProfile,
   WeldingMaterialCertificate,
+  WeldJoint,
 } from '../types/welding';
 import { WeldersDirectoryView } from './tech/WeldersDirectoryView';
 import { TechCardsDirectoryView } from './tech/TechCardsDirectoryView';
 import { MaterialsDirectoryView } from './tech/MaterialsDirectoryView';
 import { useAuth, useAppContext } from '../context';
+import { computeTechUsageCounts } from '../utils/weldingTechUtils';
+
+export type SaveActionResult = Promise<{ ok: boolean; error?: string } | void> | void;
 
 export interface WeldingTechViewProps {
   welders?: WelderProfile[];
-  onSaveWelder: (welder: WelderProfile) => void;
-  onDeleteWelder?: (stamp: string) => void;
+  onSaveWelder: (welder: WelderProfile) => SaveActionResult;
+  onDeleteWelder?: (stamp: string) => SaveActionResult;
   techCards?: TechCardItem[];
-  onSaveTechCard: (card: TechCardItem) => void;
-  onDeleteTechCard?: (id: string) => void;
+  onSaveTechCard: (card: TechCardItem) => SaveActionResult;
+  onDeleteTechCard?: (id: string) => SaveActionResult;
   materials?: WeldingMaterialCertificate[];
-  onSaveMaterial: (material: WeldingMaterialCertificate) => void;
-  onDeleteMaterial?: (id: string) => void;
+  onSaveMaterial: (material: WeldingMaterialCertificate) => SaveActionResult;
+  onDeleteMaterial?: (id: string) => SaveActionResult;
+  joints?: WeldJoint[];
   canEdit?: boolean;
   currentUserRoleLabel?: string;
 }
@@ -38,6 +43,7 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = (props) => {
   const welders = props.welders ?? app.welders;
   const techCards = props.techCards ?? app.techCards;
   const materials = props.materials ?? app.weldingMaterials;
+  const joints = props.joints ?? app.joints;
   const canEdit = props.canEdit ?? auth.userPermissions.canEditWeldingTech;
   const currentUserRoleLabel = props.currentUserRoleLabel ?? auth.userPermissions.categoryLabel;
 
@@ -51,6 +57,11 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = (props) => {
   } = props;
   const [activeTab, setActiveTab] = useState<TechTab>('welders');
 
+  const usageCounts = useMemo(
+    () => computeTechUsageCounts(joints, techCards, welders, materials),
+    [joints, techCards, welders, materials]
+  );
+
   return (
     <div className="space-y-4">
       {/* Верхняя панель с переключателями 3 подразделов технологии сварки */}
@@ -59,40 +70,67 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = (props) => {
           <button
             type="button"
             onClick={() => setActiveTab('welders')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
               activeTab === 'welders'
                 ? 'bg-[#1e3799] text-white shadow-2xs'
                 : 'text-slate-700 hover:bg-white'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Сварщики и бригады ({welders.length})</span>
+            <span>Сварщики и бригады</span>
+            <span
+              className={`px-1.5 py-0.25 rounded text-[10px] font-mono font-bold ${
+                activeTab === 'welders'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-200/80 text-slate-700'
+              }`}
+            >
+              {welders.length}
+            </span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('tech_cards')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
               activeTab === 'tech_cards'
                 ? 'bg-[#1e3799] text-white shadow-2xs'
                 : 'text-slate-700 hover:bg-white'
             }`}
           >
             <FileCheck2 className="w-3.5 h-3.5" />
-            <span>Технологические карты ТК ({techCards.length})</span>
+            <span>Технологические карты</span>
+            <span
+              className={`px-1.5 py-0.25 rounded text-[10px] font-mono font-bold ${
+                activeTab === 'tech_cards'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-200/80 text-slate-700'
+              }`}
+            >
+              {techCards.length}
+            </span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('materials')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
               activeTab === 'materials'
                 ? 'bg-[#1e3799] text-white shadow-2xs'
                 : 'text-slate-700 hover:bg-white'
             }`}
           >
             <PackageCheck className="w-3.5 h-3.5" />
-            <span>Сварочные материалы и ВК ({materials.length})</span>
+            <span>Сварочные материалы и ВК</span>
+            <span
+              className={`px-1.5 py-0.25 rounded text-[10px] font-mono font-bold ${
+                activeTab === 'materials'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-slate-200/80 text-slate-700'
+              }`}
+            >
+              {materials.length}
+            </span>
           </button>
         </div>
       </div>
@@ -102,7 +140,7 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = (props) => {
           <div className="flex items-center gap-2 font-semibold">
             <Lock className="w-4 h-4 text-amber-700 shrink-0" />
             <span>
-              Ролевое ограничение (RBAC): Текущая роль — «{currentUserRoleLabel}». Редактирование вкладки «Технология сварки» (НАКС, техкарты ТК, сертификаты СМ) доступно только роли «Технолог по сварке». Включён режим чтения.
+              Текущая роль — «{currentUserRoleLabel}». Редактирование справочников раздела «Технология сварки» доступно роли «Технолог по сварке».
             </span>
           </div>
           <span className="px-2 py-0.5 rounded bg-amber-200/70 text-amber-900 font-mono text-[11px] shrink-0">
@@ -115,6 +153,7 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = (props) => {
       {activeTab === 'welders' && (
         <WeldersDirectoryView
           welders={welders}
+          usageCounts={usageCounts.welderCounts}
           onSaveWelder={onSaveWelder}
           onDeleteWelder={onDeleteWelder}
           canEdit={canEdit}
@@ -122,20 +161,23 @@ export const WeldingTechView: React.FC<WeldingTechViewProps> = (props) => {
         />
       )}
 
-      {/* ВКЛАДКА 2: ТЕХНОЛОГИЧЕСКИЕ КАРТЫ (ТК) */}
+      {/* ВКЛАДКА 2: ТЕХНОЛОГИЧЕСКИЕ КАРТЫ */}
       {activeTab === 'tech_cards' && (
         <TechCardsDirectoryView
           techCards={techCards}
+          materials={materials}
+          usageCounts={usageCounts.techCardCounts}
           onSaveTechCard={onSaveTechCard}
           onDeleteTechCard={onDeleteTechCard}
           canEdit={canEdit}
         />
       )}
 
-      {/* ВКЛАДКА 3: СВАРОЧНЫЕ МАТЕРИАЛЫ И ВХОДНОЙ КОНТРОЛЬ (ВК) */}
+      {/* ВКЛАДКА 3: СВАРОЧНЫЕ МАТЕРИАЛЫ И ВХОДНОЙ КОНТРОЛЬ */}
       {activeTab === 'materials' && (
         <MaterialsDirectoryView
           materials={materials}
+          usageCounts={usageCounts.materialCounts}
           onSaveMaterial={onSaveMaterial}
           onDeleteMaterial={onDeleteMaterial}
           canEdit={canEdit}

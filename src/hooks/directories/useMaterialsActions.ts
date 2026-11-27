@@ -1,7 +1,12 @@
 import { useCallback } from 'react';
-import { zaychickApi } from '../../api';
+import { ApiError, zaychickApi } from '../../api';
 import { UserAccount, WeldingMaterialCertificate } from '../../types/welding';
 import { UUID_RE } from './common';
+
+export interface MaterialActionResult {
+  ok: boolean;
+  error?: string;
+}
 
 export interface UseMaterialsActionsParams {
   currentUser: UserAccount;
@@ -16,6 +21,12 @@ export interface UseMaterialsActionsParams {
   setIsLoginModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   notifyError: (msg: string) => void;
   reportError: (err: unknown, contextLabel: string) => void;
+}
+
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.message) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
 }
 
 export function useMaterialsActions(params: UseMaterialsActionsParams) {
@@ -33,11 +44,13 @@ export function useMaterialsActions(params: UseMaterialsActionsParams) {
   } = params;
 
   const handleSaveMaterial = useCallback(
-    async (mat: WeldingMaterialCertificate) => {
+    async (mat: WeldingMaterialCertificate): Promise<MaterialActionResult> => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        notifyError('[Ошибка доступа] Сохранение СМ запрещено: требуется авторизация на сервере FastAPI.');
-        return;
+        const msg =
+          'Сохранение сварочного материала запрещено: требуется авторизация на сервере.';
+        notifyError(`[Ошибка доступа] ${msg}`);
+        return { ok: false, error: msg };
       }
       recordUndoSnapshot(`Сохранение СМ ${mat.brandAndDiameter}`);
       try {
@@ -51,8 +64,16 @@ export function useMaterialsActions(params: UseMaterialsActionsParams) {
             : [saved, ...prev]
         );
         bumpRevisionMeta(`СМ ${saved.brandAndDiameter}`, currentUser.fullName);
+        return { ok: true };
       } catch (err) {
         reportError(err, 'Ошибка сохранения сварочного материала');
+        return {
+          ok: false,
+          error: extractErrorMessage(
+            err,
+            'Не удалось сохранить сварочный материал.'
+          ),
+        };
       } finally {
         setIsDbSyncing(false);
       }
@@ -72,14 +93,16 @@ export function useMaterialsActions(params: UseMaterialsActionsParams) {
   );
 
   const handleDeleteWeldingMaterial = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<MaterialActionResult> => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        notifyError('[Ошибка доступа] Удаление СМ запрещено: требуется авторизация на сервере FastAPI.');
-        return;
+        const msg =
+          'Удаление сварочного материала запрещено: требуется авторизация на сервере.';
+        notifyError(`[Ошибка доступа] ${msg}`);
+        return { ok: false, error: msg };
       }
       const target = weldingMaterials.find((m) => m.id === id);
-      if (!target) return;
+      if (!target) return { ok: false, error: 'Сварочный материал не найден.' };
       recordUndoSnapshot(`Удаление СМ «${target.brandAndDiameter}»`);
       try {
         setIsDbSyncing(true);
@@ -87,9 +110,20 @@ export function useMaterialsActions(params: UseMaterialsActionsParams) {
           await zaychickApi.deleteMaterial(target.id);
         }
         setWeldingMaterials((prev) => prev.filter((m) => m.id !== id));
-        bumpRevisionMeta(`Удалён СМ ${target.brandAndDiameter}`, currentUser.fullName);
+        bumpRevisionMeta(
+          `Удалён СМ ${target.brandAndDiameter}`,
+          currentUser.fullName
+        );
+        return { ok: true };
       } catch (err) {
         reportError(err, 'Ошибка удаления сварочного материала');
+        return {
+          ok: false,
+          error: extractErrorMessage(
+            err,
+            'Не удалось удалить сварочный материал.'
+          ),
+        };
       } finally {
         setIsDbSyncing(false);
       }

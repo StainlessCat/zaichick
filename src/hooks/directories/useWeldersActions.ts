@@ -1,7 +1,12 @@
 import { useCallback } from 'react';
-import { zaychickApi } from '../../api';
+import { ApiError, zaychickApi } from '../../api';
 import { UserAccount, WelderProfile } from '../../types/welding';
 import { UUID_RE } from './common';
+
+export interface WelderActionResult {
+  ok: boolean;
+  error?: string;
+}
 
 export interface UseWeldersActionsParams {
   currentUser: UserAccount;
@@ -14,6 +19,12 @@ export interface UseWeldersActionsParams {
   setIsLoginModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   notifyError: (msg: string) => void;
   reportError: (err: unknown, contextLabel: string) => void;
+}
+
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError && err.message) return err.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
 }
 
 export function useWeldersActions(params: UseWeldersActionsParams) {
@@ -31,11 +42,13 @@ export function useWeldersActions(params: UseWeldersActionsParams) {
   } = params;
 
   const handleSaveWelder = useCallback(
-    async (w: WelderProfile) => {
+    async (w: WelderProfile): Promise<WelderActionResult> => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        notifyError('[Ошибка доступа] Сохранение сварщика запрещено: требуется авторизация на сервере FastAPI.');
-        return;
+        const msg =
+          'Сохранение сварщика запрещено: требуется авторизация на сервере.';
+        notifyError(`[Ошибка доступа] ${msg}`);
+        return { ok: false, error: msg };
       }
       recordUndoSnapshot(`Сохранение сварщика / клейма ${w.stamp}`);
       try {
@@ -52,8 +65,13 @@ export function useWeldersActions(params: UseWeldersActionsParams) {
             : [saved, ...prev]
         );
         bumpRevisionMeta(`Сварщик ${saved.stamp}`, currentUser.fullName);
+        return { ok: true };
       } catch (err) {
         reportError(err, 'Ошибка сохранения сварщика НАКС');
+        return {
+          ok: false,
+          error: extractErrorMessage(err, 'Не удалось сохранить данные сварщика.'),
+        };
       } finally {
         setIsDbSyncing(false);
       }
@@ -73,14 +91,16 @@ export function useWeldersActions(params: UseWeldersActionsParams) {
   );
 
   const handleDeleteWelder = useCallback(
-    async (stamp: string) => {
+    async (stamp: string): Promise<WelderActionResult> => {
       if (!isAuthenticated || !currentUser.login) {
         setIsLoginModalOpen(true);
-        notifyError('[Ошибка доступа] Удаление сварщика запрещено: требуется авторизация на сервере FastAPI.');
-        return;
+        const msg =
+          'Удаление сварщика запрещено: требуется авторизация на сервере.';
+        notifyError(`[Ошибка доступа] ${msg}`);
+        return { ok: false, error: msg };
       }
       const target = welders.find((w) => w.stamp === stamp);
-      if (!target) return;
+      if (!target) return { ok: false, error: 'Сварщик не найден.' };
       recordUndoSnapshot(`Удаление сварщика / клейма «${stamp}»`);
       try {
         setIsDbSyncing(true);
@@ -89,8 +109,13 @@ export function useWeldersActions(params: UseWeldersActionsParams) {
         }
         setWelders((prev) => prev.filter((w) => w.stamp !== stamp));
         bumpRevisionMeta(`Удалён сварщик ${stamp}`, currentUser.fullName);
+        return { ok: true };
       } catch (err) {
         reportError(err, 'Ошибка удаления сварщика НАКС');
+        return {
+          ok: false,
+          error: extractErrorMessage(err, 'Не удалось удалить сварщика.'),
+        };
       } finally {
         setIsDbSyncing(false);
       }
