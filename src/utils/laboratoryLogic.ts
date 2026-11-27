@@ -25,6 +25,7 @@ export interface WelderQuotaDeficitItem {
   controlledCount: number;
   requiredCount: number;
   deficitCount: number;
+  missingMethods?: ('РК' | 'УЗК' | 'ПВК')[];
 }
 
 export interface NdtLineDeficitRow {
@@ -41,6 +42,7 @@ export interface NdtLineDeficitRow {
   weldedCount: number;
   fullyAcceptedCount: number;
   inRepairCount: number;
+  jointsInWorkCount: number;
 
   // ВИК (100% обязательный контроль сваренных стыков)
   vikPlanPct: number;
@@ -114,6 +116,7 @@ export interface NdtDeficitStatementResult {
     totalLines: number;
     deficitLinesCount: number;
     totalWelded: number;
+    jointsInWorkCount: number;
     vikDeficit: number;
     rkDeficit: number;
     uzkDeficit: number;
@@ -138,35 +141,54 @@ export interface LabConclusionFormInput {
   ndtInspector: string;
 }
 
+export function derivePrimaryNdtMethod(methods: LabConclusionMethodKey[]): NdtMethod {
+  const hasRk = methods.includes('РК');
+  const hasUzk = methods.includes('УЗК');
+  const hasPvk = methods.includes('ПВК');
+  if (hasRk && hasUzk) return 'РК+УЗК';
+  if (hasRk) return 'РК';
+  if (hasUzk) return 'УЗК';
+  if (hasPvk) return 'ПВК';
+  return 'Не требуется';
+}
+
+function matchesPhysicalMethod(
+  methodValue: NdtMethod | string | undefined,
+  targetMethod: 'РК' | 'УЗК' | 'ПВК'
+): boolean {
+  if (!methodValue) return false;
+  if (targetMethod === 'РК') return methodValue === 'РК' || methodValue === 'РК+УЗК';
+  if (targetMethod === 'УЗК') return methodValue === 'УЗК' || methodValue === 'РК+УЗК';
+  if (targetMethod === 'ПВК') return methodValue === 'ПВК' || methodValue === 'МК';
+  return false;
+}
+
 /**
- * Проверяет, засчитан ли стык по методу РК (основной, дублирующий или после ремонта со статусом «Годен»).
+ * Проверяет, засчитан ли стык по методу РК / УЗК / ПВК
+ * (с учётом раздельной карты labConclusions и плоских полей первичного/дублирующего/ремонтного контроля).
  */
 export function isJointPassedByMethod(
   joint: WeldJoint,
   targetMethod: 'РК' | 'УЗК' | 'ПВК'
 ): boolean {
-  const matchesMethod = (m?: NdtMethod | string): boolean => {
-    if (!m) return false;
-    if (targetMethod === 'РК') return m === 'РК' || m === 'РК+УЗК';
-    if (targetMethod === 'УЗК') return m === 'УЗК' || m === 'РК+УЗК';
-    if (targetMethod === 'ПВК') return m === 'ПВК' || m === 'МК';
-    return false;
-  };
+  const lcEntry = joint.labConclusions?.[targetMethod];
 
   // Если стык в открытом ремонте, первичное заключение не засчитывается до закрытия ремонта
   const inOpenRepair = isJointCurrentlyInRepair(joint);
   if (inOpenRepair) {
     return (
-      (matchesMethod(joint.repairNdtType) && joint.repairNdtResult === 'Годен') ||
-      (matchesMethod(joint.repairDupNdtType) && joint.repairDupNdtResult === 'Годен')
+      (lcEntry?.stage === 'repair' && lcEntry.result === 'Годен') ||
+      (matchesPhysicalMethod(joint.repairNdtType, targetMethod) && joint.repairNdtResult === 'Годен') ||
+      (matchesPhysicalMethod(joint.repairDupNdtType, targetMethod) && joint.repairDupNdtResult === 'Годен')
     );
   }
 
   return (
-    (matchesMethod(joint.ndtType) && joint.ndtResult === 'Годен') ||
-    (matchesMethod(joint.dupNdtType) && joint.dupNdtResult === 'Годен') ||
-    (matchesMethod(joint.repairNdtType) && joint.repairNdtResult === 'Годен') ||
-    (matchesMethod(joint.repairDupNdtType) && joint.repairDupNdtResult === 'Годен')
+    lcEntry?.result === 'Годен' ||
+    (matchesPhysicalMethod(joint.ndtType, targetMethod) && joint.ndtResult === 'Годен') ||
+    (matchesPhysicalMethod(joint.dupNdtType, targetMethod) && joint.dupNdtResult === 'Годен') ||
+    (matchesPhysicalMethod(joint.repairNdtType, targetMethod) && joint.repairNdtResult === 'Годен') ||
+    (matchesPhysicalMethod(joint.repairDupNdtType, targetMethod) && joint.repairDupNdtResult === 'Годен')
   );
 }
 
@@ -177,18 +199,12 @@ export function isJointInWorkByMethod(
   joint: WeldJoint,
   targetMethod: 'РК' | 'УЗК' | 'ПВК'
 ): boolean {
-  const matchesMethod = (m?: NdtMethod | string): boolean => {
-    if (!m) return false;
-    if (targetMethod === 'РК') return m === 'РК' || m === 'РК+УЗК';
-    if (targetMethod === 'УЗК') return m === 'УЗК' || m === 'РК+УЗК';
-    if (targetMethod === 'ПВК') return m === 'ПВК' || m === 'МК';
-    return false;
-  };
-
+  const lcEntry = joint.labConclusions?.[targetMethod];
   return (
-    (matchesMethod(joint.ndtType) && joint.ndtResult === 'В работе') ||
-    (matchesMethod(joint.dupNdtType) && joint.dupNdtResult === 'В работе') ||
-    (matchesMethod(joint.repairNdtType) && joint.repairNdtResult === 'В работе')
+    lcEntry?.result === 'В работе' ||
+    (matchesPhysicalMethod(joint.ndtType, targetMethod) && joint.ndtResult === 'В работе') ||
+    (matchesPhysicalMethod(joint.dupNdtType, targetMethod) && joint.dupNdtResult === 'В работе') ||
+    (matchesPhysicalMethod(joint.repairNdtType, targetMethod) && joint.repairNdtResult === 'В работе')
   );
 }
 
@@ -307,14 +323,28 @@ export function calculateLaboratoryDeficitStatement(
     // 1. ВИК (100% от сваренных стыков)
     const vikPlanPct = 100;
     const vikRequired = weldedCount;
-    const vikCompleted = allWeldedJoints.filter(
-      (j) =>
+    const isVikPassed = (j: WeldJoint): boolean => {
+      const inRep = isJointCurrentlyInRepair(j);
+      const lcVik = j.labConclusions?.['ВИК'];
+      if (inRep) {
+        return (
+          j.repairVikResult === 'Годен' ||
+          (lcVik?.stage === 'repair' && lcVik.result === 'Годен')
+        );
+      }
+      return (
         j.vikResult === 'Годен' ||
-        (j.vikResult === 'Ремонт' && j.repairVikResult === 'Годен')
-    ).length;
-    const vikInWork = allWeldedJoints.filter(
-      (j) => j.vikResult === 'В работе' || j.repairVikResult === 'В работе'
-    ).length;
+        (j.vikResult === 'Ремонт' && j.repairVikResult === 'Годен') ||
+        lcVik?.result === 'Годен'
+      );
+    };
+    const isVikInWork = (j: WeldJoint): boolean =>
+      j.vikResult === 'В работе' ||
+      j.repairVikResult === 'В работе' ||
+      j.labConclusions?.['ВИК']?.result === 'В работе';
+
+    const vikCompleted = allWeldedJoints.filter(isVikPassed).length;
+    const vikInWork = allWeldedJoints.filter(isVikInWork).length;
     const vikDeficit = Math.max(0, vikRequired - vikCompleted);
     const vikActualPct =
       weldedCount > 0 ? Math.min(100, Math.round((vikCompleted / weldedCount) * 100)) : 0;
@@ -343,8 +373,20 @@ export function calculateLaboratoryDeficitStatement(
     const pvkActualPct =
       weldedCount > 0 ? Math.min(100, Math.round((pvkCompleted / weldedCount) * 100)) : 0;
 
-    // 5. Анализ квот по каждому сварщику на линии
-    const welderStats = new Map<string, { welded: number; controlled: number }>();
+    // Уникальные стыки линии, находящиеся в работе ЛНК хотя бы по одному методу
+    const jointsInWorkCount = allWeldedJoints.filter(
+      (j) =>
+        isVikInWork(j) ||
+        isJointInWorkByMethod(j, 'РК') ||
+        isJointInWorkByMethod(j, 'УЗК') ||
+        isJointInWorkByMethod(j, 'ПВК')
+    ).length;
+
+    // 5. Анализ квот по каждому сварщику на линии раздельно по каждому требуемому физическому методу НК
+    const welderStats = new Map<
+      string,
+      { welded: number; rk: number; uzk: number; pvk: number }
+    >();
     for (const j of allWeldedJoints) {
       const stamps = new Set<string>();
       if (j.welderStampsList && j.welderStampsList.length > 0) {
@@ -358,30 +400,58 @@ export function calculateLaboratoryDeficitStatement(
           if (clean) stamps.add(clean);
         });
       }
-      const hasAnyPhysicalNdt =
-        isJointPassedByMethod(j, 'РК') ||
-        isJointPassedByMethod(j, 'УЗК') ||
-        isJointPassedByMethod(j, 'ПВК');
+      const passedRk = isJointPassedByMethod(j, 'РК');
+      const passedUzk = isJointPassedByMethod(j, 'УЗК');
+      const passedPvk = isJointPassedByMethod(j, 'ПВК');
       stamps.forEach((stamp) => {
-        const cur = welderStats.get(stamp) || { welded: 0, controlled: 0 };
+        const cur = welderStats.get(stamp) || { welded: 0, rk: 0, uzk: 0, pvk: 0 };
         cur.welded += 1;
-        if (hasAnyPhysicalNdt) cur.controlled += 1;
+        if (passedRk) cur.rk += 1;
+        if (passedUzk) cur.uzk += 1;
+        if (passedPvk) cur.pvk += 1;
         welderStats.set(stamp, cur);
       });
     }
 
+    const requiredPhysicalSpecs: Array<{
+      method: 'РК' | 'УЗК' | 'ПВК';
+      planPct: number;
+      key: 'rk' | 'uzk' | 'pvk';
+    }> = [];
+    if (rkPlanPct > 0) requiredPhysicalSpecs.push({ method: 'РК', planPct: rkPlanPct, key: 'rk' });
+    if (uzkPlanPct > 0) requiredPhysicalSpecs.push({ method: 'УЗК', planPct: uzkPlanPct, key: 'uzk' });
+    if (pvkPlanPct > 0) requiredPhysicalSpecs.push({ method: 'ПВК', planPct: pvkPlanPct, key: 'pvk' });
+
     const welderDeficits: WelderQuotaDeficitItem[] = [];
-    const maxPlanPct = Math.max(rkPlanPct, uzkPlanPct, pvkPlanPct);
-    if (maxPlanPct > 0) {
+    if (requiredPhysicalSpecs.length > 0) {
       for (const [stamp, st] of welderStats.entries()) {
-        const req = Math.max(1, Math.ceil(st.welded * (maxPlanPct / 100)));
-        if (st.controlled < req) {
+        const missingMethods: ('РК' | 'УЗК' | 'ПВК')[] = [];
+        let worstDeficit = 0;
+        let worstControlled = 0;
+        let worstRequired = 0;
+
+        for (const spec of requiredPhysicalSpecs) {
+          const req = Math.max(1, Math.ceil(st.welded * (spec.planPct / 100)));
+          const controlled = st[spec.key];
+          if (controlled < req) {
+            missingMethods.push(spec.method);
+            const deficit = req - controlled;
+            if (deficit > worstDeficit) {
+              worstDeficit = deficit;
+              worstControlled = controlled;
+              worstRequired = req;
+            }
+          }
+        }
+
+        if (missingMethods.length > 0) {
           welderDeficits.push({
             stamp,
             weldedCount: st.welded,
-            controlledCount: st.controlled,
-            requiredCount: req,
-            deficitCount: req - st.controlled,
+            controlledCount: worstControlled,
+            requiredCount: worstRequired,
+            deficitCount: worstDeficit,
+            missingMethods,
           });
         }
       }
@@ -399,8 +469,8 @@ export function calculateLaboratoryDeficitStatement(
       recommendedMethod = 'УЗК';
     }
 
-    // Кандидаты на включение в заявку НК: сваренные стыки, у которых не завершён контроль или открыт ремонт,
-    // и которые ещё не находятся в активной заявке ЛНК на рекомендованный метод
+    // Кандидаты на включение в заявку НК: сваренные стыки, у которых не завершён хотя бы один
+    // обязательный метод или открыт ремонт, и которые ещё не находятся в активной заявке ЛНК
     const candidateJoints = allWeldedJoints.filter((j) => {
       if (
         getActiveLabRequestForJoint(j.id, labRequests, recommendedMethod) &&
@@ -409,12 +479,16 @@ export function calculateLaboratoryDeficitStatement(
         return false;
       }
       if (isJointCurrentlyInRepair(j)) return true;
-      if (j.vikResult !== 'Годен') return true;
+      if (!isVikPassed(j)) return true;
+      if (rkPlanPct > 0 && !isJointPassedByMethod(j, 'РК')) return true;
+      if (uzkPlanPct > 0 && !isJointPassedByMethod(j, 'УЗК')) return true;
+      if (pvkPlanPct > 0 && !isJointPassedByMethod(j, 'ПВК')) return true;
       if (
-        !j.ndtResult ||
-        j.ndtResult === 'Не проводился' ||
-        j.ndtResult === 'В работе' ||
-        !j.ndtReportNumber?.trim()
+        requiredPhysicalSpecs.length === 0 &&
+        (!j.ndtResult ||
+          j.ndtResult === 'Не проводился' ||
+          j.ndtResult === 'В работе' ||
+          !j.ndtReportNumber?.trim())
       ) {
         return true;
       }
@@ -441,6 +515,7 @@ export function calculateLaboratoryDeficitStatement(
       weldedCount,
       fullyAcceptedCount,
       inRepairCount,
+      jointsInWorkCount,
       vikPlanPct,
       vikRequired,
       vikCompleted,
@@ -523,6 +598,7 @@ export function calculateLaboratoryDeficitStatement(
     totalLines: allLineRows.length,
     deficitLinesCount: allLineRows.filter((l) => l.hasDeficit).length,
     totalWelded: allLineRows.reduce((acc, l) => acc + l.weldedCount, 0),
+    jointsInWorkCount: allLineRows.reduce((acc, l) => acc + l.jointsInWorkCount, 0),
     vikDeficit: allLineRows.reduce((acc, l) => acc + l.vikDeficit, 0),
     rkDeficit: allLineRows.reduce((acc, l) => acc + l.rkDeficit, 0),
     uzkDeficit: allLineRows.reduce((acc, l) => acc + l.uzkDeficit, 0),
@@ -588,45 +664,91 @@ export function suggestNextConclusionNumber(
  */
 export function buildAcceptIntoWorkJointPatch(
   joint: WeldJoint,
-  request: Pick<NdtLabRequest, 'controlStage' | 'requestedMethod'>,
+  request: Pick<NdtLabRequest, 'controlStage' | 'requestedMethod' | 'requestedMethods'>,
   inspectorShortName: string
 ): Partial<WeldJoint> {
   const patch: Partial<WeldJoint> = {};
+  const reqMethods = getRequestMethodsList(request);
+  const physMethods = reqMethods.filter(
+    (m): m is 'РК' | 'УЗК' | 'ПВК' => m !== 'ВИК'
+  );
+  const primaryPhysNdt = derivePrimaryNdtMethod(reqMethods);
 
-  if (request.controlStage === 'Повторный НК после ремонта' || isJointCurrentlyInRepair(joint)) {
-    if (joint.repairVikResult !== 'Годен') {
+  const stageTag: 'primary' | 'repair' | 'duplicate' =
+    request.controlStage === 'Повторный НК после ремонта' || isJointCurrentlyInRepair(joint)
+      ? 'repair'
+      : request.controlStage === 'Дублирующий контроль'
+      ? 'duplicate'
+      : 'primary';
+
+  // Обновляем карту labConclusions только для запрошенных методов, не стирая существующие заключения
+  const mergedConclusions: LabConclusionsMap = { ...(joint.labConclusions || {}) };
+  let lcChanged = false;
+  for (const m of reqMethods) {
+    const existing = mergedConclusions[m];
+    const alreadyDoneForStage =
+      existing &&
+      existing.result === 'Годен' &&
+      (stageTag === 'primary' || existing.stage === stageTag);
+    if (!alreadyDoneForStage) {
+      mergedConclusions[m] = {
+        reportNumber: existing?.stage === stageTag ? existing.reportNumber || '' : '',
+        date: existing?.stage === stageTag ? existing.date || '' : '',
+        result: 'В работе',
+        inspector: inspectorShortName,
+        stage: stageTag,
+      };
+      lcChanged = true;
+    }
+  }
+  if (lcChanged) {
+    patch.labConclusions = mergedConclusions;
+  }
+
+  if (stageTag === 'repair') {
+    if (
+      (reqMethods.includes('ВИК') || request.controlStage === 'Повторный НК после ремонта') &&
+      joint.repairVikResult !== 'Годен'
+    ) {
       patch.repairVikResult = 'В работе';
       patch.repairVikInspector = inspectorShortName;
     }
-    patch.repairNdtType = request.requestedMethod;
-    if (joint.repairNdtResult !== 'Годен') {
-      patch.repairNdtResult = 'В работе';
+    if (physMethods.length > 0 && primaryPhysNdt !== 'Не требуется') {
+      patch.repairNdtType = primaryPhysNdt;
+      if (joint.repairNdtResult !== 'Годен') {
+        patch.repairNdtResult = 'В работе';
+      }
+      patch.repairNdtInspector = inspectorShortName;
     }
-    patch.repairNdtInspector = inspectorShortName;
     return patch;
   }
 
-  if (request.controlStage === 'Дублирующий контроль') {
-    patch.dupNdtType = request.requestedMethod;
-    if (joint.dupNdtResult !== 'Годен') {
-      patch.dupNdtResult = 'В работе';
+  if (stageTag === 'duplicate') {
+    if (physMethods.length > 0 && primaryPhysNdt !== 'Не требуется') {
+      patch.dupNdtType = primaryPhysNdt;
+      if (joint.dupNdtResult !== 'Годен') {
+        patch.dupNdtResult = 'В работе';
+      }
+      patch.dupNdtInspector = inspectorShortName;
     }
-    patch.dupNdtInspector = inspectorShortName;
     return patch;
   }
 
-  if (request.controlStage === 'Первичный ВИК и НК') {
-    if (joint.vikResult !== 'Годен') {
-      patch.vikResult = 'В работе';
-      patch.vikInspector = inspectorShortName;
-    }
+  if (
+    (reqMethods.includes('ВИК') || request.controlStage === 'Первичный ВИК и НК') &&
+    joint.vikResult !== 'Годен'
+  ) {
+    patch.vikResult = 'В работе';
+    patch.vikInspector = inspectorShortName;
   }
 
-  patch.ndtType = request.requestedMethod;
-  if (joint.ndtResult !== 'Годен') {
-    patch.ndtResult = 'В работе';
+  if (physMethods.length > 0 && primaryPhysNdt !== 'Не требуется') {
+    patch.ndtType = primaryPhysNdt;
+    if (joint.ndtResult !== 'Годен') {
+      patch.ndtResult = 'В работе';
+    }
+    patch.ndtInspector = inspectorShortName;
   }
-  patch.ndtInspector = inspectorShortName;
   return patch;
 }
 
@@ -690,6 +812,39 @@ export function buildLabConclusionPatch(
   }
 
   const patch: Partial<WeldJoint> = {};
+  const stageTag: 'primary' | 'repair' | 'duplicate' =
+    input.stage === 'Повторный НК после ремонта'
+      ? 'repair'
+      : input.stage === 'Дублирующий контроль'
+      ? 'duplicate'
+      : 'primary';
+
+  const syncedConclusions: LabConclusionsMap = { ...(joint.labConclusions || {}) };
+  const targetPhysMethods: ('РК' | 'УЗК' | 'ПВК')[] = [];
+  if (matchesPhysicalMethod(input.ndtMethod, 'РК')) targetPhysMethods.push('РК');
+  if (matchesPhysicalMethod(input.ndtMethod, 'УЗК')) targetPhysMethods.push('УЗК');
+  if (matchesPhysicalMethod(input.ndtMethod, 'ПВК')) targetPhysMethods.push('ПВК');
+  for (const pm of targetPhysMethods) {
+    syncedConclusions[pm] = {
+      reportNumber: reportNum,
+      date: reportDate,
+      result: input.ndtResult,
+      inspector,
+      stage: stageTag,
+    };
+  }
+  if (input.includeVik) {
+    syncedConclusions['ВИК'] = {
+      reportNumber: input.vikReportNumber?.trim() || '',
+      date: input.vikDate?.trim() || reportDate,
+      result: input.vikResult || (input.ndtResult === 'Годен' ? 'Годен' : input.ndtResult),
+      inspector: input.vikInspector?.trim() || inspector,
+      stage: stageTag,
+    };
+  }
+  if (Object.keys(syncedConclusions).length > 0) {
+    patch.labConclusions = syncedConclusions;
+  }
 
   if (input.stage === 'Повторный НК после ремонта') {
     if (input.includeVik) {
@@ -884,14 +1039,64 @@ export function isJointConclusionCompletedForRequest(
   const isFinalResult = (res?: ControlResult) =>
     res === 'Годен' || res === 'Ремонт' || res === 'Вырезать';
 
+  const methods = requestedMethods && requestedMethods.length > 0 ? requestedMethods : null;
+  const lc = joint.labConclusions;
+
   if (stage === 'Повторный НК после ремонта') {
+    if (methods) {
+      return methods.every((m) => {
+        const entry = lc?.[m];
+        if (
+          entry &&
+          entry.stage === 'repair' &&
+          Boolean(entry.reportNumber?.trim()) &&
+          Boolean(entry.date?.trim()) &&
+          isFinalResult(entry.result)
+        ) {
+          return true;
+        }
+        if (m === 'ВИК') {
+          return Boolean(joint.repairVikNumber?.trim()) && isFinalResult(joint.repairVikResult);
+        }
+        return (
+          matchesPhysicalMethod(joint.repairNdtType, m) &&
+          Boolean(joint.repairNdtNumber?.trim()) &&
+          Boolean(joint.repairNdtDate?.trim()) &&
+          isFinalResult(joint.repairNdtResult)
+        );
+      });
+    }
     return (
       Boolean(joint.repairNdtNumber?.trim()) &&
       Boolean(joint.repairNdtDate?.trim()) &&
       isFinalResult(joint.repairNdtResult)
     );
   }
+
   if (stage === 'Дублирующий контроль') {
+    if (methods) {
+      return methods.every((m) => {
+        const entry = lc?.[m];
+        if (
+          entry &&
+          entry.stage === 'duplicate' &&
+          Boolean(entry.reportNumber?.trim()) &&
+          Boolean(entry.date?.trim()) &&
+          isFinalResult(entry.result)
+        ) {
+          return true;
+        }
+        if (m === 'ВИК') {
+          return Boolean(joint.vikReportNumber?.trim()) && isFinalResult(joint.vikResult);
+        }
+        return (
+          matchesPhysicalMethod(joint.dupNdtType, m) &&
+          Boolean(joint.dupNdtReportNumber?.trim()) &&
+          Boolean(joint.dupNdtDate?.trim()) &&
+          isFinalResult(joint.dupNdtResult)
+        );
+      });
+    }
     return (
       Boolean(joint.dupNdtReportNumber?.trim()) &&
       Boolean(joint.dupNdtDate?.trim()) &&
@@ -899,28 +1104,28 @@ export function isJointConclusionCompletedForRequest(
     );
   }
 
-  const methods = requestedMethods && requestedMethods.length > 0 ? requestedMethods : null;
-  const lc = joint.labConclusions;
-
-  if (methods && lc && Object.keys(lc).length > 0) {
+  if (methods) {
     return methods.every((m) => {
-      const entry = lc[m];
-      if (entry) {
-        return (
-          Boolean(entry.reportNumber?.trim()) &&
-          Boolean(entry.date?.trim()) &&
-          isFinalResult(entry.result)
-        );
+      const entry = lc?.[m];
+      if (
+        entry &&
+        (!entry.stage || entry.stage === 'primary') &&
+        Boolean(entry.reportNumber?.trim()) &&
+        Boolean(entry.date?.trim()) &&
+        isFinalResult(entry.result)
+      ) {
+        return true;
       }
       if (m === 'ВИК') {
         return Boolean(joint.vikReportNumber?.trim()) && isFinalResult(joint.vikResult);
       }
-      return false;
+      return (
+        matchesPhysicalMethod(joint.ndtType, m) &&
+        Boolean(joint.ndtReportNumber?.trim()) &&
+        Boolean(joint.ndtDate?.trim()) &&
+        isFinalResult(joint.ndtResult)
+      );
     });
-  }
-
-  if (methods && methods.includes('ВИК') && methods.length === 1) {
-    return Boolean(joint.vikReportNumber?.trim()) && isFinalResult(joint.vikResult);
   }
 
   return (
@@ -989,8 +1194,24 @@ export function buildMultiMethodLabConclusionPatch(
     };
   }
 
+  // Сохраняем существующие записи labConclusions для незатронутых методов;
+  // для этапов ремонта и дублирующего контроля не перетираем первичные записи пустыми значениями.
+  const mergedMap: LabConclusionsMap = { ...(joint.labConclusions || {}) };
+  for (const m of CANONICAL_LAB_METHODS) {
+    const entry = normalizedMap[m];
+    if (!entry) continue;
+    if (
+      stageTag !== 'primary' &&
+      entry.result === 'Не проводился' &&
+      !entry.reportNumber
+    ) {
+      continue;
+    }
+    mergedMap[m] = entry;
+  }
+
   const patch: Partial<WeldJoint> = {
-    labConclusions: normalizedMap,
+    labConclusions: mergedMap,
   };
 
   const vikEntry = normalizedMap['ВИК'];
@@ -1006,6 +1227,17 @@ export function buildMultiMethodLabConclusionPatch(
     .sort((a, b) => (resultPriority[b.entry.result] ?? 0) - (resultPriority[a.entry.result] ?? 0));
 
   const primaryPhys = physEntries[0];
+  const resolveAggregatedPhysType = (): NdtMethod => {
+    if (!primaryPhys) return 'Не требуется';
+    const topPriority = resultPriority[primaryPhys.entry.result] ?? 0;
+    const topMethods = physEntries
+      .filter((item) => (resultPriority[item.entry.result] ?? 0) === topPriority)
+      .map((item) => item.method);
+    if (topMethods.includes('РК') && topMethods.includes('УЗК')) {
+      return 'РК+УЗК';
+    }
+    return primaryPhys.method;
+  };
 
   if (stage === 'Повторный НК после ремонта') {
     if (vikEntry && vikEntry.result !== 'Не проводился') {
@@ -1015,7 +1247,7 @@ export function buildMultiMethodLabConclusionPatch(
       patch.repairVikInspector = vikEntry.inspector;
     }
     if (primaryPhys) {
-      patch.repairNdtType = primaryPhys.method;
+      patch.repairNdtType = resolveAggregatedPhysType();
       patch.repairNdtNumber = primaryPhys.entry.reportNumber;
       patch.repairNdtDate = primaryPhys.entry.date;
       patch.repairNdtResult = primaryPhys.entry.result;
@@ -1026,7 +1258,7 @@ export function buildMultiMethodLabConclusionPatch(
 
   if (stage === 'Дублирующий контроль') {
     if (primaryPhys) {
-      patch.dupNdtType = primaryPhys.method;
+      patch.dupNdtType = resolveAggregatedPhysType();
       patch.dupNdtReportNumber = primaryPhys.entry.reportNumber;
       patch.dupNdtDate = primaryPhys.entry.date;
       patch.dupNdtResult = primaryPhys.entry.result;
@@ -1043,7 +1275,7 @@ export function buildMultiMethodLabConclusionPatch(
   }
 
   if (primaryPhys) {
-    patch.ndtType = primaryPhys.method;
+    patch.ndtType = resolveAggregatedPhysType();
     patch.ndtReportNumber = primaryPhys.entry.reportNumber;
     patch.ndtDate = primaryPhys.entry.date;
     patch.ndtResult = primaryPhys.entry.result;
@@ -1089,9 +1321,10 @@ export function getJointLabRequestStatus(
   // 1. Проверяем актуальные заявки в журнале заявок ЛНК (от новых к старым)
   for (const req of labRequests) {
     if (req.jointIds.includes(joint.id)) {
+      const reqMethods = getRequestMethodsList(req);
       if (
         req.status === 'Выполнена' ||
-        isJointConclusionCompletedForRequest(joint, req.controlStage)
+        isJointConclusionCompletedForRequest(joint, req.controlStage, reqMethods)
       ) {
         return 'Заявка исполнена';
       }
@@ -1130,10 +1363,14 @@ export function getJointLabRequestStatus(
     return 'Заявка исполнена';
   }
 
+  const hasAnyLabConclusionInWork = Object.values(joint.labConclusions || {}).some(
+    (c) => c?.result === 'В работе'
+  );
   if (
     joint.ndtResult === 'В работе' ||
     joint.vikResult === 'В работе' ||
-    joint.dupNdtResult === 'В работе'
+    joint.dupNdtResult === 'В работе' ||
+    hasAnyLabConclusionInWork
   ) {
     return 'Заявка в работе';
   }

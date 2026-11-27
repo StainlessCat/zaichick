@@ -65,7 +65,6 @@ export interface JointsRegistryViewProps {
   onSetConfirmBulkDeleteJoints: (val: boolean) => void;
   onBulkDeleteSelectedJoints: () => void;
   onOpenBulkEdit: () => void;
-  onQuickAddSupplementaryJoint: () => void;
   onOpenImportExcel: () => void;
   onOpenCreatePassport: () => void;
   onOpenEditPassport: (joint: WeldJoint) => void;
@@ -143,7 +142,6 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
     onSetConfirmBulkDeleteJoints,
     onBulkDeleteSelectedJoints,
     onOpenBulkEdit,
-    onQuickAddSupplementaryJoint,
     onOpenImportExcel,
     onOpenCreatePassport,
     onOpenEditPassport,
@@ -264,7 +262,6 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
         onSetConfirmBulkDeleteJoints={onSetConfirmBulkDeleteJoints}
         onBulkDeleteSelectedJoints={onBulkDeleteSelectedJoints}
         onOpenBulkEdit={onOpenBulkEdit}
-        onQuickAddSupplementaryJoint={onQuickAddSupplementaryJoint}
         onOpenImportExcel={onOpenImportExcel}
         onExportExcel={handleExportExcel}
         onOpenCreatePassport={onOpenCreatePassport}

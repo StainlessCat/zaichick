@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
-import { NdtLineDeficitRow, NdtRdDeficitGroup } from '../../utils/laboratoryLogic';
+import { NdtLabRequest, WeldJoint } from '../../types/welding';
+import {
+  getJointLabRequestStatus,
+  NdtLineDeficitRow,
+  NdtRdDeficitGroup,
+} from '../../utils/laboratoryLogic';
 import { LabMarkingCell } from './LabMarkingCell';
 
 interface LabDeficitTabProps {
@@ -9,6 +14,8 @@ interface LabDeficitTabProps {
   setExpandedRdCodes: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   onOpenCreateRequestModal: (line: NdtLineDeficitRow) => void;
   canCreateRequest?: boolean;
+  labRequests?: NdtLabRequest[];
+  onOpenJointPassport?: (joint: WeldJoint) => void;
 }
 
 export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
@@ -17,6 +24,8 @@ export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
   setExpandedRdCodes,
   onOpenCreateRequestModal,
   canCreateRequest = true,
+  labRequests = [],
+  onOpenJointPassport,
 }) => {
   const [expandedLines, setExpandedLines] = useState<Record<string, boolean>>({});
 
@@ -282,6 +291,11 @@ export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
                                         <div key={w.stamp}>
                                           Клеймо <strong>{w.stamp}</strong>: {w.controlledCount}/
                                           {w.requiredCount}
+                                          {w.missingMethods && w.missingMethods.length > 0 && (
+                                            <span className="text-amber-700 ml-1">
+                                              · {w.missingMethods.join(', ')}
+                                            </span>
+                                          )}
                                         </div>
                                       ))}
                                     </div>
@@ -319,13 +333,21 @@ export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
                                     title={
                                       !canCreateRequest
                                         ? 'Для формирования заявки требуется роль инженера ПТО'
+                                        : !line.hasDeficit
+                                        ? 'Сформировать дополнительную заявку на дублирующий или повторный контроль'
                                         : undefined
                                     }
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-200 disabled:text-slate-400 text-white text-[11px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap ${
+                                      line.hasDeficit
+                                        ? 'bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-200 disabled:text-slate-400 text-white'
+                                        : 'bg-white hover:bg-slate-100 border border-slate-300 disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 text-slate-700'
+                                    }`}
                                   >
                                     <Plus className="w-3.5 h-3.5" />
                                     <span>
-                                      Заявка · {line.candidateJoints.length || line.weldedCount} ст.
+                                      {line.hasDeficit
+                                        ? `Заявка · ${line.candidateJoints.length || line.weldedCount} ст.`
+                                        : 'Доп. заявка'}
                                     </span>
                                   </button>
                                 </td>
@@ -344,31 +366,75 @@ export const LabDeficitTab: React.FC<LabDeficitTabProps> = ({
                                             <th className="py-1.5 px-2.5">Сварка</th>
                                             <th className="py-1.5 px-2.5">ВИК</th>
                                             <th className="py-1.5 px-2.5">НК</th>
+                                            <th className="py-1.5 px-2.5">Статус заявки</th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
-                                          {line.allWeldedJoints.map((j) => (
-                                            <tr key={j.id} className="hover:bg-slate-50">
-                                              <td className="py-1.5 px-2.5 font-mono font-bold text-[#1e3799]">
-                                                {j.jointNumber}
-                                              </td>
-                                              <td className="py-1.5 px-2.5">
-                                                <LabMarkingCell joint={j} compact />
-                                              </td>
-                                              <td className="py-1.5 px-2.5 font-mono">
-                                                {j.diameterMm}×{j.wallThickness} мм
-                                              </td>
-                                              <td className="py-1.5 px-2.5 font-mono">
-                                                {j.weldingType} · {j.welderStamp}
-                                              </td>
-                                              <td className="py-1.5 px-2.5 font-mono">
-                                                {j.vikResult}
-                                              </td>
-                                              <td className="py-1.5 px-2.5 font-mono">
-                                                {j.ndtType}: {j.ndtResult}
-                                              </td>
-                                            </tr>
-                                          ))}
+                                          {line.allWeldedJoints.map((j) => {
+                                            const reqStatus = getJointLabRequestStatus(j, labRequests);
+                                            const physMethods = (['РК', 'УЗК', 'ПВК'] as const)
+                                              .map((m) => ({ m, e: j.labConclusions?.[m] }))
+                                              .filter(
+                                                (x) =>
+                                                  x.e &&
+                                                  (x.e.result !== 'Не проводился' || x.e.reportNumber)
+                                              );
+                                            const ndtSummary =
+                                              physMethods.length > 0
+                                                ? physMethods
+                                                    .map((x) => `${x.m}: ${x.e!.result}`)
+                                                    .join(' · ')
+                                                : `${j.ndtType}: ${j.ndtResult}`;
+
+                                            return (
+                                              <tr key={j.id} className="hover:bg-slate-50">
+                                                <td className="py-1.5 px-2.5 font-mono font-bold text-[#1e3799]">
+                                                  {onOpenJointPassport ? (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => onOpenJointPassport(j)}
+                                                      title="Открыть паспорт стыка"
+                                                      className="font-mono font-bold text-[#1e3799] hover:underline cursor-pointer"
+                                                    >
+                                                      {j.jointNumber}
+                                                    </button>
+                                                  ) : (
+                                                    j.jointNumber
+                                                  )}
+                                                </td>
+                                                <td className="py-1.5 px-2.5">
+                                                  <LabMarkingCell joint={j} compact />
+                                                </td>
+                                                <td className="py-1.5 px-2.5 font-mono">
+                                                  {j.diameterMm}×{j.wallThickness} мм
+                                                </td>
+                                                <td className="py-1.5 px-2.5 font-mono">
+                                                  {j.weldingType} · {j.welderStamp}
+                                                </td>
+                                                <td className="py-1.5 px-2.5 font-mono">
+                                                  {j.labConclusions?.['ВИК']?.result || j.vikResult}
+                                                </td>
+                                                <td className="py-1.5 px-2.5 font-mono">
+                                                  {ndtSummary}
+                                                </td>
+                                                <td className="py-1.5 px-2.5 font-medium">
+                                                  <span
+                                                    className={
+                                                      reqStatus === 'Заявка исполнена'
+                                                        ? 'text-emerald-700'
+                                                        : reqStatus === 'Заявка в работе'
+                                                        ? 'text-[#1e3799]'
+                                                        : reqStatus === 'Заявка подана'
+                                                        ? 'text-amber-700'
+                                                        : 'text-slate-500'
+                                                    }
+                                                  >
+                                                    {reqStatus}
+                                                  </span>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
                                         </tbody>
                                       </table>
                                     </div>

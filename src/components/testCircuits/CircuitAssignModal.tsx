@@ -16,6 +16,8 @@ import type {
   WeldJoint,
 } from '../../types/welding';
 import { isJointWelded } from '../../utils/jointDerived';
+import { formatDateDDMMYY } from '../../utils/formatting';
+import { normalizeCorporateJointNumber } from '../../api/mappers';
 
 export interface CircuitAssignModalProps {
   isOpen: boolean;
@@ -60,6 +62,7 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<AssignTab>('lines');
   const [search, setSearch] = useState('');
+  const [selectedRdFilter, setSelectedRdFilter] = useState<string>('ALL');
   const [selectedLineFilter, setSelectedLineFilter] = useState<string>('ALL');
   const [onlyUnassigned, setOnlyUnassigned] = useState(false);
   const { handleRequestClose } = useModalDismiss({
@@ -79,6 +82,7 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
     if (!isOpen) return;
     setActiveTab('lines');
     setSearch('');
+    setSelectedRdFilter('ALL');
     setSelectedLineFilter('ALL');
     setOnlyUnassigned(false);
     setSelectedLineIds([]);
@@ -111,6 +115,17 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
     );
   }, [circuit, joints]);
 
+  const rdCodeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of facilityLines) {
+      if (l.rdCode) set.add(l.rdCode);
+    }
+    for (const j of facilityJoints) {
+      if (j.rdCode) set.add(j.rdCode);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'));
+  }, [facilityJoints, facilityLines]);
+
   const resolveJointCircuitName = (j: WeldJoint): { id: string | null; name: string } => {
     if (j.testCircuitId) {
       return {
@@ -142,6 +157,7 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
         const lineJoints =
           jointsByLine.get(line.id) || jointsByLine.get(line.uniqueLineId) || [];
         let inThisCircuit = 0;
+        let unassignedCount = 0;
         const otherCircuits = new Set<string>();
         for (const j of lineJoints) {
           const bound = resolveJointCircuitName(j);
@@ -149,16 +165,25 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
             inThisCircuit += 1;
           } else if (bound.name) {
             otherCircuits.add(bound.name);
+          } else {
+            unassignedCount += 1;
           }
         }
         return {
           line,
           totalJoints: lineJoints.length,
           inThisCircuit,
+          unassignedCount,
           otherCircuits: Array.from(otherCircuits),
         };
       })
       .filter((row) => {
+        if (selectedRdFilter !== 'ALL' && row.line.rdCode !== selectedRdFilter) {
+          return false;
+        }
+        if (onlyUnassigned && (row.inThisCircuit > 0 || row.otherCircuits.length > 0)) {
+          return false;
+        }
         if (!q) return true;
         return (
           row.line.uniqueLineId.toLowerCase().includes(q) ||
@@ -168,12 +193,24 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
         );
       })
       .sort((a, b) => a.line.uniqueLineId.localeCompare(b.line.uniqueLineId, 'ru'));
-  }, [circuit, facilityJoints, facilityLines, search, allCircuits, circuitNameById]);
+  }, [
+    allCircuits,
+    circuit,
+    circuitNameById,
+    facilityJoints,
+    facilityLines,
+    onlyUnassigned,
+    search,
+    selectedRdFilter,
+  ]);
 
   const filteredJoints = useMemo(() => {
     const q = search.trim().toLowerCase();
     return facilityJoints
       .filter((j) => {
+        if (selectedRdFilter !== 'ALL' && j.rdCode !== selectedRdFilter) {
+          return false;
+        }
         if (selectedLineFilter !== 'ALL' && j.uniqueLineId !== selectedLineFilter) {
           return false;
         }
@@ -194,11 +231,35 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
         if (lc !== 0) return lc;
         return a.jointNumber.localeCompare(b.jointNumber, 'ru', { numeric: true });
       });
-  }, [facilityJoints, onlyUnassigned, search, selectedLineFilter, allCircuits, circuitNameById]);
+  }, [
+    allCircuits,
+    circuitNameById,
+    facilityJoints,
+    onlyUnassigned,
+    search,
+    selectedLineFilter,
+    selectedRdFilter,
+  ]);
 
   if (!isOpen || !circuit) return null;
 
-  const toggleLine = (id: string) => {
+  const selectableVisibleLineIds = lineRows
+    .filter((r) => r.totalJoints > 0)
+    .map((r) => r.line.id);
+  const allVisibleLinesSelected =
+    selectableVisibleLineIds.length > 0 &&
+    selectableVisibleLineIds.every((id) => selectedLineIds.includes(id));
+
+  const visibleJointIds = filteredJoints.map((j) => j.id);
+  const allVisibleJointsSelected =
+    visibleJointIds.length > 0 &&
+    visibleJointIds.every((id) => selectedJointIds.includes(id));
+
+  const isAllVisibleSelected =
+    activeTab === 'lines' ? allVisibleLinesSelected : allVisibleJointsSelected;
+
+  const toggleLine = (id: string, totalJoints: number) => {
+    if (totalJoints === 0) return;
     setSelectedLineIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
@@ -215,25 +276,25 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
   };
 
   const handleToggleAllLines = () => {
-    const visibleIds = lineRows.map((r) => r.line.id);
-    const allSelected =
-      visibleIds.length > 0 && visibleIds.every((id) => selectedLineIds.includes(id));
-    if (allSelected) {
-      setSelectedLineIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    if (selectableVisibleLineIds.length === 0) return;
+    if (allVisibleLinesSelected) {
+      setSelectedLineIds((prev) =>
+        prev.filter((id) => !selectableVisibleLineIds.includes(id))
+      );
     } else {
-      setSelectedLineIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+      setSelectedLineIds((prev) =>
+        Array.from(new Set([...prev, ...selectableVisibleLineIds]))
+      );
     }
     setConflicts([]);
   };
 
   const handleToggleAllJoints = () => {
-    const visibleIds = filteredJoints.map((j) => j.id);
-    const allSelected =
-      visibleIds.length > 0 && visibleIds.every((id) => selectedJointIds.includes(id));
-    if (allSelected) {
-      setSelectedJointIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    if (visibleJointIds.length === 0) return;
+    if (allVisibleJointsSelected) {
+      setSelectedJointIds((prev) => prev.filter((id) => !visibleJointIds.includes(id)));
     } else {
-      setSelectedJointIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+      setSelectedJointIds((prev) => Array.from(new Set([...prev, ...visibleJointIds])));
     }
     setConflicts([]);
   };
@@ -264,6 +325,10 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
   };
 
   const selectedCount = activeTab === 'lines' ? selectedLineIds.length : selectedJointIds.length;
+  const lineOptionsForJointsTab =
+    selectedRdFilter === 'ALL'
+      ? facilityLines
+      : facilityLines.filter((l) => l.rdCode === selectedRdFilter);
 
   return (
     <div
@@ -352,8 +417,8 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
         </div>
 
         {/* Search & Filter Controls */}
-        <div className="px-5 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center gap-2.5 shrink-0">
-          <div className="relative flex-1 min-w-[220px]">
+        <div className="px-5 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center gap-2 shrink-0">
+          <div className="relative flex-1 min-w-[200px]">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
@@ -368,43 +433,64 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
             />
           </div>
 
-          {activeTab === 'joints' && (
-            <>
-              <select
-                value={selectedLineFilter}
-                onChange={(e) => setSelectedLineFilter(e.target.value)}
-                className="h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#1e3799] max-w-[240px]"
-              >
-                <option value="ALL">Все линии объекта</option>
-                {facilityLines.map((l) => (
-                  <option key={l.id} value={l.uniqueLineId}>
-                    {l.uniqueLineId}
-                  </option>
-                ))}
-              </select>
-
-              <label className="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none px-2 py-1 rounded-lg hover:bg-slate-50">
-                <input
-                  type="checkbox"
-                  checked={onlyUnassigned}
-                  onChange={(e) => setOnlyUnassigned(e.target.checked)}
-                  className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
-                />
-                <span>Только без контура</span>
-              </label>
-            </>
+          {rdCodeOptions.length > 1 && (
+            <select
+              value={selectedRdFilter}
+              onChange={(e) => {
+                setSelectedRdFilter(e.target.value);
+                setSelectedLineFilter('ALL');
+              }}
+              className="h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#1e3799] max-w-[210px]"
+            >
+              <option value="ALL">Все шифры РД</option>
+              {rdCodeOptions.map((rd) => (
+                <option key={rd} value={rd}>
+                  {rd}
+                </option>
+              ))}
+            </select>
           )}
+
+          {activeTab === 'joints' && (
+            <select
+              value={selectedLineFilter}
+              onChange={(e) => setSelectedLineFilter(e.target.value)}
+              className="h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#1e3799] max-w-[220px]"
+            >
+              <option value="ALL">Все линии объекта</option>
+              {lineOptionsForJointsTab.map((l) => (
+                <option key={l.id} value={l.uniqueLineId}>
+                  {l.uniqueLineId}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <label className="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none px-2 py-1 rounded-lg hover:bg-slate-50">
+            <input
+              type="checkbox"
+              checked={onlyUnassigned}
+              onChange={(e) => setOnlyUnassigned(e.target.checked)}
+              className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
+            />
+            <span>Только без контура</span>
+          </label>
 
           <button
             type="button"
+            disabled={
+              activeTab === 'lines'
+                ? selectableVisibleLineIds.length === 0
+                : visibleJointIds.length === 0
+            }
             onClick={activeTab === 'lines' ? handleToggleAllLines : handleToggleAllJoints}
-            className="h-8 px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap"
+            className="h-8 px-2.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 cursor-pointer whitespace-nowrap disabled:opacity-45"
           >
-            Выбрать все видимые
+            {isAllVisibleSelected ? 'Снять выделение' : 'Выбрать все видимые'}
           </button>
         </div>
 
-        {/* Conflict Warning Banner (HTTP 409) */}
+        {/* Conflict Warning Banner */}
         {conflicts.length > 0 && (
           <div className="mx-5 mt-3 p-3.5 rounded-xl bg-amber-50 border border-amber-300 space-y-2.5 shrink-0">
             <div className="flex items-start justify-between gap-3">
@@ -470,20 +556,26 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
               <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
                 {lineRows.map(({ line, totalJoints, inThisCircuit, otherCircuits }) => {
                   const checked = selectedLineIds.includes(line.id);
+                  const isEmpty = totalJoints === 0;
                   const isFullInThis = totalJoints > 0 && inThisCircuit >= totalJoints;
                   return (
                     <label
                       key={line.id}
-                      className={`flex items-center justify-between gap-3 px-3.5 py-2.5 cursor-pointer transition-colors ${
-                        checked ? 'bg-[#f0f5fc]' : 'hover:bg-slate-50'
+                      className={`flex items-center justify-between gap-3 px-3.5 py-2.5 transition-colors ${
+                        isEmpty
+                          ? 'bg-slate-50/70 opacity-60 cursor-not-allowed'
+                          : checked
+                            ? 'bg-[#f0f5fc] cursor-pointer'
+                            : 'hover:bg-slate-50 cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <input
                           type="checkbox"
+                          disabled={isEmpty}
                           checked={checked}
-                          onChange={() => toggleLine(line.id)}
-                          className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
+                          onChange={() => toggleLine(line.id, totalJoints)}
+                          className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799] disabled:opacity-40"
                         />
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -503,7 +595,11 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        {isFullInThis ? (
+                        {isEmpty ? (
+                          <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-500 text-[10px] font-semibold">
+                            Нет стыков
+                          </span>
+                        ) : isFullInThis ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-semibold">
                             <Check className="w-3 h-3" />
                             <span>Уже в контуре</span>
@@ -552,6 +648,11 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
                     const bound = resolveJointCircuitName(j);
                     const inThis = bound.id === circuit.id;
                     const welded = isJointWelded(j);
+                    const corp = normalizeCorporateJointNumber(
+                      j.jointNumber,
+                      j.uniqueLineId,
+                      j.isSupplementary
+                    );
                     return (
                       <tr
                         key={j.id}
@@ -575,7 +676,7 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
                           {j.uniqueLineId}
                         </td>
                         <td className="px-3 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">
-                          {j.jointNumber}
+                          {corp.jointNumber}
                         </td>
                         <td className="px-3 py-2 font-mono text-[11px] text-slate-600 tabular-nums whitespace-nowrap">
                           Ø{j.diameterMm} × {j.wallThickness}
@@ -583,7 +684,7 @@ export const CircuitAssignModal: React.FC<CircuitAssignModalProps> = ({
                         <td className="px-3 py-2 whitespace-nowrap">
                           {welded ? (
                             <span className="text-[11px] font-mono text-emerald-700 font-semibold">
-                              {j.weldingDate}
+                              {formatDateDDMMYY(j.weldingDate)}
                             </span>
                           ) : (
                             <span className="text-[11px] text-slate-400">Не сварен</span>

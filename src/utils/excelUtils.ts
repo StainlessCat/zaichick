@@ -21,6 +21,18 @@ import {
 } from './weldingLogic';
 import { normalizeCorporateJointNumber } from '../api/mappers';
 import { buildXlsxBinary } from './xlsxBuilder';
+import { buildJointLabMarking } from './labMarking';
+import { getRequestMethodsList, NdtLineDeficitRow } from './laboratoryLogic';
+import {
+  CIRCUIT_TEST_STATUS_LABELS,
+  CircuitNdtReadiness,
+  computeCircuitNdtReadiness,
+  formatJointControlSummaryForCircuit,
+  isJointAssignedToCircuit,
+  SRI_STATUS_LABELS,
+} from './testCircuitCalc';
+import { getJointNominalInch } from './jointDerived';
+import { RECORD_STATUS_LABELS_RU } from './rbac';
 
 export function triggerBlobDownload(blob: Blob, filename: string): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -371,3 +383,381 @@ export async function exportLaboratoryToExcel(params?: {
   const { blob, filename } = await zaychickApi.downloadLaboratoryXlsx(params);
   triggerBlobDownload(blob, filename);
 }
+
+/**
+ * Клиентский многолистовой экспорт раздела «Лаборатория НК» в .xlsx по текущим фильтрам.
+ * Включает 3 листа: «Дефицитная ведомость», «Заявки в ЛНК», «Заключения ЛНК» (с полем «Маркировка стыка»).
+ */
+export function exportLaboratoryFilteredToXlsx(params: {
+  deficitLines: NdtLineDeficitRow[];
+  requests: NdtLabRequest[];
+  joints: WeldJoint[];
+}): void {
+  const { deficitLines, requests, joints } = params;
+
+  const deficitHeaders = [
+    'Объект',
+    'Шифр РД',
+    'Линия',
+    'Контур ГИ',
+    'Категория / Уровень',
+    'Всего стыков',
+    'Сварено',
+    'В ремонте',
+    'ВИК Треб.',
+    'ВИК Факт',
+    'ВИК Дефицит',
+    'РК %',
+    'РК Треб.',
+    'РК Факт',
+    'РК Дефицит',
+    'УЗК %',
+    'УЗК Треб.',
+    'УЗК Факт',
+    'УЗК Дефицит',
+    'ПВК %',
+    'ПВК Треб.',
+    'ПВК Факт',
+    'ПВК Дефицит',
+    'Квота сварщиков',
+    'Статус',
+  ];
+
+  const deficitRows: Array<Array<string | number>> = deficitLines.map((l) => [
+    l.objectName,
+    l.rdCode,
+    l.lineNumber,
+    l.contour,
+    `${l.pipelineCategory || '—'} / ${l.qualityLevel || '—'}`,
+    l.totalJoints,
+    l.weldedCount,
+    l.inRepairCount,
+    l.vikRequired,
+    l.vikCompleted,
+    l.vikDeficit,
+    l.rkPlanPct,
+    l.rkRequired,
+    l.rkCompleted,
+    l.rkDeficit,
+    l.uzkPlanPct,
+    l.uzkRequired,
+    l.uzkCompleted,
+    l.uzkDeficit,
+    l.pvkPlanPct,
+    l.pvkRequired,
+    l.pvkCompleted,
+    l.pvkDeficit,
+    l.welderDeficits.length === 0
+      ? 'Квота закрыта'
+      : l.welderDeficits
+          .map(
+            (w) =>
+              `${w.stamp}: ${w.controlledCount}/${w.requiredCount}${
+                w.missingMethods?.length ? ` · ${w.missingMethods.join('+')}` : ''
+              }`
+          )
+          .join('; '),
+    l.weldedCount === 0
+      ? 'Нет сварки'
+      : l.hasDeficit
+      ? 'Требуется НК'
+      : 'Норматив выполнен',
+  ]);
+
+  const requestHeaders = [
+    '№ заявки',
+    'Статус',
+    'Этап контроля',
+    'Методы НК',
+    'Объект',
+    'Шифр РД',
+    'Линия',
+    'Стыков',
+    'Подал',
+    'Дата подачи',
+    'Принял',
+    'Дата приёмки',
+    'Примечание',
+  ];
+
+  const requestRows: Array<Array<string | number>> = requests.map((r) => [
+    r.requestNumber,
+    r.status,
+    r.controlStage,
+    getRequestMethodsList(r).join('+'),
+    r.objectName,
+    r.rdCode,
+    r.lineNumber,
+    r.jointIds.length,
+    r.createdBy,
+    r.createdAt,
+    r.acceptedBy || '',
+    r.acceptedAt || '',
+    r.notes || '',
+  ]);
+
+  const conclusionHeaders = [
+    '№ стыка',
+    'Маркировка стыка',
+    'Шифр РД',
+    'Линия',
+    'Типоразмер, мм',
+    'Дата сварки',
+    'Клеймо',
+    'ВИК Результат',
+    'ВИК № заключения',
+    'ВИК Дата',
+    'РК Результат',
+    'РК № заключения',
+    'РК Дата',
+    'УЗК Результат',
+    'УЗК № заключения',
+    'УЗК Дата',
+    'ПВК Результат',
+    'ПВК № заключения',
+    'ПВК Дата',
+    'Дефектоскопист',
+  ];
+
+  const resolveMethodCols = (
+    j: WeldJoint,
+    m: 'ВИК' | 'РК' | 'УЗК' | 'ПВК'
+  ): [string, string, string] => {
+    const entry = j.labConclusions?.[m];
+    if (entry) {
+      return [
+        entry.result || '',
+        entry.reportNumber || '',
+        entry.date ? formatDateDDMMYY(entry.date) : '',
+      ];
+    }
+    if (m === 'ВИК') {
+      return [
+        j.vikResult || '',
+        j.vikReportNumber || '',
+        j.vikDate ? formatDateDDMMYY(j.vikDate) : '',
+      ];
+    }
+    const matches =
+      (m === 'РК' && (j.ndtType === 'РК' || j.ndtType === 'РК+УЗК')) ||
+      (m === 'УЗК' && (j.ndtType === 'УЗК' || j.ndtType === 'РК+УЗК')) ||
+      (m === 'ПВК' && (j.ndtType === 'ПВК' || j.ndtType === 'МК'));
+    if (matches) {
+      return [
+        j.ndtResult || '',
+        j.ndtReportNumber || '',
+        j.ndtDate ? formatDateDDMMYY(j.ndtDate) : '',
+      ];
+    }
+    return ['Не проводился', '', ''];
+  };
+
+  const conclusionRows: Array<Array<string | number>> = joints.map((j) => {
+    const corp = normalizeCorporateJointNumber(
+      j.jointNumber,
+      j.uniqueLineId,
+      j.isSupplementary
+    );
+    const { marking } = buildJointLabMarking(j);
+    const vik = resolveMethodCols(j, 'ВИК');
+    const rk = resolveMethodCols(j, 'РК');
+    const uzk = resolveMethodCols(j, 'УЗК');
+    const pvk = resolveMethodCols(j, 'ПВК');
+    const inspector =
+      j.labConclusions?.['РК']?.inspector ||
+      j.labConclusions?.['УЗК']?.inspector ||
+      j.labConclusions?.['ПВК']?.inspector ||
+      j.labConclusions?.['ВИК']?.inspector ||
+      j.ndtInspector ||
+      j.vikInspector ||
+      '';
+    return [
+      corp.jointNumber,
+      marking,
+      j.rdCode,
+      j.lineNumber,
+      `${j.diameterMm}×${j.wallThickness}`,
+      formatDateDDMMYY(j.weldingDate),
+      j.welderStamp,
+      ...vik,
+      ...rk,
+      ...uzk,
+      ...pvk,
+      inspector,
+    ];
+  });
+
+  const bytes = buildXlsxBinary([
+    {
+      name: 'Дефицитная ведомость',
+      headers: deficitHeaders,
+      rows: deficitRows,
+      columnWidths: [
+        18, 16, 14, 18, 14, 11, 10, 10, 10, 10, 11, 8, 10, 10, 11, 8, 10, 10,
+        11, 8, 10, 10, 11, 24, 18,
+      ],
+    },
+    {
+      name: 'Заявки в ЛНК',
+      headers: requestHeaders,
+      rows: requestRows,
+      columnWidths: [16, 15, 24, 14, 18, 16, 14, 9, 20, 16, 20, 16, 28],
+    },
+    {
+      name: 'Заключения ЛНК',
+      headers: conclusionHeaders,
+      rows: conclusionRows,
+      columnWidths: [
+        10, 26, 16, 14, 13, 12, 12, 13, 24, 11, 13, 24, 11, 13, 24, 11, 13, 24,
+        11, 18,
+      ],
+    },
+  ]);
+
+  const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
+  const blob = new Blob([bytes.buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  triggerBlobDownload(blob, `ZAYCHICK_Laboratoriya_NK_${dateStamp}.xlsx`);
+}
+
+/**
+ * Нативный клиентский экспорт раздела «Испытания» в .xlsx (2 листа):
+ * 1) Контуры испытаний (сводка по сварке, d-inch, EDI, готовности НК, СРИ и актам)
+ * 2) Состав стыков (детализация по стыкам отфильтрованных контуров в корпоративном формате номеров)
+ */
+export function exportTestCircuitsFilteredToXlsx(params: {
+  circuits: TestCircuit[];
+  ndtByCircuitId?: Map<string, CircuitNdtReadiness>;
+  allJoints: WeldJoint[];
+  allLines: ProjectLineItem[];
+}): void {
+  const { circuits, ndtByCircuitId, allJoints, allLines } = params;
+
+  const circuitHeaders = [
+    'Контур испытаний',
+    'Объект строительства',
+    'СРИ',
+    'Статус СРИ',
+    'Включённые линии',
+    'Всего стыков',
+    'Сварено',
+    'Сварка, %',
+    'd-inch факт',
+    'd-inch всего',
+    'EDI факт',
+    'EDI всего',
+    'Готовность НК, %',
+    'Дефицит НК',
+    'Брак, шт.',
+    'Плановая дата',
+    'Номер акта',
+    'Дата испытания',
+    'Статус испытания',
+    'Статус записи',
+  ];
+
+  const circuitRows: Array<Array<string | number>> = circuits.map((c) => {
+    const ndt =
+      ndtByCircuitId?.get(c.id) || computeCircuitNdtReadiness(c, allJoints, allLines);
+    const linesText = c.linesSummary
+      .map((l) =>
+        l.isFullLine
+          ? l.uniqueLineId
+          : `${l.uniqueLineId} · ${l.assignedJointsCount}/${l.lineTotalJointsCount}`
+      )
+      .join('; ');
+    return [
+      c.name,
+      c.objectName || '',
+      c.sriName || '',
+      SRI_STATUS_LABELS[c.sriStatus] || c.sriStatus,
+      linesText,
+      c.totalJoints,
+      c.weldedJoints,
+      Number(c.weldingJointsPercent.toFixed(1)),
+      Number(c.weldedDInch.toFixed(2)),
+      Number(c.totalDInch.toFixed(2)),
+      Number(c.weldedEdi.toFixed(2)),
+      Number(c.totalEdi.toFixed(2)),
+      Number(ndt.ndtPercent.toFixed(1)),
+      ndt.deficitDetails.length > 0 ? ndt.deficitDetails.join(', ') : 'Выполнено',
+      c.defectiveJointsCount,
+      c.plannedDate ? formatDateDDMMYY(c.plannedDate) : '',
+      c.actNumber || '',
+      c.actualTestDate ? formatDateDDMMYY(c.actualTestDate) : '',
+      CIRCUIT_TEST_STATUS_LABELS[c.testStatus] || c.testStatus,
+      RECORD_STATUS_LABELS_RU[c.recordStatus] || c.recordStatus,
+    ];
+  });
+
+  const jointHeaders = [
+    'Контур испытаний',
+    'Шифр РД',
+    'Линия',
+    '№ стыка',
+    'Типоразмер, мм',
+    'd-inch',
+    'EDI',
+    'Дата сварки',
+    'Клеймо',
+    'Контроль ВИК и НК',
+    'Брак',
+  ];
+
+  const jointRows: Array<Array<string | number>> = [];
+  for (const c of circuits) {
+    const assigned = allJoints
+      .filter((j) => isJointAssignedToCircuit(j, c))
+      .sort((a, b) => {
+        const lc = a.uniqueLineId.localeCompare(b.uniqueLineId, 'ru');
+        if (lc !== 0) return lc;
+        return a.jointNumber.localeCompare(b.jointNumber, 'ru', { numeric: true });
+      });
+    for (const j of assigned) {
+      const corp = normalizeCorporateJointNumber(
+        j.jointNumber,
+        j.uniqueLineId,
+        j.isSupplementary
+      );
+      const summary = formatJointControlSummaryForCircuit(j);
+      jointRows.push([
+        c.name,
+        j.rdCode,
+        j.uniqueLineId,
+        corp.jointNumber,
+        `${j.diameterMm}×${j.wallThickness}`,
+        Number(getJointNominalInch(j).toFixed(2)),
+        Number(getJointEquivDiaInch(j).toFixed(2)),
+        j.weldingDate ? formatDateDDMMYY(j.weldingDate) : 'Не сварен',
+        j.welderStamp || '',
+        summary.label,
+        summary.status === 'defect' ? 'Да' : 'Нет',
+      ]);
+    }
+  }
+
+  const bytes = buildXlsxBinary([
+    {
+      name: 'Контуры испытаний',
+      headers: circuitHeaders,
+      rows: circuitRows,
+      columnWidths: [
+        28, 24, 24, 15, 28, 12, 11, 11, 12, 12, 12, 12, 15, 22, 10, 14, 16, 14, 14, 14,
+      ],
+    },
+    {
+      name: 'Состав стыков',
+      headers: jointHeaders,
+      rows: jointRows,
+      columnWidths: [28, 22, 22, 10, 14, 10, 10, 13, 12, 28, 8],
+    },
+  ]);
+
+  const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
+  const blob = new Blob([bytes.buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  triggerBlobDownload(blob, `ZAYCHICK_Ispytaniya_${dateStamp}.xlsx`);
+}
+

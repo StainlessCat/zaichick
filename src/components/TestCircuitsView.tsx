@@ -1,16 +1,18 @@
 import React, { useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  CheckCircle2,
-  ClipboardCheck,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Edit3,
   Eye,
-  FileCheck2,
+  FileSpreadsheet,
   Gauge,
   Link2,
   Plus,
   RotateCcw,
   Search,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react';
 import type {
@@ -24,12 +26,17 @@ import type {
   WeldJoint,
 } from '../types/welding';
 import { useAppContext, useAuth } from '../context';
-import { canManageTestCircuits } from '../utils/rbac';
+import { canManageTestCircuits, canUserMutateRecord } from '../utils/rbac';
 import {
   CIRCUIT_TEST_STATUS_OPTIONS,
+  CircuitNdtReadiness,
   computeCircuitMetricsLocal,
+  computeCircuitNdtReadiness,
+  getCircuitUniqueLineLabel,
   SRI_STATUS_OPTIONS,
 } from '../utils/testCircuitCalc';
+import { formatDateDDMMYY } from '../utils/formatting';
+import { exportTestCircuitsFilteredToXlsx } from '../utils/excelUtils';
 import { RecordStatusBadge } from './RecordStatusControls';
 import {
   CircuitTestStatusBadge,
@@ -70,6 +77,7 @@ export interface TestCircuitsViewProps {
       actNumber?: string | null;
       actualTestDate?: string | null;
       force?: boolean;
+      forceReason?: string | null;
     }
   ) => Promise<CircuitActionOutcome<TestCircuitDetail>>;
   onChangeCircuitStatus: (
@@ -95,6 +103,14 @@ export interface TestCircuitsViewProps {
   onOpenJointPassport: (joint: WeldJoint) => void;
 }
 
+type SortKey =
+  | 'name'
+  | 'weldingJointsPercent'
+  | 'weldingDInchPercent'
+  | 'ndtPercent'
+  | 'plannedDate'
+  | 'testStatus';
+
 export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
   onLoadCircuitDetail,
   onCreateCircuit,
@@ -112,9 +128,14 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
   const canManage = canManageTestCircuits(currentUser);
 
   const [search, setSearch] = useState('');
+  const [filterRdCode, setFilterRdCode] = useState<string>('ALL');
   const [filterTestStatus, setFilterTestStatus] = useState<'ALL' | CircuitTestStatus>('ALL');
   const [filterSriStatus, setFilterSriStatus] = useState<'ALL' | SriStatus>('ALL');
   const [onlyWithDefects, setOnlyWithDefects] = useState(false);
+  const [sortConfig, setSortConfig] = useState<{
+    key: SortKey;
+    direction: 'asc' | 'desc';
+  } | null>(null);
 
   const [formModal, setFormModal] = useState<{
     isOpen: boolean;
@@ -123,16 +144,19 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
   }>({ isOpen: false, mode: 'create', circuit: null });
 
   const [assignModalCircuitId, setAssignModalCircuitId] = useState<string | null>(null);
-  const [drawerDetail, setDrawerDetail] = useState<TestCircuitDetail | null>(null);
+  const [drawerCircuitId, setDrawerCircuitId] = useState<string | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [bannerError, setBannerError] = useState('');
 
-  // Ensure metrics stay live even in offline/local mode
+  // Keep circuit metrics live-synced with app.joints (so edits in Joint Passport refresh immediately)
   const enrichedCircuits = useMemo(() => {
     return app.testCircuits.map((c) => {
-      if (app.isDbConnected) return c;
       const computed = computeCircuitMetricsLocal(c, app.joints, app.projectLineList);
+      if (app.isDbConnected && computed.totalJoints === 0 && c.totalJoints > 0) {
+        // Fallback to server summary if client joints list has not loaded the circuit's joints
+        return c;
+      }
       const { joints: _j, ...summary } = computed;
       void _j;
       return summary;
@@ -145,9 +169,36 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
     return enrichedCircuits.filter((c) => c.objectName === obj);
   }, [app.selectedObjectName, enrichedCircuits]);
 
+  const ndtReadinessById = useMemo(() => {
+    const map = new Map<string, CircuitNdtReadiness>();
+    for (const c of scopedCircuits) {
+      map.set(c.id, computeCircuitNdtReadiness(c, app.joints, app.projectLineList));
+    }
+    return map;
+  }, [app.joints, app.projectLineList, scopedCircuits]);
+
+  const rdCodeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of scopedCircuits) {
+      for (const ls of c.linesSummary) {
+        if (ls.rdCode) set.add(ls.rdCode);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'));
+  }, [scopedCircuits]);
+
+  const effectiveRdFilter =
+    filterRdCode !== 'ALL' && rdCodeOptions.includes(filterRdCode) ? filterRdCode : 'ALL';
+
   const filteredCircuits = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return scopedCircuits.filter((c) => {
+    const list = scopedCircuits.filter((c) => {
+      if (
+        effectiveRdFilter !== 'ALL' &&
+        !c.linesSummary.some((ls) => ls.rdCode === effectiveRdFilter)
+      ) {
+        return false;
+      }
       if (filterTestStatus !== 'ALL' && c.testStatus !== filterTestStatus) return false;
       if (filterSriStatus !== 'ALL' && c.sriStatus !== filterSriStatus) return false;
       if (onlyWithDefects && c.defectiveJointsCount === 0) return false;
@@ -156,13 +207,57 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
         c.name.toLowerCase().includes(q) ||
         (c.sriName || '').toLowerCase().includes(q) ||
         (c.actNumber || '').toLowerCase().includes(q) ||
-        c.linesSummary.some((l) => l.uniqueLineId.toLowerCase().includes(q))
+        c.linesSummary.some(
+          (l) =>
+            l.uniqueLineId.toLowerCase().includes(q) ||
+            l.lineNumber.toLowerCase().includes(q) ||
+            l.rdCode.toLowerCase().includes(q)
+        )
       );
     });
-  }, [filterSriStatus, filterTestStatus, onlyWithDefects, scopedCircuits, search]);
 
+    if (!sortConfig) return list;
+
+    const dir = sortConfig.direction === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      switch (sortConfig.key) {
+        case 'name':
+          return a.name.localeCompare(b.name, 'ru') * dir;
+        case 'weldingJointsPercent':
+          return (a.weldingJointsPercent - b.weldingJointsPercent) * dir;
+        case 'weldingDInchPercent':
+          return (a.weldingDInchPercent - b.weldingDInchPercent) * dir;
+        case 'ndtPercent': {
+          const na = ndtReadinessById.get(a.id)?.ndtPercent ?? 0;
+          const nb = ndtReadinessById.get(b.id)?.ndtPercent ?? 0;
+          return (na - nb) * dir;
+        }
+        case 'plannedDate': {
+          const da = a.plannedDate || '9999-12-31';
+          const db = b.plannedDate || '9999-12-31';
+          return da.localeCompare(db) * dir;
+        }
+        case 'testStatus': {
+          const sa = a.testStatus === 'TESTED' ? 1 : 0;
+          const sb = b.testStatus === 'TESTED' ? 1 : 0;
+          return (sa - sb) * dir;
+        }
+      }
+    });
+  }, [
+    effectiveRdFilter,
+    filterSriStatus,
+    filterTestStatus,
+    ndtReadinessById,
+    onlyWithDefects,
+    scopedCircuits,
+    search,
+    sortConfig,
+  ]);
+
+  // Dynamic KPIs matching active filters
   const kpi = useMemo(() => {
-    let totalCircuits = scopedCircuits.length;
+    const totalCircuits = filteredCircuits.length;
     let testedCount = 0;
     let sriApprovedCount = 0;
     let totalJoints = 0;
@@ -172,8 +267,10 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
     let totalEdi = 0;
     let weldedEdi = 0;
     let totalDefects = 0;
+    let ndtRequired = 0;
+    let ndtPassed = 0;
 
-    for (const c of scopedCircuits) {
+    for (const c of filteredCircuits) {
       if (c.testStatus === 'TESTED') testedCount += 1;
       if (c.sriStatus === 'APPROVED') sriApprovedCount += 1;
       totalJoints += c.totalJoints;
@@ -183,11 +280,17 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
       totalEdi += c.totalEdi;
       weldedEdi += c.weldedEdi;
       totalDefects += c.defectiveJointsCount;
+      const ndt = ndtReadinessById.get(c.id);
+      if (ndt) {
+        ndtRequired += ndt.requiredChecks;
+        ndtPassed += ndt.passedChecks;
+      }
     }
 
     const jointsPct = totalJoints > 0 ? Math.round((weldedJoints / totalJoints) * 1000) / 10 : 0;
     const dInchPct = totalDInch > 0 ? Math.round((weldedDInch / totalDInch) * 1000) / 10 : 0;
-    const ediPct = totalEdi > 0 ? Math.round((weldedEdi / totalEdi) * 1000) / 10 : 0;
+    const ndtPct = ndtRequired > 0 ? Math.round((ndtPassed / ndtRequired) * 1000) / 10 : 0;
+    const ndtDeficit = Math.max(0, ndtRequired - ndtPassed);
 
     return {
       totalCircuits,
@@ -201,22 +304,29 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
       dInchPct,
       totalEdi,
       weldedEdi,
-      ediPct,
       totalDefects,
+      ndtRequired,
+      ndtPassed,
+      ndtPct,
+      ndtDeficit,
     };
-  }, [scopedCircuits]);
+  }, [filteredCircuits, ndtReadinessById]);
+
+  // Live reactive drawer detail synced with latest joints & circuit metadata
+  const liveDrawerDetail = useMemo<TestCircuitDetail | null>(() => {
+    if (!drawerCircuitId) return null;
+    const base = enrichedCircuits.find((c) => c.id === drawerCircuitId);
+    if (!base) return null;
+    return computeCircuitMetricsLocal(base, app.joints, app.projectLineList);
+  }, [app.joints, app.projectLineList, drawerCircuitId, enrichedCircuits]);
 
   const openDrawer = async (circuit: TestCircuit) => {
     setBannerError('');
-    // Show immediate local preview while fetching full detail
-    const localPreview = computeCircuitMetricsLocal(circuit, app.joints, app.projectLineList);
-    setDrawerDetail(localPreview);
+    setDrawerCircuitId(circuit.id);
     setDrawerLoading(true);
     try {
       const res = await onLoadCircuitDetail(circuit.id);
-      if (res.ok && res.data) {
-        setDrawerDetail(res.data);
-      } else if (res.error) {
+      if (!res.ok && res.error) {
         setBannerError(res.error);
       }
     } finally {
@@ -229,15 +339,39 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
     [assignModalCircuitId, enrichedCircuits]
   );
 
+  const formModalCircuit = useMemo(() => {
+    if (!formModal.circuit) return null;
+    return enrichedCircuits.find((c) => c.id === formModal.circuit!.id) || formModal.circuit;
+  }, [enrichedCircuits, formModal.circuit]);
+
+  const handleToggleSort = (key: SortKey) => {
+    setSortConfig((prev) => {
+      if (!prev || prev.key !== key) return { key, direction: 'asc' };
+      if (prev.direction === 'asc') return { key, direction: 'desc' };
+      return null;
+    });
+  };
+
+  const renderSortIcon = (key: SortKey) => {
+    if (!sortConfig || sortConfig.key !== key) {
+      return <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />;
+    }
+    return sortConfig.direction === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-[#1e3799] shrink-0" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-[#1e3799] shrink-0" />
+    );
+  };
+
   const handleFormSubmit = async (payload: CircuitFormSubmitPayload) => {
     if (formModal.mode === 'create') {
       return onCreateCircuit(payload);
     }
-    if (!formModal.circuit) {
+    if (!formModalCircuit) {
       return { ok: false, error: 'Контур не выбран.' };
     }
-    const res = await onUpdateCircuit(formModal.circuit.id, {
-      version: formModal.circuit.version,
+    return onUpdateCircuit(formModalCircuit.id, {
+      version: formModalCircuit.version,
       name: payload.name,
       sriName: payload.sriName,
       sriStatus: payload.sriStatus,
@@ -246,11 +380,8 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
       actNumber: payload.actNumber,
       actualTestDate: payload.actualTestDate,
       force: payload.force,
+      forceReason: payload.forceReason,
     });
-    if (res.ok && res.data && drawerDetail?.id === res.data.id) {
-      setDrawerDetail(res.data);
-    }
-    return res;
   };
 
   const handleAssignLinesWrapped = async (
@@ -263,11 +394,7 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
     errorCode?: string;
     conflicts?: CircuitAssignmentConflictItem[];
   }> => {
-    const res = await onAssignLinesToCircuit(circuitId, lineIds, overwriteExisting);
-    if (res.ok && res.data && drawerDetail?.id === circuitId) {
-      setDrawerDetail(res.data.circuit);
-    }
-    return res;
+    return onAssignLinesToCircuit(circuitId, lineIds, overwriteExisting);
   };
 
   const handleAssignJointsWrapped = async (
@@ -280,11 +407,7 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
     errorCode?: string;
     conflicts?: CircuitAssignmentConflictItem[];
   }> => {
-    const res = await onAssignJointsToCircuit(circuitId, jointIds, overwriteExisting);
-    if (res.ok && res.data && drawerDetail?.id === circuitId) {
-      setDrawerDetail(res.data.circuit);
-    }
-    return res;
+    return onAssignJointsToCircuit(circuitId, jointIds, overwriteExisting);
   };
 
   const handleDeleteConfirmed = async (circuit: TestCircuit) => {
@@ -293,186 +416,231 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
     setConfirmDeleteId(null);
     if (!res.ok) {
       setBannerError(res.error || 'Не удалось удалить контур.');
-    } else if (drawerDetail?.id === circuit.id) {
-      setDrawerDetail(null);
+    } else if (drawerCircuitId === circuit.id) {
+      setDrawerCircuitId(null);
     }
+  };
+
+  const handleExportExcel = () => {
+    exportTestCircuitsFilteredToXlsx({
+      circuits: filteredCircuits,
+      ndtByCircuitId: ndtReadinessById,
+      allJoints: app.joints,
+      allLines: app.projectLineList,
+    });
   };
 
   const hasActiveFilters =
     search.trim() !== '' ||
+    effectiveRdFilter !== 'ALL' ||
     filterTestStatus !== 'ALL' ||
     filterSriStatus !== 'ALL' ||
     onlyWithDefects;
 
   return (
-    <div className="space-y-3">
-      {/* Header Banner */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-[#1e3799] text-white flex items-center justify-center shrink-0">
-            <Gauge className="w-5 h-5" />
+    <div className="space-y-2.5">
+      {/* Compact Header Card: KPI Strip + Filter Bar (unified with Laboratory & Registry) */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-3 space-y-2.5">
+        {/* 6-Cell Compact KPI Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border border-slate-200 rounded-lg bg-slate-50/70 overflow-hidden">
+          <div
+            className="px-3 py-2 flex items-center justify-between gap-2"
+            title={`Испытано: ${kpi.testedCount} из ${kpi.totalCircuits} контуров`}
+          >
+            <span className="text-[11px] font-medium text-slate-600 truncate">
+              Контуры
+            </span>
+            <span className="text-sm font-bold font-mono tabular-nums text-slate-900">
+              {kpi.testedCount}/{kpi.totalCircuits}
+            </span>
           </div>
-          <div className="min-w-0">
-            <h1 className="text-base font-bold text-slate-900 truncate">
-              Испытательные контуры
-            </h1>
-            <p className="text-xs text-slate-500 truncate">
-              Управление контурами, статусами СРИ, привязкой линий и стыков, расчёт готовности в стыках и дюймах
-            </p>
+
+          <div
+            className="px-3 py-2 flex items-center justify-between gap-2"
+            title={`Согласована специальная рабочая инструкция: ${kpi.sriApprovedCount} из ${kpi.totalCircuits}`}
+          >
+            <span className="text-[11px] font-medium text-slate-600 truncate">
+              СРИ согласована
+            </span>
+            <span className="text-sm font-bold font-mono tabular-nums text-emerald-700">
+              {kpi.sriApprovedCount}/{kpi.totalCircuits}
+            </span>
+          </div>
+
+          <div
+            className="px-3 py-2 flex items-center justify-between gap-2"
+            title={`Сварено стыков: ${kpi.weldedJoints} из ${kpi.totalJoints} шт.`}
+          >
+            <span className="text-[11px] font-medium text-slate-600 truncate">
+              Сварка стыков
+            </span>
+            <span className="text-sm font-bold font-mono tabular-nums text-[#1e3799]">
+              {kpi.jointsPct.toFixed(1)}%
+            </span>
+          </div>
+
+          <div
+            className="px-3 py-2 flex items-center justify-between gap-2"
+            title={`Сварено: ${kpi.weldedDInch.toFixed(1)} из ${kpi.totalDInch.toFixed(1)} d-inch · EDI ${kpi.weldedEdi.toFixed(1)} из ${kpi.totalEdi.toFixed(1)}`}
+          >
+            <span className="text-[11px] font-medium text-slate-600 truncate">
+              Сварка d-inch
+            </span>
+            <span className="text-sm font-bold font-mono tabular-nums text-[#1e3799]">
+              {kpi.dInchPct.toFixed(1)}%
+            </span>
+          </div>
+
+          <div
+            className="px-3 py-2 flex items-center justify-between gap-2"
+            title={`Выполнено проверок ВИК и НК: ${kpi.ndtPassed} из ${kpi.ndtRequired}, дефицит: ${kpi.ndtDeficit}`}
+          >
+            <span className="text-[11px] font-medium text-slate-600 truncate">
+              Готовность НК
+            </span>
+            <span
+              className={`text-sm font-bold font-mono tabular-nums ${
+                kpi.ndtRequired > 0 && kpi.ndtDeficit === 0
+                  ? 'text-emerald-700'
+                  : kpi.ndtDeficit > 0
+                    ? 'text-amber-700'
+                    : 'text-slate-700'
+              }`}
+            >
+              {kpi.ndtPct.toFixed(1)}%
+            </span>
+          </div>
+
+          <div
+            className="px-3 py-2 flex items-center justify-between gap-2"
+            title="Стыки с неисправленным браком в отфильтрованных контурах"
+          >
+            <span className="text-[11px] font-medium text-slate-600 truncate">
+              Брак
+            </span>
+            <span
+              className={`text-sm font-bold font-mono tabular-nums ${
+                kpi.totalDefects > 0 ? 'text-red-700' : 'text-emerald-700'
+              }`}
+            >
+              {kpi.totalDefects}
+            </span>
           </div>
         </div>
 
-        {canManage && (
-          <button
-            type="button"
-            onClick={() =>
-              setFormModal({ isOpen: true, mode: 'create', circuit: null })
+        {/* Filter & Action Toolbar */}
+        <div className="flex flex-wrap items-center gap-2">
+          {rdCodeOptions.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-slate-600 whitespace-nowrap">
+                Шифр РД:
+              </span>
+              <select
+                value={effectiveRdFilter}
+                onChange={(e) => setFilterRdCode(e.target.value)}
+                className="h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:border-[#1e3799] max-w-[240px]"
+              >
+                <option value="ALL">Все шифры РД</option>
+                {rdCodeOptions.map((rd) => (
+                  <option key={rd} value={rd}>
+                    {rd}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск по контуру, СРИ, номеру акта или линии..."
+              className="w-full h-8 pl-8 pr-3 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:bg-white focus:border-[#1e3799]"
+            />
+          </div>
+
+          <select
+            value={filterTestStatus}
+            onChange={(e) =>
+              setFilterTestStatus(e.target.value as 'ALL' | CircuitTestStatus)
             }
-            className="h-9 px-4 rounded-lg bg-[#1e3799] hover:bg-[#15276e] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+            className="h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#1e3799]"
           >
-            <Plus className="w-4 h-4" />
-            <span>Создать контур</span>
-          </button>
-        )}
-      </div>
+            <option value="ALL">Все статусы испытаний</option>
+            {CIRCUIT_TEST_STATUS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
 
-      {/* KPI Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Контуры испытаний
-            </span>
-            <ClipboardCheck className="w-4 h-4 text-[#1e3799]" />
-          </div>
-          <div className="mt-1.5 flex items-baseline justify-between gap-2 font-mono tabular-nums">
-            <span className="text-xl font-bold text-slate-900">{kpi.totalCircuits}</span>
-            <span className="text-xs font-semibold text-emerald-700">
-              Испытано: {kpi.testedCount}
-            </span>
-          </div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
-            В работе: {kpi.totalCircuits - kpi.testedCount}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Готовность СРИ
-            </span>
-            <FileCheck2 className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="mt-1.5 flex items-baseline justify-between gap-2 font-mono tabular-nums">
-            <span className="text-xl font-bold text-slate-900">
-              {kpi.sriApprovedCount} / {kpi.totalCircuits}
-            </span>
-            <span className="text-xs font-semibold text-slate-600">
-              {kpi.totalCircuits > 0
-                ? `${Math.round((kpi.sriApprovedCount / kpi.totalCircuits) * 100)}%`
-                : '0%'}
-            </span>
-          </div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
-            Согласована специальная рабочая инструкция
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Сварка по стыкам
-            </span>
-            <CheckCircle2 className="w-4 h-4 text-[#1e3799]" />
-          </div>
-          <ReadinessMiniBar
-            percent={kpi.jointsPct}
-            primaryText={`${kpi.weldedJoints} / ${kpi.totalJoints} шт.`}
-            defectCount={kpi.totalDefects}
-          />
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 p-3.5 shadow-2xs space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Сварка в дюймах
-            </span>
-            <Gauge className="w-4 h-4 text-[#1e3799]" />
-          </div>
-          <ReadinessMiniBar
-            percent={kpi.dInchPct}
-            primaryText={`${kpi.weldedDInch.toFixed(1)} / ${kpi.totalDInch.toFixed(1)} d-inch`}
-            secondaryText={`EDI: ${kpi.weldedEdi.toFixed(1)} / ${kpi.totalEdi.toFixed(1)} (${kpi.ediPct.toFixed(1)}%)`}
-          />
-        </div>
-      </div>
-
-      {/* Filter Bar */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-3 flex flex-wrap items-center gap-2.5">
-        <div className="relative flex-1 min-w-[220px]">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по контуру, СРИ, номеру акта или линии..."
-            className="w-full h-8 pl-8 pr-3 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:bg-white focus:border-[#1e3799]"
-          />
-        </div>
-
-        <select
-          value={filterTestStatus}
-          onChange={(e) =>
-            setFilterTestStatus(e.target.value as 'ALL' | CircuitTestStatus)
-          }
-          className="h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#1e3799]"
-        >
-          <option value="ALL">Все статусы испытаний</option>
-          {CIRCUIT_TEST_STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={filterSriStatus}
-          onChange={(e) => setFilterSriStatus(e.target.value as 'ALL' | SriStatus)}
-          className="h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#1e3799]"
-        >
-          <option value="ALL">Все статусы СРИ</option>
-          {SRI_STATUS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              СРИ: {opt.label}
-            </option>
-          ))}
-        </select>
-
-        <label className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 cursor-pointer select-none hover:bg-slate-50">
-          <input
-            type="checkbox"
-            checked={onlyWithDefects}
-            onChange={(e) => setOnlyWithDefects(e.target.checked)}
-            className="rounded border-slate-300 text-red-600 focus:ring-red-500"
-          />
-          <span>Только с браком</span>
-        </label>
-
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearch('');
-              setFilterTestStatus('ALL');
-              setFilterSriStatus('ALL');
-              setOnlyWithDefects(false);
-            }}
-            className="h-8 px-2.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+          <select
+            value={filterSriStatus}
+            onChange={(e) => setFilterSriStatus(e.target.value as 'ALL' | SriStatus)}
+            className="h-8 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-[#1e3799]"
           >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Сбросить</span>
-          </button>
-        )}
+            <option value="ALL">Все статусы СРИ</option>
+            {SRI_STATUS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                СРИ: {opt.label}
+              </option>
+            ))}
+          </select>
+
+          <label className="inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 cursor-pointer select-none hover:bg-slate-50">
+            <input
+              type="checkbox"
+              checked={onlyWithDefects}
+              onChange={(e) => setOnlyWithDefects(e.target.checked)}
+              className="rounded border-slate-300 text-red-600 focus:ring-red-500"
+            />
+            <span>Только с браком</span>
+          </label>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setFilterRdCode('ALL');
+                setFilterTestStatus('ALL');
+                setFilterSriStatus('ALL');
+                setOnlyWithDefects(false);
+              }}
+              className="h-8 px-2.5 rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Сбросить</span>
+            </button>
+          )}
+
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              title="Выгрузить в Excel"
+              aria-label="Выгрузить в Excel"
+              className="h-8 w-8 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-[#1e3799] inline-flex items-center justify-center transition-colors cursor-pointer shrink-0"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+            </button>
+
+            {canManage && (
+              <button
+                type="button"
+                onClick={() =>
+                  setFormModal({ isOpen: true, mode: 'create', circuit: null })
+                }
+                className="h-8 px-3.5 rounded-lg bg-[#1e3799] hover:bg-[#15276e] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Создать контур</span>
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {bannerError && (
@@ -528,19 +696,88 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
             <table className="w-full text-left border-collapse text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Контур и СРИ</th>
+                  <th className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSort('name')}
+                      className="inline-flex items-center gap-1 hover:text-slate-800 cursor-pointer uppercase"
+                    >
+                      <span>Контур и СРИ</span>
+                      {renderSortIcon('name')}
+                    </button>
+                  </th>
                   <th className="px-3 py-3">Включённые линии</th>
                   <th className="px-3 py-3">Статус СРИ</th>
-                  <th className="px-3 py-3">Готовность по стыкам</th>
-                  <th className="px-3 py-3">Готовность в дюймах</th>
-                  <th className="px-3 py-3">План / Акт испытания</th>
-                  <th className="px-3 py-3">Статус</th>
+                  <th className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSort('weldingJointsPercent')}
+                      className="inline-flex items-center gap-1 hover:text-slate-800 cursor-pointer uppercase"
+                    >
+                      <span>Сварка стыков</span>
+                      {renderSortIcon('weldingJointsPercent')}
+                    </button>
+                  </th>
+                  <th className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSort('weldingDInchPercent')}
+                      className="inline-flex items-center gap-1 hover:text-slate-800 cursor-pointer uppercase"
+                    >
+                      <span>Сварка в дюймах</span>
+                      {renderSortIcon('weldingDInchPercent')}
+                    </button>
+                  </th>
+                  <th className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSort('ndtPercent')}
+                      className="inline-flex items-center gap-1 hover:text-slate-800 cursor-pointer uppercase"
+                    >
+                      <span>Готовность НК</span>
+                      {renderSortIcon('ndtPercent')}
+                    </button>
+                  </th>
+                  <th className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSort('plannedDate')}
+                      className="inline-flex items-center gap-1 hover:text-slate-800 cursor-pointer uppercase"
+                    >
+                      <span>План / Акт</span>
+                      {renderSortIcon('plannedDate')}
+                    </button>
+                  </th>
+                  <th className="px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSort('testStatus')}
+                      className="inline-flex items-center gap-1 hover:text-slate-800 cursor-pointer uppercase"
+                    >
+                      <span>Статус</span>
+                      {renderSortIcon('testStatus')}
+                    </button>
+                  </th>
                   <th className="px-4 py-3 text-right">Действия</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredCircuits.map((circuit) => {
-                  const isMutable = circuit.recordStatus === 'DRAFT';
+                  const canEdit = canUserMutateRecord(
+                    currentUser,
+                    circuit,
+                    ['PTO', 'SK'],
+                    'edit',
+                    false
+                  ).allowed;
+                  const canDelete = canUserMutateRecord(
+                    currentUser,
+                    circuit,
+                    ['PTO', 'SK'],
+                    'delete',
+                    false
+                  ).allowed;
+                  const ndt = ndtReadinessById.get(circuit.id);
                   const visibleLines = circuit.linesSummary.slice(0, 3);
                   const remainingLines = circuit.linesSummary.length - visibleLines.length;
 
@@ -571,29 +808,35 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
                             Стыки не назначены
                           </span>
                         ) : (
-                          <div className="flex flex-wrap gap-1 max-w-[240px]">
-                            {visibleLines.map((ls) => (
-                              <span
-                                key={ls.lineId || ls.uniqueLineId}
-                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border ${
-                                  ls.isFullLine
-                                    ? 'bg-[#f0f5fc] border-[#1e3799]/20 text-[#1e3799]'
-                                    : 'bg-amber-50 border-amber-300 text-amber-900'
-                                }`}
-                                title={
-                                  ls.isFullLine
-                                    ? `Линия ${ls.uniqueLineId} включена полностью`
-                                    : `Частичное включение: ${ls.assignedJointsCount} из ${ls.lineTotalJointsCount} стыков`
-                                }
-                              >
-                                <span>{ls.lineNumber || ls.uniqueLineId}</span>
-                                {!ls.isFullLine && (
-                                  <span className="text-[9px] opacity-80">
-                                    {ls.assignedJointsCount}/{ls.lineTotalJointsCount}
-                                  </span>
-                                )}
-                              </span>
-                            ))}
+                          <div className="flex flex-wrap gap-1 max-w-[230px]">
+                            {visibleLines.map((ls) => {
+                              const badgeLabel = getCircuitUniqueLineLabel(
+                                ls,
+                                circuit.linesSummary
+                              );
+                              return (
+                                <span
+                                  key={ls.lineId || ls.uniqueLineId}
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border ${
+                                    ls.isFullLine
+                                      ? 'bg-[#f0f5fc] border-[#1e3799]/20 text-[#1e3799]'
+                                      : 'bg-amber-50 border-amber-300 text-amber-900'
+                                  }`}
+                                  title={
+                                    ls.isFullLine
+                                      ? `Линия ${ls.uniqueLineId} включена полностью`
+                                      : `Частичное включение: ${ls.assignedJointsCount} из ${ls.lineTotalJointsCount} стыков`
+                                  }
+                                >
+                                  <span>{badgeLabel}</span>
+                                  {!ls.isFullLine && (
+                                    <span className="text-[9px] opacity-80">
+                                      {ls.assignedJointsCount}/{ls.lineTotalJointsCount}
+                                    </span>
+                                  )}
+                                </span>
+                              );
+                            })}
                             {remainingLines > 0 && (
                               <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">
                                 +{remainingLines}
@@ -623,13 +866,33 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
                         />
                       </td>
 
+                      <td className="px-3 py-3 align-top">
+                        {ndt && ndt.requiredChecks > 0 ? (
+                          <ReadinessMiniBar
+                            percent={ndt.ndtPercent}
+                            primaryText={`${ndt.passedChecks} / ${ndt.requiredChecks} пров.`}
+                            secondaryText={
+                              ndt.deficitDetails.length > 0
+                                ? ndt.deficitDetails.join(' · ')
+                                : 'Норматив выполнен'
+                            }
+                          />
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Нет стыков</span>
+                        )}
+                      </td>
+
                       <td className="px-3 py-3 align-top whitespace-nowrap text-[11px] font-mono tabular-nums">
                         <div className="text-slate-600">
-                          План: {circuit.plannedDate || '—'}
+                          План:{' '}
+                          {circuit.plannedDate ? formatDateDDMMYY(circuit.plannedDate) : '—'}
                         </div>
                         {circuit.actNumber || circuit.actualTestDate ? (
                           <div className="text-emerald-700 font-semibold mt-0.5">
-                            Акт {circuit.actNumber || '—'} · {circuit.actualTestDate || '—'}
+                            Акт {circuit.actNumber || '—'} ·{' '}
+                            {circuit.actualTestDate
+                              ? formatDateDDMMYY(circuit.actualTestDate)
+                              : '—'}
                           </div>
                         ) : (
                           <div className="text-slate-400 mt-0.5">Акт не оформлен</div>
@@ -639,6 +902,12 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
                       <td className="px-3 py-3 align-top whitespace-nowrap">
                         <div className="flex flex-col items-start gap-1">
                           <CircuitTestStatusBadge status={circuit.testStatus} />
+                          {circuit.recordStatus === 'VERIFIED' && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-sky-50 text-sky-800 border border-sky-200 whitespace-nowrap">
+                              <ShieldCheck className="w-3 h-3 shrink-0" />
+                              <span>Проверено</span>
+                            </span>
+                          )}
                           <RecordStatusBadge status={circuit.recordStatus} compact />
                         </div>
                       </td>
@@ -674,7 +943,7 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </button>
-                            {canManage && isMutable && (
+                            {canEdit && (
                               <>
                                 <button
                                   type="button"
@@ -698,15 +967,17 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
                                 >
                                   <Edit3 className="w-3.5 h-3.5" />
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteId(circuit.id)}
-                                  title="Удалить контур"
-                                  className="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
                               </>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(circuit.id)}
+                                title="Удалить контур"
+                                className="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             )}
                           </div>
                         )}
@@ -724,7 +995,10 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
       <CircuitFormModal
         isOpen={formModal.isOpen}
         mode={formModal.mode}
-        circuit={formModal.circuit}
+        circuit={formModalCircuit}
+        ndtReadiness={
+          formModalCircuit ? ndtReadinessById.get(formModalCircuit.id) || null : null
+        }
         facilities={app.derivedFacilities}
         defaultObjectName={app.selectedObjectName}
         currentUser={currentUser}
@@ -748,36 +1022,33 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
 
       {/* Detail Slide-Over Drawer */}
       <CircuitDetailDrawer
-        isOpen={Boolean(drawerDetail)}
-        detail={drawerDetail}
+        isOpen={Boolean(liveDrawerDetail)}
+        detail={liveDrawerDetail}
+        ndtReadiness={
+          liveDrawerDetail ? ndtReadinessById.get(liveDrawerDetail.id) || null : null
+        }
         loading={drawerLoading}
-        canManage={canManage}
+        currentUser={currentUser}
         allJoints={app.joints}
-        onClose={() => setDrawerDetail(null)}
+        onClose={() => setDrawerCircuitId(null)}
         onEditCircuit={() => {
-          if (!drawerDetail) return;
-          setFormModal({ isOpen: true, mode: 'edit', circuit: drawerDetail });
+          if (!liveDrawerDetail) return;
+          setFormModal({ isOpen: true, mode: 'edit', circuit: liveDrawerDetail });
         }}
         onOpenAssignModal={() => {
-          if (!drawerDetail) return;
-          setAssignModalCircuitId(drawerDetail.id);
+          if (!liveDrawerDetail) return;
+          setAssignModalCircuitId(liveDrawerDetail.id);
         }}
         onChangeStatus={async (targetStatus, reason) => {
-          if (!drawerDetail) return;
-          const res = await onChangeCircuitStatus(drawerDetail, targetStatus, reason);
-          if (res.ok && res.data) {
-            setDrawerDetail(res.data);
-          } else if (res.error) {
+          if (!liveDrawerDetail) return;
+          const res = await onChangeCircuitStatus(liveDrawerDetail, targetStatus, reason);
+          if (!res.ok && res.error) {
             setBannerError(res.error);
           }
         }}
         onUnassignJoints={async (jointIds) => {
-          if (!drawerDetail) return { ok: false, error: 'Контур не выбран.' };
-          const res = await onUnassignJointsFromCircuit(drawerDetail.id, jointIds);
-          if (res.ok && res.data) {
-            setDrawerDetail(res.data.circuit);
-          }
-          return res;
+          if (!liveDrawerDetail) return { ok: false, error: 'Контур не выбран.' };
+          return onUnassignJointsFromCircuit(liveDrawerDetail.id, jointIds);
         }}
         onOpenJointPassport={onOpenJointPassport}
       />

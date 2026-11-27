@@ -93,7 +93,6 @@ export interface AppMainContentProps {
   onSetConfirmBulkDeleteJoints: (val: boolean) => void;
   onBulkDeleteSelectedJoints: () => Promise<void>;
   onOpenBulkEdit: () => void;
-  onQuickAddSupplementaryJoint: () => void;
   onOpenImportExcel: () => void;
   onOpenCreatePassport: () => void;
   onOpenEditPassport: (j: WeldJoint) => void;
@@ -236,7 +235,6 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
     onSetConfirmBulkDeleteJoints,
     onBulkDeleteSelectedJoints,
     onOpenBulkEdit,
-    onQuickAddSupplementaryJoint,
     onOpenImportExcel,
     onOpenCreatePassport,
     onOpenEditPassport,
@@ -340,7 +338,6 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
           onSetConfirmBulkDeleteJoints={onSetConfirmBulkDeleteJoints}
           onBulkDeleteSelectedJoints={onBulkDeleteSelectedJoints}
           onOpenBulkEdit={onOpenBulkEdit}
-          onQuickAddSupplementaryJoint={onQuickAddSupplementaryJoint}
           onOpenImportExcel={onOpenImportExcel}
           onOpenCreatePassport={onOpenCreatePassport}
           onOpenEditPassport={onOpenEditPassport}

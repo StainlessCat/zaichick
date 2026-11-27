@@ -6,7 +6,6 @@ import {
   Download,
   Edit3,
   FileSpreadsheet,
-  GitBranchPlus,
   Layers,
   Plus,
   Radiation,
@@ -31,7 +30,6 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
   onSetConfirmBulkDeleteJoints,
   onBulkDeleteSelectedJoints,
   onOpenBulkEdit,
-  onQuickAddSupplementaryJoint,
   onOpenImportExcel,
   onExportExcel,
   onOpenCreatePassport,
@@ -225,18 +223,6 @@ export const RegistryToolbar: React.FC<RegistryToolbarProps> = ({
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
               <span>Загрузить из Excel</span>
             </Button>
-
-            {onQuickAddSupplementaryJoint && (
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={onQuickAddSupplementaryJoint}
-                title="Быстро добавить доборный стык внутри декады базового номера"
-              >
-                <GitBranchPlus className="w-3.5 h-3.5 text-[#1e3799]" />
-                <span>Доборный стык</span>
-              </Button>
-            )}
 
             <Button
               type="button"

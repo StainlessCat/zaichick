@@ -1,5 +1,4 @@
-import { useModalDismiss } from '../../hooks/useModalDismiss';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -17,6 +16,7 @@ import type {
 } from '../../types/welding';
 import {
   CIRCUIT_TEST_STATUS_OPTIONS,
+  CircuitNdtReadiness,
   SRI_STATUS_OPTIONS,
 } from '../../utils/testCircuitCalc';
 import { canForceCloseTestCircuit } from '../../utils/rbac';
@@ -39,6 +39,7 @@ export interface CircuitFormModalProps {
   isOpen: boolean;
   mode: 'create' | 'edit';
   circuit?: TestCircuit | null;
+  ndtReadiness?: CircuitNdtReadiness | null;
   facilities: FacilityObject[];
   defaultObjectName: string;
   currentUser: UserAccount;
@@ -48,10 +49,22 @@ export interface CircuitFormModalProps {
   ) => Promise<{ ok: boolean; error?: string; errorCode?: string }>;
 }
 
+interface InitialSnapshot {
+  selectedFacilityName: string;
+  name: string;
+  sriName: string;
+  sriStatus: SriStatus;
+  testStatus: CircuitTestStatus;
+  plannedDate: string;
+  actNumber: string;
+  actualTestDate: string;
+}
+
 export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
   isOpen,
   mode,
   circuit,
+  ndtReadiness,
   facilities,
   defaultObjectName,
   currentUser,
@@ -70,50 +83,120 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
   const [forceReason, setForceReason] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const initialRef = useRef<InitialSnapshot>({
+    selectedFacilityName: '',
+    name: '',
+    sriName: '',
+    sriStatus: 'IN_DEVELOPMENT',
+    testStatus: 'NOT_TESTED',
+    plannedDate: '',
+    actNumber: '',
+    actualTestDate: '',
+  });
 
   useEffect(() => {
     if (!isOpen) return;
     setError('');
     setForceClose(false);
     setForceReason('');
+    setShowDiscardConfirm(false);
+
     if (mode === 'edit' && circuit) {
-      setSelectedFacilityName(circuit.objectName || defaultObjectName || facilities[0]?.name || '');
-      setName(circuit.name || '');
-      setSriName(circuit.sriName || '');
-      setSriStatus(circuit.sriStatus || 'IN_DEVELOPMENT');
-      setTestStatus(circuit.testStatus || 'NOT_TESTED');
-      setPlannedDate(circuit.plannedDate ? circuit.plannedDate.slice(0, 10) : '');
-      setActNumber(circuit.actNumber || '');
-      setActualTestDate(circuit.actualTestDate ? circuit.actualTestDate.slice(0, 10) : '');
+      const snap: InitialSnapshot = {
+        selectedFacilityName:
+          circuit.objectName || defaultObjectName || facilities[0]?.name || '',
+        name: circuit.name || '',
+        sriName: circuit.sriName || '',
+        sriStatus: circuit.sriStatus || 'IN_DEVELOPMENT',
+        testStatus: circuit.testStatus || 'NOT_TESTED',
+        plannedDate: circuit.plannedDate ? circuit.plannedDate.slice(0, 10) : '',
+        actNumber: circuit.actNumber || '',
+        actualTestDate: circuit.actualTestDate ? circuit.actualTestDate.slice(0, 10) : '',
+      };
+      initialRef.current = snap;
+      setSelectedFacilityName(snap.selectedFacilityName);
+      setName(snap.name);
+      setSriName(snap.sriName);
+      setSriStatus(snap.sriStatus);
+      setTestStatus(snap.testStatus);
+      setPlannedDate(snap.plannedDate);
+      setActNumber(snap.actNumber);
+      setActualTestDate(snap.actualTestDate);
     } else {
       const initialObj =
         defaultObjectName && defaultObjectName !== 'ALL'
           ? defaultObjectName
           : facilities[0]?.name || '';
-      setSelectedFacilityName(initialObj);
-      setName('');
-      setSriName('');
-      setSriStatus('IN_DEVELOPMENT');
-      setTestStatus('NOT_TESTED');
-      setPlannedDate('');
-      setActNumber('');
-      setActualTestDate('');
+      const snap: InitialSnapshot = {
+        selectedFacilityName: initialObj,
+        name: '',
+        sriName: '',
+        sriStatus: 'IN_DEVELOPMENT',
+        testStatus: 'NOT_TESTED',
+        plannedDate: '',
+        actNumber: '',
+        actualTestDate: '',
+      };
+      initialRef.current = snap;
+      setSelectedFacilityName(snap.selectedFacilityName);
+      setName(snap.name);
+      setSriName(snap.sriName);
+      setSriStatus(snap.sriStatus);
+      setTestStatus(snap.testStatus);
+      setPlannedDate(snap.plannedDate);
+      setActNumber(snap.actNumber);
+      setActualTestDate(snap.actualTestDate);
     }
   }, [isOpen, mode, circuit, defaultObjectName, facilities]);
 
-  const isDirty = Boolean(name.trim() || sriName.trim() || actNumber.trim());
+  const snap = initialRef.current;
+  const isDirty =
+    selectedFacilityName !== snap.selectedFacilityName ||
+    name !== snap.name ||
+    sriName !== snap.sriName ||
+    sriStatus !== snap.sriStatus ||
+    testStatus !== snap.testStatus ||
+    plannedDate !== snap.plannedDate ||
+    actNumber !== snap.actNumber ||
+    actualTestDate !== snap.actualTestDate ||
+    forceClose ||
+    forceReason.trim().length > 0;
 
-  const { handleRequestClose } = useModalDismiss({
-    isOpen,
-    isDirty,
-    onClose,
-    confirmMessage: 'В форме испытательного контура есть несохранённые данные. Закрыть без сохранения?',
-  });
+  const handleRequestClose = () => {
+    if (submitting) return;
+    if (isDirty) {
+      setShowDiscardConfirm(true);
+      return;
+    }
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (showDiscardConfirm) {
+          setShowDiscardConfirm(false);
+        } else if (isDirty) {
+          setShowDiscardConfirm(true);
+        } else {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [isOpen, isDirty, onClose, showDiscardConfirm]);
 
   if (!isOpen) return null;
 
   const canForce = canForceCloseTestCircuit(currentUser);
-  const isSwitchingToTested = mode === 'edit' && testStatus === 'TESTED';
+  const wasAlreadyTested = mode === 'edit' && circuit?.testStatus === 'TESTED';
+  const isSwitchingToTested = mode === 'edit' && testStatus === 'TESTED' && !wasAlreadyTested;
 
   const criticalChecks =
     mode === 'edit' && circuit
@@ -136,6 +219,13 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
         ]
       : [];
 
+  const ndtOk = ndtReadiness ? ndtReadiness.isNdtComplete : true;
+  const ndtLabel = ndtReadiness
+    ? ndtReadiness.isNdtComplete
+      ? `Контроль ВИК и НК выполнен на 100%: ${ndtReadiness.passedChecks} из ${ndtReadiness.requiredChecks} проверок`
+      : `Контроль ВИК и НК: ${ndtReadiness.ndtPercent.toFixed(1)}% · дефицит: ${ndtReadiness.deficitDetails.join(', ')}`
+    : 'Контроль ВИК и НК выполнен';
+
   const warningChecks =
     mode === 'edit' && circuit
       ? [
@@ -143,6 +233,12 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
             id: 'welded_100',
             label: `Сварка выполнена на 100%: ${circuit.weldedJoints} из ${circuit.totalJoints} шт.`,
             ok: circuit.totalJoints > 0 && circuit.weldingJointsPercent >= 100,
+            critical: false,
+          },
+          {
+            id: 'ndt_100',
+            label: ndtLabel,
+            ok: ndtOk,
             critical: false,
           },
           {
@@ -167,31 +263,35 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
       return;
     }
 
-    if (isSwitchingToTested) {
+    if (mode === 'edit' && testStatus === 'TESTED') {
       if (!actNumber.trim() || !actualTestDate.trim()) {
         setError(
           'Для статуса «Испытано» обязательно укажите номер акта и фактическую дату испытания.'
         );
         return;
       }
-      if (hasCriticalBlockers) {
-        setError(
-          'Перевод контура в статус «Испытано» невозможен: контур пуст или содержит неисправленный брак. Принудительное закрытие запрещено.'
-        );
-        return;
-      }
-      if (hasWarningBlockers) {
-        if (!forceClose) {
+      if (isSwitchingToTested) {
+        if (hasCriticalBlockers) {
           setError(
-            canForce
-              ? 'Не выполнены все условия готовности. Устраните замечания или укажите обоснование для принудительного закрытия.'
-              : 'Не выполнены условия готовности для перевода контура в статус «Испытано».'
+            'Перевод контура в статус «Испытано» невозможен: контур пуст или содержит неисправленный брак. Принудительное закрытие запрещено.'
           );
           return;
         }
-        if (!forceReason.trim() || forceReason.trim().length < 5) {
-          setError('Для принудительного закрытия обязательно укажите обоснование не менее 5 символов.');
-          return;
+        if (hasWarningBlockers) {
+          if (!forceClose) {
+            setError(
+              canForce
+                ? 'Не выполнены все условия готовности. Устраните замечания или укажите обоснование для принудительного закрытия.'
+                : 'Не выполнены условия готовности для перевода контура в статус «Испытано».'
+            );
+            return;
+          }
+          if (!forceReason.trim() || forceReason.trim().length < 5) {
+            setError(
+              'Для принудительного закрытия обязательно укажите обоснование не менее 5 символов.'
+            );
+            return;
+          }
         }
       }
     }
@@ -201,6 +301,8 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
     setSubmitting(true);
     setError('');
     try {
+      const shouldForce =
+        isSwitchingToTested && forceClose && !hasCriticalBlockers && hasWarningBlockers;
       const res = await onSubmit({
         facilityId: matchedFacility?.id || circuit?.facilityId || null,
         objectName: matchedFacility?.name || selectedFacilityName || null,
@@ -210,8 +312,8 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
         ...(mode === 'edit'
           ? {
               testStatus,
-              force: forceClose && !hasCriticalBlockers,
-              forceReason: forceClose && !hasCriticalBlockers ? forceReason.trim() : null,
+              force: shouldForce,
+              forceReason: shouldForce ? forceReason.trim() : null,
             }
           : {}),
         plannedDate: plannedDate || null,
@@ -363,7 +465,10 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
                   onChange={(e) => {
                     const next = e.target.value as CircuitTestStatus;
                     setTestStatus(next);
-                    if (next !== 'TESTED') { setForceClose(false); setForceReason(''); }
+                    if (next !== 'TESTED') {
+                      setForceClose(false);
+                      setForceReason('');
+                    }
                   }}
                   className="w-full h-9 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
                 >
@@ -382,13 +487,13 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
             <div className="space-y-1">
               <label className="block text-[11px] font-semibold text-slate-700">
                 Номер акта испытания
-                {isSwitchingToTested && <span className="text-red-500"> *</span>}
+                {testStatus === 'TESTED' && <span className="text-red-500"> *</span>}
               </label>
               <input
                 type="text"
                 value={actNumber}
                 onChange={(e) => setActNumber(e.target.value)}
-                required={isSwitchingToTested}
+                required={testStatus === 'TESTED'}
                 placeholder="Например, АКТ-ИСП-042"
                 className="w-full h-9 px-3 bg-white border border-slate-300 rounded-lg text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
               />
@@ -397,13 +502,13 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
             <div className="space-y-1">
               <label className="block text-[11px] font-semibold text-slate-700">
                 Фактическая дата испытания
-                {isSwitchingToTested && <span className="text-red-500"> *</span>}
+                {testStatus === 'TESTED' && <span className="text-red-500"> *</span>}
               </label>
               <input
                 type="date"
                 value={actualTestDate}
                 onChange={(e) => setActualTestDate(e.target.value)}
-                required={isSwitchingToTested}
+                required={testStatus === 'TESTED'}
                 className="w-full h-9 px-3 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#1e3799]/25 focus:border-[#1e3799]"
               />
             </div>
@@ -435,7 +540,9 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
                     ) : (
                       <XCircle className="w-3.5 h-3.5 text-red-600 shrink-0" />
                     )}
-                    <span className={chk.ok ? 'text-slate-700' : 'text-red-800 font-semibold'}>
+                    <span
+                      className={chk.ok ? 'text-slate-700' : 'text-red-800 font-semibold'}
+                    >
                       {chk.label}
                     </span>
                   </li>
@@ -462,7 +569,7 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
                         />
                         <span className="text-[11px] text-amber-950 leading-snug">
                           <span className="font-bold">Принудительное закрытие контура</span> — перевести
-                          в статус «Испытано» при незавершённой сварке или несогласованной СРИ.
+                          в статус «Испытано» при незавершённой сварке, НК или несогласованной СРИ.
                           Факт принудительного закрытия фиксируется в журнале аудита.
                         </span>
                       </label>
@@ -492,6 +599,34 @@ export const CircuitFormModal: React.FC<CircuitFormModalProps> = ({
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {showDiscardConfirm && (
+            <div
+              role="alertdialog"
+              aria-label="Подтверждение закрытия формы"
+              className="p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 flex flex-wrap items-center justify-between gap-2"
+            >
+              <span className="text-xs font-semibold">
+                В форме есть несохранённые изменения. Закрыть без сохранения?
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDiscardConfirm(false)}
+                  className="h-7 px-2.5 rounded border border-amber-300 bg-white hover:bg-amber-100 text-[11px] font-semibold text-amber-900 cursor-pointer"
+                >
+                  Продолжить правку
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="h-7 px-2.5 rounded bg-red-600 hover:bg-red-700 text-white text-[11px] font-semibold cursor-pointer"
+                >
+                  Закрыть без сохранения
+                </button>
+              </div>
             </div>
           )}
 

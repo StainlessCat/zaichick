@@ -5,17 +5,17 @@ import {
   LabConclusionMethodKey,
   NdtLabControlStage,
   NdtLabRequest,
-  NdtMethod,
 } from '../../types/welding';
 import { formatDateDDMMYY } from '../../utils/weldingLogic';
 import {
   CANONICAL_LAB_METHODS,
+  derivePrimaryNdtMethod,
   getRequestMethodsList,
   NdtDeficitStatementResult,
   NdtLineDeficitRow,
   resolveLineLabMethodAvailability,
 } from '../../utils/laboratoryLogic';
-import { CONTROL_STAGES_LIST, RequestModalState } from './types';
+import { CONTROL_STAGE_LABELS, CONTROL_STAGES_LIST, RequestModalState } from './types';
 import { LabMarkingCell } from './LabMarkingCell';
 
 interface LabRequestModalProps {
@@ -77,10 +77,14 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
         ? current.filter((item) => item !== m)
         : CANONICAL_LAB_METHODS.filter((item) => item === m || current.includes(item));
       const safeNext: LabConclusionMethodKey[] = next.length > 0 ? next : [m];
+      const prunedJointIds = prev.selectedJointIds.filter(
+        (jId) => !findOverlappingActiveRequest(jId, labRequests, safeNext)
+      );
       return {
         ...prev,
         requestedMethods: safeNext,
-        requestedMethod: (safeNext.join('+') || 'РК') as NdtMethod,
+        requestedMethod: derivePrimaryNdtMethod(safeNext),
+        selectedJointIds: prunedJointIds,
       };
     });
   };
@@ -155,7 +159,7 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
               >
                 {CONTROL_STAGES_LIST.map((st) => (
                   <option key={st} value={st}>
-                    {st}
+                    {CONTROL_STAGE_LABELS[st]}
                   </option>
                 ))}
               </select>
@@ -383,8 +387,9 @@ export const LabRequestModal: React.FC<LabRequestModalProps> = ({
           </button>
           <button
             type="button"
+            disabled={requestModalState.selectedJointIds.length === 0}
             onClick={onSubmitNewRequest}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e3799] hover:bg-[#15276e] text-white text-xs font-bold cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-300 disabled:text-slate-500 text-white text-xs font-bold cursor-pointer disabled:cursor-not-allowed transition-colors"
           >
             <UserCheck className="w-4 h-4" />
             <span>

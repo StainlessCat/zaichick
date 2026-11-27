@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Calendar,
@@ -8,13 +8,16 @@ import {
   FileText,
   GitBranch,
   Link2,
+  RotateCcw,
   Search,
+  ShieldCheck,
   Unlink,
   X,
 } from 'lucide-react';
 import type {
   RecordStatus,
   TestCircuitDetail,
+  UserAccount,
   WeldJoint,
 } from '../../types/welding';
 import { RecordStatusActions, RecordStatusBadge } from '../RecordStatusControls';
@@ -23,12 +26,23 @@ import {
   ReadinessMiniBar,
   SriStatusBadge,
 } from './CircuitStatusBadges';
+import {
+  CircuitNdtReadiness,
+  formatJointControlSummaryForCircuit,
+} from '../../utils/testCircuitCalc';
+import {
+  canUserMutateRecord,
+  canUserTransitionRecordStatus,
+} from '../../utils/rbac';
+import { formatDateDDMMYY } from '../../utils/formatting';
+import { normalizeCorporateJointNumber } from '../../api/mappers';
 
 export interface CircuitDetailDrawerProps {
   isOpen: boolean;
   detail: TestCircuitDetail | null;
+  ndtReadiness?: CircuitNdtReadiness | null;
   loading?: boolean;
-  canManage: boolean;
+  currentUser: UserAccount;
   allJoints: WeldJoint[];
   onClose: () => void;
   onEditCircuit: () => void;
@@ -43,8 +57,9 @@ type JointFilterMode = 'all' | 'welded' | 'unwelded' | 'defective';
 export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
   isOpen,
   detail,
+  ndtReadiness,
   loading = false,
-  canManage,
+  currentUser,
   allJoints,
   onClose,
   onEditCircuit,
@@ -57,7 +72,28 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
   const [jointFilter, setJointFilter] = useState<JointFilterMode>('all');
   const [selectedJointIds, setSelectedJointIds] = useState<string[]>([]);
   const [busyUnassign, setBusyUnassign] = useState(false);
+  const [busyStatus, setBusyStatus] = useState(false);
   const [error, setError] = useState('');
+
+  // Reset local filters & selections when switching circuit or closing drawer
+  useEffect(() => {
+    setSearch('');
+    setJointFilter('all');
+    setSelectedJointIds([]);
+    setError('');
+  }, [detail?.id, isOpen]);
+
+  // Close drawer on Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   const fullJointMap = useMemo(() => {
     const map = new Map<string, WeldJoint>();
@@ -84,7 +120,20 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
 
   if (!isOpen || !detail) return null;
 
-  const isMutable = detail.recordStatus === 'DRAFT';
+  const canEdit = canUserMutateRecord(
+    currentUser,
+    detail,
+    ['PTO', 'SK'],
+    'edit',
+    false
+  ).allowed;
+
+  const canReturnVerifiedToDraft =
+    detail.recordStatus === 'VERIFIED' &&
+    canUserTransitionRecordStatus(currentUser, 'VERIFIED', 'DRAFT', ['PTO', 'SK']).allowed;
+
+  const showActionBar =
+    canEdit || detail.recordStatus === 'LOCKED' || canReturnVerifiedToDraft;
 
   const handleToggleJoint = (id: string) => {
     setSelectedJointIds((prev) =>
@@ -105,6 +154,16 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
       }
     } finally {
       setBusyUnassign(false);
+    }
+  };
+
+  const handleReturnToDraft = async () => {
+    setBusyStatus(true);
+    setError('');
+    try {
+      await onChangeStatus('DRAFT');
+    } finally {
+      setBusyStatus(false);
     }
   };
 
@@ -129,6 +188,12 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
                 <h2 className="text-base font-bold truncate">{detail.name}</h2>
                 <CircuitTestStatusBadge status={detail.testStatus} />
                 <SriStatusBadge status={detail.sriStatus} />
+                {detail.recordStatus === 'VERIFIED' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-sky-500/20 text-sky-100 border border-sky-300/35 whitespace-nowrap">
+                    <ShieldCheck className="w-3 h-3 shrink-0" />
+                    <span>Проверено</span>
+                  </span>
+                )}
                 <RecordStatusBadge status={detail.recordStatus} />
               </div>
               <div className="text-xs text-sky-100/85 flex items-center gap-3 flex-wrap">
@@ -155,29 +220,44 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
           <div className="flex items-center gap-4 flex-wrap text-[11px] text-sky-100/90 pt-1 border-t border-white/15">
             <span className="inline-flex items-center gap-1 font-mono">
               <Calendar className="w-3.5 h-3.5 text-sky-200" />
-              <span>План: {detail.plannedDate || '—'}</span>
+              <span>
+                План: {detail.plannedDate ? formatDateDDMMYY(detail.plannedDate) : '—'}
+              </span>
             </span>
             <span className="font-mono">
-              Факт испытания: {detail.actualTestDate || '—'}
+              Факт испытания:{' '}
+              {detail.actualTestDate ? formatDateDDMMYY(detail.actualTestDate) : '—'}
             </span>
-            <span className="font-mono">
-              Акт №: {detail.actNumber || '—'}
-            </span>
+            <span className="font-mono">Акт №: {detail.actNumber || '—'}</span>
           </div>
         </div>
 
         {/* Action Bar */}
-        {((canManage && isMutable) || detail.recordStatus === 'LOCKED') && (
+        {showActionBar && (
           <div className="px-5 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 flex-wrap shrink-0">
-            <RecordStatusActions
-              status={detail.recordStatus}
-              recordLabel={`Контур «${detail.name}»`}
-              allowedDepartments={['PTO', 'SK']}
-              onChangeStatus={onChangeStatus}
-            />
+            <div className="flex items-center gap-2 flex-wrap">
+              <RecordStatusActions
+                status={detail.recordStatus}
+                recordLabel={`Контур «${detail.name}»`}
+                allowedDepartments={['PTO', 'SK']}
+                onChangeStatus={onChangeStatus}
+              />
+              {canReturnVerifiedToDraft && (
+                <button
+                  type="button"
+                  disabled={busyStatus}
+                  onClick={() => void handleReturnToDraft()}
+                  className="h-8 px-3 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Вернуть запись из статуса Проверено в Черновик для редактирования операторами"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Вернуть в черновик</span>
+                </button>
+              )}
+            </div>
 
             <div className="flex items-center gap-2 ml-auto">
-              {canManage && isMutable && (
+              {canEdit && (
                 <>
                   <button
                     type="button"
@@ -220,32 +300,45 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-1.5">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Готовность по стыкам
+                Сварка по стыкам
               </div>
               <ReadinessMiniBar
                 percent={detail.weldingJointsPercent}
                 primaryText={`${detail.weldedJoints} / ${detail.totalJoints} шт.`}
+                defectCount={detail.defectiveJointsCount}
               />
             </div>
 
             <div className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-1.5">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Нормативный d-inch
+                Сварка в d-inch и EDI
               </div>
               <ReadinessMiniBar
                 percent={detail.weldingDInchPercent}
-                primaryText={`${detail.weldedDInch.toFixed(1)} / ${detail.totalDInch.toFixed(1)}`}
+                primaryText={`${detail.weldedDInch.toFixed(1)} / ${detail.totalDInch.toFixed(1)} d-inch`}
+                secondaryText={`EDI: ${detail.weldedEdi.toFixed(1)} / ${detail.totalEdi.toFixed(1)}`}
               />
             </div>
 
             <div className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-1.5">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Эквивалентный EDI
+                Готовность ВИК и НК
               </div>
-              <ReadinessMiniBar
-                percent={detail.weldingEdiPercent}
-                primaryText={`${detail.weldedEdi.toFixed(1)} / ${detail.totalEdi.toFixed(1)}`}
-              />
+              {ndtReadiness ? (
+                <ReadinessMiniBar
+                  percent={ndtReadiness.ndtPercent}
+                  primaryText={`${ndtReadiness.passedChecks} / ${ndtReadiness.requiredChecks} пров.`}
+                  secondaryText={
+                    ndtReadiness.deficitDetails.length > 0
+                      ? ndtReadiness.deficitDetails.join(' · ')
+                      : ndtReadiness.requiredChecks > 0
+                        ? 'Норматив НК выполнен'
+                        : 'Нет стыков'
+                  }
+                />
+              ) : (
+                <div className="text-xs text-slate-400 pt-1">Нет данных НК</div>
+              )}
             </div>
 
             <div className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-1.5">
@@ -314,7 +407,7 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
                 Состав стыков контура
               </h3>
-              {canManage && isMutable && selectedJointIds.length > 0 && (
+              {canEdit && selectedJointIds.length > 0 && (
                 <button
                   type="button"
                   disabled={busyUnassign}
@@ -368,7 +461,7 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
               <table className="w-full text-left border-collapse text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-500">
                   <tr>
-                    {canManage && isMutable && (
+                    {canEdit && (
                       <th className="w-9 px-2.5 py-2 text-center">Выбор</th>
                     )}
                     <th className="px-3 py-2">Линия</th>
@@ -377,7 +470,7 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
                     <th className="px-3 py-2 text-right">d-inch</th>
                     <th className="px-3 py-2 text-right">EDI</th>
                     <th className="px-3 py-2">Сварка</th>
-                    <th className="px-3 py-2">ВИК / НК</th>
+                    <th className="px-3 py-2">ВИК и НК</th>
                     <th className="px-3 py-2 text-right">Действия</th>
                   </tr>
                 </thead>
@@ -385,7 +478,7 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
                   {filteredJoints.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={canManage && isMutable ? 9 : 8}
+                        colSpan={canEdit ? 9 : 8}
                         className="px-4 py-8 text-center text-xs text-slate-500"
                       >
                         Нет стыков по текущему фильтру.
@@ -395,18 +488,30 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
                     filteredJoints.map((j) => {
                       const fullJoint = fullJointMap.get(j.id);
                       const checked = selectedJointIds.includes(j.id);
+                      const corp = normalizeCorporateJointNumber(
+                        j.jointNumber,
+                        j.uniqueLineId,
+                        fullJoint?.isSupplementary
+                      );
+                      const controlSummary = fullJoint
+                        ? formatJointControlSummaryForCircuit(fullJoint)
+                        : null;
+                      const isDefect = controlSummary
+                        ? controlSummary.status === 'defect'
+                        : j.hasUnresolvedDefect;
+
                       return (
                         <tr
                           key={j.id}
                           className={`transition-colors ${
-                            j.hasUnresolvedDefect
+                            isDefect
                               ? 'bg-red-50/40 hover:bg-red-50/70'
                               : checked
                                 ? 'bg-[#f0f5fc]'
                                 : 'hover:bg-slate-50'
                           }`}
                         >
-                          {canManage && isMutable && (
+                          {canEdit && (
                             <td className="px-2.5 py-2 text-center">
                               <input
                                 type="checkbox"
@@ -420,7 +525,18 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
                             {j.uniqueLineId}
                           </td>
                           <td className="px-3 py-2 font-mono font-bold text-slate-900 whitespace-nowrap">
-                            {j.jointNumber}
+                            {fullJoint ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenJointPassport(fullJoint)}
+                                className="text-[#1e3799] hover:underline cursor-pointer"
+                                title="Открыть паспорт стыка"
+                              >
+                                {corp.jointNumber}
+                              </button>
+                            ) : (
+                              corp.jointNumber
+                            )}
                           </td>
                           <td className="px-3 py-2 font-mono text-[11px] text-slate-600 tabular-nums whitespace-nowrap">
                             Ø{j.diameterMm} × {j.wallThickness}
@@ -432,16 +548,46 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
                             {j.edi.toFixed(2)}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap font-mono text-[11px]">
-                            {j.isWelded ? (
+                            {j.isWelded && j.weldingDate ? (
                               <span className="text-emerald-700 font-semibold">
-                                {j.weldingDate}
+                                {formatDateDDMMYY(j.weldingDate)}
                               </span>
                             ) : (
                               <span className="text-slate-400">Не сварен</span>
                             )}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-[11px]">
-                            {j.hasUnresolvedDefect ? (
+                            {controlSummary ? (
+                              controlSummary.status === 'defect' ? (
+                                <span
+                                  className="inline-flex items-center gap-1 text-red-700 font-bold"
+                                  title={controlSummary.detail}
+                                >
+                                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                                  <span>{controlSummary.detail}</span>
+                                </span>
+                              ) : controlSummary.status === 'repaired' ? (
+                                <span
+                                  className="inline-flex items-center gap-1 text-emerald-700 font-semibold"
+                                  title={controlSummary.detail}
+                                >
+                                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                  <span>{controlSummary.label}</span>
+                                </span>
+                              ) : controlSummary.status === 'passed' ? (
+                                <span className="text-emerald-700 font-medium">
+                                  {controlSummary.label}
+                                </span>
+                              ) : controlSummary.status === 'in_work' ? (
+                                <span className="text-amber-700 font-medium">
+                                  {controlSummary.label}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">
+                                  {controlSummary.label}
+                                </span>
+                              )
+                            ) : j.hasUnresolvedDefect ? (
                               <span className="inline-flex items-center gap-1 text-red-700 font-bold">
                                 <AlertTriangle className="w-3 h-3" />
                                 <span>Брак</span>
@@ -464,7 +610,7 @@ export const CircuitDetailDrawer: React.FC<CircuitDetailDrawerProps> = ({
                                   <ExternalLink className="w-3.5 h-3.5" />
                                 </button>
                               )}
-                              {canManage && isMutable && (
+                              {canEdit && (
                                 <button
                                   type="button"
                                   disabled={busyUnassign}

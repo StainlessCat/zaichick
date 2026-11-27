@@ -88,9 +88,10 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
 
     return {
       deficit: deficitStatement.totals.totalPhysicalDeficit,
-      inWork: requestCounts.inWork,
+      inWork: deficitStatement.totals.jointsInWorkCount,
       ready: readyJoints,
       requests: requestCounts.total,
+      activeRequests: requestCounts.submitted + requestCounts.inWork,
       repair: repairJoints,
       coveragePct,
     };
@@ -101,7 +102,10 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
       <div className="bg-white rounded-xl border border-slate-200 p-2.5 shadow-2xs space-y-2">
         {/* Компактная однострочная полоса KPI над фильтром шифра РД */}
         <div className="grid grid-cols-3 sm:grid-cols-6 border border-slate-200 rounded-lg divide-x divide-y sm:divide-y-0 divide-slate-200 bg-slate-50/70 overflow-hidden">
-          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+          <div
+            className="px-3 py-1.5 flex items-baseline justify-between gap-2"
+            title="Суммарный дефицит физических методов НК по линиям, стыков"
+          >
             <span className="text-[11px] font-medium text-slate-500 truncate">
               Дефицит
             </span>
@@ -114,7 +118,10 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
             </span>
           </div>
 
-          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+          <div
+            className="px-3 py-1.5 flex items-baseline justify-between gap-2"
+            title="Стыки со статусом контроля «В работе»"
+          >
             <span className="text-[11px] font-medium text-slate-500 truncate">
               В работе
             </span>
@@ -123,7 +130,10 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
             </span>
           </div>
 
-          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+          <div
+            className="px-3 py-1.5 flex items-baseline justify-between gap-2"
+            title="Полностью принятые стыки"
+          >
             <span className="text-[11px] font-medium text-slate-500 truncate">
               Готово
             </span>
@@ -132,7 +142,10 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
             </span>
           </div>
 
-          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+          <div
+            className="px-3 py-1.5 flex items-baseline justify-between gap-2"
+            title={`Заявок в ЛНК: всего ${kpiMetrics.requests}, активных ${kpiMetrics.activeRequests}`}
+          >
             <span className="text-[11px] font-medium text-slate-500 truncate">
               Заявки
             </span>
@@ -141,7 +154,10 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
             </span>
           </div>
 
-          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+          <div
+            className="px-3 py-1.5 flex items-baseline justify-between gap-2"
+            title="Стыки в открытом ремонте"
+          >
             <span className="text-[11px] font-medium text-slate-500 truncate">
               Ремонт
             </span>
@@ -154,7 +170,10 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
             </span>
           </div>
 
-          <div className="px-3 py-1.5 flex items-baseline justify-between gap-2">
+          <div
+            className="px-3 py-1.5 flex items-baseline justify-between gap-2"
+            title="Фактическое выполнение объёма физических методов НК к нормативу Лайнлиста"
+          >
             <span className="text-[11px] font-medium text-slate-500 truncate">
               Охват НК
             </span>

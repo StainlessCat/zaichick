@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildAcceptIntoWorkJointPatch,
   buildLabConclusionPatch,
   buildMultiMethodLabConclusionPatch,
   calculateLaboratoryDeficitStatement,
+  derivePrimaryNdtMethod,
   getActiveLabRequestForJoint,
+  getJointLabRequestStatus,
   getRequestMethodsList,
   isJointConclusionCompletedForRequest,
+  isJointInWorkByMethod,
+  isJointPassedByMethod,
   resolveLineLabMethodAvailability,
 } from './laboratoryLogic';
+import { createDraftFromJoint } from '../components/laboratory/types';
 import type { NdtLabRequest, ProjectLineItem, WeldJoint } from '../types/welding';
 import { INITIAL_JOINTS } from '../data/seedData';
 
@@ -26,6 +32,7 @@ const makeTestJoint = (id: string, jointNumber: string, extra?: Partial<WeldJoin
   diameterInch: '8"',
   weldingDate: '2026-11-14',
   welderStamp: 'W01',
+  welderStampsList: ['W01'],
   weldingType: 'РД',
   gostJointType: 'С17',
   jointKind: 'Стыковое',
@@ -278,5 +285,191 @@ describe('Laboratory Logic — Stage 3 Enhancements', () => {
     expect(
       isJointConclusionCompletedForRequest(updatedJoint, 'Первичный ВИК и НК', ['ВИК', 'РК', 'УЗК', 'ПВК'])
     ).toBe(false);
+  });
+
+  it('multi-method labConclusions close РК, УЗК and ПВК line deficits simultaneously', () => {
+    const line: ProjectLineItem = {
+      ...makeTestLine(),
+      rkPercent: 100,
+      uzkPercent: 100,
+      pvkPercent: 100,
+    };
+
+    const j1 = makeTestJoint('j-m1', '010');
+    const built = buildMultiMethodLabConclusionPatch(j1, 'Первичный ВИК и НК', {
+      ВИК: { reportNumber: 'ВИК-010', date: '2026-11-15', result: 'Годен', inspector: 'Иванов И.И.' },
+      РК: { reportNumber: 'РК-010', date: '2026-11-15', result: 'Годен', inspector: 'Иванов И.И.' },
+      УЗК: { reportNumber: 'УЗК-010', date: '2026-11-15', result: 'Годен', inspector: 'Иванов И.И.' },
+      ПВК: { reportNumber: 'ПВК-010', date: '2026-11-15', result: 'Годен', inspector: 'Иванов И.И.' },
+    });
+    expect(built.ok).toBe(true);
+    expect(built.patch.ndtType).toBe('РК+УЗК');
+
+    const passedJoint: WeldJoint = { ...j1, ...built.patch };
+    expect(isJointPassedByMethod(passedJoint, 'РК')).toBe(true);
+    expect(isJointPassedByMethod(passedJoint, 'УЗК')).toBe(true);
+    expect(isJointPassedByMethod(passedJoint, 'ПВК')).toBe(true);
+
+    const statement = calculateLaboratoryDeficitStatement([passedJoint], [line]);
+    const row = statement.allLineRows[0];
+    expect(row.rkDeficit).toBe(0);
+    expect(row.uzkDeficit).toBe(0);
+    expect(row.pvkDeficit).toBe(0);
+    expect(row.welderDeficits).toHaveLength(0);
+    expect(row.hasDeficit).toBe(false);
+  });
+
+  it('welder quota detects per-method deficits when only one of multiple required methods is passed', () => {
+    const line: ProjectLineItem = {
+      ...makeTestLine(),
+      rkPercent: 100,
+      uzkPercent: 100,
+      pvkPercent: 100,
+    };
+    const jUzkOnly = makeTestJoint('j-uzk-only', '020', {
+      ndtType: 'УЗК',
+      ndtResult: 'Годен',
+      ndtReportNumber: 'УЗК-020',
+      ndtDate: '2026-11-15',
+    });
+
+    const statement = calculateLaboratoryDeficitStatement([jUzkOnly], [line]);
+    const row = statement.allLineRows[0];
+    expect(row.uzkDeficit).toBe(0);
+    expect(row.rkDeficit).toBe(1);
+    expect(row.pvkDeficit).toBe(1);
+    expect(row.welderDeficits).toHaveLength(1);
+    expect(row.welderDeficits[0].stamp).toBe('W01');
+    expect(row.welderDeficits[0].missingMethods).toEqual(['РК', 'ПВК']);
+    expect(row.candidateJoints.map((j) => j.id)).toContain('j-uzk-only');
+  });
+
+  it('createDraftFromJoint populates both РК and УЗК when ndtType is РК+УЗК', () => {
+    const combinedJoint = makeTestJoint('j-comb', '010', {
+      ndtType: 'РК+УЗК',
+      ndtResult: 'Годен',
+      ndtReportNumber: 'РК-УЗК-010',
+      ndtDate: '2026-11-15',
+      ndtInspector: 'Петров П.П.',
+    });
+
+    const draft = createDraftFromJoint(combinedJoint, 'Первичный ВИК и НК', 'Иванов И.И.');
+    expect(draft.methods['РК'].result).toBe('Годен');
+    expect(draft.methods['РК'].reportNumber).toBe('РК-УЗК-010');
+    expect(draft.methods['УЗК'].result).toBe('Годен');
+    expect(draft.methods['УЗК'].reportNumber).toBe('РК-УЗК-010');
+    expect(draft.methods['ПВК'].result).toBe('Не проводился');
+  });
+
+  it('buildAcceptIntoWorkJointPatch uses canonical NdtMethod and isolates ВИК-only requests', () => {
+    expect(derivePrimaryNdtMethod(['ВИК'])).toBe('Не требуется');
+    expect(derivePrimaryNdtMethod(['ВИК', 'РК', 'УЗК'])).toBe('РК+УЗК');
+    expect(derivePrimaryNdtMethod(['ВИК', 'ПВК'])).toBe('ПВК');
+
+    const j = makeTestJoint('j-acc', '030', { vikResult: 'Не проводился' });
+
+    const vikOnlyPatch = buildAcceptIntoWorkJointPatch(
+      j,
+      {
+        controlStage: 'Первичный ВИК и НК',
+        requestedMethod: 'Не требуется',
+        requestedMethods: ['ВИК'],
+      },
+      'Орлова Е.В.'
+    );
+    expect(vikOnlyPatch.vikResult).toBe('В работе');
+    expect(vikOnlyPatch.ndtResult).toBeUndefined();
+    expect(vikOnlyPatch.ndtType).toBeUndefined();
+    expect(vikOnlyPatch.labConclusions?.['ВИК']?.result).toBe('В работе');
+
+    const multiPatch = buildAcceptIntoWorkJointPatch(
+      j,
+      {
+        controlStage: 'Первичный ВИК и НК',
+        requestedMethod: 'РК+УЗК',
+        requestedMethods: ['ВИК', 'РК', 'УЗК', 'ПВК'],
+      },
+      'Орлова Е.В.'
+    );
+    expect(multiPatch.ndtType).toBe('РК+УЗК');
+    expect(multiPatch.ndtResult).toBe('В работе');
+    expect(multiPatch.labConclusions?.['ПВК']?.result).toBe('В работе');
+
+    const inWorkJoint: WeldJoint = { ...j, ...multiPatch };
+    expect(isJointInWorkByMethod(inWorkJoint, 'РК')).toBe(true);
+    expect(isJointInWorkByMethod(inWorkJoint, 'УЗК')).toBe(true);
+    expect(isJointInWorkByMethod(inWorkJoint, 'ПВК')).toBe(true);
+    const statement = calculateLaboratoryDeficitStatement([inWorkJoint], [makeTestLine()]);
+    expect(statement.totals.jointsInWorkCount).toBe(1);
+  });
+
+  it('getJointLabRequestStatus requires all requested methods before returning Заявка исполнена', () => {
+    const jPartial = makeTestJoint('j-part', '040', {
+      ndtType: 'РК',
+      ndtResult: 'Годен',
+      ndtReportNumber: 'РК-040',
+      ndtDate: '2026-11-15',
+      labConclusions: {
+        ВИК: { reportNumber: 'ВИК-040', date: '2026-11-15', result: 'Годен', inspector: 'Иванов И.И.', stage: 'primary' },
+        РК: { reportNumber: 'РК-040', date: '2026-11-15', result: 'Годен', inspector: 'Иванов И.И.', stage: 'primary' },
+      },
+    });
+    const req: NdtLabRequest = {
+      id: 'req-multi',
+      requestNumber: 'ЗНК-2026-099',
+      createdAt: '2026-11-15 09:00',
+      createdDate: '2026-11-15',
+      createdBy: 'Инженер ПТО',
+      objectName: 'УКПГ-1С',
+      rdCode: 'РД-01',
+      lineNumber: '101',
+      uniqueLineId: 'РД-01:101',
+      contour: 'Контур А',
+      controlStage: 'Первичный ВИК и НК',
+      requestedMethod: 'РК+УЗК',
+      requestedMethods: ['ВИК', 'РК', 'УЗК'],
+      jointIds: ['j-part'],
+      status: 'В работе ЛНК',
+    };
+
+    // УЗК ещё не оформлен -> заявка остаётся в работе
+    expect(getJointLabRequestStatus(jPartial, [req])).toBe('Заявка в работе');
+
+    // После оформления УЗК -> заявка исполнена
+    const jDone: WeldJoint = {
+      ...jPartial,
+      labConclusions: {
+        ...jPartial.labConclusions,
+        УЗК: { reportNumber: 'УЗК-040', date: '2026-11-15', result: 'Годен', inspector: 'Иванов И.И.', stage: 'primary' },
+      },
+    };
+    expect(getJointLabRequestStatus(jDone, [req])).toBe('Заявка исполнена');
+  });
+
+  it('buildMultiMethodLabConclusionPatch preserves primary labConclusions on repair stage', () => {
+    const jWithPrimary = makeTestJoint('j-rep-keep', '050', {
+      ndtType: 'РК',
+      ndtResult: 'Ремонт',
+      ndtReportNumber: 'РК-050',
+      ndtDate: '2026-11-15',
+      labConclusions: {
+        ВИК: { reportNumber: 'ВИК-050', date: '2026-11-15', result: 'Годен', inspector: 'Иванов И.И.', stage: 'primary' },
+        РК: { reportNumber: 'РК-050', date: '2026-11-15', result: 'Ремонт', inspector: 'Иванов И.И.', stage: 'primary' },
+      },
+    });
+
+    const repairBuilt = buildMultiMethodLabConclusionPatch(
+      jWithPrimary,
+      'Повторный НК после ремонта',
+      {
+        РК: { reportNumber: 'РК-050-Р1', date: '2026-11-16', result: 'Годен', inspector: 'Петров П.П.' },
+      }
+    );
+
+    expect(repairBuilt.ok).toBe(true);
+    expect(repairBuilt.patch.repairNdtResult).toBe('Годен');
+    // Первичная запись ВИК не стёрта при сохранении только РК после ремонта
+    expect(repairBuilt.patch.labConclusions?.['ВИК']?.reportNumber).toBe('ВИК-050');
+    expect(repairBuilt.patch.labConclusions?.['РК']?.stage).toBe('repair');
   });
 });

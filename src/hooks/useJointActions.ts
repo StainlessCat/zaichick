@@ -19,7 +19,6 @@ import {
   buildUniqueLineId,
   FIELD_LABELS_MAP,
   formatDateDDMMYY,
-  suggestNextJointNumber,
 } from '../utils/weldingLogic';
 import {
   canUserMutateRecord,
@@ -40,7 +39,6 @@ export interface UseJointActionsParams {
   serverFacilities: FacilityObject[];
   setServerFacilities: React.Dispatch<React.SetStateAction<FacilityObject[]>>;
   derivedFacilities: FacilityObject[];
-  filteredAndSortedJoints: WeldJoint[];
   selectedJointIds: string[];
   setSelectedJointIds: React.Dispatch<React.SetStateAction<string[]>>;
   setConfirmBulkDeleteJoints: React.Dispatch<React.SetStateAction<boolean>>;
@@ -65,7 +63,6 @@ export interface UseJointActionsParams {
       joint: WeldJoint | null;
     }>
   >;
-  siteWeatherTempC: string;
   activeConflict: OptimisticLockConflictPayload | null;
   setActiveConflict: React.Dispatch<
     React.SetStateAction<OptimisticLockConflictPayload | null>
@@ -92,7 +89,6 @@ export function useJointActions(params: UseJointActionsParams) {
     serverFacilities,
     setServerFacilities,
     derivedFacilities,
-    filteredAndSortedJoints,
     selectedJointIds,
     setSelectedJointIds,
     setConfirmBulkDeleteJoints,
@@ -102,7 +98,6 @@ export function useJointActions(params: UseJointActionsParams) {
     passportModalMode,
     passportBaseJointRef,
     setPassportModal,
-    siteWeatherTempC,
     activeConflict,
     setActiveConflict,
     isAuthenticated,
@@ -694,55 +689,6 @@ export function useJointActions(params: UseJointActionsParams) {
     ]
   );
 
-  const handleQuickAddSupplementaryJoint = useCallback(
-    (baseJoint?: WeldJoint) => {
-      if (!isAuthenticated || !currentUser.login) {
-        setIsLoginModalOpen(true);
-        notifyError('Создание стыков невозможно: требуется авторизация на сервере FastAPI.');
-        return;
-      }
-      const refJoint = baseJoint || filteredAndSortedJoints[0] || joints[0];
-      if (!refJoint) return;
-
-      const lineJointNumbers = joints
-        .filter((j) => j.uniqueLineId === refJoint.uniqueLineId)
-        .map((j) => j.jointNumber);
-
-      const nextSuppNumber = suggestNextJointNumber(
-        lineJointNumbers,
-        refJoint.jointNumber
-      );
-
-      const draftSupp: WeldJoint = {
-        ...refJoint,
-        id: `j-supp-${Date.now()}`,
-        jointNumber: nextSuppNumber,
-        isSupplementary: true,
-        weldingDate: new Date().toISOString().slice(0, 10),
-        ambientTemp: siteWeatherTempC,
-        vikResult: 'В работе',
-        ndtResult: 'Не проводился',
-        dupNdtResult: 'Не проводился',
-      };
-
-      setPassportModal({
-        isOpen: true,
-        mode: 'create',
-        joint: draftSupp,
-      });
-    },
-    [
-      currentUser.login,
-      filteredAndSortedJoints,
-      isAuthenticated,
-      joints,
-      notifyError,
-      setIsLoginModalOpen,
-      setPassportModal,
-      siteWeatherTempC,
-    ]
-  );
-
   const handleApplyBulkUpdate = useCallback(
     async (rawPatch: Partial<WeldJoint>) => {
       if (!isAuthenticated || !currentUser.login) {
@@ -1049,7 +995,6 @@ export function useJointActions(params: UseJointActionsParams) {
     handleTriggerSimulatedConflict,
     handleDeleteJointFromPassport,
     handleImportJoints,
-    handleQuickAddSupplementaryJoint,
     handleApplyBulkUpdate,
     handleBulkDeleteSelectedJoints,
     handleBatchUpdateJointsFromLab,

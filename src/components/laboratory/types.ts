@@ -53,6 +53,13 @@ export const CONTROL_STAGES_LIST: NdtLabControlStage[] = [
   'Дублирующий контроль',
 ];
 
+export const CONTROL_STAGE_LABELS: Record<NdtLabControlStage, string> = {
+  'Первичный ВИК и НК': 'Первичный ВИК и НК',
+  'Физический НК (РК/УЗК/ПВК)': 'Физический НК',
+  'Повторный НК после ремонта': 'Повторный НК после ремонта',
+  'Дублирующий контроль': 'Дублирующий контроль',
+};
+
 export const CONCLUSION_RESULTS_LIST: ControlResult[] = [
   'Не проводился',
   'Годен',
@@ -60,6 +67,17 @@ export const CONCLUSION_RESULTS_LIST: ControlResult[] = [
   'Вырезать',
   'В работе',
 ];
+
+function matchesNdtMethod(
+  ndtType: NdtMethod | string | undefined,
+  method: 'РК' | 'УЗК' | 'ПВК'
+): boolean {
+  if (!ndtType) return false;
+  if (method === 'РК') return ndtType === 'РК' || ndtType === 'РК+УЗК';
+  if (method === 'УЗК') return ndtType === 'УЗК' || ndtType === 'РК+УЗК';
+  if (method === 'ПВК') return ndtType === 'ПВК' || ndtType === 'МК';
+  return false;
+}
 
 export function createDraftFromJoint(
   joint: WeldJoint,
@@ -92,9 +110,16 @@ export function createDraftFromJoint(
     fallbackInspector: string
   ): LabMethodDraft => {
     const existing = lc[m];
-    if (existing) {
+    const stageMatches =
+      existing &&
+      (stageMode === 'primary'
+        ? !existing.stage || existing.stage === 'primary'
+        : existing.stage === stageMode);
+
+    if (existing && stageMatches) {
       return {
-        reportNumber: existing.reportNumber || (existing.result !== 'Не проводился' ? autoNum(m) : ''),
+        reportNumber:
+          existing.reportNumber || (existing.result !== 'Не проводился' ? autoNum(m) : ''),
         date: existing.date || safeDate,
         result: existing.result || 'Не проводился',
         inspector: existing.inspector || defaultInspector,
@@ -133,30 +158,34 @@ export function createDraftFromJoint(
         repNdtRes !== 'Не проводился' && repNdtRes !== 'В работе' ? repNdtRes : 'Годен',
       ndtInspector: joint.repairNdtInspector || defaultInspector,
       methods: {
-        ВИК: {
-          reportNumber: joint.repairVikNumber || autoNum('ВИК'),
-          date: joint.repairVikDate || safeDate,
-          result: repVikRes,
-          inspector: joint.repairVikInspector || defaultInspector,
-        },
-        РК: {
-          reportNumber: repNdtMethod === 'РК' ? joint.repairNdtNumber || '' : '',
-          date: joint.repairNdtDate || safeDate,
-          result: repNdtMethod === 'РК' ? repNdtRes : 'Не проводился',
-          inspector: joint.repairNdtInspector || defaultInspector,
-        },
-        УЗК: {
-          reportNumber: repNdtMethod === 'УЗК' ? joint.repairNdtNumber || '' : '',
-          date: joint.repairNdtDate || safeDate,
-          result: repNdtMethod === 'УЗК' ? repNdtRes : 'Не проводился',
-          inspector: joint.repairNdtInspector || defaultInspector,
-        },
-        ПВК: {
-          reportNumber: repNdtMethod === 'ПВК' ? joint.repairNdtNumber || '' : '',
-          date: joint.repairNdtDate || safeDate,
-          result: repNdtMethod === 'ПВК' ? repNdtRes : 'Не проводился',
-          inspector: joint.repairNdtInspector || defaultInspector,
-        },
+        ВИК: buildMethodDraft(
+          'ВИК',
+          joint.repairVikNumber || '',
+          joint.repairVikDate || safeDate,
+          repVikRes,
+          joint.repairVikInspector || defaultInspector
+        ),
+        РК: buildMethodDraft(
+          'РК',
+          matchesNdtMethod(repNdtMethod, 'РК') ? joint.repairNdtNumber || '' : '',
+          joint.repairNdtDate || safeDate,
+          matchesNdtMethod(repNdtMethod, 'РК') ? repNdtRes : 'Не проводился',
+          joint.repairNdtInspector || defaultInspector
+        ),
+        УЗК: buildMethodDraft(
+          'УЗК',
+          matchesNdtMethod(repNdtMethod, 'УЗК') ? joint.repairNdtNumber || '' : '',
+          joint.repairNdtDate || safeDate,
+          matchesNdtMethod(repNdtMethod, 'УЗК') ? repNdtRes : 'Не проводился',
+          joint.repairNdtInspector || defaultInspector
+        ),
+        ПВК: buildMethodDraft(
+          'ПВК',
+          matchesNdtMethod(repNdtMethod, 'ПВК') ? joint.repairNdtNumber || '' : '',
+          joint.repairNdtDate || safeDate,
+          matchesNdtMethod(repNdtMethod, 'ПВК') ? repNdtRes : 'Не проводился',
+          joint.repairNdtInspector || defaultInspector
+        ),
       },
       isDirty: false,
     };
@@ -184,25 +213,34 @@ export function createDraftFromJoint(
       ndtResult: dupRes !== 'Не проводился' && dupRes !== 'В работе' ? dupRes : 'Годен',
       ndtInspector: joint.dupNdtInspector || defaultInspector,
       methods: {
-        ВИК: buildMethodDraft('ВИК', joint.vikReportNumber || '', joint.vikDate || safeDate, joint.vikResult || 'Не проводился', joint.vikInspector || defaultInspector),
-        РК: {
-          reportNumber: dupMethod === 'РК' ? joint.dupNdtReportNumber || '' : '',
-          date: joint.dupNdtDate || safeDate,
-          result: dupMethod === 'РК' ? dupRes : 'Не проводился',
-          inspector: joint.dupNdtInspector || defaultInspector,
-        },
-        УЗК: {
-          reportNumber: dupMethod === 'УЗК' ? joint.dupNdtReportNumber || '' : '',
-          date: joint.dupNdtDate || safeDate,
-          result: dupMethod === 'УЗК' ? dupRes : 'Не проводился',
-          inspector: joint.dupNdtInspector || defaultInspector,
-        },
-        ПВК: {
-          reportNumber: dupMethod === 'ПВК' ? joint.dupNdtReportNumber || '' : '',
-          date: joint.dupNdtDate || safeDate,
-          result: dupMethod === 'ПВК' ? dupRes : 'Не проводился',
-          inspector: joint.dupNdtInspector || defaultInspector,
-        },
+        ВИК: buildMethodDraft(
+          'ВИК',
+          joint.vikReportNumber || '',
+          joint.vikDate || safeDate,
+          joint.vikResult || 'Не проводился',
+          joint.vikInspector || defaultInspector
+        ),
+        РК: buildMethodDraft(
+          'РК',
+          matchesNdtMethod(dupMethod, 'РК') ? joint.dupNdtReportNumber || '' : '',
+          joint.dupNdtDate || safeDate,
+          matchesNdtMethod(dupMethod, 'РК') ? dupRes : 'Не проводился',
+          joint.dupNdtInspector || defaultInspector
+        ),
+        УЗК: buildMethodDraft(
+          'УЗК',
+          matchesNdtMethod(dupMethod, 'УЗК') ? joint.dupNdtReportNumber || '' : '',
+          joint.dupNdtDate || safeDate,
+          matchesNdtMethod(dupMethod, 'УЗК') ? dupRes : 'Не проводился',
+          joint.dupNdtInspector || defaultInspector
+        ),
+        ПВК: buildMethodDraft(
+          'ПВК',
+          matchesNdtMethod(dupMethod, 'ПВК') ? joint.dupNdtReportNumber || '' : '',
+          joint.dupNdtDate || safeDate,
+          matchesNdtMethod(dupMethod, 'ПВК') ? dupRes : 'Не проводился',
+          joint.dupNdtInspector || defaultInspector
+        ),
       },
       isDirty: false,
     };
@@ -242,27 +280,23 @@ export function createDraftFromJoint(
       ),
       РК: buildMethodDraft(
         'РК',
-        primaryPhysType === 'РК' ? joint.ndtReportNumber || '' : '',
+        matchesNdtMethod(primaryPhysType, 'РК') ? joint.ndtReportNumber || '' : '',
         joint.ndtDate || safeDate,
-        primaryPhysType === 'РК' ? primaryPhysRes : 'Не проводился',
+        matchesNdtMethod(primaryPhysType, 'РК') ? primaryPhysRes : 'Не проводился',
         joint.ndtInspector || defaultInspector
       ),
       УЗК: buildMethodDraft(
         'УЗК',
-        primaryPhysType === 'УЗК' ? joint.ndtReportNumber || '' : '',
+        matchesNdtMethod(primaryPhysType, 'УЗК') ? joint.ndtReportNumber || '' : '',
         joint.ndtDate || safeDate,
-        primaryPhysType === 'УЗК' ? primaryPhysRes : 'Не проводился',
+        matchesNdtMethod(primaryPhysType, 'УЗК') ? primaryPhysRes : 'Не проводился',
         joint.ndtInspector || defaultInspector
       ),
       ПВК: buildMethodDraft(
         'ПВК',
-        primaryPhysType === 'ПВК' || primaryPhysType === 'МК'
-          ? joint.ndtReportNumber || ''
-          : '',
+        matchesNdtMethod(primaryPhysType, 'ПВК') ? joint.ndtReportNumber || '' : '',
         joint.ndtDate || safeDate,
-        primaryPhysType === 'ПВК' || primaryPhysType === 'МК'
-          ? primaryPhysRes
-          : 'Не проводился',
+        matchesNdtMethod(primaryPhysType, 'ПВК') ? primaryPhysRes : 'Не проводился',
         joint.ndtInspector || defaultInspector
       ),
     },

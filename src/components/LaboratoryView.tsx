@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import {
-  ControlResult,
   FacilityObject,
   InspectorProfile,
   LabConclusionMethodKey,
@@ -8,25 +8,23 @@ import {
   NdtLabControlStage,
   NdtLabRequest,
   NdtLabRequestStatus,
-  NdtMethod,
   ProjectLineItem,
   UserAccount,
   WeldJoint,
 } from '../types/welding';
 import { formatInspectorShortName, RolePermissions } from '../utils/rbac';
-import { exportLaboratoryToExcel } from '../utils/excelUtils';
+import { exportLaboratoryFilteredToXlsx } from '../utils/excelUtils';
 import { buildJointLabMarking, buildLabConclusionNumber } from '../utils/labMarking';
 import {
   buildAcceptIntoWorkJointPatch,
   buildMultiMethodLabConclusionPatch,
   CANONICAL_LAB_METHODS,
+  derivePrimaryNdtMethod,
   getRequestMethodsList,
   resolveLineLabMethodAvailability,
   calculateLaboratoryDeficitStatement,
   isJointConclusionCompletedForRequest,
-  LabConclusionFormInput,
   NdtLineDeficitRow,
-  suggestNextConclusionNumber,
   suggestNextLabRequestNumber,
 } from '../utils/laboratoryLogic';
 import {
@@ -110,15 +108,18 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     'ALL' | 'PENDING' | 'COMPLETED'
   >('ALL');
 
+  const [pendingDeleteRequest, setPendingDeleteRequest] =
+    useState<NdtLabRequest | null>(null);
+
   // Состояние модального конструктора новой заявки на НК от инженера ПТО
   const [requestModalState, setRequestModalState] = useState<RequestModalState>({
     isOpen: false,
     lineRow: null,
     selectedJointIds: [],
     controlStage: 'Первичный ВИК и НК',
-    requestedMethod: 'ВИК+РК' as NdtMethod,
+    requestedMethod: 'РК',
     requestedMethods: ['ВИК', 'РК'],
-    ptoEngineerName: currentUser.fullName || 'Смирнов А.В. (Инженер ПТО)',
+    ptoEngineerName: currentUser.fullName || 'Инженер ПТО',
     notes: '',
   });
 
@@ -131,7 +132,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     ) {
       return shortCurrent;
     }
-    return inspectors[0]?.fullName || shortCurrent || 'Орлова Е.В.';
+    return inspectors[0]?.fullName || shortCurrent || '';
   }, [currentUser.fullName, inspectors]);
 
   const canCreateRequest =
@@ -198,7 +199,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     return m;
   }, [joints]);
 
-  // Отфильтрованные группы дефицитной ведомости
+  // Отфильтрованные группы дефицитной ведомости с пересчётом итогов по видимым линиям
   const filteredRdGroups = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return deficitStatement.rdGroups
@@ -222,21 +223,50 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         return {
           ...group,
           lines: filteredLines,
+          totalLines: filteredLines.length,
+          deficitLinesCount: filteredLines.filter((l) => l.hasDeficit).length,
+          totalJoints: filteredLines.reduce((acc, l) => acc + l.totalJoints, 0),
+          weldedCount: filteredLines.reduce((acc, l) => acc + l.weldedCount, 0),
+          vikRequired: filteredLines.reduce((acc, l) => acc + l.vikRequired, 0),
+          vikCompleted: filteredLines.reduce((acc, l) => acc + l.vikCompleted, 0),
+          vikDeficit: filteredLines.reduce((acc, l) => acc + l.vikDeficit, 0),
+          rkRequired: filteredLines.reduce((acc, l) => acc + l.rkRequired, 0),
+          rkCompleted: filteredLines.reduce((acc, l) => acc + l.rkCompleted, 0),
+          rkDeficit: filteredLines.reduce((acc, l) => acc + l.rkDeficit, 0),
+          uzkRequired: filteredLines.reduce((acc, l) => acc + l.uzkRequired, 0),
+          uzkCompleted: filteredLines.reduce((acc, l) => acc + l.uzkCompleted, 0),
+          uzkDeficit: filteredLines.reduce((acc, l) => acc + l.uzkDeficit, 0),
+          pvkRequired: filteredLines.reduce((acc, l) => acc + l.pvkRequired, 0),
+          pvkCompleted: filteredLines.reduce((acc, l) => acc + l.pvkCompleted, 0),
+          pvkDeficit: filteredLines.reduce((acc, l) => acc + l.pvkDeficit, 0),
+          totalPhysicalDeficit: filteredLines.reduce(
+            (acc, l) => acc + l.totalPhysicalDeficit,
+            0
+          ),
         };
       })
       .filter((g) => g.lines.length > 0);
   }, [deficitStatement.rdGroups, onlyDeficitLines, searchQuery]);
 
+  // Заявки в пределах выбранного объекта и шифра РД
+  const scopedRequests = useMemo(
+    () =>
+      labRequests.filter((r) => {
+        if (selectedObjectName !== 'ALL' && r.objectName !== selectedObjectName) {
+          return false;
+        }
+        if (selectedRdCode !== 'ALL' && r.rdCode !== selectedRdCode) {
+          return false;
+        }
+        return true;
+      }),
+    [labRequests, selectedObjectName, selectedRdCode]
+  );
+
   // Отфильтрованные заявки на НК
   const filteredRequests = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return labRequests.filter((req) => {
-      if (selectedObjectName !== 'ALL' && req.objectName !== selectedObjectName) {
-        return false;
-      }
-      if (selectedRdCode !== 'ALL' && req.rdCode !== selectedRdCode) {
-        return false;
-      }
+    return scopedRequests.filter((req) => {
       if (requestStatusFilter !== 'ALL' && req.status !== requestStatusFilter) {
         return false;
       }
@@ -259,22 +289,18 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         })
       );
     });
-  }, [labRequests, requestStatusFilter, searchQuery, selectedObjectName, selectedRdCode]);
+  }, [scopedRequests, requestStatusFilter, searchQuery, jointsById]);
 
   // Счётчики заявок по статусам
-  const requestCounts = useMemo(() => {
-    const scoped = labRequests.filter((r) => {
-      if (selectedObjectName !== 'ALL' && r.objectName !== selectedObjectName) return false;
-      if (selectedRdCode !== 'ALL' && r.rdCode !== selectedRdCode) return false;
-      return true;
-    });
-    return {
-      total: scoped.length,
-      submitted: scoped.filter((r) => r.status === 'Подана ПТО').length,
-      inWork: scoped.filter((r) => r.status === 'В работе ЛНК').length,
-      completed: scoped.filter((r) => r.status === 'Выполнена').length,
-    };
-  }, [labRequests, selectedObjectName, selectedRdCode]);
+  const requestCounts = useMemo(
+    () => ({
+      total: scopedRequests.length,
+      submitted: scopedRequests.filter((r) => r.status === 'Подана ПТО').length,
+      inWork: scopedRequests.filter((r) => r.status === 'В работе ЛНК').length,
+      completed: scopedRequests.filter((r) => r.status === 'Выполнена').length,
+    }),
+    [scopedRequests]
+  );
 
   // Открытие конструктора заявки от инженера ПТО по конкретной линии дефицитной ведомости
   const handleOpenCreateRequestModal = (lineRow?: NdtLineDeficitRow) => {
@@ -306,6 +332,10 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       .slice(0, Math.max(1, neededCount))
       .map((j) => j.id);
 
+    const resolvedRequired = resolveLineLabMethodAvailability(targetRow).requiredMethods;
+    const initialMethods: LabConclusionMethodKey[] =
+      resolvedRequired.length > 0 ? resolvedRequired : ['ВИК', 'РК'];
+
     setRequestModalState({
       isOpen: true,
       lineRow: targetRow,
@@ -316,13 +346,10 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           : targetRow.vikDeficit > 0
           ? 'Первичный ВИК и НК'
           : 'Физический НК (РК/УЗК/ПВК)',
-      requestedMethod: ((resolveLineLabMethodAvailability(targetRow).requiredMethods.join('+') || targetRow.recommendedMethod) as NdtMethod),
-      requestedMethods: resolveLineLabMethodAvailability(targetRow).requiredMethods.length > 0 ? resolveLineLabMethodAvailability(targetRow).requiredMethods : ['ВИК', 'РК'],
-      ptoEngineerName:
-        currentUser.fullName && currentUser.login
-          ? `${currentUser.fullName}`
-          : 'Смирнов А.В. (Инженер ПТО)',
-      notes: `Контроль сваренных стыков линии ${targetRow.lineNumber} (норма РК ${targetRow.rkPlanPct}%, УЗК ${targetRow.uzkPlanPct}%, ПВК ${targetRow.pvkPlanPct}%)`,
+      requestedMethod: derivePrimaryNdtMethod(initialMethods),
+      requestedMethods: initialMethods,
+      ptoEngineerName: currentUser.fullName?.trim() || 'Инженер ПТО',
+      notes: `Контроль сваренных стыков линии ${targetRow.lineNumber} · РК ${targetRow.rkPlanPct}%, УЗК ${targetRow.uzkPlanPct}%, ПВК ${targetRow.pvkPlanPct}%`,
     });
   };
 
@@ -332,7 +359,6 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       lineRow,
       selectedJointIds,
       controlStage,
-      requestedMethod,
       requestedMethods,
       ptoEngineerName,
       notes,
@@ -353,6 +379,10 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         ? crypto.randomUUID()
         : '';
 
+    const normalizedMethods: LabConclusionMethodKey[] =
+      requestedMethods.length > 0 ? requestedMethods : ['ВИК', 'РК'];
+    const canonicalNdtMethod = derivePrimaryNdtMethod(normalizedMethods);
+
     const newReq: NdtLabRequest = {
       id: generatedId,
       requestNumber: reqNumber,
@@ -365,8 +395,8 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       uniqueLineId: lineRow.uniqueLineId,
       contour: lineRow.contour,
       controlStage,
-      requestedMethod: ((requestedMethods.length > 0 ? requestedMethods.join('+') : requestedMethod) as NdtMethod),
-      requestedMethods: requestedMethods.length > 0 ? requestedMethods : ['ВИК', 'РК'],
+      requestedMethod: canonicalNdtMethod,
+      requestedMethods: normalizedMethods,
       jointIds: selectedJointIds,
       status: 'Подана ПТО',
       notes: notes.trim(),
@@ -379,7 +409,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         setActiveTab('requests');
         showBanner(
           'success',
-          `Заявка № ${reqNumber} (${selectedJointIds.length} ст., метод ${requestedMethod}) сформирована инженером ПТО и передана в Лабораторию НК.`
+          `Заявка № ${reqNumber} на ${selectedJointIds.length} ст., методы ${normalizedMethods.join('+')} передана в Лабораторию НК.`
         );
       } else {
         showBanner(
@@ -412,7 +442,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       if (ok !== false) {
         showBanner(
           'success',
-          `Заявка № ${req.requestNumber} принята в работу дефектоскопистом (${inspector}). Статус ${updates.length} стыков обновлён на «В работе» во всех разделах системы.`
+          `Заявка № ${req.requestNumber} принята в работу · ${inspector}. Статус ${updates.length} стыков обновлён на «В работе».`
         );
       } else {
         showBanner(
@@ -441,68 +471,9 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     () =>
       activeRequestIdForConclusions === 'ALL'
         ? null
-        : labRequests.find((r) => r.id === activeRequestIdForConclusions) || null,
-    [activeRequestIdForConclusions, labRequests]
+        : scopedRequests.find((r) => r.id === activeRequestIdForConclusions) || null,
+    [activeRequestIdForConclusions, scopedRequests]
   );
-
-  const conclusionTargetJoints = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const defaultStage: NdtLabControlStage =
-      activeRequestObj?.controlStage || 'Первичный ВИК и НК';
-
-    let baseList: WeldJoint[];
-    if (activeRequestObj) {
-      const idSet = new Set(activeRequestObj.jointIds);
-      baseList = joints.filter((j) => idSet.has(j.id));
-    } else {
-      baseList = joints.filter((j) => {
-        if (!j.weldingDate || !j.weldingDate.trim()) return false;
-        if (selectedObjectName !== 'ALL' && j.objectName !== selectedObjectName) {
-          return false;
-        }
-        if (selectedRdCode !== 'ALL' && j.rdCode !== selectedRdCode) {
-          return false;
-        }
-        if (
-          conclusionLineFilter !== 'ALL' &&
-          j.uniqueLineId !== conclusionLineFilter
-        ) {
-          return false;
-        }
-        return true;
-      });
-    }
-
-    const reqMethods = activeRequestObj ? getRequestMethodsList(activeRequestObj) : undefined;
-    return baseList.filter((j) => {
-      const isCompleted = isJointConclusionCompletedForRequest(j, defaultStage, reqMethods);
-      if (conclusionStateFilter === 'PENDING' && isCompleted) return false;
-      if (conclusionStateFilter === 'COMPLETED' && !isCompleted) return false;
-      if (!q) return true;
-      const marking = buildJointLabMarking(j).marking.toLowerCase();
-      const hasConclusionMatch = Object.values(j.labConclusions || {}).some((c) =>
-        (c?.reportNumber || '').toLowerCase().includes(q)
-      );
-      return (
-        j.jointNumber.toLowerCase().includes(q) ||
-        j.lineNumber.toLowerCase().includes(q) ||
-        j.rdCode.toLowerCase().includes(q) ||
-        j.welderStamp.toLowerCase().includes(q) ||
-        marking.includes(q) ||
-        hasConclusionMatch ||
-        (j.ndtReportNumber || '').toLowerCase().includes(q) ||
-        (j.vikReportNumber || '').toLowerCase().includes(q)
-      );
-    });
-  }, [
-    activeRequestObj,
-    conclusionLineFilter,
-    conclusionStateFilter,
-    joints,
-    searchQuery,
-    selectedObjectName,
-    selectedRdCode,
-  ]);
 
   // Локальные черновики строк ведомости заключений
   const [draftRows, setDraftRows] = useState<Record<string, LabJointDraftRow>>({});
@@ -532,12 +503,98 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     }
   }, [activeRequestObj, defaultInspectorName]);
 
+  const effectiveConclusionStage: NdtLabControlStage =
+    activeRequestObj?.controlStage || batchPreset.stage;
+
+  const conclusionTargetJoints = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+
+    let baseList: WeldJoint[];
+    if (activeRequestObj) {
+      const idSet = new Set(activeRequestObj.jointIds);
+      baseList = joints.filter((j) => idSet.has(j.id));
+    } else {
+      baseList = joints.filter((j) => {
+        if (!j.weldingDate || !j.weldingDate.trim()) return false;
+        if (selectedObjectName !== 'ALL' && j.objectName !== selectedObjectName) {
+          return false;
+        }
+        if (selectedRdCode !== 'ALL' && j.rdCode !== selectedRdCode) {
+          return false;
+        }
+        if (
+          conclusionLineFilter !== 'ALL' &&
+          j.uniqueLineId !== conclusionLineFilter
+        ) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    const reqMethods = activeRequestObj ? getRequestMethodsList(activeRequestObj) : undefined;
+    return baseList.filter((j) => {
+      const isCompleted = isJointConclusionCompletedForRequest(
+        j,
+        effectiveConclusionStage,
+        reqMethods
+      );
+      if (conclusionStateFilter === 'PENDING' && isCompleted) return false;
+      if (conclusionStateFilter === 'COMPLETED' && !isCompleted) return false;
+      if (!q) return true;
+      const marking = buildJointLabMarking(j).marking.toLowerCase();
+      const hasConclusionMatch = Object.values(j.labConclusions || {}).some((c) =>
+        (c?.reportNumber || '').toLowerCase().includes(q)
+      );
+      return (
+        j.jointNumber.toLowerCase().includes(q) ||
+        j.lineNumber.toLowerCase().includes(q) ||
+        j.rdCode.toLowerCase().includes(q) ||
+        j.welderStamp.toLowerCase().includes(q) ||
+        marking.includes(q) ||
+        hasConclusionMatch ||
+        (j.ndtReportNumber || '').toLowerCase().includes(q) ||
+        (j.vikReportNumber || '').toLowerCase().includes(q)
+      );
+    });
+  }, [
+    activeRequestObj,
+    conclusionLineFilter,
+    conclusionStateFilter,
+    effectiveConclusionStage,
+    joints,
+    searchQuery,
+    selectedObjectName,
+    selectedRdCode,
+  ]);
+
+  // Автоматически очищаем из выделения стыки, скрытые текущими фильтрами
+  useEffect(() => {
+    const visibleIds = new Set(conclusionTargetJoints.map((j) => j.id));
+    setSelectedConclusionJointIds((prev) => {
+      const next = prev.filter((id) => visibleIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [conclusionTargetJoints]);
+
+  // Сбрасываем выбранную заявку ведомости, если она вышла за пределы фильтра объекта / шифра РД
+  useEffect(() => {
+    if (
+      activeRequestIdForConclusions !== 'ALL' &&
+      !scopedRequests.some((r) => r.id === activeRequestIdForConclusions)
+    ) {
+      setActiveRequestIdForConclusions('ALL');
+    }
+  }, [activeRequestIdForConclusions, scopedRequests]);
+
   const getRowDraft = (joint: WeldJoint): LabJointDraftRow => {
     const existing = draftRows[joint.id];
-    if (existing) return existing;
-    const defaultStage = activeRequestObj?.controlStage || 'Первичный ВИК и НК';
-    const defaultInsp = activeRequestObj?.acceptedBy || defaultInspectorName;
-    const created = createDraftFromJoint(joint, defaultStage, defaultInsp);
+    if (existing && (existing.isDirty || existing.stage === effectiveConclusionStage)) {
+      return existing;
+    }
+    const defaultInsp =
+      activeRequestObj?.acceptedBy || batchPreset.inspectorName || defaultInspectorName;
+    const created = createDraftFromJoint(joint, effectiveConclusionStage, defaultInsp);
     if (activeRequestObj?.requestedMethod) {
       created.ndtMethod = activeRequestObj.requestedMethod;
     }
@@ -641,17 +698,18 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       });
   };
 
-  // Пакетное применение заключений с автонумерацией Метод-Маркировка
+  // Пакетное применение заключений с автонумерацией Метод-Маркировка (только для явно выбранных стыков)
   const handleApplyBatchConclusions = () => {
-    const targetJoints =
-      selectedConclusionJointIds.length > 0
-        ? conclusionTargetJoints.filter((j) =>
-            selectedConclusionJointIds.includes(j.id)
-          )
-        : conclusionTargetJoints;
+    if (selectedConclusionJointIds.length === 0) {
+      showBanner('error', 'Отметьте в таблице стыки, для которых нужно заполнить заключения.');
+      return;
+    }
+
+    const selectedSet = new Set(selectedConclusionJointIds);
+    const targetJoints = conclusionTargetJoints.filter((j) => selectedSet.has(j.id));
 
     if (targetJoints.length === 0) {
-      showBanner('error', 'Нет стыков для пакетного оформления заключений.');
+      showBanner('error', 'Нет выбранных стыков для пакетного оформления заключений.');
       return;
     }
 
@@ -706,7 +764,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     Promise.resolve(
       onSaveLabConclusions(
         updates,
-        `Пакетное оформление заключений ЛНК (${updates.length} ст., ${methodsLabel})`,
+        `Пакетное оформление заключений ЛНК: ${updates.length} ст., ${methodsLabel}`,
         activeRequestObj?.id
       )
     )
@@ -716,7 +774,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           setSelectedConclusionJointIds([]);
           showBanner(
             'success',
-            `Оформлено ${updates.length} заключений ЛНК (${methodsLabel} — «${batchPreset.ndtResult}»).`
+            `Оформлено ${updates.length} заключений ЛНК · ${methodsLabel} — «${batchPreset.ndtResult}».`
           );
         } else {
           showBanner(
@@ -799,78 +857,6 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
       });
   };
 
-  // Экспорт дефицитной ведомости в CSV
-  const handleExportDeficitCsv = () => {
-    const headers = [
-      'Объект',
-      'Шифр РД',
-      'Линия',
-      'Контур испытания',
-      'Категория',
-      'Всего стыков',
-      'Сварено стыков',
-      'ВИК План (100%)',
-      'ВИК Выполнено',
-      'ВИК Дефицит',
-      'РК Норма %',
-      'РК Требуется (шт)',
-      'РК Выполнено (шт)',
-      'РК Дефицит (шт)',
-      'УЗК Норма %',
-      'УЗК Требуется (шт)',
-      'УЗК Выполнено (шт)',
-      'УЗК Дефицит (шт)',
-      'ПВК Норма %',
-      'ПВК Требуется (шт)',
-      'ПВК Выполнено (шт)',
-      'ПВК Дефицит (шт)',
-      'Дефицит по сварщикам',
-    ];
-    const rows = deficitStatement.allLineRows.map((r) => [
-      r.objectName,
-      r.rdCode,
-      r.lineNumber,
-      r.contour,
-      r.pipelineCategory,
-      r.totalJoints,
-      r.weldedCount,
-      r.vikRequired,
-      r.vikCompleted,
-      r.vikDeficit,
-      `${r.rkPlanPct}%`,
-      r.rkRequired,
-      r.rkCompleted,
-      r.rkDeficit,
-      `${r.uzkPlanPct}%`,
-      r.uzkRequired,
-      r.uzkCompleted,
-      r.uzkDeficit,
-      `${r.pvkPlanPct}%`,
-      r.pvkRequired,
-      r.pvkCompleted,
-      r.pvkDeficit,
-      r.welderDeficits
-        .map((w) => `${w.stamp} (${w.controlledCount}/${w.requiredCount})`)
-        .join(', '),
-    ]);
-
-    const csvContent =
-      '\uFEFF' +
-      [headers, ...rows]
-        .map((row) =>
-          row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';')
-        )
-        .join('\r\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Дефицитная_ведомость_ЛНК_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   const currentFacility = facilities.find((f) => f.name === selectedObjectName);
   const availableRdCodes = useMemo(() => {
     if (selectedObjectName !== 'ALL' && currentFacility) {
@@ -889,6 +875,43 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
     return list;
   }, [currentFacility, facilities, selectedObjectName]);
 
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() ||
+      (selectedRdCode && selectedRdCode !== 'ALL') ||
+      onlyDeficitLines ||
+      requestStatusFilter !== 'ALL' ||
+      activeRequestIdForConclusions !== 'ALL' ||
+      conclusionLineFilter !== 'ALL' ||
+      conclusionStateFilter !== 'ALL'
+  );
+
+  const handleResetAllFilters = () => {
+    setSearchQuery('');
+    onSelectRdCode('ALL');
+    setOnlyDeficitLines(false);
+    setRequestStatusFilter('ALL');
+    setActiveRequestIdForConclusions('ALL');
+    setConclusionLineFilter('ALL');
+    setConclusionStateFilter('ALL');
+  };
+
+  const handleConfirmDeleteRequest = () => {
+    if (!pendingDeleteRequest || !onDeleteLabRequest) return;
+    const req = pendingDeleteRequest;
+    setPendingDeleteRequest(null);
+    Promise.resolve(onDeleteLabRequest(req.id))
+      .then((ok) => {
+        if (ok !== false) {
+          showBanner('success', `Заявка № ${req.requestNumber} удалена.`);
+        } else {
+          showBanner('error', `Ошибка при удалении заявки № ${req.requestNumber}.`);
+        }
+      })
+      .catch(() => {
+        showBanner('error', `Сетевая ошибка при удалении заявки № ${req.requestNumber}.`);
+      });
+  };
+
   return (
     <div className="space-y-4">
       {/* Шапка раздела и сводная статистика */}
@@ -896,18 +919,19 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         selectedRdCode={selectedRdCode}
         onSelectRdCode={onSelectRdCode}
         availableRdCodes={availableRdCodes}
-        onExportExcel={async () => {
+        onExportExcel={() => {
           try {
-            await exportLaboratoryToExcel({
-              objectName: selectedObjectName,
-              rdCode: selectedRdCode,
-              searchQuery,
+            const visibleDeficitLines = filteredRdGroups.flatMap((g) => g.lines);
+            exportLaboratoryFilteredToXlsx({
+              deficitLines: visibleDeficitLines,
+              requests: filteredRequests,
+              joints: conclusionTargetJoints,
             });
             showBanner('success', 'Отчёт Лаборатории НК выгружен в Excel.');
           } catch (err: unknown) {
             showBanner(
               'error',
-              `Ошибка выгрузки в Excel: ${(err instanceof Error ? err.message : String(err)) || 'Проверьте авторизацию'}`
+              `Ошибка выгрузки в Excel: ${(err instanceof Error ? err.message : String(err)) || 'Повторите попытку'}`
             );
           }
         }}
@@ -934,8 +958,8 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         setSearchQuery={setSearchQuery}
         statusBanner={statusBanner}
         onDismissStatusBanner={() => setStatusBanner(null)}
-        hasActiveFilters={Boolean(searchQuery.trim() || (selectedRdCode && selectedRdCode !== 'ALL'))}
-        onResetAllFilters={() => { setSearchQuery(''); onSelectRdCode('ALL'); }}
+        hasActiveFilters={hasActiveFilters}
+        onResetAllFilters={handleResetAllFilters}
       />
 
       {/* Вкладка 1: Дефицитная ведомость */}
@@ -946,6 +970,8 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           setExpandedRdCodes={setExpandedRdCodes}
           onOpenCreateRequestModal={handleOpenCreateRequestModal}
           canCreateRequest={canCreateRequest}
+          labRequests={scopedRequests}
+          onOpenJointPassport={onOpenJointPassport}
         />
       )}
 
@@ -957,6 +983,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           requestStatusFilter={requestStatusFilter}
           setRequestStatusFilter={setRequestStatusFilter}
           jointsById={jointsById}
+          canCreateRequest={canCreateRequest}
           canDeleteRequest={
             auth.isAuthenticated &&
             (userPermissions.category === 'admin' ||
@@ -964,39 +991,13 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
               userPermissions.category === 'pto')
           }
           canAcceptRequest={canProcessNdt}
+          inspectors={inspectors}
+          selectedInspectorForAccept={selectedInspectorForAccept}
+          setSelectedInspectorForAccept={setSelectedInspectorForAccept}
           onOpenCreateRequestModal={() => handleOpenCreateRequestModal()}
           onAcceptRequestClick={handleAcceptRequestClick}
           onDeleteRequestClick={
-            onDeleteLabRequest
-              ? (req) => {
-                  if (
-                    window.confirm(
-                      `Вы уверены, что хотите удалить заявку № ${req.requestNumber}?`
-                    )
-                  ) {
-                    Promise.resolve(onDeleteLabRequest(req.id))
-                      .then((ok) => {
-                        if (ok !== false) {
-                          showBanner(
-                            'success',
-                            `Заявка № ${req.requestNumber} успешно удалена.`
-                          );
-                        } else {
-                          showBanner(
-                            'error',
-                            `Ошибка при удалении заявки № ${req.requestNumber}.`
-                          );
-                        }
-                      })
-                      .catch(() => {
-                        showBanner(
-                          'error',
-                          `Сетевая ошибка при удалении заявки № ${req.requestNumber}.`
-                        );
-                      });
-                  }
-                }
-              : undefined
+            onDeleteLabRequest ? (req) => setPendingDeleteRequest(req) : undefined
           }
           onOpenRequestInConclusions={handleOpenRequestInConclusions}
           onOpenJointPassport={onOpenJointPassport}
@@ -1012,7 +1013,7 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
           setConclusionLineFilter={setConclusionLineFilter}
           conclusionStateFilter={conclusionStateFilter}
           setConclusionStateFilter={setConclusionStateFilter}
-          labRequests={labRequests}
+          labRequests={scopedRequests}
           deficitAllLineRows={deficitStatement.allLineRows}
           dirtyJointsCount={dirtyJointsCount}
           onSaveAllDirtyRows={handleSaveAllDirtyRows}
@@ -1050,6 +1051,57 @@ export const LaboratoryView: React.FC<LaboratoryViewProps> = (props) => {
         isOpen={isCodeRefOpen}
         onClose={() => setIsCodeRefOpen(false)}
       />
+
+      {/* Встроенное подтверждение удаления заявки в ЛНК */}
+      {pendingDeleteRequest && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[1px]"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="lab-delete-dialog-title"
+        >
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-5 py-3.5 bg-rose-700 text-white flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <h3 id="lab-delete-dialog-title" className="text-sm font-bold">
+                Удаление заявки в ЛНК
+              </h3>
+            </div>
+            <div className="p-5 text-xs text-slate-700 space-y-2">
+              <p>
+                Удалить заявку{' '}
+                <strong className="font-mono text-slate-900">
+                  {pendingDeleteRequest.requestNumber}
+                </strong>{' '}
+                по линии{' '}
+                <strong className="font-mono text-slate-900">
+                  {pendingDeleteRequest.lineNumber}
+                </strong>
+                ?
+              </p>
+              <p className="text-slate-500">
+                Связанные с заявкой стыки останутся в реестре без удаления истории контроля.
+              </p>
+            </div>
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteRequest(null)}
+                className="px-4 py-2 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteRequest}
+                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer"
+              >
+                Удалить заявку
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

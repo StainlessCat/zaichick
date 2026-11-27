@@ -6,7 +6,10 @@ import type {
   UserAccount,
   WeldJoint,
 } from '../types/welding';
-import { isJointConclusionCompletedForRequest } from '../utils/laboratoryLogic';
+import {
+  getRequestMethodsList,
+  isJointConclusionCompletedForRequest,
+} from '../utils/laboratoryLogic';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -204,9 +207,13 @@ export function useLabRequestActions({
             if (current)
               updatedJointsMap.set(u.jointId, { ...current, ...u.patch });
           }
+          const reqMethods = req ? getRequestMethodsList(req) : undefined;
           const allJointsDone = req?.jointIds.every((jId) => {
             const j = updatedJointsMap.get(jId);
-            return j && isJointConclusionCompletedForRequest(j, req.controlStage);
+            return (
+              j &&
+              isJointConclusionCompletedForRequest(j, req.controlStage, reqMethods)
+            );
           });
 
           const nextStatus = allJointsDone

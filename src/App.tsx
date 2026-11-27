@@ -342,7 +342,6 @@ export const App: React.FC = () => {
     serverFacilities,
     setServerFacilities,
     derivedFacilities,
-    filteredAndSortedJoints: filters.filteredAndSortedJoints,
     selectedJointIds: filters.selectedJointIds,
     setSelectedJointIds: filters.setSelectedJointIds,
     setConfirmBulkDeleteJoints,
@@ -352,7 +351,6 @@ export const App: React.FC = () => {
     passportModalMode: filters.passportModal.mode,
     passportBaseJointRef,
     setPassportModal: filters.setPassportModal,
-    siteWeatherTempC: siteWeather.tempC,
     activeConflict,
     setActiveConflict,
     isAuthenticated,
@@ -1286,7 +1284,6 @@ export const App: React.FC = () => {
         onSetConfirmBulkDeleteJoints={setConfirmBulkDeleteJoints}
         onBulkDeleteSelectedJoints={jointActions.handleBulkDeleteSelectedJoints}
         onOpenBulkEdit={filters.handleOpenBulkEdit}
-        onQuickAddSupplementaryJoint={jointActions.handleQuickAddSupplementaryJoint}
         onOpenImportExcel={filters.handleOpenImportExcel}
         onOpenCreatePassport={filters.handleOpenCreatePassport}
         onOpenEditPassport={filters.handleOpenEditPassport}

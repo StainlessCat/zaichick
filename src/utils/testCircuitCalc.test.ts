@@ -3,12 +3,16 @@ import type { ProjectLineItem, TestCircuit, UserAccount, WeldJoint } from '../ty
 import {
   buildSeedTestCircuitsFromJoints,
   computeCircuitMetricsLocal,
+  computeCircuitNdtReadiness,
+  formatJointControlSummaryForCircuit,
+  getCircuitUniqueLineLabel,
   hasJointUnresolvedDefect,
 } from './testCircuitCalc';
 import {
   canForceCloseTestCircuit,
   canManageTestCircuits,
   canUserEditJointField,
+  canUserMutateRecord,
   getUserRolePermissions,
 } from './rbac';
 
@@ -333,5 +337,134 @@ describe('RBAC — модуль Испытания и права СК / ПТО',
     expect(skPerms.canManageTestCircuits).toBe(true);
     expect(skPerms.canEditPrepAndWeldingFields).toBe(false);
     expect(skPerms.canEditNdtFields).toBe(false);
+  });
+
+  it('разрешает SUPERADMIN и DEPT_ADMIN редактировать VERIFIED контур, а OPERATOR — только свои DRAFT', () => {
+    const verifiedCircuit = makeCircuit({ recordStatus: 'VERIFIED', createdById: 'u-other' });
+    const foreignDraft = makeCircuit({ recordStatus: 'DRAFT', createdById: 'u-other' });
+    const ownDraft = makeCircuit({ recordStatus: 'DRAFT', createdById: 'u-OPERATOR-PTO' });
+
+    expect(
+      canUserMutateRecord(makeUser('SUPERADMIN', 'ALL'), verifiedCircuit, ['PTO', 'SK'], 'edit').allowed
+    ).toBe(true);
+    expect(
+      canUserMutateRecord(makeUser('DEPT_ADMIN', 'PTO'), verifiedCircuit, ['PTO', 'SK'], 'edit').allowed
+    ).toBe(true);
+    expect(
+      canUserMutateRecord(makeUser('OPERATOR', 'PTO'), verifiedCircuit, ['PTO', 'SK'], 'edit').allowed
+    ).toBe(false);
+    expect(
+      canUserMutateRecord(makeUser('OPERATOR', 'PTO'), foreignDraft, ['PTO', 'SK'], 'delete').allowed
+    ).toBe(false);
+    expect(
+      canUserMutateRecord(makeUser('OPERATOR', 'PTO'), ownDraft, ['PTO', 'SK'], 'delete').allowed
+    ).toBe(true);
+  });
+});
+
+describe('testCircuitCalc — многометодный НК, закрытый ремонт и уникальные подписи линий', () => {
+  it('выявляет брак в многометодных заключениях labConclusions даже при Годен в плоском поле ndtResult', () => {
+    const multiDefect = makeJoint({
+      vikResult: 'Годен',
+      ndtType: 'РК',
+      ndtResult: 'Годен',
+      labConclusions: {
+        РК: { result: 'Годен', reportNumber: 'РК-1', date: '2026-06-12', inspector: 'Лебедев' },
+        ПВК: { result: 'Ремонт', reportNumber: 'ПВК-1', date: '2026-06-12', inspector: 'Лебедев' },
+      },
+    });
+    expect(hasJointUnresolvedDefect(multiDefect)).toBe(true);
+    expect(formatJointControlSummaryForCircuit(multiDefect).status).toBe('defect');
+  });
+
+  it('отображает «Годен · после ремонта» вместо «Годен / Ремонт» для стыка с закрытым ремонтом', () => {
+    const repaired = makeJoint({
+      vikResult: 'Годен',
+      ndtType: 'РК',
+      ndtResult: 'Ремонт',
+      repairAction: 'Ремонт',
+      repairVikResult: 'Годен',
+      repairNdtType: 'РК',
+      repairNdtResult: 'Годен',
+    });
+    expect(hasJointUnresolvedDefect(repaired)).toBe(false);
+    const summary = formatJointControlSummaryForCircuit(repaired);
+    expect(summary.status).toBe('repaired');
+    expect(summary.label).toBe('Годен · после ремонта');
+  });
+
+  it('рассчитывает готовность контура по ВИК и физическим методам НК (РК/УЗК/ПВК) с детализацией дефицита', () => {
+    const circuit = makeCircuit({ id: 'tc-kvd', name: 'КВД-1' });
+    const line = makeLine({
+      id: 'l-gs104',
+      lineNumber: 'ГС-104/2',
+      uniqueLineId: '001-ТХ3-ГС-104/2',
+      rkPercent: 100,
+      uzkPercent: 100,
+      pvkPercent: 100,
+    });
+    const j1 = makeJoint({
+      id: 'j-1',
+      lineId: 'l-gs104',
+      uniqueLineId: '001-ТХ3-ГС-104/2',
+      testCircuitId: 'tc-kvd',
+      vikResult: 'Годен',
+      ndtType: 'РК+УЗК',
+      ndtResult: 'Годен',
+    });
+    const j2 = makeJoint({
+      id: 'j-2',
+      lineId: 'l-gs104',
+      uniqueLineId: '001-ТХ3-ГС-104/2',
+      testCircuitId: 'tc-kvd',
+      vikResult: 'Годен',
+      ndtType: 'УЗК',
+      ndtResult: 'Годен',
+    });
+
+    const ndt = computeCircuitNdtReadiness(circuit, [j1, j2], [line]);
+    // 2 ВИК + 2 РК + 2 УЗК + 2 ПВК = 8 проверок; пройдено 2 ВИК + 1 РК + 2 УЗК + 0 ПВК = 5 -> 62.5%
+    expect(ndt.requiredChecks).toBe(8);
+    expect(ndt.passedChecks).toBe(5);
+    expect(ndt.deficitChecks).toBe(3);
+    expect(ndt.ndtPercent).toBe(62.5);
+    expect(ndt.isNdtComplete).toBe(false);
+    expect(ndt.deficitDetails).toEqual(['РК −1', 'ПВК −2']);
+  });
+
+  it('различает линии с одинаковым коротким номером из разных шифров РД', () => {
+    const summaries = [
+      {
+        lineId: 'l-1',
+        uniqueLineId: '001-ТХ3-ФП1.2/1',
+        lineNumber: 'ФП1.2/1',
+        rdCode: '001-ТХ3',
+        assignedJointsCount: 5,
+        lineTotalJointsCount: 5,
+        isFullLine: true,
+      },
+      {
+        lineId: 'l-2',
+        uniqueLineId: '002-ТХ1-ФП1.2/1',
+        lineNumber: 'ФП1.2/1',
+        rdCode: '002-ТХ1',
+        assignedJointsCount: 1,
+        lineTotalJointsCount: 1,
+        isFullLine: true,
+      },
+      {
+        lineId: 'l-3',
+        uniqueLineId: '001-ТХ3-МТ-09/1',
+        lineNumber: 'МТ-09/1',
+        rdCode: '001-ТХ3',
+        assignedJointsCount: 1,
+        lineTotalJointsCount: 1,
+        isFullLine: true,
+      },
+    ];
+
+    expect(getCircuitUniqueLineLabel(summaries[0], summaries)).toBe('001-ТХ3-ФП1.2/1');
+    expect(getCircuitUniqueLineLabel(summaries[1], summaries)).toBe('002-ТХ1-ФП1.2/1');
+    expect(getCircuitUniqueLineLabel(summaries[2], summaries)).toBe('МТ-09/1');
   });
 });

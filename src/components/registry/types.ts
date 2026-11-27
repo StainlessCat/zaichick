@@ -28,7 +28,6 @@ export interface RegistryToolbarProps {
   onSetConfirmBulkDeleteJoints: (val: boolean) => void;
   onBulkDeleteSelectedJoints: () => void;
   onOpenBulkEdit: () => void;
-  onQuickAddSupplementaryJoint?: () => void;
   onOpenImportExcel: () => void;
   onExportExcel?: () => void;
   onOpenCreatePassport: () => void;

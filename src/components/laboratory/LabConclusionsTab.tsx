@@ -27,6 +27,7 @@ import {
 } from '../../utils/laboratoryLogic';
 import {
   CONCLUSION_RESULTS_LIST,
+  CONTROL_STAGE_LABELS,
   CONTROL_STAGES_LIST,
   LabJointDraftRow,
   LabMethodDraft,
@@ -120,7 +121,26 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
     [activeRequest]
   );
 
+  // Сворачиваем столбцы методов, отключённые (0% по Лайнлисту) для всех строк текущей выборки
+  const collapsedMethods = React.useMemo(() => {
+    const collapsed: Record<LabConclusionMethodKey, boolean> = {
+      ВИК: false,
+      РК: false,
+      УЗК: false,
+      ПВК: false,
+    };
+    if (conclusionTargetJoints.length === 0) return collapsed;
+    for (const m of ['РК', 'УЗК', 'ПВК'] as const) {
+      collapsed[m] = conclusionTargetJoints.every((joint) => {
+        const lineRow = lineByUniqueId.get(joint.uniqueLineId);
+        return resolveLineLabMethodAvailability(lineRow, activeReqMethods).methods[m].disabled;
+      });
+    }
+    return collapsed;
+  }, [conclusionTargetJoints, lineByUniqueId, activeReqMethods]);
+
   const toggleBatchMethod = (m: LabConclusionMethodKey) => {
+    if (!canProcessNdt) return;
     setBatchPreset((p) => {
       const curr = p.selectedMethods;
       const next = curr.includes(m)
@@ -234,24 +254,25 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 items-end">
             <div>
               <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                 Этап контроля
               </label>
               <select
                 value={batchPreset.stage}
+                disabled={!canProcessNdt}
                 onChange={(e) =>
                   setBatchPreset((p) => ({
                     ...p,
                     stage: e.target.value as NdtLabControlStage,
                   }))
                 }
-                className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-semibold"
+                className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-semibold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
               >
                 {CONTROL_STAGES_LIST.map((st) => (
                   <option key={st} value={st}>
-                    {st}
+                    {CONTROL_STAGE_LABELS[st]}
                   </option>
                 ))}
               </select>
@@ -268,8 +289,9 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                     <button
                       key={m}
                       type="button"
+                      disabled={!canProcessNdt}
                       onClick={() => toggleBatchMethod(m)}
-                      className={`px-2.5 py-1.5 rounded border text-xs font-mono font-bold transition-colors cursor-pointer ${
+                      className={`px-2.5 py-1.5 rounded border text-xs font-mono font-bold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                         active
                           ? 'bg-[#1e3799] text-white border-[#1e3799]'
                           : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
@@ -289,10 +311,11 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
               <input
                 type="date"
                 value={batchPreset.ndtDate}
+                disabled={!canProcessNdt}
                 onChange={(e) =>
                   setBatchPreset((p) => ({ ...p, ndtDate: e.target.value }))
                 }
-                className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-mono"
+                className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-mono disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
               />
             </div>
 
@@ -302,13 +325,14 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
               </label>
               <select
                 value={batchPreset.ndtResult}
+                disabled={!canProcessNdt}
                 onChange={(e) =>
                   setBatchPreset((p) => ({
                     ...p,
                     ndtResult: e.target.value as ControlResult,
                   }))
                 }
-                className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-bold"
+                className="w-full px-2.5 py-1.5 rounded bg-white border border-slate-300 text-xs font-bold disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
               >
                 {CONCLUSION_RESULTS_LIST.filter((r) => r !== 'Не проводился').map((r) => (
                   <option key={r} value={r}>
@@ -319,10 +343,40 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
             </div>
 
             <div>
+              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                Дефектоскопист
+              </label>
+              <select
+                value={batchPreset.inspectorName}
+                disabled={!canProcessNdt}
+                onChange={(e) =>
+                  setBatchPreset((p) => ({
+                    ...p,
+                    inspectorName: e.target.value,
+                  }))
+                }
+                className="w-full px-2 py-1.5 rounded bg-white border border-slate-300 text-xs font-medium text-slate-900 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+              >
+                {inspectors.map((insp) => (
+                  <option key={insp.fullName} value={insp.fullName}>
+                    {insp.fullName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <button
                 type="button"
-                disabled={!canProcessNdt}
+                disabled={!canProcessNdt || selectedConclusionJointIds.length === 0}
                 onClick={onApplyBatchConclusions}
+                title={
+                  !canProcessNdt
+                    ? 'Для оформления заключений требуется роль дефектоскописта ЛНК'
+                    : selectedConclusionJointIds.length === 0
+                    ? 'Выберите хотя бы один стык в таблице ниже'
+                    : undefined
+                }
                 className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:bg-slate-300 disabled:text-slate-500 text-white text-xs font-bold transition-colors cursor-pointer disabled:cursor-not-allowed whitespace-nowrap"
               >
                 <FileCheck2 className="w-3.5 h-3.5" />
@@ -335,13 +389,14 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
 
       {/* Рабочая таблица с раздельным вводом по методам ВИК / РК / УЗК / ПВК */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
+        <div className="overflow-auto max-h-[calc(100vh-320px)]">
+          <table className="w-full text-left border-separate border-spacing-0 text-xs">
+            <thead className="sticky top-0 z-20">
               <tr className="bg-[#1e3799] text-white select-none text-xs font-semibold shadow-xs">
-                <th className="py-2.5 px-2.5 w-8 text-center border-r border-white/15">
+                <th className="sticky left-0 z-30 bg-[#1e3799] py-2.5 px-2.5 w-9 min-w-[36px] text-center border-r border-white/15">
                   <input
                     type="checkbox"
+                    disabled={!canProcessNdt || conclusionTargetJoints.length === 0}
                     checked={
                       conclusionTargetJoints.length > 0 &&
                       conclusionTargetJoints.every((j) =>
@@ -358,28 +413,28 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                       setSelectedConclusionJointIds(allChecked ? [] : allIds);
                     }}
                     aria-label="Выбрать все стыки ведомости"
-                    className="rounded border-white/40 text-sky-400 focus:ring-sky-300 cursor-pointer"
+                    className="rounded border-white/40 text-sky-400 focus:ring-sky-300 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   />
                 </th>
-                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[160px]">
+                <th className="sticky left-9 z-30 bg-[#1e3799] py-2.5 px-2.5 border-r border-white/15 min-w-[160px] shadow-[2px_0_4px_-2px_rgba(15,23,42,0.2)]">
                   Стык и линия
                 </th>
-                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[190px]">
+                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[195px]">
                   Маркировка стыка
                 </th>
-                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[205px]">
-                  ВИК
-                </th>
-                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[205px]">
-                  РК
-                </th>
-                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[205px]">
-                  УЗК
-                </th>
-                <th className="py-2.5 px-2.5 border-r border-white/15 min-w-[205px]">
-                  ПВК
-                </th>
-                <th className="py-2.5 px-3 text-right">Действие</th>
+                {CANONICAL_LAB_METHODS.map((method) => (
+                  <th
+                    key={method}
+                    className={`py-2.5 px-2.5 border-r border-white/15 ${
+                      collapsedMethods[method]
+                        ? 'w-16 min-w-[64px] text-center text-sky-200'
+                        : 'min-w-[235px]'
+                    }`}
+                  >
+                    {method}
+                  </th>
+                ))}
+                <th className="py-2.5 px-3 text-right min-w-[105px]">Действие</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -408,6 +463,12 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                       ? 'duplicate'
                       : 'primary';
 
+                  const stickyRowBg = row.isDirty
+                    ? 'bg-sky-50'
+                    : isCompleted
+                    ? 'bg-emerald-50/40'
+                    : 'bg-white';
+
                   return (
                     <tr
                       key={joint.id}
@@ -419,9 +480,12 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                           : 'bg-white hover:bg-slate-50'
                       }
                     >
-                      <td className="py-2 px-2.5 text-center align-top">
+                      <td
+                        className={`sticky left-0 z-10 ${stickyRowBg} py-2 px-2.5 text-center align-top border-b border-r border-slate-200`}
+                      >
                         <input
                           type="checkbox"
+                          disabled={!canProcessNdt}
                           checked={isSelected}
                           onChange={() =>
                             setSelectedConclusionJointIds((prev) =>
@@ -431,12 +495,14 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                             )
                           }
                           aria-label={`Выбрать стык ${joint.jointNumber}`}
-                          className="rounded border-slate-300 text-[#1e3799] mt-1"
+                          className="rounded border-slate-300 text-[#1e3799] mt-1 disabled:opacity-40 disabled:cursor-not-allowed"
                         />
                       </td>
 
                       {/* Стык и линия */}
-                      <td className="py-2 px-2.5 align-top">
+                      <td
+                        className={`sticky left-9 z-10 ${stickyRowBg} py-2 px-2.5 align-top border-b border-r border-slate-200 shadow-[2px_0_4px_-2px_rgba(15,23,42,0.08)]`}
+                      >
                         <button
                           type="button"
                           onClick={() => onOpenJointPassport(joint)}
@@ -466,7 +532,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                       </td>
 
                       {/* Маркировка стыка */}
-                      <td className="py-2 px-2.5 align-top">
+                      <td className="py-2 px-2.5 align-top border-b border-r border-slate-100">
                         <LabMarkingCell joint={joint} />
                       </td>
 
@@ -487,14 +553,19 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                         return (
                           <td
                             key={method}
-                            className={`py-2 px-2 border-r border-slate-100 align-top ${
+                            className={`py-2 px-2 border-b border-r border-slate-100 align-top ${
                               avail.disabled ? 'bg-slate-50/80 opacity-60' : ''
-                            }`}
+                            } ${collapsedMethods[method] ? 'text-center' : ''}`}
                           >
                             {avail.disabled ? (
-                              <div className="flex items-center gap-1 text-[11px] text-slate-400 font-mono py-1">
+                              <div
+                                className={`flex items-center ${
+                                  collapsedMethods[method] ? 'justify-center' : ''
+                                } gap-1 text-[11px] text-slate-400 font-mono py-1`}
+                                title="0% по Лайнлисту"
+                              >
                                 <Lock className="w-3 h-3 shrink-0" />
-                                <span>0% по Лайнлисту</span>
+                                <span>{collapsedMethods[method] ? '0%' : '0% по Лайнлисту'}</span>
                               </div>
                             ) : (
                               <div className="space-y-1">
@@ -543,6 +614,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                                       })
                                     }
                                     placeholder={autoNum || `${method}-...`}
+                                    title={mDraft.reportNumber || undefined}
                                     aria-label={`Номер заключения ${method} для стыка ${joint.jointNumber}`}
                                     className="w-full min-w-0 px-1.5 py-1 rounded bg-white border border-slate-300 text-[11px] font-mono text-slate-900 focus:border-[#1e3799] focus:outline-none"
                                   />
@@ -602,7 +674,7 @@ export const LabConclusionsTab: React.FC<LabConclusionsTabProps> = ({
                       })}
 
                       {/* Действие */}
-                      <td className="py-2 px-3 text-right align-top">
+                      <td className="py-2 px-3 text-right align-top border-b border-slate-100">
                         <button
                           type="button"
                           disabled={!canProcessNdt}

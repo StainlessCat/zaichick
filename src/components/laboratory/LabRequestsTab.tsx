@@ -7,8 +7,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
+  ControlResult,
+  InspectorProfile,
+  LabConclusionMethodKey,
   NdtLabRequest,
   NdtLabRequestStatus,
+  NdtMethod,
   WeldJoint,
 } from '../../types/welding';
 import { formatDateDDMMYY } from '../../utils/weldingLogic';
@@ -16,7 +20,64 @@ import {
   getRequestMethodsList,
   isJointConclusionCompletedForRequest,
 } from '../../utils/laboratoryLogic';
+import { CONTROL_STAGE_LABELS } from './types';
 import { LabMarkingCell } from './LabMarkingCell';
+
+function matchesPhysNdtType(
+  ndtType: NdtMethod | string | undefined,
+  method: 'РК' | 'УЗК' | 'ПВК'
+): boolean {
+  if (!ndtType) return false;
+  if (method === 'РК') return ndtType === 'РК' || ndtType === 'РК+УЗК';
+  if (method === 'УЗК') return ndtType === 'УЗК' || ndtType === 'РК+УЗК';
+  if (method === 'ПВК') return ndtType === 'ПВК' || ndtType === 'МК';
+  return false;
+}
+
+function getStageMethodResult(
+  j: WeldJoint,
+  req: NdtLabRequest,
+  m: LabConclusionMethodKey
+): { res: ControlResult; num: string } {
+  const lcEntry = j.labConclusions?.[m];
+
+  if (req.controlStage === 'Повторный НК после ремонта') {
+    if (lcEntry?.stage === 'repair') {
+      return { res: lcEntry.result || 'Не проводился', num: lcEntry.reportNumber || '' };
+    }
+    if (m === 'ВИК') {
+      return { res: j.repairVikResult || 'Не проводился', num: j.repairVikNumber || '' };
+    }
+    if (matchesPhysNdtType(j.repairNdtType, m)) {
+      return { res: j.repairNdtResult || 'Не проводился', num: j.repairNdtNumber || '' };
+    }
+    return { res: 'Не проводился', num: '' };
+  }
+
+  if (req.controlStage === 'Дублирующий контроль') {
+    if (lcEntry?.stage === 'duplicate') {
+      return { res: lcEntry.result || 'Не проводился', num: lcEntry.reportNumber || '' };
+    }
+    if (m === 'ВИК') {
+      return { res: j.vikResult || 'Не проводился', num: j.vikReportNumber || '' };
+    }
+    if (matchesPhysNdtType(j.dupNdtType, m)) {
+      return { res: j.dupNdtResult || 'Не проводился', num: j.dupNdtReportNumber || '' };
+    }
+    return { res: 'Не проводился', num: '' };
+  }
+
+  if (lcEntry && (!lcEntry.stage || lcEntry.stage === 'primary')) {
+    return { res: lcEntry.result || 'Не проводился', num: lcEntry.reportNumber || '' };
+  }
+  if (m === 'ВИК') {
+    return { res: j.vikResult || 'Не проводился', num: j.vikReportNumber || '' };
+  }
+  if (matchesPhysNdtType(j.ndtType, m)) {
+    return { res: j.ndtResult || 'Не проводился', num: j.ndtReportNumber || '' };
+  }
+  return { res: 'Не проводился', num: '' };
+}
 
 interface LabRequestsTabProps {
   filteredRequests: NdtLabRequest[];
@@ -29,8 +90,12 @@ interface LabRequestsTabProps {
   requestStatusFilter: 'ALL' | NdtLabRequestStatus;
   setRequestStatusFilter: (val: 'ALL' | NdtLabRequestStatus) => void;
   jointsById: Map<string, WeldJoint>;
+  canCreateRequest?: boolean;
   canDeleteRequest?: boolean;
   canAcceptRequest?: boolean;
+  inspectors?: InspectorProfile[];
+  selectedInspectorForAccept?: string;
+  setSelectedInspectorForAccept?: (val: string) => void;
   onOpenCreateRequestModal: () => void;
   onAcceptRequestClick: (req: NdtLabRequest) => void;
   onDeleteRequestClick?: (req: NdtLabRequest) => void;
@@ -44,8 +109,12 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
   requestStatusFilter,
   setRequestStatusFilter,
   jointsById,
+  canCreateRequest = false,
   canDeleteRequest,
   canAcceptRequest = true,
+  inspectors = [],
+  selectedInspectorForAccept = '',
+  setSelectedInspectorForAccept,
   onOpenCreateRequestModal,
   onAcceptRequestClick,
   onDeleteRequestClick,
@@ -86,6 +155,30 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
             </button>
           ))}
         </div>
+        {canAcceptRequest &&
+          inspectors.length > 0 &&
+          setSelectedInspectorForAccept && (
+            <div className="flex items-center gap-2 text-xs">
+              <label
+                htmlFor="lab-accept-inspector"
+                className="font-semibold text-slate-600 whitespace-nowrap"
+              >
+                Дефектоскопист приёмки:
+              </label>
+              <select
+                id="lab-accept-inspector"
+                value={selectedInspectorForAccept}
+                onChange={(e) => setSelectedInspectorForAccept(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-300 text-xs font-medium text-slate-900 focus:outline-none focus:border-[#1e3799]"
+              >
+                {inspectors.map((insp) => (
+                  <option key={insp.fullName} value={insp.fullName}>
+                    {insp.fullName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
       </div>
 
       {filteredRequests.length === 0 ? (
@@ -93,14 +186,16 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
           <div className="text-sm font-semibold text-slate-700">
             Заявки в ЛНК по выбранному фильтру отсутствуют
           </div>
-          <button
-            type="button"
-            onClick={onOpenCreateRequestModal}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e3799] text-white text-xs font-semibold cursor-pointer"
-          >
-            <FilePlus2 className="w-4 h-4" />
-            <span>Создать заявку в ЛНК</span>
-          </button>
+          {canCreateRequest && (
+            <button
+              type="button"
+              onClick={onOpenCreateRequestModal}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e3799] hover:bg-[#15276e] text-white text-xs font-semibold cursor-pointer transition-colors"
+            >
+              <FilePlus2 className="w-4 h-4" />
+              <span>Создать заявку в ЛНК</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -140,7 +235,9 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                           </span>
                         ))}
                       </div>
-                      <span className="text-slate-500 text-[11px]">{req.controlStage}</span>
+                      <span className="text-slate-500 text-[11px]">
+                        {CONTROL_STAGE_LABELS[req.controlStage] || req.controlStage}
+                      </span>
                       <span className="text-slate-400">·</span>
                       <span className="font-mono text-slate-700">
                         {req.rdCode} / {req.lineNumber}
@@ -250,21 +347,7 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                             <td className="py-2 px-3">
                               <div className="flex flex-wrap gap-1.5 font-mono text-[11px]">
                                 {reqMethods.map((m) => {
-                                  const lcEntry = j.labConclusions?.[m];
-                                  const res =
-                                    lcEntry?.result ??
-                                    (m === 'ВИК'
-                                      ? j.vikResult
-                                      : j.ndtType === m
-                                      ? j.ndtResult
-                                      : 'Не проводился');
-                                  const num =
-                                    lcEntry?.reportNumber ??
-                                    (m === 'ВИК'
-                                      ? j.vikReportNumber
-                                      : j.ndtType === m
-                                      ? j.ndtReportNumber
-                                      : '');
+                                  const { res, num } = getStageMethodResult(j, req, m);
                                   const badgeColor =
                                     res === 'Годен'
                                       ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
@@ -287,7 +370,11 @@ export const LabRequestsTab: React.FC<LabRequestsTabProps> = ({
                               </div>
                             </td>
                             <td className="py-2 px-3 text-slate-700">
-                              {j.ndtInspector || j.vikInspector || '—'}
+                              {req.controlStage === 'Повторный НК после ремонта'
+                                ? j.repairNdtInspector || j.repairVikInspector || '—'
+                                : req.controlStage === 'Дублирующий контроль'
+                                ? j.dupNdtInspector || '—'
+                                : j.ndtInspector || j.vikInspector || '—'}
                             </td>
                             <td className="py-2 px-3 text-right">
                               <button
