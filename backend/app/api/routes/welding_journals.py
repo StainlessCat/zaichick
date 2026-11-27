@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from app.api.deps import get_current_user, get_db_session
 from app.models.joint import WeldJoint
 from app.models.lrv import LrvItem
 from app.models.user import User
+from app.models.welding_tech import WeldingMaterial
 from app.schemas.domain import (
     JournalCompletenessOut,
     JournalPreviewResponse,
@@ -35,16 +37,34 @@ async def fetch_filtered_joints_and_lrv(
     rd_code: str | None,
     unique_line_id: str | None,
     facility_id: uuid.UUID | None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    welded_only: bool = True,
 ) -> tuple[list[WeldJoint], dict[tuple[str, str], LrvItem]]:
     stmt = select(WeldJoint)
+    if welded_only:
+        stmt = stmt.where(WeldJoint.welding_date.is_not(None))
     if facility_id is not None:
         stmt = stmt.where(WeldJoint.facility_id == facility_id)
     if rd_code:
         stmt = stmt.where(WeldJoint.rd_code == rd_code.strip())
     if unique_line_id:
         stmt = stmt.where(WeldJoint.unique_line_id == unique_line_id.strip())
+    if date_from is not None:
+        stmt = stmt.where(WeldJoint.welding_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(WeldJoint.welding_date <= date_to)
     joints = list(
-        (await session.execute(stmt.order_by(WeldJoint.sort_order.asc(), WeldJoint.joint_number.asc())))
+        (
+            await session.execute(
+                stmt.order_by(
+                    WeldJoint.welding_date.asc().nullslast(),
+                    WeldJoint.line_number.asc(),
+                    WeldJoint.sort_order.asc(),
+                    WeldJoint.joint_number.asc(),
+                )
+            )
+        )
         .scalars()
         .all()
     )
@@ -64,6 +84,8 @@ async def get_welding_journal_preview(
     rd_code: str | None = Query(default=None),
     unique_line_id: str | None = Query(default=None),
     facility_id: uuid.UUID | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     limit: int = Query(default=500, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
     _: User = Depends(get_current_user),
@@ -74,10 +96,18 @@ async def get_welding_journal_preview(
         rd_code=rd_code,
         unique_line_id=unique_line_id,
         facility_id=facility_id,
+        date_from=date_from,
+        date_to=date_to,
+        welded_only=True,
     )
     completeness = validate_journal_completeness(joints, standard=standard)
     page = joints[offset : offset + limit]
     is_gost = standard == "ГОСТ 32569-2013"
+    materials = (
+        list((await session.execute(select(WeldingMaterial))).scalars().all())
+        if is_gost
+        else []
+    )
 
     rows = [
         JournalPreviewRowOut(
@@ -85,7 +115,7 @@ async def get_welding_journal_preview(
             joint_number=j.joint_number,
             line_number=j.line_number,
             cells=(
-                format_gost_32569_row(offset + idx + 1, j, lrv_map)
+                format_gost_32569_row(offset + idx + 1, j, lrv_map, materials)
                 if is_gost
                 else format_sto_gazprom_row(offset + idx + 1, j, lrv_map)
             ),
@@ -109,6 +139,8 @@ async def check_welding_journal_completeness(
     rd_code: str | None = Query(default=None),
     unique_line_id: str | None = Query(default=None),
     facility_id: uuid.UUID | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     _: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> JournalCompletenessOut:
@@ -117,6 +149,9 @@ async def check_welding_journal_completeness(
         rd_code=rd_code,
         unique_line_id=unique_line_id,
         facility_id=facility_id,
+        date_from=date_from,
+        date_to=date_to,
+        welded_only=True,
     )
     completeness = validate_journal_completeness(joints, standard=standard)
     return JournalCompletenessOut(**dataclasses.asdict(completeness))

@@ -460,8 +460,8 @@ export function formatGost32569JournalRow(
   }
 
   const isAustenitic =
-    joint.elem1Material.includes('12Х18Н10Т') ||
-    joint.elem2Material.includes('12Х18Н10Т');
+    (joint.elem1Material || '').includes('12Х18Н10Т') ||
+    (joint.elem2Material || '').includes('12Х18Н10Т');
   const customCol17 = normalizeGostNotApplicable(joint.ferritePhaseInfo);
   const col17 = customCol17 || 'н/п';
 

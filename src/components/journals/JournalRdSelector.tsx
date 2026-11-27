@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, FileCode2, Search, X } from 'lucide-react';
-import { JournalRdOption } from './types';
+import { JournalRdOption, pluralizeRu } from './types';
 
 interface JournalRdSelectorProps {
   currentRdCode: string;
@@ -110,7 +110,7 @@ export const JournalRdSelector: React.FC<JournalRdSelectorProps> = ({
         }`}
         title={
           currentRdCode === 'ALL'
-            ? 'Выбор комплекта рабочей документации (шифра РД)'
+            ? 'Выбор комплекта рабочей документации'
             : `Выбран шифр РД: ${currentRdCode}`
         }
       >
@@ -134,7 +134,7 @@ export const JournalRdSelector: React.FC<JournalRdSelectorProps> = ({
                 handleSelect('ALL');
               }}
               className="hover:bg-[#1e3799]/15 rounded p-0.5 text-[#1e3799]"
-              title="Сбросить фильтр по шифру РД (показать все шифры РД)"
+              title="Сбросить фильтр по шифру РД"
             >
               <X className="w-3 h-3" />
             </span>
@@ -164,7 +164,7 @@ export const JournalRdSelector: React.FC<JournalRdSelectorProps> = ({
                   setRdSearch(e.target.value);
                   setRdHighlightIndex(0);
                 }}
-                placeholder="Поиск шифра РД (номер до 40 символов, суффикс)..."
+                placeholder="Поиск по шифру РД или суффиксу..."
                 className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#1e3799] focus:ring-1 focus:ring-[#1e3799]"
               />
               {rdSearch && (
@@ -238,15 +238,14 @@ export const JournalRdSelector: React.FC<JournalRdSelectorProps> = ({
                       )}
                     </div>
                     <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                      <span>{opt.linesCount} лин.</span>
+                      <span>
+                        {opt.linesCount}{' '}
+                        {pluralizeRu(opt.linesCount, 'линия', 'линии', 'линий')}
+                      </span>
                       <span>·</span>
                       <span>
                         {opt.jointsCount}{' '}
-                        {opt.jointsCount === 1
-                          ? 'стык'
-                          : opt.jointsCount > 1 && opt.jointsCount < 5
-                          ? 'стыка'
-                          : 'стыков'}
+                        {pluralizeRu(opt.jointsCount, 'стык', 'стыка', 'стыков')}
                       </span>
                     </div>
                   </div>

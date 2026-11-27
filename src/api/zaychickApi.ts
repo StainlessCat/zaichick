@@ -1060,7 +1060,14 @@ export const zaychickApi = {
     rdCode?: string;
     uniqueLineId?: string;
     facilityId?: string;
+    dateFrom?: string;
+    dateTo?: string;
     strict?: boolean;
+    draftLabel?: string;
+    journalNumber?: string;
+    customerName?: string;
+    contractorName?: string;
+    responsibleKeeper?: string;
   }) {
     const q = new URLSearchParams({ standard: params.standard });
     if (params.rdCode && params.rdCode !== 'ALL') q.set('rd_code', params.rdCode);
@@ -1068,7 +1075,14 @@ export const zaychickApi = {
       q.set('unique_line_id', params.uniqueLineId);
     }
     if (params.facilityId) q.set('facility_id', params.facilityId);
+    if (params.dateFrom) q.set('date_from', params.dateFrom);
+    if (params.dateTo) q.set('date_to', params.dateTo);
     if (params.strict) q.set('strict', 'true');
+    if (params.draftLabel) q.set('draft_label', params.draftLabel);
+    if (params.journalNumber) q.set('journal_number', params.journalNumber);
+    if (params.customerName) q.set('customer_name', params.customerName);
+    if (params.contractorName) q.set('contractor_name', params.contractorName);
+    if (params.responsibleKeeper) q.set('responsible_keeper', params.responsibleKeeper);
     return apiDownloadBlob(
       `/api/exports/journal.xlsx?${q.toString()}`,
       `welding_journal_${params.standard === 'ГОСТ 32569-2013' ? 'GOST_32569' : 'STO_GAZPROM'}.xlsx`

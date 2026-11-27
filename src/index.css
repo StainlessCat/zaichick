@@ -147,6 +147,10 @@ html[data-theme-preset]:not([data-theme-preset="navy"]) .bg-\[\#e8f1fc\] {
   background: #64748b;
 }
 
+.print-only {
+  display: none;
+}
+
 @media print {
   @page {
     size: A3 landscape;
@@ -157,6 +161,10 @@ html[data-theme-preset]:not([data-theme-preset="navy"]) .bg-\[\#e8f1fc\] {
     display: none !important;
   }
 
+  .print-only {
+    display: block !important;
+  }
+
   body {
     background: #ffffff !important;
     -webkit-print-color-adjust: exact !important;
@@ -165,6 +173,12 @@ html[data-theme-preset]:not([data-theme-preset="navy"]) .bg-\[\#e8f1fc\] {
 
   .print-journal-scroll {
     overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .journal-sticky-col {
+    position: static !important;
+    box-shadow: none !important;
   }
 
   .print-journal-container table {

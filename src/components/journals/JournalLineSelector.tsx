@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, FolderKanban, Search, X } from 'lucide-react';
 import { extractRdSuffix } from '../../utils/weldingLogic';
-import { JournalLineOption } from './types';
+import { JournalLineOption, pluralizeRu } from './types';
 
 interface JournalLineSelectorProps {
   selectedLineKey: string;
@@ -30,7 +30,6 @@ export const JournalLineSelector: React.FC<JournalLineSelectorProps> = ({
   const lineInputRef = useRef<HTMLInputElement>(null);
   const lineDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Переключение фокуса в поле поиска при открытии списка линий
   useEffect(() => {
     if (isLineOpen) {
       setLineDropdownSearch('');
@@ -43,7 +42,6 @@ export const JournalLineSelector: React.FC<JournalLineSelectorProps> = ({
     }
   }, [isLineOpen]);
 
-  // Закрытие выпадающего списка при клике вне его области
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -67,9 +65,9 @@ export const JournalLineSelector: React.FC<JournalLineSelectorProps> = ({
       uniqueLineId: '',
       lineName:
         currentRdCode === 'ALL'
-          ? (selectedObjectName === 'ALL'
-              ? 'Сводный перечень по всем объектам и шифрам РД'
-              : `Все линии объекта «${selectedObjectName}»`)
+          ? selectedObjectName === 'ALL'
+            ? 'Сводный перечень по всем объектам и шифрам РД'
+            : `Все линии объекта «${selectedObjectName}»`
           : `Все линии шифра РД «${extractRdSuffix(currentRdCode) || currentRdCode}»`,
       product: '',
       objectName: selectedObjectName,
@@ -93,7 +91,13 @@ export const JournalLineSelector: React.FC<JournalLineSelectorProps> = ({
         l.pipelineCategory.toLowerCase().includes(q)
       );
     });
-  }, [availableLines, lineDropdownSearch, currentRdCode, relevantJointsCount, selectedObjectName]);
+  }, [
+    availableLines,
+    lineDropdownSearch,
+    currentRdCode,
+    relevantJointsCount,
+    selectedObjectName,
+  ]);
 
   const handleSelect = (lineKey: string) => {
     onSelectLine(lineKey);
@@ -157,7 +161,7 @@ export const JournalLineSelector: React.FC<JournalLineSelectorProps> = ({
               handleSelect('ALL');
             }}
             className="hover:bg-[#1e3799]/15 rounded p-0.5 text-[#1e3799]"
-            title="Сбросить фильтр по линии (показать все линии)"
+            title="Сбросить фильтр по линии"
           >
             <X className="w-3 h-3" />
           </span>
@@ -186,7 +190,7 @@ export const JournalLineSelector: React.FC<JournalLineSelectorProps> = ({
                   setLineDropdownSearch(e.target.value);
                   setLineHighlightIndex(0);
                 }}
-                placeholder="Поиск линии (номер, шифр, продукт, контур)..."
+                placeholder="Поиск линии по номеру, шифру, продукту..."
                 className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#1e3799] focus:ring-1 focus:ring-[#1e3799]"
               />
               {lineDropdownSearch && (
@@ -207,9 +211,9 @@ export const JournalLineSelector: React.FC<JournalLineSelectorProps> = ({
           <div className="px-3 py-1 bg-slate-50 border-b border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
             <span className="truncate">
               {currentRdCode === 'ALL'
-                ? (selectedObjectName === 'ALL'
-                    ? 'Все линии всех объектов'
-                    : `Линии объекта «${selectedObjectName}»`)
+                ? selectedObjectName === 'ALL'
+                  ? 'Все линии всех объектов'
+                  : `Линии объекта «${selectedObjectName}»`
                 : `Шифр: ${extractRdSuffix(currentRdCode) || currentRdCode}`}
             </span>
             <span className="font-mono text-slate-400 shrink-0">
@@ -241,8 +245,8 @@ export const JournalLineSelector: React.FC<JournalLineSelectorProps> = ({
                     isSelected
                       ? 'bg-[#e8f1fc] text-[#1e3799] font-semibold'
                       : isHighlighted
-                      ? 'bg-slate-100 text-slate-900'
-                      : 'text-slate-700 hover:bg-slate-50'
+                        ? 'bg-slate-100 text-slate-900'
+                        : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   <div className="min-w-0 flex-1">
@@ -261,15 +265,18 @@ export const JournalLineSelector: React.FC<JournalLineSelectorProps> = ({
                         </span>
                       )}
                     </div>
-                    {(opt.lineName || opt.product || opt.jointsCount !== undefined) && (
+                    {(opt.lineName ||
+                      opt.product ||
+                      opt.jointsCount !== undefined) && (
                       <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5 truncate">
                         <span className="font-medium text-[#1e3799]">
                           {opt.jointsCount}{' '}
-                          {opt.jointsCount === 1
-                            ? 'стык'
-                            : opt.jointsCount > 1 && opt.jointsCount < 5
-                            ? 'стыка'
-                            : 'стыков'}
+                          {pluralizeRu(
+                            opt.jointsCount,
+                            'стык',
+                            'стыка',
+                            'стыков'
+                          )}
                         </span>
                         {opt.lineName && (
                           <>

@@ -13,11 +13,15 @@ import {
 import {
   ALL_COLUMNS,
   formatDateDDMMYY,
+  formatGost32569JournalRow,
+  formatStoGazpromJournalRow,
   getJointEquivDiaInch,
   getJointFieldValue,
+  GOST_32569_2013_JOURNAL_COLUMNS,
   isDateColumnKey,
   parseLrvCatalogRecords,
   parseProjectLineListRecords,
+  STO_GAZPROM_15_1_1_002_2023_COLUMNS,
 } from './weldingLogic';
 import { normalizeCorporateJointNumber } from '../api/mappers';
 import { buildXlsxBinary } from './xlsxBuilder';
@@ -162,37 +166,206 @@ export async function exportAllJointsToFile(
   triggerBlobDownload(blob, `${csvPrefix}ZAYCHICK_Reestr_Stykov_${dateStamp}.csv`);
 }
 
+export interface WeldingJournalExportOptions {
+  isDraftUnsynced?: boolean;
+  unsyncedCount?: number;
+  isDraftIncomplete?: boolean;
+  missingCount?: number;
+  facilityId?: string;
+  objectName?: string;
+  rdCode?: string;
+  uniqueLineId?: string;
+  lineLabel?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  strict?: boolean;
+  preferClientExport?: boolean;
+  journalNumber?: string;
+  customerName?: string;
+  contractorName?: string;
+  responsibleKeeper?: string;
+}
+
+export interface WeldingJournalExportResult {
+  mode: 'server' | 'client';
+  filename: string;
+}
+
+function buildClientWeldingJournalXlsx(
+  joints: WeldJoint[],
+  standard: JournalStandard,
+  materials: WeldingMaterialCertificate[],
+  lrvCatalog: LRVItem[],
+  options: WeldingJournalExportOptions | undefined,
+  draftBanner: string | undefined,
+  filename: string
+): void {
+  const isGost = standard === 'ГОСТ 32569-2013';
+  const headers = isGost
+    ? GOST_32569_2013_JOURNAL_COLUMNS.map((c) => `${c.colNumber}. ${c.label}`)
+    : STO_GAZPROM_15_1_1_002_2023_COLUMNS.map((c) => c.fullLabel);
+
+  const columnWidths = isGost
+    ? [8, 22, 24, 34, 15, 19, 13, 30, 17, 16, 18, 18, 16, 16, 20, 22, 18]
+    : STO_GAZPROM_15_1_1_002_2023_COLUMNS.map((c) =>
+        Math.max(10, Math.min(34, Math.round(c.minWidth / 7)))
+      );
+
+  const rows: Array<Array<string | number>> = [];
+  if (draftBanner) {
+    const bannerRow: Array<string | number> = new Array(headers.length).fill('');
+    bannerRow[0] = draftBanner;
+    rows.push(bannerRow);
+  }
+
+  joints.forEach((j, idx) => {
+    const cells = isGost
+      ? formatGost32569JournalRow(j, idx, materials, lrvCatalog).cells
+      : formatStoGazpromJournalRow(j, idx, lrvCatalog).cells;
+    rows.push(cells);
+  });
+
+  const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
+  const metaRows: Array<Array<string | number>> = [
+    ['Нормативная форма', standard],
+    ['Номер журнала', options?.journalNumber?.trim() || 'Не указан'],
+    [
+      'Объект строительства',
+      options?.objectName && options.objectName !== 'ALL'
+        ? options.objectName
+        : 'Все объекты',
+    ],
+    [
+      'Шифр РД',
+      options?.rdCode && options.rdCode !== 'ALL' ? options.rdCode : 'Все шифры',
+    ],
+    [
+      'Линия',
+      options?.lineLabel && options.lineLabel !== 'Все линии'
+        ? options.lineLabel
+        : options?.uniqueLineId && options.uniqueLineId !== 'ALL'
+          ? options.uniqueLineId
+          : 'Все линии',
+    ],
+    [
+      'Период сварки',
+      options?.dateFrom || options?.dateTo
+        ? `${options?.dateFrom ? formatDateDDMMYY(options.dateFrom) : '—'} — ${
+            options?.dateTo ? formatDateDDMMYY(options.dateTo) : '—'
+          }`
+        : 'Весь период',
+    ],
+    ['Заказчик', options?.customerName?.trim() || 'Не указан'],
+    ['Подрядчик', options?.contractorName?.trim() || 'Не указан'],
+    [
+      'Ответственный за ведение журнала',
+      options?.responsibleKeeper?.trim() || 'Не указан',
+    ],
+    ['Записей в журнале', joints.length],
+    ['Статус выпуска', draftBanner || 'Чистовой выпуск'],
+    ['Дата формирования', dateStamp],
+    [
+      'Подпись ответственного за ведение',
+      `${options?.responsibleKeeper?.trim() || '______________________'}   Подпись: ______________`,
+    ],
+    [
+      'Подпись строительного контроля',
+      '______________________   Подпись: ______________',
+    ],
+  ];
+
+  const bytes = buildXlsxBinary([
+    {
+      name: isGost ? 'Журнал ГОСТ 32569' : 'Журнал СТО Газпром',
+      headers,
+      rows,
+      columnWidths,
+    },
+    {
+      name: 'Титульные реквизиты',
+      headers: ['Реквизит', 'Значение'],
+      rows: metaRows,
+      columnWidths: [34, 62],
+    },
+  ]);
+
+  const blob = new Blob([bytes.buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  triggerBlobDownload(blob, filename);
+}
+
 /**
- * Экспорт нормативных журналов сварочных работ через серверный openpyxl
- * (СТО Газпром 15-1.1-002-2023 — 49 граф, ГОСТ 32569-2013 — 17 граф)
+ * Экспорт нормативных журналов сварочных работ (СТО Газпром 15-1.1-002-2023 — 49 граф, ГОСТ 32569-2013 — 17 граф).
+ * Использует серверный openpyxl при полном совпадении области и автоматический клиентский фоллбэк .xlsx
+ * в автономном режиме или при активных табличных фильтрах.
  */
 export async function exportWeldingJournalToExcel(
-  _joints: WeldJoint[],
+  joints: WeldJoint[],
   standard: JournalStandard,
-  _materials: WeldingMaterialCertificate[] = [],
-  _lrvCatalog: LRVItem[] = [],
-  options?: {
-    isDraftUnsynced?: boolean;
-    unsyncedCount?: number;
-    isDraftIncomplete?: boolean;
-    missingCount?: number;
-    rdCode?: string;
-    uniqueLineId?: string;
-    strict?: boolean;
-  }
-): Promise<void> {
-  const { blob, filename } = await zaychickApi.downloadJournalXlsx({
-    standard,
-    rdCode: options?.rdCode,
-    uniqueLineId: options?.uniqueLineId,
-    strict: options?.strict,
-  });
+  materials: WeldingMaterialCertificate[] = [],
+  lrvCatalog: LRVItem[] = [],
+  options?: WeldingJournalExportOptions
+): Promise<WeldingJournalExportResult> {
   const jPrefix = options?.isDraftUnsynced
     ? 'ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_'
     : options?.isDraftIncomplete
       ? 'ЧЕРНОВИК_НЕПОЛНЫЕ_РЕКВИЗИТЫ_'
       : '';
-  triggerBlobDownload(blob, `${jPrefix}${filename}`);
+
+  const draftParts: string[] = [];
+  if (options?.isDraftUnsynced) {
+    draftParts.push(
+      options.unsyncedCount && options.unsyncedCount > 0
+        ? `ЧЕРНОВИК · НЕ СИНХРОНИЗИРОВАНО · ${options.unsyncedCount} изм.`
+        : 'ЧЕРНОВИК · АВТОНОМНЫЙ РЕЖИМ'
+    );
+  }
+  if (options?.isDraftIncomplete) {
+    draftParts.push(
+      `ЧЕРНОВИК · ТРЕБУЕТСЯ ЗАПОЛНЕНИЕ РЕКВИЗИТОВ · пропуски в ${options.missingCount ?? 0} стыках`
+    );
+  }
+  const draftBanner = draftParts.length > 0 ? draftParts.join(' | ') : undefined;
+
+  const tag = standard === 'ГОСТ 32569-2013' ? 'GOST_32569' : 'STO_GAZPROM';
+  const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
+  const clientFilename = `${jPrefix}ZAYCHICK_Zhurnal_${tag}_${dateStamp}.xlsx`;
+
+  if (!options?.preferClientExport) {
+    try {
+      const { blob, filename } = await zaychickApi.downloadJournalXlsx({
+        standard,
+        facilityId: options?.facilityId,
+        rdCode: options?.rdCode,
+        uniqueLineId: options?.uniqueLineId,
+        dateFrom: options?.dateFrom,
+        dateTo: options?.dateTo,
+        strict: options?.strict,
+        draftLabel: draftBanner,
+        journalNumber: options?.journalNumber?.trim() || undefined,
+        customerName: options?.customerName?.trim() || undefined,
+        contractorName: options?.contractorName?.trim() || undefined,
+        responsibleKeeper: options?.responsibleKeeper?.trim() || undefined,
+      });
+      const finalName = `${jPrefix}${filename}`;
+      triggerBlobDownload(blob, finalName);
+      return { mode: 'server', filename: finalName };
+    } catch {
+      // Безопасный переход на локальное формирование валидного .xlsx без потери данных
+    }
+  }
+
+  buildClientWeldingJournalXlsx(
+    joints,
+    standard,
+    materials,
+    lrvCatalog,
+    options,
+    draftBanner,
+    clientFilename
+  );
+  return { mode: 'client', filename: clientFilename };
 }
 
 export async function exportReadinessReportToExcel(

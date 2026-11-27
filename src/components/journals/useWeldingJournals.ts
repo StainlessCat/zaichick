@@ -1,8 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import {
-  JournalStandard,
-  WeldJoint,
-} from '../../types/welding';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { JournalStandard, WeldJoint } from '../../types/welding';
 import {
   extractRdSuffix,
   formatDateDDMMYY,
@@ -10,6 +7,8 @@ import {
   formatStoGazpromJournalRow,
   GOST_32569_2013_JOURNAL_COLUMNS,
   Gost32569ColumnKey,
+  isJointCurrentlyInRepair,
+  isJointFullyAccepted,
   sortJointsChronologically,
   STO_GAZPROM_15_1_1_002_2023_COLUMNS,
   StoGazpromColumnKey,
@@ -18,16 +17,74 @@ import {
   exportWeldingJournalToExcel,
   triggerBlobDownload,
 } from '../../utils/excelUtils';
-import { validateJournalCompleteness } from '../../utils/journals';
+import {
+  isJointRepaired,
+  JournalJointMissingItem,
+  validateJournalCompleteness,
+} from '../../utils/journals';
 import { useResizableColumns } from '../../utils/useResizableColumns';
 import { applyTableColumnFiltersAndSort } from '../TableColumnFilterPopover';
 import { useAppContext } from '../../context';
 import type {
+  JournalExportModalState,
   JournalLineOption,
+  JournalQuickFilter,
+  JournalQuickFilterCounts,
   JournalRdOption,
+  JournalTitleMeta,
+  JournalToastState,
   LineWeldingAlert,
   WeldingJournalsViewProps,
-} from './index';
+} from './types';
+import { pluralizeRu } from './types';
+
+const JOURNAL_META_STORAGE_KEY = 'zaychick_journal_title_meta_v1';
+const JOURNAL_HIDE_REPAIRS_KEY = 'zaychick_journal_hide_empty_repairs_v1';
+
+const EMPTY_TITLE_META: JournalTitleMeta = {
+  journalNumber: '',
+  customerName: '',
+  contractorName: '',
+  responsibleKeeper: '',
+};
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function readStoredTitleMetaMap(): Record<string, JournalTitleMeta> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(JOURNAL_META_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredTitleMeta(scopeKey: string, meta: JournalTitleMeta): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const current = readStoredTitleMetaMap();
+    current[scopeKey] = meta;
+    window.localStorage.setItem(
+      JOURNAL_META_STORAGE_KEY,
+      JSON.stringify(current)
+    );
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function readHideEmptyRepairsPref(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(JOURNAL_HIDE_REPAIRS_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
 
 export function useWeldingJournals(props: WeldingJournalsViewProps) {
   const app = useAppContext();
@@ -35,6 +92,7 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
   const joints = props.joints ?? app.joints;
   const allJoints = props.allJoints ?? app.joints;
   const lines = props.lines ?? app.projectLineList ?? [];
+  const facilities = props.facilities ?? app.derivedFacilities ?? [];
   const materials = props.materials ?? app.weldingMaterials ?? [];
   const lrvCatalog = props.lrvCatalog ?? app.lrvCatalog ?? [];
   const selectedObjectName = props.selectedObjectName ?? app.selectedObjectName;
@@ -43,14 +101,91 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
   const isDbConnected = props.isDbConnected ?? app.isDbConnected;
   const pendingSyncCount = props.pendingSyncCount ?? app.pendingSyncCount;
 
-  // По умолчанию открываем форму по СТО Газпром 15-1.1-002-2023 (49 граф)
   const [standard, setStandard] = useState<JournalStandard>(
     'СТО Газпром 15-1.1-002-2023'
   );
-  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
-  const [actionToast, setActionToast] = useState<string>('');
+  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>(
+    {}
+  );
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [quickFilter, setQuickFilter] = useState<JournalQuickFilter>('all');
+  const [hideEmptyRepairCols, setHideEmptyRepairCols] = useState<boolean>(
+    readHideEmptyRepairsPref
+  );
 
-  // 1. Состояние выбора шифра РД (синхронизируется с пропом selectedRdCode)
+  const [toast, setToast] = useState<JournalToastState | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const [exportModal, setExportModal] =
+    useState<JournalExportModalState | null>(null);
+  const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
+
+  const metaScopeKey = selectedObjectName || 'ALL';
+  const [titleMeta, setTitleMeta] = useState<JournalTitleMeta>(() => {
+    const stored = readStoredTitleMetaMap();
+    return stored[metaScopeKey] || EMPTY_TITLE_META;
+  });
+
+  useEffect(() => {
+    const stored = readStoredTitleMetaMap();
+    setTitleMeta(stored[metaScopeKey] || EMPTY_TITLE_META);
+  }, [metaScopeKey]);
+
+  const handleSaveTitleMeta = useCallback(
+    (nextMeta: JournalTitleMeta) => {
+      setTitleMeta(nextMeta);
+      writeStoredTitleMeta(metaScopeKey, nextMeta);
+      showToast('Титульные реквизиты журнала сохранены', 'success');
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [metaScopeKey]
+  );
+
+  const toggleHideEmptyRepairCols = useCallback(() => {
+    setHideEmptyRepairCols((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(JOURNAL_HIDE_REPAIRS_KEY, String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const showToast = useCallback(
+    (message: string, variant: JournalToastState['variant'] = 'success') => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      setToast({ message, variant });
+      toastTimerRef.current = window.setTimeout(() => {
+        setToast(null);
+        toastTimerRef.current = null;
+      }, 5000);
+    },
+    []
+  );
+
+  const dismissToast = useCallback(() => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
+  // 1. Выбор шифра РД
   const [currentRdCode, setCurrentRdCode] = useState<string>(
     selectedRdCode || 'ALL'
   );
@@ -61,31 +196,49 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     }
   }, [selectedRdCode]);
 
-  // 2. Состояние выбора линии
+  // 2. Выбор линии
   const [selectedLineKey, setSelectedLineKey] = useState<string>('ALL');
 
-  // Все доступные стыки
+  // Сбрасываем выбранную линию при смене объекта строительства
+  const prevObjectRef = useRef<string>(selectedObjectName);
+  useEffect(() => {
+    if (prevObjectRef.current !== selectedObjectName) {
+      prevObjectRef.current = selectedObjectName;
+      setSelectedLineKey('ALL');
+    }
+  }, [selectedObjectName]);
+
   const effectiveAllJoints = useMemo(() => {
     return allJoints && allJoints.length > 0 ? allJoints : joints;
   }, [allJoints, joints]);
 
-  // Стыки объекта, выбранного в глобальном меню-гамбургере (или всех объектов, если ALL)
   const objectScopedJoints = useMemo(() => {
-    if (!selectedObjectName || selectedObjectName === 'ALL') return effectiveAllJoints;
-    return effectiveAllJoints.filter((j) => j.objectName === selectedObjectName);
+    if (!selectedObjectName || selectedObjectName === 'ALL') {
+      return effectiveAllJoints;
+    }
+    return effectiveAllJoints.filter(
+      (j) => j.objectName === selectedObjectName
+    );
   }, [effectiveAllJoints, selectedObjectName]);
 
-  // Линии объекта, выбранного в глобальном меню-гамбургере
   const objectScopedLines = useMemo(() => {
     if (!selectedObjectName || selectedObjectName === 'ALL') return lines;
     return lines.filter((l) => l.objectName === selectedObjectName);
   }, [lines, selectedObjectName]);
 
-  // Варианты выбора шифра РД для текущего объекта
+  // UUID выбранного объекта строительства для серверного экспорта
+  const selectedFacilityId = useMemo(() => {
+    if (!selectedObjectName || selectedObjectName === 'ALL') return undefined;
+    const fac = facilities.find((f) => f.name === selectedObjectName);
+    if (fac?.id && UUID_REGEX.test(fac.id)) {
+      return fac.id;
+    }
+    return undefined;
+  }, [facilities, selectedObjectName]);
+
   const rdOptions = useMemo<JournalRdOption[]>(() => {
     const map = new Map<string, JournalRdOption>();
 
-    // Добавляем шифры из проектных линий объекта
     for (const l of objectScopedLines) {
       if (!l.rdCode) continue;
       const key = l.rdCode.trim();
@@ -103,7 +256,6 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
       }
     }
 
-    // Подсчитываем стыки по каждому шифру РД
     for (const j of objectScopedJoints) {
       if (!j.rdCode) continue;
       const key = j.rdCode.trim();
@@ -135,11 +287,9 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     return [allOption, ...sorted];
   }, [objectScopedLines, objectScopedJoints]);
 
-  // Список доступных линий для текущего объекта и шифра РД
   const availableLines = useMemo<JournalLineOption[]>(() => {
     const map = new Map<string, JournalLineOption>();
 
-    // 1. Линии из projectLineList
     for (const pl of objectScopedLines) {
       if (currentRdCode !== 'ALL' && pl.rdCode !== currentRdCode) continue;
       const key = pl.uniqueLineId || pl.lineNumber;
@@ -159,7 +309,6 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
       });
     }
 
-    // 2. Стыки объекта и шифра РД для подсчёта и выявления линий, отсутствующих в лайн-листе
     const relevantJoints =
       currentRdCode !== 'ALL'
         ? objectScopedJoints.filter((j) => j.rdCode === currentRdCode)
@@ -195,7 +344,6 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     );
   }, [objectScopedLines, objectScopedJoints, currentRdCode]);
 
-  // Выбранный объект линии
   const selectedLineItem = useMemo(() => {
     if (selectedLineKey === 'ALL') return null;
     return (
@@ -208,7 +356,6 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     );
   }, [selectedLineKey, availableLines]);
 
-  // Человекочитаемая метка выбранной линии
   const activeLineDisplayLabel = useMemo(() => {
     if (selectedLineKey === 'ALL') return 'Все линии';
     if (!selectedLineItem) return selectedLineKey;
@@ -217,7 +364,7 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
       selectedLineItem.uniqueLineId &&
       selectedLineItem.uniqueLineId !== selectedLineItem.lineNumber
     ) {
-      return `${selectedLineItem.lineNumber} (${selectedLineItem.uniqueLineId})`;
+      return `${selectedLineItem.lineNumber} · ${selectedLineItem.uniqueLineId}`;
     }
     return (
       selectedLineItem.lineNumber ||
@@ -226,11 +373,9 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     );
   }, [selectedLineItem, selectedLineKey]);
 
-  // Оповещение: проверка полной завершённости сварочных работ по выбранной линии (для Блока 1)
   const lineWeldingAlert = useMemo<LineWeldingAlert | null>(() => {
     if (selectedLineKey === 'ALL') return null;
 
-    // Все стыки выбранной линии в рамках текущего объекта
     const lineJoints = objectScopedJoints.filter((j) => {
       if (
         selectedLineItem?.uniqueLineId &&
@@ -273,12 +418,10 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     };
   }, [objectScopedJoints, selectedLineKey, selectedLineItem]);
 
-  // Обработчики выбора шифра РД и линии
   const handleSelectRd = (rd: string) => {
     setCurrentRdCode(rd);
     onSelectRdCode?.(rd);
 
-    // Если выбранная линия не принадлежит новому шифру РД, сбрасываем линию на 'ALL'
     if (selectedLineKey !== 'ALL' && rd !== 'ALL') {
       const lineExistsInNewRd =
         objectScopedLines.some(
@@ -291,7 +434,8 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
         objectScopedJoints.some(
           (j) =>
             j.rdCode === rd &&
-            (j.uniqueLineId === selectedLineKey || j.lineNumber === selectedLineKey)
+            (j.uniqueLineId === selectedLineKey ||
+              j.lineNumber === selectedLineKey)
         );
       if (!lineExistsInNewRd) {
         setSelectedLineKey('ALL');
@@ -303,18 +447,19 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     setSelectedLineKey(lineKey);
   };
 
-  // Проверка валидности шифра РД при смене объекта в меню-гамбургере
   useEffect(() => {
     if (currentRdCode !== 'ALL') {
       const rdStillValid =
         lines.some(
           (l) =>
-            (selectedObjectName === 'ALL' || l.objectName === selectedObjectName) &&
+            (selectedObjectName === 'ALL' ||
+              l.objectName === selectedObjectName) &&
             l.rdCode === currentRdCode
         ) ||
         joints.some(
           (j) =>
-            (selectedObjectName === 'ALL' || j.objectName === selectedObjectName) &&
+            (selectedObjectName === 'ALL' ||
+              j.objectName === selectedObjectName) &&
             j.rdCode === currentRdCode
         );
       if (!rdStillValid) {
@@ -325,7 +470,6 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     }
   }, [selectedObjectName, lines, joints, currentRdCode, onSelectRdCode]);
 
-  // Стыки с фильтрацией по объекту (из гамбургера), шифру РД и выбранной линии
   const lineScopedJoints = useMemo(() => {
     let list = objectScopedJoints;
 
@@ -348,7 +492,8 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
       } else {
         list = list.filter(
           (j) =>
-            j.uniqueLineId === selectedLineKey || j.lineNumber === selectedLineKey
+            j.uniqueLineId === selectedLineKey ||
+            j.lineNumber === selectedLineKey
         );
       }
     }
@@ -356,7 +501,6 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     return list;
   }, [objectScopedJoints, currentRdCode, selectedLineKey, selectedLineItem]);
 
-  // Регулирование ширины столбцов журнала по ГОСТ 32569-2013
   const {
     getColumnWidth: getGostColWidth,
     handleResizeStart: handleGostResizeStart,
@@ -370,7 +514,6 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     ),
   });
 
-  // Регулирование ширины столбцов журнала по СТО Газпром 15-1.1-002-2023
   const {
     getColumnWidth: getStoColWidth,
     handleResizeStart: handleStoResizeStart,
@@ -384,25 +527,52 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     ),
   });
 
-  const showToast = (msg: string) => {
-    setActionToast(msg);
-    setTimeout(() => setActionToast(''), 4500);
-  };
-
   const handleSwitchStandard = (nextStd: JournalStandard) => {
     setStandard(nextStd);
     setColumnFilters({});
   };
 
-  // Сортировка стыков всегда производится исключительно по хронологии
+  // Заваренные стыки с учётом периода сварки в строгой хронологии
   const baseChronologicalJoints = useMemo(() => {
-    const welded = lineScopedJoints.filter(
-      (j) => Boolean(j.weldingDate && j.weldingDate.trim() !== '')
-    );
+    const welded = lineScopedJoints.filter((j) => {
+      const wd = j.weldingDate?.trim();
+      if (!wd) return false;
+      const iso = wd.slice(0, 10);
+      if (dateFrom && iso < dateFrom) return false;
+      if (dateTo && iso > dateTo) return false;
+      return true;
+    });
     return sortJointsChronologically(welded);
-  }, [lineScopedJoints]);
+  }, [lineScopedJoints, dateFrom, dateTo]);
 
-  // Геттеры для всех 49 граф формы СТО Газпром 15-1.1-002-2023
+  // Единый источник истины по полноте реквизитов для таблицы, фильтров и баннера
+  const baseCompleteness = useMemo(() => {
+    return validateJournalCompleteness(baseChronologicalJoints, standard);
+  }, [baseChronologicalJoints, standard]);
+
+  const missingByJointId = useMemo(() => {
+    const map = new Map<string, JournalJointMissingItem>();
+    for (const item of baseCompleteness.missingItems) {
+      map.set(item.jointId, item);
+    }
+    return map;
+  }, [baseCompleteness]);
+
+  const quickFilterCounts = useMemo<JournalQuickFilterCounts>(() => {
+    let inRepair = 0;
+    let accepted = 0;
+    for (const j of baseChronologicalJoints) {
+      if (isJointCurrentlyInRepair(j)) inRepair++;
+      if (isJointFullyAccepted(j)) accepted++;
+    }
+    return {
+      all: baseChronologicalJoints.length,
+      incomplete: missingByJointId.size,
+      inRepair,
+      accepted,
+    };
+  }, [baseChronologicalJoints, missingByJointId]);
+
   const stoGazpromGetters = useMemo<
     Record<StoGazpromColumnKey, (j: WeldJoint, idx: number) => string>
   >(() => {
@@ -417,7 +587,6 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     return map;
   }, [lrvCatalog]);
 
-  // Геттеры для всех 17 граф формы по ГОСТ 32569-2013
   const gost32569Getters = useMemo<
     Record<Gost32569ColumnKey, (j: WeldJoint, idx: number) => string>
   >(() => {
@@ -435,66 +604,102 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
   const activeGetters =
     standard === 'ГОСТ 32569-2013' ? gost32569Getters : stoGazpromGetters;
 
-  // Применяем фильтры столбцов, сохраняя строгий хронологический порядок
-  const chronologicalJoints = useMemo(
-    () =>
-      applyTableColumnFiltersAndSort(
-        baseChronologicalJoints,
-        columnFilters,
-        activeGetters,
-        null
-      ),
-    [baseChronologicalJoints, columnFilters, activeGetters]
-  );
+  // Применяем быстрый фильтр, текстовый поиск и фильтры столбцов, сохраняя хронологию
+  const chronologicalJoints = useMemo(() => {
+    let list = baseChronologicalJoints;
 
-  // Нормативный контроль полноты журнала
+    if (quickFilter === 'incomplete') {
+      list = list.filter((j) => missingByJointId.has(j.id));
+    } else if (quickFilter === 'in_repair') {
+      list = list.filter((j) => isJointCurrentlyInRepair(j));
+    } else if (quickFilter === 'accepted') {
+      list = list.filter((j) => isJointFullyAccepted(j));
+    }
+
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((j) => {
+        const hay = [
+          j.jointNumber,
+          j.lineNumber,
+          j.uniqueLineId,
+          j.welderStamp,
+          j.welderFullName,
+          j.techCardNumber,
+          j.responsiblePerson,
+          j.vikReportNumber,
+          j.ndtReportNumber,
+          j.dupNdtReportNumber,
+          j.repairVikNumber,
+          j.repairNdtNumber,
+          j.elem1Name,
+          j.elem2Name,
+          j.elem1FactoryNumber,
+          j.elem2FactoryNumber,
+          j.weldingMaterials,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    return applyTableColumnFiltersAndSort(
+      list,
+      columnFilters,
+      activeGetters,
+      null
+    );
+  }, [
+    baseChronologicalJoints,
+    quickFilter,
+    missingByJointId,
+    searchQuery,
+    columnFilters,
+    activeGetters,
+  ]);
+
   const journalCompleteness = useMemo(() => {
     return validateJournalCompleteness(chronologicalJoints, standard);
   }, [chronologicalJoints, standard]);
 
-  const confirmCompletenessBeforeExport = (): {
-    proceed: boolean;
-    isDraftIncomplete: boolean;
-    missingCount: number;
-  } => {
-    if (journalCompleteness.isFullyComplete) {
-      return { proceed: true, isDraftIncomplete: false, missingCount: 0 };
+  const jointsById = useMemo(() => {
+    const map = new Map<string, WeldJoint>();
+    for (const j of baseChronologicalJoints) {
+      map.set(j.id, j);
     }
+    return map;
+  }, [baseChronologicalJoints]);
 
-    const { missingSummary, jointsWithMissingDataCount, missingItems } = journalCompleteness;
-    const linesArr: string[] = [];
-    if (missingSummary.missingDates > 0) linesArr.push(`• Не указана дата сварки: ${missingSummary.missingDates}`);
-    if (missingSummary.missingWelders > 0) linesArr.push(`• Не указано клеймо сварщика: ${missingSummary.missingWelders}`);
-    if (missingSummary.missingTechCards > 0) linesArr.push(`• Не привязана техкарта (ТК): ${missingSummary.missingTechCards}`);
-    if (missingSummary.missingVikReports > 0) linesArr.push(`• Первичный ВИК (нет номера/даты/результата): ${missingSummary.missingVikReports}`);
-    if (missingSummary.missingNdtReports > 0) linesArr.push(`• Первичный НК (нет номера/даты/результата): ${missingSummary.missingNdtReports}`);
-    if (missingSummary.missingDupNdtReports > 0) linesArr.push(`• Повторный/дублирующий НК (нет номера/даты/результата): ${missingSummary.missingDupNdtReports}`);
-    if (missingSummary.missingRepairDetails > 0) linesArr.push(`• Сведения о ремонте и переконтроле: ${missingSummary.missingRepairDetails}`);
-    if (missingSummary.missingRepairVikReports > 0) linesArr.push(`• ВИК после ремонта (нет номера/даты/результата): ${missingSummary.missingRepairVikReports}`);
-    if (missingSummary.missingRepairNdtReports > 0) linesArr.push(`• НК после ремонта (нет номера/даты/результата): ${missingSummary.missingRepairNdtReports}`);
-    if (missingSummary.missingRepairDupNdtReports > 0) linesArr.push(`• Повторный НК после ремонта (нет номера/даты/результата): ${missingSummary.missingRepairDupNdtReports}`);
-    if (missingSummary.missingResponsiblePerson > 0) linesArr.push(`• Не указан ответственный мастер: ${missingSummary.missingResponsiblePerson}`);
+  const repairedJointsCount = useMemo(() => {
+    return chronologicalJoints.filter((j) => isJointRepaired(j)).length;
+  }, [chronologicalJoints]);
 
-    const sampleDetails = missingItems
-      .slice(0, 5)
-      .map(
-        (item) =>
-          `  — Стык №${item.jointNumber}${item.lineNumber ? ` (${item.lineNumber})` : ''}: ${item.missingFields.map((f) => f.label).join('; ')}`
-      );
-    if (missingItems.length > 5) {
-      sampleDetails.push(`  … и ещё ${missingItems.length - 5} стыков`);
-    }
+  const effectiveHideRepairCols =
+    standard === 'СТО Газпром 15-1.1-002-2023' &&
+    hideEmptyRepairCols &&
+    repairedJointsCount === 0;
 
-    const proceed = window.confirm(
-      `ПРЕДУПРЕЖДЕНИЕ О ПОЛНОТЕ ДАННЫХ ЖУРНАЛА:\n\nВ формируемом журнале «${standard}» (${chronologicalJoints.length} стыков) обнаружены пропуски обязательных реквизитов в ${jointsWithMissingDataCount} стыках:\n${linesArr.join('\n')}${sampleDetails.length > 0 ? `\n\nПримеры пропусков:\n${sampleDetails.join('\n')}` : ''}\n\nВАЖНО: Экспорт документа сам по себе не подтверждает нормативную пригодность и не заменяет проверку ответственного лица (главного сварщика / инженера ПТО).\n\nДокумент будет выгружен с грифом «ЧЕРНОВИК: ТРЕБУЕТСЯ ЗАПОЛНЕНИЕ РЕКВИЗИТОВ».\n\nПродолжить экспорт черновика?`
+  const hasClientOnlyFilters = useMemo(() => {
+    return Boolean(
+      searchQuery.trim() ||
+        quickFilter !== 'all' ||
+        Object.keys(columnFilters).length > 0
     );
+  }, [searchQuery, quickFilter, columnFilters]);
 
-    return {
-      proceed,
-      isDraftIncomplete: true,
-      missingCount: jointsWithMissingDataCount,
-    };
-  };
+  const hasActiveFilters = useMemo(() => {
+    return Boolean(hasClientOnlyFilters || dateFrom || dateTo);
+  }, [hasClientOnlyFilters, dateFrom, dateTo]);
+
+  const handleResetAllFilters = useCallback(() => {
+    setColumnFilters({});
+    setSearchQuery('');
+    setDateFrom('');
+    setDateTo('');
+    setQuickFilter('all');
+  }, []);
 
   const handleApplyFilter = (colKey: string, vals: string[] | undefined) => {
     setColumnFilters((prev) => {
@@ -507,19 +712,7 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
 
   const isOfflineOrUnsynced = !isDbConnected || pendingSyncCount > 0;
 
-  const confirmIfUnsynced = (): boolean => {
-    if (isOfflineOrUnsynced) {
-      return window.confirm(
-        `ВНИМАНИЕ: В системе имеются несинхронизированные данные (${pendingSyncCount} изм.) или отсутствует связь с сервером СУБД PostgreSQL.\n\nОфициальное формирование журнала заблокировано до подтверждения сервером.\nДокумент будет выгружен с грифом «ЧЕРНОВИК (НЕ СИНХРОНИЗИРОВАНО)». Продолжить выгрузку черновика?`
-      );
-    }
-    return true;
-  };
-
-  const handleExportCsv = () => {
-    if (!confirmIfUnsynced()) return;
-    const comp = confirmCompletenessBeforeExport();
-    if (!comp.proceed) return;
+  const executeExportCsv = useCallback(() => {
     const headers =
       standard === 'ГОСТ 32569-2013'
         ? GOST_32569_2013_JOURNAL_COLUMNS.map((c) => c.label)
@@ -540,9 +733,17 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
         )
         .join('\n');
 
+    const draftPrefix = isOfflineOrUnsynced
+      ? 'ЧЕРНОВИК_НЕ_СИНХРОНИЗИРОВАНО_'
+      : !journalCompleteness.isFullyComplete
+        ? 'ЧЕРНОВИК_НЕПОЛНЫЕ_РЕКВИЗИТЫ_'
+        : '';
+
     const rdSuffix =
       currentRdCode !== 'ALL'
-        ? `_РД_${(extractRdSuffix(currentRdCode) || currentRdCode).replace(/[\\/:*?"<>|]/g, '_').slice(0, 15)}`
+        ? `_РД_${(extractRdSuffix(currentRdCode) || currentRdCode)
+            .replace(/[\\/:*?"<>|]/g, '_')
+            .slice(0, 15)}`
         : '';
     const lineSuffix =
       selectedLineKey !== 'ALL' && selectedLineItem
@@ -552,18 +753,41 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
       selectedObjectName !== 'ALL'
         ? `_${selectedObjectName.replace(/[\\/:*?"<>|]/g, '_').slice(0, 25)}`
         : '';
-    const fileName = `Журнал_сварки_${standard.replace(/\s+/g, '_')}${objSuffix}${rdSuffix}${lineSuffix}.csv`;
+    const fileName = `${draftPrefix}Журнал_сварки_${standard.replace(/\s+/g, '_')}${objSuffix}${rdSuffix}${lineSuffix}.csv`;
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     triggerBlobDownload(blob, fileName);
-    showToast(`Журнал (${chronologicalJoints.length} зап.) выгружен в файл «${fileName}».`);
-  };
+    showToast(
+      `Журнал выгружен в CSV: ${chronologicalJoints.length} ${pluralizeRu(
+        chronologicalJoints.length,
+        'запись',
+        'записи',
+        'записей'
+      )}`,
+      'success'
+    );
+  }, [
+    standard,
+    chronologicalJoints,
+    materials,
+    lrvCatalog,
+    isOfflineOrUnsynced,
+    journalCompleteness.isFullyComplete,
+    currentRdCode,
+    selectedLineKey,
+    selectedLineItem,
+    selectedObjectName,
+    showToast,
+  ]);
 
-  const handleExportXlsx = async () => {
-    if (!confirmIfUnsynced()) return;
-    const comp = confirmCompletenessBeforeExport();
-    if (!comp.proceed) return;
+  const executeExportXlsx = useCallback(async () => {
+    const isDraftIncomplete = !journalCompleteness.isFullyComplete;
+    const resolvedUniqueLineId =
+      selectedLineKey !== 'ALL'
+        ? selectedLineItem?.uniqueLineId || selectedLineKey
+        : undefined;
+
     try {
-      await exportWeldingJournalToExcel(
+      const result = await exportWeldingJournalToExcel(
         chronologicalJoints,
         standard,
         materials,
@@ -571,22 +795,118 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
         {
           isDraftUnsynced: isOfflineOrUnsynced,
           unsyncedCount: pendingSyncCount,
-          isDraftIncomplete: comp.isDraftIncomplete,
-          missingCount: comp.missingCount,
-          rdCode: currentRdCode,
-          uniqueLineId: selectedLineKey,
-          strict: !comp.isDraftIncomplete,
+          isDraftIncomplete,
+          missingCount: journalCompleteness.jointsWithMissingDataCount,
+          facilityId: selectedFacilityId,
+          objectName: selectedObjectName,
+          rdCode: currentRdCode !== 'ALL' ? currentRdCode : undefined,
+          uniqueLineId: resolvedUniqueLineId,
+          lineLabel: activeLineDisplayLabel,
+          dateFrom: dateFrom || undefined,
+          dateTo: dateTo || undefined,
+          strict: !isDraftIncomplete,
+          preferClientExport: isOfflineOrUnsynced || hasClientOnlyFilters,
+          journalNumber: titleMeta.journalNumber,
+          customerName: titleMeta.customerName,
+          contractorName: titleMeta.contractorName,
+          responsibleKeeper: titleMeta.responsibleKeeper,
         }
       );
+
+      if (result.mode === 'server') {
+        showToast(
+          `Книга Excel сформирована и скачана: ${chronologicalJoints.length} ${pluralizeRu(
+            chronologicalJoints.length,
+            'запись',
+            'записи',
+            'записей'
+          )}`,
+          isDraftIncomplete ? 'warning' : 'success'
+        );
+      } else {
+        showToast(
+          `Книга Excel сформирована локально по текущей выборке: ${chronologicalJoints.length} ${pluralizeRu(
+            chronologicalJoints.length,
+            'запись',
+            'записи',
+            'записей'
+          )}`,
+          isOfflineOrUnsynced || isDraftIncomplete ? 'warning' : 'success'
+        );
+      }
+    } catch {
       showToast(
-        `Книга Excel по форме «${standard}» (${chronologicalJoints.length} зап.) сформирована на сервере и скачана.`
-      );
-    } catch (err: unknown) {
-      showToast(
-        `Ошибка серверной выгрузки Excel: ${(err instanceof Error ? err.message : String(err)) || 'Проверьте авторизацию и подключение к FastAPI'}`
+        'Не удалось сформировать файл Excel. Попробуйте повторить выгрузку.',
+        'error'
       );
     }
-  };
+  }, [
+    journalCompleteness,
+    selectedLineKey,
+    selectedLineItem,
+    chronologicalJoints,
+    standard,
+    materials,
+    lrvCatalog,
+    isOfflineOrUnsynced,
+    pendingSyncCount,
+    selectedFacilityId,
+    selectedObjectName,
+    currentRdCode,
+    activeLineDisplayLabel,
+    dateFrom,
+    dateTo,
+    hasClientOnlyFilters,
+    titleMeta,
+    showToast,
+  ]);
+
+  const handleRequestExport = useCallback(
+    (format: 'xlsx' | 'csv') => {
+      if (isOfflineOrUnsynced || !journalCompleteness.isFullyComplete) {
+        setExportModal({ format });
+        return;
+      }
+      if (format === 'xlsx') {
+        void executeExportXlsx();
+      } else {
+        executeExportCsv();
+      }
+    },
+    [
+      isOfflineOrUnsynced,
+      journalCompleteness.isFullyComplete,
+      executeExportXlsx,
+      executeExportCsv,
+    ]
+  );
+
+  const handleConfirmModalExport = useCallback(() => {
+    if (!exportModal) return;
+    const fmt = exportModal.format;
+    setExportModal(null);
+    if (fmt === 'xlsx') {
+      void executeExportXlsx();
+    } else {
+      executeExportCsv();
+    }
+  }, [exportModal, executeExportXlsx, executeExportCsv]);
+
+  const handleExportXlsx = useCallback(
+    () => handleRequestExport('xlsx'),
+    [handleRequestExport]
+  );
+
+  const handleExportCsv = useCallback(
+    () => handleRequestExport('csv'),
+    [handleRequestExport]
+  );
+
+  const handlePrint = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.print();
+    }
+  }, []);
 
   const currentFormationDate = formatDateDDMMYY(
     new Date().toISOString().slice(0, 10)
@@ -600,13 +920,40 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     ).length;
   }, [objectScopedJoints, currentRdCode]);
 
+  const periodDisplayLabel = useMemo(() => {
+    if (!dateFrom && !dateTo) return null;
+    const fromLabel = dateFrom ? formatDateDDMMYY(dateFrom) : '...';
+    const toLabel = dateTo ? formatDateDDMMYY(dateTo) : '...';
+    return `${fromLabel} — ${toLabel}`;
+  }, [dateFrom, dateTo]);
+
   return {
     standard,
     setStandard,
     columnFilters,
     setColumnFilters,
-    actionToast,
-    setActionToast,
+    searchQuery,
+    setSearchQuery,
+    dateFrom,
+    setDateFrom,
+    dateTo,
+    setDateTo,
+    quickFilter,
+    setQuickFilter,
+    quickFilterCounts,
+    hideEmptyRepairCols,
+    toggleHideEmptyRepairCols,
+    effectiveHideRepairCols,
+    repairedJointsCount,
+    toast,
+    dismissToast,
+    exportModal,
+    setExportModal,
+    handleConfirmModalExport,
+    isMetaModalOpen,
+    setIsMetaModalOpen,
+    titleMeta,
+    handleSaveTitleMeta,
     currentRdCode,
     selectedLineKey,
     rdOptions,
@@ -619,12 +966,20 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     handleApplyFilter,
     handleExportCsv,
     handleExportXlsx,
+    handlePrint,
+    hasActiveFilters,
+    handleResetAllFilters,
     baseChronologicalJoints,
     chronologicalJoints,
     journalCompleteness,
+    missingByJointId,
+    jointsById,
     isOfflineOrUnsynced,
+    isDbConnected,
+    pendingSyncCount,
     currentFormationDate,
     relevantJointsCount,
+    periodDisplayLabel,
     gost32569Getters,
     stoGazpromGetters,
     getGostColWidth,
@@ -638,5 +993,7 @@ export function useWeldingJournals(props: WeldingJournalsViewProps) {
     handleResetStoWidths,
     hasCustomStoWidths,
     selectedObjectName,
+    materials,
+    lrvCatalog,
   };
 }

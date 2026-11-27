@@ -7,10 +7,10 @@ import {
 } from '../../types/welding';
 import {
   formatGost32569JournalRow,
-  getMissingPassportFields,
   GOST_32569_2013_JOURNAL_COLUMNS,
   Gost32569ColumnKey,
 } from '../../utils/weldingLogic';
+import { isJointRepaired, JournalJointMissingItem } from '../../utils/journals';
 import { TableColumnFilterHeader } from '../TableColumnFilterPopover';
 import { RecordStatusBadge } from '../RecordStatusControls';
 
@@ -19,9 +19,13 @@ interface JournalGostTableProps {
   baseChronologicalJoints: WeldJoint[];
   materials: WeldingMaterialCertificate[];
   lrvCatalog: LRVItem[];
+  missingByJointId: Map<string, JournalJointMissingItem>;
   columnFilters: Record<string, string[]>;
   onApplyFilter: (colKey: string, vals: string[] | undefined) => void;
-  gost32569Getters: Record<Gost32569ColumnKey, (j: WeldJoint, idx: number) => string>;
+  gost32569Getters: Record<
+    Gost32569ColumnKey,
+    (j: WeldJoint, idx: number) => string
+  >;
   getGostColWidth: (key: string, minWidth?: number) => number;
   handleGostResizeStart: (
     e: React.PointerEvent,
@@ -42,6 +46,7 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
   baseChronologicalJoints,
   materials,
   lrvCatalog,
+  missingByJointId,
   columnFilters,
   onApplyFilter,
   gost32569Getters,
@@ -54,6 +59,9 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
   selectedLineKey,
   activeLineDisplayLabel,
 }) => {
+  const col1Width = getGostColWidth('col1', 55);
+  const col2Width = getGostColWidth('col2', 150);
+
   return (
     <div>
       <table className="w-full text-xs border-collapse">
@@ -61,6 +69,20 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
           <tr className="bg-[#1e3799] text-white text-left">
             {GOST_32569_2013_JOURNAL_COLUMNS.map((col, idx) => {
               const colWidth = getGostColWidth(col.key, col.minWidth);
+              const isCol1 = col.key === 'col1';
+              const isCol2 = col.key === 'col2';
+              const stickyStyle: React.CSSProperties | undefined = isCol1
+                ? { position: 'sticky', left: 0, zIndex: 30 }
+                : isCol2
+                  ? { position: 'sticky', left: col1Width, zIndex: 30 }
+                  : undefined;
+
+              const stickyClass = isCol1
+                ? 'bg-[#1e3799] journal-sticky-col'
+                : isCol2
+                  ? 'bg-[#1e3799] journal-sticky-col shadow-[2px_0_5px_-1px_rgba(15,23,42,0.28)]'
+                  : '';
+
               return (
                 <TableColumnFilterHeader
                   key={col.key}
@@ -74,11 +96,12 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
                   minWidth={col.minWidth}
                   onResizeStart={handleGostResizeStart}
                   onAutoFit={() => handleGostAutoFit(col.key, col.minWidth)}
-                  className={
+                  style={stickyStyle}
+                  className={`${stickyClass} ${
                     idx === GOST_32569_2013_JOURNAL_COLUMNS.length - 1
                       ? 'border-r-0'
                       : ''
-                  }
+                  }`}
                 />
               );
             })}
@@ -87,11 +110,28 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
           <tr className="bg-[#15276e] text-sky-100 text-center font-mono text-[11px] font-bold border-t border-white/15">
             {GOST_32569_2013_JOURNAL_COLUMNS.map((col, idx) => {
               const colWidth = getGostColWidth(col.key, col.minWidth);
+              const isCol1 = col.key === 'col1';
+              const isCol2 = col.key === 'col2';
+              const style: React.CSSProperties = {
+                width: colWidth,
+                minWidth: colWidth,
+                ...(isCol1
+                  ? { position: 'sticky', left: 0, zIndex: 30 }
+                  : isCol2
+                    ? { position: 'sticky', left: col1Width, zIndex: 30 }
+                    : {}),
+              };
+              const stickyClass = isCol1
+                ? 'bg-[#15276e] journal-sticky-col'
+                : isCol2
+                  ? 'bg-[#15276e] journal-sticky-col shadow-[2px_0_5px_-1px_rgba(15,23,42,0.28)]'
+                  : '';
+
               return (
                 <th
                   key={col.key}
-                  style={{ width: colWidth, minWidth: colWidth }}
-                  className={`py-1 px-2 border-r border-white/15 ${
+                  style={style}
+                  className={`py-1 px-2 border-r border-white/15 ${stickyClass} ${
                     idx === GOST_32569_2013_JOURNAL_COLUMNS.length - 1
                       ? 'border-r-0'
                       : ''
@@ -113,11 +153,11 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
                 <div className="flex flex-col items-center justify-center gap-1.5">
                   <BookOpen className="w-8 h-8 text-slate-300 stroke-1" />
                   <span className="font-semibold text-slate-700">
-                    В журнале пока нет записей
+                    В журнале нет записей по заданным условиям
                   </span>
                   <span className="text-[11px] text-slate-400 max-w-md">
                     {selectedLineKey !== 'ALL'
-                      ? `По выбранной линии «${activeLineDisplayLabel}» ещё не внесены выполненные сварочные работы с датами сварки.`
+                      ? `По выбранной линии «${activeLineDisplayLabel}» отсутствуют сваренные стыки, соответствующие активным фильтрам.`
                       : 'В текущей выборке отсутствуют сваренные стыки с заполненной датой сварки.'}
                   </span>
                 </div>
@@ -125,19 +165,35 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
             </tr>
           )}
           {chronologicalJoints.map((j, index) => {
-            const row = formatGost32569JournalRow(j, index, materials, lrvCatalog);
+            const row = formatGost32569JournalRow(
+              j,
+              index,
+              materials,
+              lrvCatalog
+            );
             const gostType = j.gostJointType?.trim() || 'С17';
-            const missingFields = getMissingPassportFields(j);
-            const isIncomplete = missingFields.length > 0;
+            const repairedSuffix = isJointRepaired(j) ? 'Р' : '';
+            const missingItem = missingByJointId.get(j.id);
+            const missingLabels = missingItem
+              ? missingItem.missingFields.map((f) => f.label)
+              : [];
+            const isIncomplete = missingLabels.length > 0;
+            const stickyBgClass = isIncomplete
+              ? 'bg-amber-50 group-hover:bg-amber-100'
+              : index % 2 === 0
+                ? 'bg-white group-hover:bg-[#e8f1fc]'
+                : 'bg-slate-50 group-hover:bg-[#e8f1fc]';
+
             return (
               <tr
                 key={j.id}
+                onDoubleClick={() => onEditJoint(j)}
                 title={
                   isIncomplete
-                    ? `Внимание: дата сварки внесена, но не заполнены обязательные поля паспорта (${missingFields.length}): ${missingFields.join(', ')}`
-                    : undefined
+                    ? `Не заполнены обязательные реквизиты: ${missingLabels.join('; ')}`
+                    : 'Двойной клик открывает паспорт стыка'
                 }
-                className={`transition-colors align-top ${
+                className={`group transition-colors align-top ${
                   isIncomplete
                     ? 'bg-amber-50/80 hover:bg-amber-100/80'
                     : 'hover:bg-[#e8f1fc]/60 odd:bg-white even:bg-slate-50/60'
@@ -146,10 +202,13 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
                 {/* Графа 1: № п/п */}
                 <td
                   style={{
-                    width: getGostColWidth('col1', 55),
-                    minWidth: getGostColWidth('col1', 55),
+                    position: 'sticky',
+                    left: 0,
+                    zIndex: 10,
+                    width: col1Width,
+                    minWidth: col1Width,
                   }}
-                  className="py-2.5 px-2.5 font-mono text-center text-slate-900 border-r border-slate-200"
+                  className={`py-2.5 px-2.5 font-mono text-center text-slate-900 border-r border-slate-200 journal-sticky-col ${stickyBgClass}`}
                 >
                   {row.col1}
                 </td>
@@ -157,10 +216,13 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
                 {/* Графа 2: Обозначение сварного соединения по исполнительному чертежу, тип сварного соединения ГОСТ 16037 */}
                 <td
                   style={{
-                    width: getGostColWidth('col2', 150),
-                    minWidth: getGostColWidth('col2', 150),
+                    position: 'sticky',
+                    left: col1Width,
+                    zIndex: 10,
+                    width: col2Width,
+                    minWidth: col2Width,
                   }}
-                  className="py-2.5 px-2.5 border-r border-slate-200 font-mono text-center text-slate-900 whitespace-nowrap"
+                  className={`py-2.5 px-2.5 border-r border-slate-200 font-mono text-center text-slate-900 whitespace-nowrap journal-sticky-col shadow-[2px_0_5px_-1px_rgba(15,23,42,0.1)] ${stickyBgClass}`}
                 >
                   <div className="inline-flex flex-col items-center gap-0.5">
                     <div>
@@ -171,6 +233,7 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
                         title="Открыть паспорт стыка"
                       >
                         {j.jointNumber}
+                        {repairedSuffix}
                       </button>
                       , {gostType}
                     </div>
@@ -237,7 +300,7 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
                   {row.col7}
                 </td>
 
-                {/* Графа 8: Сварочные материалы (марка электрода, сварочной проволоки, защитный газ, флюс), НД, №№ сертификатов */}
+                {/* Графа 8: Сварочные материалы, НД, №№ сертификатов */}
                 <td
                   style={{
                     width: getGostColWidth('col8', 210),
@@ -352,7 +415,7 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
         </tbody>
       </table>
 
-      <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-2">
+      <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-2 no-print">
         <div className="flex items-center gap-3">
           <div>
             Записей в журнале:{' '}
@@ -373,7 +436,7 @@ export const JournalGostTable: React.FC<JournalGostTableProps> = ({
           )}
         </div>
         <div>
-          Ширина столбцов регулируется перетаскиванием правой границы заголовка (двойной клик — автоподбор)
+          Ширина столбцов регулируется перетаскиванием границы заголовка · двойной клик подбирает ширину · двойной клик по строке открывает паспорт
         </div>
       </div>
     </div>

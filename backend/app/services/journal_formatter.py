@@ -121,13 +121,19 @@ def _extract_surname_only(full_name: str | None) -> str:
     s = (full_name or "").strip()
     if not s or s.lower() == "н/п":
         return "н/п"
-    tokens = re.split(r"\s+", s)
-    return tokens[0] if tokens else "н/п"
+    s = re.sub(r"^(мастер|прораб|инженер|начальник|бригадир)\s+(смр\s+)?", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"^смр\s+", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b[А-ЯЁA-Z]\.\s*[А-ЯЁA-Z]\.?\b", "", s).strip()
+    s = re.sub(r"\b[А-ЯЁA-Z]\.\b", "", s).strip()
+    tokens = [t for t in re.split(r"\s+", s) if t]
+    if tokens:
+        return tokens[0].rstrip(".,")
+    return (full_name or "").strip() or "н/п"
 
 
 def _norm_gost_np(value: str | None) -> str:
     s = (value or "").strip()
-    if not s or s.lower() in {"не проводилось", "не требуется", "нет", "-", "—", "н/д"}:
+    if not s or s.lower() in {"не проводилось", "не проводился", "не требуется", "нет", "-", "—", "н/д", "н/п"}:
         return ""
     return s
 
@@ -136,7 +142,117 @@ def _is_angular_joint(joint: Any) -> bool:
     if _ev(getattr(joint, "joint_kind", None)) == "Угловое":
         return True
     gost = (getattr(joint, "gost_joint_type", None) or "").strip().upper()
-    return gost in ANGULAR_GOST_CODES
+    if not gost:
+        return False
+    if gost in ANGULAR_GOST_CODES:
+        return True
+    return gost.startswith(("У", "Y", "U"))
+
+
+def is_joint_repaired(joint: Any) -> bool:
+    not_cond = ControlResultEnum.NOT_CONDUCTED.value
+    rep_vik = _ev(getattr(joint, "repair_vik_result", None))
+    rep_ndt = _ev(getattr(joint, "repair_ndt_result", None))
+    rep_dup = _ev(getattr(joint, "repair_dup_ndt_result", None))
+    return bool(
+        (getattr(joint, "repair_action", None) or "").strip()
+        or getattr(joint, "repair_date", None) is not None
+        or (getattr(joint, "repair_welder_stamp", None) or "").strip()
+        or (rep_vik and rep_vik != not_cond)
+        or (rep_ndt and rep_ndt != not_cond)
+        or (rep_dup and rep_dup != not_cond)
+        or _ev(getattr(joint, "vik_result", None)) == ControlResultEnum.REPAIR.value
+        or _ev(getattr(joint, "ndt_result", None)) == ControlResultEnum.REPAIR.value
+        or _ev(getattr(joint, "dup_ndt_result", None)) == ControlResultEnum.REPAIR.value
+        or is_joint_defective(joint)
+    )
+
+
+def _infer_welding_consumable_ntd(brand_part: str) -> str:
+    s = brand_part.lower()
+    if "св-04х" in s or "св-08г2с" in s or s.startswith("св-"):
+        return "ГОСТ 2246-70"
+    if any(k in s for k in ("уони", "lb-52", "ок ", "ok ", "цл-", "озл-")):
+        return "ГОСТ 9466-75"
+    if "co2" in s and "ar" in s:
+        return "ТУ 2114-004-00204760-99"
+    if "ar" in s:
+        return "ГОСТ 10157-2016"
+    if "co2" in s:
+        return "ГОСТ 8050-85"
+    return "ГОСТ 2246-70"
+
+
+def _format_gost_consumables_cell(
+    raw_materials: str | None,
+    materials_catalog: list[Any] | None = None,
+) -> str:
+    raw = (raw_materials or "").strip()
+    if not raw:
+        return "н/п"
+
+    matched_mat = None
+    for m in (materials_catalog or []):
+        bd = (getattr(m, "brand_and_diameter", None) or "").strip()
+        if bd and (bd == raw or bd.lower() == raw.lower()):
+            matched_mat = m
+            break
+
+    working = raw
+    trailing_parens: list[str] = []
+    for match in re.finditer(r"\(([^)]+)\)", raw):
+        inner = match.group(1).strip()
+        if inner:
+            trailing_parens.append(inner)
+        working = working.replace(match.group(0), "").strip()
+
+    split_main = [
+        re.sub(r"[()]", "", p).strip()
+        for p in re.split(r"\s+/\s+|;\s*|\n+", working)
+        if re.sub(r"[()]", "", p).strip()
+    ]
+    parts = [*split_main, *trailing_parens]
+    if not parts:
+        return "н/п"
+
+    raw_cert_parts: list[str] = []
+    raw_batch_parts: list[str] = []
+    if matched_mat is not None:
+        cert_raw = re.sub(
+            r"серт\.?\s*№?\s*",
+            "",
+            (getattr(matched_mat, "certificate_number", None) or ""),
+            flags=re.IGNORECASE,
+        )
+        raw_cert_parts = [
+            re.sub(r"[()]", "", c).strip()
+            for c in re.split(r"\s+/\s+|,\s*", cert_raw)
+            if re.sub(r"[()]", "", c).strip()
+        ]
+        batch_raw = getattr(matched_mat, "batch_number", None) or ""
+        for b in re.split(r"\s+/\s+|,\s*", batch_raw):
+            cleaned = re.sub(r"пл\.?\s*", "", b, flags=re.IGNORECASE)
+            cleaned = re.sub(r"партия\s*", "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"баллон\s*ar\s*№?\s*", "АР-", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"смесь\s*", "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"[()]", "", cleaned).strip()
+            if cleaned:
+                raw_batch_parts.append(cleaned)
+
+    lines: list[str] = []
+    for idx, part in enumerate(parts):
+        ntd = _infer_welding_consumable_ntd(part)
+        cert = (
+            raw_cert_parts[idx]
+            if idx < len(raw_cert_parts)
+            else (
+                raw_batch_parts[idx]
+                if idx < len(raw_batch_parts)
+                else (raw_cert_parts[0] if raw_cert_parts else "")
+            )
+        )
+        lines.append(", ".join(x for x in (part, ntd, cert) if x))
+    return "\n".join(lines)
 
 
 def _format_elem_line(
@@ -151,40 +267,62 @@ def _format_elem_line(
     short = (getattr(lrv, "short_name", None) or name or "").strip()
     mat = (getattr(joint, f"elem{idx}_material", None) or "").strip()
     ntd = (getattr(joint, f"elem{idx}_ntd", None) or "").strip()
-    cert_parts = [
-        p
-        for p in (
-            f"зав. № {getattr(joint, f'elem{idx}_factory_number', None)}".strip()
-            if (getattr(joint, f"elem{idx}_factory_number", None) or "").strip()
-            else "",
-            f"серт. {getattr(joint, f'elem{idx}_cert_number', None)}".strip()
-            if (getattr(joint, f"elem{idx}_cert_number", None) or "").strip()
-            else "",
-            f"пл. {getattr(joint, f'elem{idx}_heat_number', None)}".strip()
-            if (getattr(joint, f"elem{idx}_heat_number", None) or "").strip()
-            else "",
-        )
-        if p
-    ]
+
+    cert_num = (getattr(joint, f"elem{idx}_cert_number", None) or "").strip()
+    heat_num = (getattr(joint, f"elem{idx}_heat_number", None) or "").strip()
+    batch_num = (getattr(joint, f"elem{idx}_batch_number", None) or "").strip()
+    fac_num = (getattr(joint, f"elem{idx}_factory_number", None) or "").strip()
+
+    if cert_num:
+        cert_parts = [
+            p
+            for p in (
+                f"серт. № {cert_num}",
+                f"пл. {heat_num}" if heat_num else "",
+                f"парт. {batch_num}" if batch_num else "",
+            )
+            if p
+        ]
+    else:
+        cert_parts = [fac_num] if fac_num else []
+
+    cert_str = ", ".join(cert_parts).replace("(", "").replace(")", "").strip()
     title = f"{mat} {short}".replace("(", "").replace(")", "").strip()
-    return ", ".join([x for x in (title, ntd.replace("(", "").replace(")", "").strip(), ", ".join(cert_parts)) if x])
+    clean_ntd = ntd.replace("(", "").replace(")", "").strip()
+    return ", ".join([x for x in (title, clean_ntd, cert_str) if x])
 
 
 def format_gost_32569_row(
     seq_no: int,
     joint: Any,
     lrv_map: dict[tuple[str, str], Any] | None = None,
+    materials: list[Any] | None = None,
 ) -> list[str]:
     """Format 17 normative columns per GOST 32569-2013 without fabricating report numbers."""
     lrv_lookup = lrv_map or {}
     col1 = str(seq_no)
-    gost_t = (getattr(joint, "gost_joint_type", None) or "").strip()
+    gost_t = (getattr(joint, "gost_joint_type", None) or "").strip() or "С17"
     j_num = (getattr(joint, "joint_number", None) or "").strip()
-    col2 = f"ст. №{j_num}, {gost_t}" if j_num and gost_t else (f"ст. №{j_num}" if j_num else "н/п")
+    repair_suffix = "Р" if is_joint_repaired(joint) else ""
+    col2 = f"{j_num}{repair_suffix}, {gost_t}" if j_num else "н/п"
 
     stamp = (getattr(joint, "welder_stamp", None) or "").strip()
     fio = (getattr(joint, "welder_full_name", None) or "").strip()
-    col3 = f"{fio}, {stamp}" if fio and stamp else (fio or stamp or "н/п")
+    names_list = [n.strip() for n in fio.split(",") if n.strip()]
+    stamps_raw = getattr(joint, "welder_stamps_list", None) or []
+    stamps_list = (
+        [str(s).strip() for s in stamps_raw if str(s).strip()]
+        if stamps_raw
+        else [s.strip() for s in re.sub(r"^[^(]+\(([^)]+)\)$", r"\1", stamp).split(",") if s.strip()]
+    )
+    if len(names_list) > 1 and len(names_list) == len(stamps_list):
+        col3 = "\n".join(f"{n}, {s}" for n, s in zip(names_list, stamps_list))
+    elif names_list and stamps_list:
+        col3 = f"{', '.join(names_list)}, {stamp or ', '.join(stamps_list)}"
+    elif fio or stamp:
+        col3 = f"{fio}, {stamp}" if fio and stamp else (fio or stamp)
+    else:
+        col3 = "н/п"
 
     e1 = _format_elem_line(joint, 1, lrv_lookup)
     e2 = _format_elem_line(joint, 2, lrv_lookup)
@@ -198,7 +336,7 @@ def format_gost_32569_row(
     amb = getattr(joint, "ambient_temp_c", None)
     col6 = f"{w_date}, {_fmt_temp(amb)} °С" if amb is not None else w_date
     col7 = (getattr(joint, "welding_type", None) or "").strip() or "н/п"
-    col8 = (getattr(joint, "welding_materials", None) or "").strip() or "н/п"
+    col8 = _format_gost_consumables_cell(getattr(joint, "welding_materials", None), materials)
 
     raw_preheat = (getattr(joint, "preheat_temp", None) or "").strip()
     try:
@@ -299,11 +437,7 @@ def format_sto_gazprom_row(
     col13 = (getattr(joint, "joint_number", None) or "").strip() or "н/п"
 
     is_ang = _is_angular_joint(joint)
-    is_rep = bool(
-        is_joint_defective(joint)
-        or (getattr(joint, "repair_action", None) or "").strip() == "Ремонт"
-        or getattr(joint, "repair_date", None) is not None
-    )
+    is_rep = is_joint_repaired(joint)
     col14 = "Я / Р" if (is_ang and is_rep) else ("Я" if is_ang else ("Р" if is_rep else "н/п"))
     col15 = "н/п"
     col16 = (getattr(joint, "tech_card_number", None) or "").strip() or "н/п"

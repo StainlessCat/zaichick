@@ -174,8 +174,17 @@ def build_welding_journal_workbook_bytes(
     *,
     standard: str = "СТО Газпром 15-1.1-002-2023",
     lrv_items: list[Any] | None = None,
+    materials: list[Any] | None = None,
     object_title: str = "",
     rd_code: str = "",
+    line_label: str = "",
+    date_from: str | None = None,
+    date_to: str | None = None,
+    draft_banner: str | None = None,
+    journal_number: str | None = None,
+    customer_name: str | None = None,
+    contractor_name: str | None = None,
+    responsible_keeper: str | None = None,
 ) -> bytes:
     """Generate normative XLSX Welding Journal (GOST 32569-2013 or STO Gazprom 15-1.1-002-2023)."""
     wb = Workbook()
@@ -189,18 +198,44 @@ def build_welding_journal_workbook_bytes(
         f"Стандарт: {standard}",
         f"Объект: {object_title or 'Все объекты'}",
         f"Шифр РД: {rd_code or 'Все шифры'}",
-        f"Сформировано: {ts_label}",
     ]
+    if line_label:
+        meta_parts.append(f"Линия: {line_label}")
+    if date_from or date_to:
+        meta_parts.append(f"Период сварки: {date_from or '...'} — {date_to or '...'}")
+    if journal_number:
+        meta_parts.append(f"Журнал № {journal_number}")
+    meta_parts.append(f"Сформировано: {ts_label}")
     subtitle = " | ".join(meta_parts)
 
+    total_cols = len(GOST_32569_HEADERS) if is_gost else len(STO_GAZPROM_COLUMNS)
+    title_text = (
+        "ЖУРНАЛ СВАРКИ ТЕХНОЛОГИЧЕСКИХ СТАЛЬНЫХ ТРУБОПРОВОДОВ · ГОСТ 32569-2013"
+        if is_gost
+        else "ЖУРНАЛ СВАРОЧНЫХ РАБОТ · СТО ГАЗПРОМ 15-1.1-002-2023, ФОРМА Г.1"
+    )
+    if journal_number:
+        title_text = f"{title_text} · № {journal_number}"
+
+    hdr_row = _write_title_block(
+        ws,
+        title=title_text,
+        subtitle=subtitle,
+        total_cols=total_cols,
+    )
+
+    if draft_banner:
+        end_col = get_column_letter(total_cols)
+        ws.merge_cells(f"A3:{end_col}3")
+        ws["A3"] = draft_banner
+        ws["A3"].font = Font(name="Calibri", size=10, bold=True, color="991B1B")
+        ws["A3"].fill = _ALERT_AMBER_FILL
+        ws["A3"].alignment = _ALIGN_LEFT
+        ws["A3"].border = _CELL_BORDER
+        ws.row_dimensions[3].height = 22
+        hdr_row = 5
+
     if is_gost:
-        total_cols = len(GOST_32569_HEADERS)
-        hdr_row = _write_title_block(
-            ws,
-            title="ЖУРНАЛ СВАРОЧНЫХ РАБОТ (ГОСТ 32569-2013)",
-            subtitle=subtitle,
-            total_cols=total_cols,
-        )
         widths = [7, 24, 24, 34, 16, 20, 13, 30, 18, 18, 20, 20, 18, 18, 22, 24, 22]
         for idx, (label, width) in enumerate(zip(GOST_32569_HEADERS, widths), start=1):
             ws.column_dimensions[get_column_letter(idx)].width = width
@@ -210,21 +245,64 @@ def build_welding_journal_workbook_bytes(
         ws.row_dimensions[hdr_row + 1].height = 18
         _style_header_range(ws, min_row=hdr_row, max_row=hdr_row + 1, max_col=total_cols)
 
-        data_rows = [format_gost_32569_row(i + 1, j, lrv_map) for i, j in enumerate(joints)]
-        _write_table_rows(ws, start_row=hdr_row + 2, rows=data_rows, left_align_cols={4, 8})
+        data_start = hdr_row + 2
+        data_rows = [format_gost_32569_row(i + 1, j, lrv_map, materials) for i, j in enumerate(joints)]
+        _write_table_rows(ws, start_row=data_start, rows=data_rows, left_align_cols={4, 8})
+        ws.freeze_panes = f"C{data_start}"
         _configure_print_sheet(ws, header_rows_end=hdr_row + 1)
     else:
-        total_cols = len(STO_GAZPROM_COLUMNS)
-        hdr_row = _write_title_block(
-            ws,
-            title="ЖУРНАЛ СВАРОЧНЫХ РАБОТ (СТО Газпром 15-1.1-002-2023, Форма Г.1)",
-            subtitle=subtitle,
-            total_cols=total_cols,
-        )
         data_start = _build_sto_header(ws, start_row=hdr_row)
         data_rows = [format_sto_gazprom_row(i + 1, j, lrv_map) for i, j in enumerate(joints)]
         _write_table_rows(ws, start_row=data_start, rows=data_rows, left_align_cols={6, 8, 17})
+        ws.freeze_panes = f"B{data_start}"
         _configure_print_sheet(ws, header_rows_end=data_start - 1)
+
+    # Signature footer below the journal table
+    sig_row = data_start + len(data_rows) + 2
+    sig_end_col = get_column_letter(min(total_cols, 10))
+    ws.merge_cells(f"A{sig_row}:{sig_end_col}{sig_row}")
+    keeper_label = responsible_keeper.strip() if responsible_keeper and responsible_keeper.strip() else "______________________"
+    ws[f"A{sig_row}"] = f"Ответственный за ведение журнала: {keeper_label}   Подпись: ______________   Дата: «___» __________ 20___ г."
+    ws[f"A{sig_row}"].font = _FONT_BODY
+    ws[f"A{sig_row}"].alignment = _ALIGN_LEFT
+    ws.row_dimensions[sig_row].height = 20
+
+    ws.merge_cells(f"A{sig_row + 1}:{sig_end_col}{sig_row + 1}")
+    ws[f"A{sig_row + 1}"] = "Представитель строительного контроля: ______________________   Подпись: ______________   Дата: «___» __________ 20___ г."
+    ws[f"A{sig_row + 1}"].font = _FONT_BODY
+    ws[f"A{sig_row + 1}"].alignment = _ALIGN_LEFT
+    ws.row_dimensions[sig_row + 1].height = 20
+
+    # Dedicated Title Requisites sheet for official handover
+    ws_meta = wb.create_sheet("Титульные реквизиты")
+    meta_rows = [
+        ["Нормативная форма", standard],
+        ["Номер журнала", journal_number or "Не указан"],
+        ["Объект строительства", object_title or "Все объекты"],
+        ["Шифр РД", rd_code or "Все шифры"],
+        ["Линия", line_label or "Все линии"],
+        ["Период сварки", f"{date_from or '—'} — {date_to or '—'}" if (date_from or date_to) else "Весь период"],
+        ["Заказчик", customer_name or "Не указан"],
+        ["Подрядчик", contractor_name or "Не указан"],
+        ["Ответственный за ведение журнала", responsible_keeper or "Не указан"],
+        ["Записей в журнале", len(joints)],
+        ["Статус документа", draft_banner or "Чистовой выпуск"],
+        ["Дата формирования", ts_label],
+    ]
+    start_m = _write_title_block(
+        ws_meta,
+        title="ТИТУЛЬНЫЕ РЕКВИЗИТЫ ЖУРНАЛА СВАРОЧНЫХ РАБОТ",
+        subtitle=f"{standard} · {object_title or 'Все объекты'}",
+        total_cols=2,
+    )
+    ws_meta.cell(row=start_m, column=1, value="Реквизит")
+    ws_meta.cell(row=start_m, column=2, value="Значение")
+    ws_meta.column_dimensions["A"].width = 36
+    ws_meta.column_dimensions["B"].width = 64
+    ws_meta.row_dimensions[start_m].height = 24
+    _style_header_range(ws_meta, min_row=start_m, max_row=start_m, max_col=2)
+    _write_table_rows(ws_meta, start_row=start_m + 1, rows=meta_rows, left_align_cols={1, 2})
+    _configure_print_sheet(ws_meta, header_rows_end=start_m)
 
     return _workbook_to_bytes(wb)
 

@@ -20,12 +20,14 @@ from app.api.routes.reports import (
 )
 from app.api.routes.welding_journals import fetch_filtered_joints_and_lrv
 from app.models.executive_doc import ExecutiveDoc
+from app.models.facility import Facility
 from app.models.joint import WeldJoint
 from app.models.lab_request import NdtLabRequestModel
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
 from app.models.test_circuit import TestCircuit
 from app.models.user import User
+from app.models.welding_tech import WeldingMaterial
 from app.services.audit_service import record_audit_log
 from app.services.excel_export import (
     build_joints_registry_workbook_bytes,
@@ -66,7 +68,14 @@ async def export_welding_journal_xlsx(
     rd_code: str | None = Query(default=None),
     unique_line_id: str | None = Query(default=None),
     facility_id: uuid.UUID | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     strict: bool = Query(default=False),
+    draft_label: str | None = Query(default=None, max_length=240),
+    journal_number: str | None = Query(default=None, max_length=80),
+    customer_name: str | None = Query(default=None, max_length=200),
+    contractor_name: str | None = Query(default=None, max_length=200),
+    responsible_keeper: str | None = Query(default=None, max_length=160),
     current_user: User = Depends(require_permission("can_export_documents")),
     session: AsyncSession = Depends(get_db_session),
 ) -> Response:
@@ -75,6 +84,9 @@ async def export_welding_journal_xlsx(
         rd_code=rd_code,
         unique_line_id=unique_line_id,
         facility_id=facility_id,
+        date_from=date_from,
+        date_to=date_to,
+        welded_only=True,
     )
     completeness = validate_journal_completeness(joints, standard=standard)
     if strict and not completeness.is_fully_complete:
@@ -90,13 +102,45 @@ async def export_welding_journal_xlsx(
         )
 
     object_title = joints[0].object_name if joints else ""
+    if not object_title and facility_id is not None:
+        fac = (
+            await session.execute(select(Facility).where(Facility.id == facility_id))
+        ).scalar_one_or_none()
+        if fac is not None:
+            object_title = fac.name
+
+    is_gost = standard == "ГОСТ 32569-2013"
+    materials = (
+        list((await session.execute(select(WeldingMaterial))).scalars().all())
+        if is_gost
+        else []
+    )
+
+    effective_draft_banner: str | None = None
+    if draft_label and draft_label.strip():
+        effective_draft_banner = draft_label.strip()
+    elif not completeness.is_fully_complete:
+        effective_draft_banner = (
+            f"ЧЕРНОВИК · ТРЕБУЕТСЯ ЗАПОЛНЕНИЕ РЕКВИЗИТОВ · "
+            f"пропуски в {completeness.joints_with_missing_data_count} из {len(joints)} стыков"
+        )
+
     payload = await asyncio.to_thread(
         build_welding_journal_workbook_bytes,
         joints,
         standard=standard,
         lrv_items=list(lrv_map.values()),
+        materials=materials,
         object_title=object_title,
         rd_code=rd_code or "",
+        line_label=unique_line_id or "",
+        date_from=date_from.isoformat() if date_from else None,
+        date_to=date_to.isoformat() if date_to else None,
+        draft_banner=effective_draft_banner,
+        journal_number=journal_number,
+        customer_name=customer_name,
+        contractor_name=contractor_name,
+        responsible_keeper=responsible_keeper,
     )
     await record_audit_log(
         session,
@@ -108,13 +152,15 @@ async def export_welding_journal_xlsx(
             "standard": standard,
             "rows": len(joints),
             "is_complete": completeness.is_fully_complete,
+            "date_from": date_from.isoformat() if date_from else None,
+            "date_to": date_to.isoformat() if date_to else None,
         },
         ip_address=get_client_ip(request),
         unique_line_id=unique_line_id,
         rd_code=rd_code,
         summary=f"Экспорт журнала ({standard}, {len(joints)} стыков)",
     )
-    tag = "GOST_32569" if standard == "ГОСТ 32569-2013" else "STO_GAZPROM"
+    tag = "GOST_32569" if is_gost else "STO_GAZPROM"
     return _xlsx_response(
         payload,
         f"welding_journal_{tag}.xlsx",
