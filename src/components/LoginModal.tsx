@@ -1,745 +1,606 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  AlertCircle,
   CheckCircle2,
+  Clock,
+  Eye,
+  EyeOff,
   KeyRound,
+  Loader2,
   Lock,
-  ShieldAlert,
+  LogIn,
+  LogOut,
   ShieldCheck,
-  Trash2,
-  UserPlus,
-  Users,
+  User,
   X,
 } from 'lucide-react';
 import { ApiError, zaychickApi } from '../api';
+import { markGuestModeDismissed } from '../hooks/useServerSync';
 import { UserAccount } from '../types/welding';
-import { getUserRolePermissions } from '../utils/rbac';
-import { ZaychickLogo } from './ZaychickLogo';
+import { useModalDismiss } from '../hooks/useModalDismiss';
+import {
+  DEPARTMENT_LABELS_RU,
+  resolveUserDepartment,
+  resolveUserSystemRole,
+  SYSTEM_ROLE_LABELS_RU,
+} from '../utils/rbac';
 
-export type LoginModalMode = 'login' | 'register' | 'admin_password';
+export type LoginModalMode = 'login' | 'change_password' | 'force_change_password';
 
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: UserAccount;
-  accounts: UserAccount[];
   initialMode?: LoginModalMode;
   isAuthenticated?: boolean;
-  onAuthenticate: (account: UserAccount, inputPassword?: string) => void;
-  onRegisterAccount?: (account: UserAccount) => void;
-  onDeleteAccount?: (login: string) => void;
-  onToggleAdminRights?: (
-    targetLogin: string,
-    grantAdmin: boolean
-  ) => Promise<{ ok: boolean; message: string }> | { ok: boolean; message: string };
-  onChangeAdminPassword?: (
-    adminLogin: string,
-    currentPassword: string,
-    newPassword: string
-  ) => Promise<{ ok: boolean; message: string }> | { ok: boolean; message: string };
+  sessionExpiredNotice?: string | null;
+  onClearSessionNotice?: () => void;
+  onAuthenticate: (account: UserAccount) => void;
+  onLogout?: () => Promise<void>;
 }
 
-const ROLE_PRESETS = [
-  'Системный администратор (Полный доступ)',
-  'Администратор системы (Полный доступ)',
-  'Главный инженер ПТО',
-  'Ведущий инженер ПТО (Лайнлист / РД)',
-  'Инженер ПТО · База материалов и входной контроль',
-  'Главный сварщик (НАКС / Техкарты)',
-  'Технолог по сварке (Служба ГС)',
-  'Инженер ПТО (Реестр стыков и сводка)',
-  'Производитель работ СМР (Участок №1)',
-  'Производитель работ СМР (Участок №2)',
-  'Инженер СК / ВИК (Строительный контроль)',
-  'Специалист ЛНК',
-  'Дефектоскопист ЛНК (РК / УЗК / ПВК)',
-  'Представитель Заказчика',
-  'Инженер по комплектации ИД (Печать журналов)',
-];
+const MIN_PASSWORD_LENGTH = 8;
+
+function formatUserFriendlyAuthError(err: unknown): { message: string; retryAfter?: number } {
+  if (err instanceof ApiError) {
+    if (err.status === 429) {
+      return {
+        message: 'Превышено число попыток входа. Подождите перед следующей попыткой.',
+        retryAfter: err.retryAfterSeconds ?? 60,
+      };
+    }
+    if (err.status === 401) {
+      return { message: err.message || 'Неверный логин или пароль.' };
+    }
+    if (err.status === 403) {
+      return { message: err.message || 'Учётная запись деактивирована. Обратитесь к администратору.' };
+    }
+    if (err.status >= 500) {
+      return { message: 'Сервер временно недоступен. Попробуйте повторить вход позже.' };
+    }
+    return { message: err.message || 'Не удалось выполнить запрос.' };
+  }
+  if (err instanceof Error) {
+    const lower = err.message.toLowerCase();
+    if (lower.includes('fetch') || lower.includes('network') || lower.includes('failed')) {
+      return { message: 'Нет связи с сервером. Проверьте подключение и повторите попытку.' };
+    }
+    return { message: err.message };
+  }
+  return { message: 'Не удалось выполнить вход. Повторите попытку.' };
+}
 
 export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen,
   onClose,
   currentUser,
-  accounts,
   initialMode = 'login',
   isAuthenticated = false,
+  sessionExpiredNotice = null,
+  onClearSessionNotice,
   onAuthenticate,
-  onRegisterAccount,
-  onDeleteAccount,
-  onToggleAdminRights,
-  onChangeAdminPassword,
+  onLogout,
 }) => {
-  const isCurrentUserAdmin = useMemo(
-    () => Boolean(isAuthenticated) && getUserRolePermissions(currentUser).category === 'admin',
-    [currentUser, isAuthenticated]
-  );
-  const [mode, setMode] = useState<LoginModalMode>(
-    !isCurrentUserAdmin && initialMode === 'register' ? 'login' : initialMode
-  );
-  const [login, setLogin] = useState(currentUser.login || '');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState(ROLE_PRESETS[5]);
-  const [department, setDepartment] = useState('Производственно-технический отдел');
-  const [registerIsAdmin, setRegisterIsAdmin] = useState(false);
+  const [mode, setMode] = useState<LoginModalMode>(initialMode);
+  const [loginInput, setLoginInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNewPwd, setShowNewPwd] = useState(false);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
-  const [confirmDeleteLogin, setConfirmDeleteLogin] = useState<string | null>(null);
+  const [infoMsg, setInfoMsg] = useState('');
+  const [retryCountdown, setRetryCountdown] = useState<number>(0);
 
-  // Поля формы смены пароля администратора
-  const adminAccounts = useMemo(
-    () =>
-      accounts.filter(
-        (acc) => getUserRolePermissions(acc).category === 'admin'
-      ),
-    [accounts]
-  );
+  const isForcedRotation = mode === 'force_change_password';
 
-  const [targetAdminLogin, setTargetAdminLogin] = useState<string>(
-    currentUser.login || ''
-  );
-  const [oldAdminPassword, setOldAdminPassword] = useState<string>('');
-  const [newAdminPassword, setNewAdminPassword] = useState<string>('');
-  const [confirmAdminPassword, setConfirmAdminPassword] = useState<string>('');
+  const handleRequestClose = () => {
+    if (isForcedRotation) return;
+    if (!isAuthenticated) {
+      markGuestModeDismissed();
+    }
+    onClearSessionNotice?.();
+    onClose();
+  };
+
+  useModalDismiss({
+    isOpen: isOpen && !isForcedRotation,
+    onClose: handleRequestClose,
+  });
 
   useEffect(() => {
-    if (isOpen) {
-      const allowedInitialMode =
-        !isCurrentUserAdmin && initialMode === 'register' ? 'login' : initialMode;
-      setMode(allowedInitialMode);
-      setLogin(currentUser.login || '');
-      setPassword('');
-      setErrorMsg('');
-      setSuccessMsg('');
-      setRegisterIsAdmin(false);
-      const defaultAdmin =
-        adminAccounts.find((a) => a.login === currentUser.login)?.login ||
-        adminAccounts[0]?.login ||
-        currentUser.login ||
-        '';
-      setTargetAdminLogin(defaultAdmin);
-      setOldAdminPassword('');
-      setNewAdminPassword('');
-      setConfirmAdminPassword('');
-    }
-  }, [isOpen, initialMode, currentUser.login, isCurrentUserAdmin, adminAccounts]);
+    if (!isOpen) return;
+    const resolvedMode: LoginModalMode =
+      initialMode === 'force_change_password'
+        ? 'force_change_password'
+        : initialMode === 'change_password' && isAuthenticated
+          ? 'change_password'
+          : 'login';
+
+    setMode(resolvedMode);
+    setLoginInput('');
+    setPasswordInput('');
+    setShowPassword(false);
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    setShowCurrentPwd(false);
+    setShowNewPwd(false);
+    setErrorMsg('');
+    setInfoMsg('');
+    setIsSubmitting(false);
+  }, [isOpen, initialMode, isAuthenticated]);
+
+  useEffect(() => {
+    if (retryCountdown <= 0) return;
+    const timer = window.setInterval(() => {
+      setRetryCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [retryCountdown]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || retryCountdown > 0) return;
+
+    const cleanLogin = loginInput.trim();
+    if (!cleanLogin || !passwordInput) {
+      setErrorMsg('Введите логин и пароль.');
+      return;
+    }
+
     setErrorMsg('');
-    setSuccessMsg('');
-
-    if (mode === 'admin_password') {
-      if (!onChangeAdminPassword) return;
-      const cleanOld = oldAdminPassword.trim();
-      const cleanNew = newAdminPassword.trim();
-      const cleanConfirm = confirmAdminPassword.trim();
-
-      if (!cleanOld) {
-        setErrorMsg('Введите действующий пароль администратора');
-        return;
-      }
-      if (cleanNew.length < 8) {
-        setErrorMsg('Новый пароль администратора должен содержать не менее 8 символов');
-        return;
-      }
-      if (cleanNew !== cleanConfirm) {
-        setErrorMsg('Новый пароль и подтверждение пароля не совпадают');
-        return;
-      }
-
-      const res = await onChangeAdminPassword(targetAdminLogin, cleanOld, cleanNew);
-      if (!res.ok) {
-        setErrorMsg(res.message);
-        return;
-      }
-      setSuccessMsg(res.message);
-      setOldAdminPassword('');
-      setNewAdminPassword('');
-      setConfirmAdminPassword('');
-      if (targetAdminLogin === currentUser.login) {
-        setPassword(cleanNew);
-      }
-      return;
-    }
-
-    const cleanLogin = login.trim();
-    const cleanPassword = password.trim();
-
-    if (!cleanLogin || !cleanPassword) {
-      setErrorMsg('Введите пару логин и пароль для входа в систему');
-      return;
-    }
-
-    if (mode === 'register') {
-      if (!isCurrentUserAdmin) {
-        setErrorMsg('Право регистрации новых пользователей предоставлено исключительно администратору системы');
-        return;
-      }
-      if (cleanPassword.length < 8) {
-        setErrorMsg('Пароль учётной записи должен содержать не менее 8 символов');
-        return;
-      }
-      if (!fullName.trim()) {
-        setErrorMsg('Укажите ФИО регистрируемого специалиста');
-        return;
-      }
-      const existing = accounts.find(
-        (a) => a.login.toLowerCase() === cleanLogin.toLowerCase()
-      );
-      if (existing) {
-        setErrorMsg(`Логин «${cleanLogin}» уже зарегистрирован в системе`);
-        return;
-      }
-
-      const assignedRole = registerIsAdmin
-        ? role.trim() || 'Администратор системы (Полный доступ)'
-        : role.trim() || 'Инженер ПТО / СМР';
-
-      try {
-        const created = await zaychickApi.createUser({
-          login: cleanLogin,
-          password: cleanPassword,
-          fullName: fullName.trim(),
-          role: assignedRole,
-          department:
-            department.trim() ||
-            (registerIsAdmin
-              ? 'Администрация / Управление проектом'
-              : 'Производственно-технический отдел'),
-          mustChangePassword: false,
-        });
-        setSuccessMsg(`Пользователь «${cleanLogin}» успешно зарегистрирован. Войдите с назначенным паролем.`);
-        setErrorMsg('');
-        onRegisterAccount?.(created);
-        setLogin(cleanLogin);
-        setPassword('');
-        setMode('login');
-        return;
-      } catch (err) {
-        if (err instanceof ApiError) {
-          if (err.status === 409) {
-            setErrorMsg(`Пользователь с логином «${cleanLogin}» уже зарегистрирован`);
-            return;
-          }
-          if (err.status === 403) {
-            setErrorMsg('Недостаточно прав: регистрация разрешена только администратору');
-            return;
-          }
-          setErrorMsg(err.message);
-          return;
-        }
-        setErrorMsg(
-          'Сервер авторизации FastAPI недоступен. Проверьте порт 8000.'
-        );
-        return;
-      }
-    }
-
-    // 1. Авторизация строго через FastAPI /api/auth/login (устанавливает HttpOnly SameSite=Lax JWT Cookie)
+    setInfoMsg('');
+    setIsSubmitting(true);
     try {
-      const session = await zaychickApi.login(cleanLogin, cleanPassword);
-      setErrorMsg('');
-      onAuthenticate(session.user, cleanPassword);
-      onClose();
-      return;
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.status === 401) {
-          setErrorMsg('Неверный логин или пароль. Проверьте правильность введённых данных.');
-          return;
-        }
-        if (err.status === 403) {
-          setErrorMsg('Доступ запрещён: учётная запись деактивирована или заблокирована.');
-          return;
-        }
-        setErrorMsg(err.message || 'Ошибка авторизации на сервере.');
-        return;
+      const session = await zaychickApi.login(cleanLogin, passwordInput);
+      onClearSessionNotice?.();
+      onAuthenticate(session.user);
+
+      if (session.user.mustChangePassword) {
+        setCurrentPassword(passwordInput);
+        setPasswordInput('');
+        setMode('force_change_password');
+        setInfoMsg('');
+      } else {
+        setPasswordInput('');
+        onClose();
       }
-      setErrorMsg(
-        'Сервер авторизации FastAPI недоступен. Проверьте, запущен ли backend на http://127.0.0.1:8000.'
-      );
-      return;
+    } catch (err: unknown) {
+      const parsed = formatUserFriendlyAuthError(err);
+      setErrorMsg(parsed.message);
+      if (parsed.retryAfter && parsed.retryAfter > 0) {
+        setRetryCountdown(parsed.retryAfter);
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
+  const handlePasswordChangeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    const cleanCurrent = currentPassword;
+    const cleanNew = newPassword.trim();
+    const cleanConfirm = confirmNewPassword.trim();
+
+    if (!cleanCurrent) {
+      setErrorMsg('Введите текущий пароль.');
+      return;
+    }
+    if (cleanNew.length < MIN_PASSWORD_LENGTH) {
+      setErrorMsg(`Новый пароль должен содержать не менее ${MIN_PASSWORD_LENGTH} символов.`);
+      return;
+    }
+    if (cleanNew === cleanCurrent.trim()) {
+      setErrorMsg('Новый пароль должен отличаться от текущего.');
+      return;
+    }
+    if (cleanNew !== cleanConfirm) {
+      setErrorMsg('Новый пароль и подтверждение не совпадают.');
+      return;
+    }
+
+    setErrorMsg('');
+    setInfoMsg('');
+    setIsSubmitting(true);
+    try {
+      const session = await zaychickApi.changeOwnPassword(cleanCurrent, cleanNew);
+      onAuthenticate(session.user);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      if (isForcedRotation) {
+        onClose();
+      } else {
+        setInfoMsg('Пароль успешно обновлён. Остальные сессии завершены.');
+      }
+    } catch (err: unknown) {
+      const parsed = formatUserFriendlyAuthError(err);
+      setErrorMsg(parsed.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const userRoleLabel = SYSTEM_ROLE_LABELS_RU[resolveUserSystemRole(currentUser)];
+  const userDeptLabel = DEPARTMENT_LABELS_RU[resolveUserDepartment(currentUser)];
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Авторизация, регистрация и смена пароля администратора"
+      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !isForcedRotation) {
+          handleRequestClose();
+        }
+      }}
     >
       <div
-        className="fixed inset-0 bg-slate-900/50 backdrop-blur-[1px]"
-        onClick={onClose}
-      />
-
-      <div className="relative z-10 w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
-        <div className="px-6 py-4 bg-[#1e3799] text-white flex items-center justify-between shrink-0">
-          <ZaychickLogo variant="header" size={34} />
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть окно входа"
-            className="p-1.5 rounded-lg text-sky-100 hover:text-white hover:bg-white/10"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h2 className="font-display text-base font-bold text-slate-900">
-                Многопользовательский доступ «ZAYCHICK»
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-modal-title"
+        className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden flex flex-col"
+      >
+        {/* Заголовок */}
+        <div className="px-5 py-4 bg-[#1e3799] text-white flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+              {mode === 'login' ? (
+                <KeyRound className="w-4 h-4 text-sky-200" />
+              ) : (
+                <Lock className="w-4 h-4 text-sky-200" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <h2 id="auth-modal-title" className="text-sm font-bold tracking-tight truncate">
+                {mode === 'login'
+                  ? 'Вход в систему'
+                  : isForcedRotation
+                    ? 'Требуется смена пароля'
+                    : 'Смена пароля'}
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Все действия протоколируются в журнале аудита под личным логином и ролью
+              <p className="text-[11px] text-sky-200 truncate">
+                {mode === 'login'
+                  ? 'Авторизация сотрудника для работы с проектом'
+                  : 'Обновление пароля вашей учётной записи'}
               </p>
             </div>
           </div>
 
-          {isCurrentUserAdmin && (
-            <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg border border-slate-200">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('login');
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                }}
-                className={`py-1.5 px-2.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
-                  mode === 'login'
-                    ? 'bg-[#1e3799] text-white shadow-2xs'
-                    : 'text-slate-700 hover:text-slate-900'
-                }`}
-              >
-                Вход по логину
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('register');
-                  setLogin('');
-                  setPassword('');
-                  setFullName('');
-                  setRegisterIsAdmin(false);
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                }}
-                className={`py-1.5 px-2.5 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
-                  mode === 'register'
-                    ? 'bg-[#1e3799] text-white shadow-2xs'
-                    : 'text-slate-700 hover:text-slate-900'
-                }`}
-              >
-                Регистрация
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('admin_password');
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                }}
-                className={`py-1.5 px-2.5 rounded-md text-xs font-semibold transition-colors cursor-pointer inline-flex items-center justify-center gap-1 ${
-                  mode === 'admin_password'
-                    ? 'bg-[#1e3799] text-white shadow-2xs'
-                    : 'text-slate-700 hover:text-slate-900'
-                }`}
-              >
-                <Lock className="w-3 h-3 shrink-0" />
-                <span className="truncate">Пароль админа</span>
-              </button>
+          {!isForcedRotation && (
+            <button
+              type="button"
+              onClick={handleRequestClose}
+              aria-label="Закрыть окно"
+              className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-white/80 hover:text-white hover:bg-white/15 transition-colors cursor-pointer shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Переключатель режимов только для уже авторизованного пользователя */}
+        {isAuthenticated && !isForcedRotation && (
+          <div className="px-5 pt-3 bg-slate-50 border-b border-slate-200 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setErrorMsg('');
+                setInfoMsg('');
+              }}
+              className={`px-3 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+                mode === 'login'
+                  ? 'border-[#1e3799] text-[#1e3799]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Сменить пользователя
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('change_password');
+                setErrorMsg('');
+                setInfoMsg('');
+              }}
+              className={`px-3 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+                mode === 'change_password'
+                  ? 'border-[#1e3799] text-[#1e3799]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Смена пароля
+            </button>
+          </div>
+        )}
+
+        {/* Тело модального окна */}
+        <div className="p-5 space-y-4">
+          {/* Уведомление об истечении сессии */}
+          {mode === 'login' && sessionExpiredNotice && (
+            <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>{sessionExpiredNotice}</span>
             </div>
           )}
 
-          {errorMsg && (
-            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 font-medium">
-              {errorMsg}
+          {/* Уведомление об обязательной смене временного пароля */}
+          {isForcedRotation && (
+            <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+              <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                Для продолжения работы установите постоянный пароль длиной не менее{' '}
+                {MIN_PASSWORD_LENGTH} символов.
+              </span>
             </div>
           )}
 
-          {successMsg && (
-            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-medium flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{successMsg}</span>
+          {/* Таймер блокировки при 429 */}
+          {retryCountdown > 0 && (
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium">
+              <Clock className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="tabular-nums">
+                Повторная попытка входа доступна через {retryCountdown} сек.
+              </span>
             </div>
           )}
 
-          {mode === 'admin_password' ? (
-            <div className="space-y-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="flex items-center gap-2 text-xs font-bold text-[#1e3799]">
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                <span>Смена пароля учётной записи администратора</span>
-              </div>
+          {errorMsg && retryCountdown === 0 && (
+            <div
+              role="alert"
+              className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium"
+            >
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Учётная запись администратора
-                </label>
-                <select
-                  value={targetAdminLogin}
-                  onChange={(e) => setTargetAdminLogin(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+          {infoMsg && (
+            <div className="flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <span>{infoMsg}</span>
+            </div>
+          )}
+
+          {mode === 'login' ? (
+            <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+              <div className="space-y-1">
+                <label
+                  htmlFor="auth-login-input"
+                  className="block text-xs font-semibold text-slate-700"
                 >
-                  {adminAccounts.map((adm) => (
-                    <option key={adm.login} value={adm.login}>
-                      {adm.fullName} ({adm.login}) — {adm.role}
-                    </option>
-                  ))}
-                </select>
+                  Логин
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="auth-login-input"
+                    type="text"
+                    required
+                    autoFocus
+                    autoComplete="username"
+                    value={loginInput}
+                    onChange={(e) => setLoginInput(e.target.value)}
+                    placeholder="Введите логин учётной записи"
+                    className="w-full h-10 pl-9 pr-3 bg-white border border-slate-300 focus:border-[#1e3799] focus:ring-2 focus:ring-[#1e3799]/15 focus:outline-none rounded-lg text-sm font-medium text-slate-900"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Действующий пароль администратора *
+              <div className="space-y-1">
+                <label
+                  htmlFor="auth-password-input"
+                  className="block text-xs font-semibold text-slate-700"
+                >
+                  Пароль
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="auth-password-input"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    autoComplete="current-password"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    placeholder="Введите пароль"
+                    className="w-full h-10 pl-9 pr-10 bg-white border border-slate-300 focus:border-[#1e3799] focus:ring-2 focus:ring-[#1e3799]/15 focus:outline-none rounded-lg text-sm font-medium text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                    tabIndex={-1}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-1 flex flex-col gap-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting || retryCountdown > 0}
+                  className="w-full h-10 px-4 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:opacity-50 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Проверка учётных данных...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="w-4 h-4" />
+                      <span>Войти в систему</span>
+                    </>
+                  )}
+                </button>
+
+                {!isAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={handleRequestClose}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    Продолжить в режиме просмотра
+                  </button>
+                )}
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handlePasswordChangeSubmit} className="space-y-3.5">
+              {/* Карточка текущего пользователя */}
+              <div className="px-3.5 py-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-slate-900 truncate">
+                    {currentUser.fullName}
+                  </div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    {currentUser.login} · {userRoleLabel} · {userDeptLabel}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="auth-cur-password"
+                  className="block text-xs font-semibold text-slate-700"
+                >
+                  Текущий пароль
+                </label>
+                <div className="relative">
+                  <input
+                    id="auth-cur-password"
+                    type={showCurrentPwd ? 'text' : 'password'}
+                    required
+                    autoFocus={!currentPassword}
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Введите действующий пароль"
+                    className="w-full h-10 pl-3 pr-10 bg-white border border-slate-300 focus:border-[#1e3799] focus:ring-2 focus:ring-[#1e3799]/15 focus:outline-none rounded-lg text-sm font-medium text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPwd((prev) => !prev)}
+                    aria-label={showCurrentPwd ? 'Скрыть пароль' : 'Показать пароль'}
+                    tabIndex={-1}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    {showCurrentPwd ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="auth-new-password"
+                  className="block text-xs font-semibold text-slate-700"
+                >
+                  Новый пароль
+                </label>
+                <div className="relative">
+                  <input
+                    id="auth-new-password"
+                    type={showNewPwd ? 'text' : 'password'}
+                    required
+                    minLength={MIN_PASSWORD_LENGTH}
+                    autoFocus={Boolean(currentPassword)}
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder={`Минимум ${MIN_PASSWORD_LENGTH} символов`}
+                    className="w-full h-10 pl-3 pr-10 bg-white border border-slate-300 focus:border-[#1e3799] focus:ring-2 focus:ring-[#1e3799]/15 focus:outline-none rounded-lg text-sm font-medium text-slate-900"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPwd((prev) => !prev)}
+                    aria-label={showNewPwd ? 'Скрыть пароль' : 'Показать пароль'}
+                    tabIndex={-1}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    {showNewPwd ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label
+                  htmlFor="auth-confirm-password"
+                  className="block text-xs font-semibold text-slate-700"
+                >
+                  Подтверждение нового пароля
                 </label>
                 <input
-                  type="password"
+                  id="auth-confirm-password"
+                  type={showNewPwd ? 'text' : 'password'}
                   required
-                  value={oldAdminPassword}
-                  onChange={(e) => setOldAdminPassword(e.target.value)}
-                  placeholder="Введите текущий пароль"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
+                  minLength={MIN_PASSWORD_LENGTH}
+                  autoComplete="new-password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  placeholder="Повторите новый пароль"
+                  className="w-full h-10 px-3 bg-white border border-slate-300 focus:border-[#1e3799] focus:ring-2 focus:ring-[#1e3799]/15 focus:outline-none rounded-lg text-sm font-medium text-slate-900"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Новый пароль *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    value={newAdminPassword}
-                    onChange={(e) => setNewAdminPassword(e.target.value)}
-                    placeholder="Мин. 8 символов"
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Подтвердите новый пароль *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    value={confirmAdminPassword}
-                    onChange={(e) => setConfirmAdminPassword(e.target.value)}
-                    placeholder="Повторите новый пароль"
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
-                  />
-                </div>
+              <div className="pt-1 flex flex-col gap-2">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full h-10 px-4 rounded-lg bg-[#1e3799] hover:bg-[#15276e] disabled:opacity-50 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Сохранение...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Сохранить новый пароль</span>
+                    </>
+                  )}
+                </button>
+
+                {isForcedRotation && onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void onLogout();
+                    }}
+                    className="w-full h-9 px-3 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Выйти из учётной записи</span>
+                  </button>
+                )}
               </div>
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Логин пользователя *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={login}
-                    onChange={(e) => setLogin(e.target.value)}
-                    placeholder="Напр.: morozov_ig"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799] focus:bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Пароль *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Введите пароль"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799] focus:bg-white"
-                  />
-                </div>
-              </div>
-
-              {mode === 'register' && (
-                <div className="space-y-3 pt-1 border-t border-slate-200">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      ФИО специалиста (для журналов и аудита) *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Напр.: Морозов Игорь Геннадьевич"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3799] focus:bg-white"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Должность / Роль в системе
-                      </label>
-                      <input
-                        type="text"
-                        list="role-presets-list"
-                        value={role}
-                        onChange={(e) => setRole(e.target.value)}
-                        placeholder="Выберите или введите должность"
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3799] focus:bg-white"
-                      />
-                      <datalist id="role-presets-list">
-                        {ROLE_PRESETS.map((r) => (
-                          <option key={r} value={r} />
-                        ))}
-                      </datalist>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Подразделение / Служба
-                      </label>
-                      <input
-                        type="text"
-                        value={department}
-                        onChange={(e) => setDepartment(e.target.value)}
-                        placeholder="Напр.: Лаборатория НК (ЛНК)"
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#1e3799] focus:bg-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-200">
-                    <label className="flex items-start gap-2.5 p-2.5 rounded-lg bg-sky-50 border border-sky-200 cursor-pointer hover:bg-sky-100 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={registerIsAdmin}
-                        onChange={(e) => setRegisterIsAdmin(e.target.checked)}
-                        className="w-4 h-4 mt-0.5 text-[#1e3799] rounded border-slate-300 focus:ring-[#1e3799]"
-                      />
-                      <div className="text-xs">
-                        <span className="font-bold text-[#1e3799] flex items-center gap-1">
-                          <ShieldCheck className="w-3.5 h-3.5 text-[#1e3799]" />
-                          <span>Назначить права администратора</span>
-                        </span>
-                        <p className="text-[11px] text-slate-600 mt-0.5">
-                          Пользователь получит неограниченный доступ ко всем разделам системы, управлению СУБД и назначению ролей
-                        </p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-              )}
-            </>
+            </form>
           )}
-
-          <button
-            type="submit"
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] transition-colors cursor-pointer"
-          >
-            {mode === 'admin_password' ? (
-              <>
-                <Lock className="w-4 h-4" />
-                <span>Сохранить новый пароль администратора</span>
-              </>
-            ) : mode === 'register' ? (
-              <>
-                <UserPlus className="w-4 h-4" />
-                <span>Зарегистрировать специалиста</span>
-              </>
-            ) : (
-              <>
-                <KeyRound className="w-4 h-4" />
-                <span>Войти по логину и паролю</span>
-              </>
-            )}
-          </button>
-
-          {/* Управление учётными записями для администратора (без авто-входа и без паролей) */}
-          {isCurrentUserAdmin && accounts.length > 0 && (
-            <div className="pt-3 border-t border-slate-200 space-y-2">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
-                <span>Управление пользователями в СУБД ({accounts.length} чел.):</span>
-                <span className="text-[10px] text-slate-400">Роли и доступы</span>
-              </div>
-              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                {accounts.map((acc) => {
-                  const isCurrent = acc.login === currentUser.login;
-                  const isConfirming = confirmDeleteLogin === acc.login;
-                  const isAccAdmin =
-                    getUserRolePermissions(acc).category === 'admin';
-
-                  return (
-                    <div
-                      key={acc.login}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-left text-xs transition-colors ${
-                        isCurrent
-                          ? 'bg-[#e8f1fc] border-[#1e3799] text-[#1e3799]'
-                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex-1 text-left min-w-0 pr-2">
-                        <div className="font-semibold truncate flex items-center gap-1.5">
-                          <span className="truncate">{acc.fullName}</span>
-                          {isAccAdmin && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-indigo-100 text-[#1e3799] text-[10px] font-bold shrink-0">
-                              <ShieldCheck className="w-3 h-3" />
-                              <span>Админ</span>
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-500 truncate flex items-center gap-2">
-                          <span>
-                            Логин: <span className="font-mono">{acc.login}</span>
-                          </span>
-                          <span>·</span>
-                          <span className="truncate">{acc.role}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {!isConfirming ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setLogin(acc.login);
-                                setPassword('');
-                                setMode('login');
-                                setErrorMsg('');
-                                setSuccessMsg('');
-                              }}
-                              title="Выбрать данный логин для формы входа"
-                              className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-[10px] font-semibold transition-colors cursor-pointer"
-                            >
-                              Выбрать
-                            </button>
-                            {onToggleAdminRights && acc.login !== 'admin' && (
-                              isAccAdmin ? (
-                                <button
-                                  type="button"
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    setErrorMsg('');
-                                    setSuccessMsg('');
-                                    const res = await onToggleAdminRights(acc.login, false);
-                                    if (res.ok) setSuccessMsg(res.message);
-                                    else setErrorMsg(res.message);
-                                  }}
-                                  title="Отозвать права администратора"
-                                  className="px-2 py-1 rounded bg-white border border-amber-300 text-amber-800 hover:bg-amber-50 text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                                >
-                                  <ShieldAlert className="w-3 h-3 text-amber-600" />
-                                  <span>Снять админа</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    setErrorMsg('');
-                                    setSuccessMsg('');
-                                    const res = await onToggleAdminRights(acc.login, true);
-                                    if (res.ok) setSuccessMsg(res.message);
-                                    else setErrorMsg(res.message);
-                                  }}
-                                  title="Назначить права администратора"
-                                  className="px-2 py-1 rounded bg-white border border-indigo-200 text-[#1e3799] hover:bg-indigo-50 text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                                >
-                                  <ShieldCheck className="w-3 h-3 text-indigo-600" />
-                                  <span>Сделать админом</span>
-                                </button>
-                              )
-                            )}
-                            {isAccAdmin && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setTargetAdminLogin(acc.login);
-                                  setMode('admin_password');
-                                  setErrorMsg('');
-                                  setSuccessMsg('');
-                                }}
-                                title="Изменить пароль администратора"
-                                className="px-2 py-1 rounded bg-white border border-sky-200 text-[#1e3799] hover:bg-sky-50 text-[10px] font-semibold inline-flex items-center gap-1 cursor-pointer"
-                              >
-                                <KeyRound className="w-3 h-3" />
-                                <span>Пароль</span>
-                              </button>
-                            )}
-                            {onDeleteAccount && acc.login !== 'admin' && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (accounts.length <= 1) {
-                                    setErrorMsg(
-                                      'Нельзя удалить единственную оставшуюся учётную запись в системе.'
-                                    );
-                                    return;
-                                  }
-                                  setConfirmDeleteLogin(acc.login);
-                                }}
-                                title={`Удалить пользователя ${acc.fullName}`}
-                                aria-label={`Удалить пользователя ${acc.fullName}`}
-                                className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDeleteAccount?.(acc.login);
-                                setConfirmDeleteLogin(null);
-                              }}
-                              className="px-2 py-1 rounded bg-red-600 text-white text-[11px] font-bold hover:bg-red-700 cursor-pointer"
-                            >
-                              Удалить
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirmDeleteLogin(null);
-                              }}
-                              className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-700 text-[11px] font-semibold cursor-pointer"
-                            >
-                              Отмена
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600 flex items-center justify-between">
-            <span className="inline-flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-[#1e3799]" />
-              <span>Авторизация: FastAPI REST (JWT HttpOnly Cookie)</span>
-            </span>
-            <span className="font-mono">СУБД: PostgreSQL 16</span>
-          </div>
-        </form>
+        </div>
       </div>
     </div>
   );

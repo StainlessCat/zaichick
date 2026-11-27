@@ -14,8 +14,12 @@ export interface AuthContextValue {
   setIsLoginModalOpen: (open: boolean) => void;
   loginModalInitialMode: LoginModalMode;
   setLoginModalInitialMode: (mode: LoginModalMode) => void;
+  sessionExpiredNotice: string | null;
+  clearSessionExpiredNotice: () => void;
+  isSessionsModalOpen: boolean;
+  setIsSessionsModalOpen: (open: boolean) => void;
   onLogout: () => Promise<void>;
-  onSwitchUser?: (login: string) => Promise<void>;
+  onLogoutAllDevices: () => Promise<void>;
 }
 
 const defaultPermissions = getUserRolePermissions(ANONYMOUS_USER);
@@ -31,8 +35,12 @@ export const AuthContext = createContext<AuthContextValue>({
   setIsLoginModalOpen: () => {},
   loginModalInitialMode: 'login',
   setLoginModalInitialMode: () => {},
+  sessionExpiredNotice: null,
+  clearSessionExpiredNotice: () => {},
+  isSessionsModalOpen: false,
+  setIsSessionsModalOpen: () => {},
   onLogout: async () => {},
-  onSwitchUser: async () => {},
+  onLogoutAllDevices: async () => {},
 });
 
 export interface AuthProviderProps {
@@ -40,12 +48,17 @@ export interface AuthProviderProps {
   setCurrentUser: (user: UserAccount) => void;
   userAccounts: UserAccount[];
   setUserAccounts: React.Dispatch<React.SetStateAction<UserAccount[]>>;
+  isAuthenticated?: boolean;
   isLoginModalOpen: boolean;
   setIsLoginModalOpen: (open: boolean) => void;
   loginModalInitialMode: LoginModalMode;
   setLoginModalInitialMode: (mode: LoginModalMode) => void;
+  sessionExpiredNotice?: string | null;
+  clearSessionExpiredNotice?: () => void;
+  isSessionsModalOpen?: boolean;
+  setIsSessionsModalOpen?: (open: boolean) => void;
   onLogout: () => Promise<void>;
-  onSwitchUser?: (login: string) => Promise<void>;
+  onLogoutAllDevices?: () => Promise<void>;
   children: React.ReactNode;
 }
 
@@ -54,12 +67,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
   setCurrentUser,
   userAccounts,
   setUserAccounts,
+  isAuthenticated: isAuthenticatedProp,
   isLoginModalOpen,
   setIsLoginModalOpen,
   loginModalInitialMode,
   setLoginModalInitialMode,
+  sessionExpiredNotice = null,
+  clearSessionExpiredNotice = () => {},
+  isSessionsModalOpen = false,
+  setIsSessionsModalOpen = () => {},
   onLogout,
-  onSwitchUser,
+  onLogoutAllDevices,
   children,
 }) => {
   const userPermissions = useMemo(() => {
@@ -67,13 +85,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
   }, [currentUser]);
 
   const isAuthenticated = useMemo(() => {
+    if (typeof isAuthenticatedProp === 'boolean') {
+      return isAuthenticatedProp;
+    }
     return (
       Boolean(currentUser.login) &&
       currentUser.login !== 'anonymous' &&
       currentUser.login !== ANONYMOUS_USER.login &&
       currentUser.isActive !== false
     );
-  }, [currentUser.login, currentUser.isActive]);
+  }, [isAuthenticatedProp, currentUser.login, currentUser.isActive]);
+
+  const resolvedLogoutAll = onLogoutAllDevices ?? onLogout;
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -87,8 +110,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
       setIsLoginModalOpen,
       loginModalInitialMode,
       setLoginModalInitialMode,
+      sessionExpiredNotice,
+      clearSessionExpiredNotice,
+      isSessionsModalOpen,
+      setIsSessionsModalOpen,
       onLogout,
-      onSwitchUser,
+      onLogoutAllDevices: resolvedLogoutAll,
     }),
     [
       currentUser,
@@ -101,8 +128,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
       setIsLoginModalOpen,
       loginModalInitialMode,
       setLoginModalInitialMode,
+      sessionExpiredNotice,
+      clearSessionExpiredNotice,
+      isSessionsModalOpen,
+      setIsSessionsModalOpen,
       onLogout,
-      onSwitchUser,
+      resolvedLogoutAll,
     ]
   );
 

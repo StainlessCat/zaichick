@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, zaychickApi } from '../api';
+import { registerUnauthorizedHandler } from '../api/client';
 import {
   ANONYMOUS_USER,
   AuditLogEntry,
@@ -19,6 +20,34 @@ import {
   WeldJoint,
 } from '../types/welding';
 import { getUserRolePermissions } from '../utils/rbac';
+
+const GUEST_DISMISSED_STORAGE_KEY = 'zaychick_guest_mode_dismissed';
+const SLIDING_REFRESH_MIN_INTERVAL_MS = 10 * 60 * 1000; // minimum 10 min between refreshes
+const SLIDING_REFRESH_THRESHOLD_MS = 6 * 60 * 60 * 1000; // refresh when < 6 hours remaining
+
+export function markGuestModeDismissed(): void {
+  try {
+    sessionStorage.setItem(GUEST_DISMISSED_STORAGE_KEY, '1');
+  } catch {
+    // ignore storage quota / private mode
+  }
+}
+
+export function clearGuestModeDismissed(): void {
+  try {
+    sessionStorage.removeItem(GUEST_DISMISSED_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function isGuestModeDismissed(): boolean {
+  try {
+    return sessionStorage.getItem(GUEST_DISMISSED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 export interface FacilityGeoOverride {
   region: string;
@@ -40,6 +69,9 @@ export interface UseServerSyncParams {
   currentUser: UserAccount | null;
   setCurrentUser: React.Dispatch<React.SetStateAction<UserAccount>>;
   setIsLoginModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setLoginModalInitialMode?: React.Dispatch<
+    React.SetStateAction<'login' | 'change_password' | 'force_change_password'>
+  >;
   setServerFacilities: React.Dispatch<React.SetStateAction<FacilityObject[]>>;
   setJoints: React.Dispatch<React.SetStateAction<WeldJoint[]>>;
   setProjectLineList: React.Dispatch<React.SetStateAction<ProjectLineItem[]>>;
@@ -107,6 +139,7 @@ export function useServerSync({
   currentUser,
   setCurrentUser,
   setIsLoginModalOpen,
+  setLoginModalInitialMode,
   setServerFacilities,
   setJoints,
   setProjectLineList,
@@ -128,12 +161,95 @@ export function useServerSync({
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [lastSyncError, setLastSyncError] = useState<string | null>(null);
   const [lastSyncAttemptAt, setLastSyncAttemptAt] = useState<string | null>(null);
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState<string | null>(null);
   const [isServerDbModalOpen, setIsServerDbModalOpen] = useState<boolean>(false);
   const [activeConflict, setActiveConflict] =
     useState<OptimisticLockConflictPayload | null>(null);
 
   const clientIdRef = useRef<string>(`pg-${Math.random().toString(36).slice(2, 9)}`);
   const isApplyingServerStateRef = useRef<boolean>(false);
+  const isAuthenticatedRef = useRef<boolean>(false);
+  const sessionExpiresAtRef = useRef<number | null>(null);
+  const lastRefreshAtRef = useRef<number>(0);
+  const isRefreshingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated;
+  }, [isAuthenticated]);
+
+  const clearSessionExpiredNotice = useCallback(() => {
+    setSessionExpiredNotice(null);
+  }, []);
+
+  // Global 401 handler: cleanly terminate stale session & prompt re-authentication
+  useEffect(() => {
+    return registerUnauthorizedHandler(({ message }) => {
+      if (!isAuthenticatedRef.current) return;
+      isAuthenticatedRef.current = false;
+      sessionExpiresAtRef.current = null;
+      setIsAuthenticated(false);
+      setCurrentUser(ANONYMOUS_USER);
+      setSessionExpiredNotice(
+        message || 'Сессия завершена или истекла. Выполните вход повторно.'
+      );
+      setLoginModalInitialMode?.('login');
+      setIsLoginModalOpen(true);
+    });
+  }, [setCurrentUser, setIsLoginModalOpen, setLoginModalInitialMode]);
+
+  // Sliding session refresh on user activity so active engineers are never unexpectedly logged out
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const maybeRefreshSession = () => {
+      if (!isAuthenticatedRef.current || isRefreshingRef.current) return;
+      const now = Date.now();
+      if (now - lastRefreshAtRef.current < SLIDING_REFRESH_MIN_INTERVAL_MS) {
+        return;
+      }
+      const expiresAt = sessionExpiresAtRef.current;
+      const shouldRefresh =
+        expiresAt === null || expiresAt - now < SLIDING_REFRESH_THRESHOLD_MS;
+      if (!shouldRefresh) return;
+
+      isRefreshingRef.current = true;
+      lastRefreshAtRef.current = now;
+      void zaychickApi
+        .refreshSession()
+        .then((refreshed) => {
+          if (refreshed.expiresAt) {
+            const parsed = Date.parse(refreshed.expiresAt);
+            if (Number.isFinite(parsed)) {
+              sessionExpiresAtRef.current = parsed;
+            }
+          }
+        })
+        .catch(() => {
+          // 401 is handled globally by registerUnauthorizedHandler; transient network errors ignored
+        })
+        .finally(() => {
+          isRefreshingRef.current = false;
+        });
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        maybeRefreshSession();
+      }
+    };
+
+    window.addEventListener('pointerdown', maybeRefreshSession, { passive: true });
+    window.addEventListener('keydown', maybeRefreshSession, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibility);
+    const intervalId = window.setInterval(maybeRefreshSession, 5 * 60 * 1000);
+
+    return () => {
+      window.removeEventListener('pointerdown', maybeRefreshSession);
+      window.removeEventListener('keydown', maybeRefreshSession);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, [isAuthenticated]);
 
   const applyGeoFromFacilities = useCallback(
     (facilities: FacilityObject[]) => {
@@ -177,8 +293,21 @@ export function useServerSync({
       setLastSyncAttemptAt(new Date().toISOString());
       try {
         const session = await zaychickApi.getSession();
+        clearGuestModeDismissed();
         setCurrentUser(session.user);
         setIsAuthenticated(true);
+        setSessionExpiredNotice(null);
+
+        if (session.expiresAt) {
+          const parsedExp = Date.parse(session.expiresAt);
+          sessionExpiresAtRef.current = Number.isFinite(parsedExp) ? parsedExp : null;
+        }
+        lastRefreshAtRef.current = Date.now();
+
+        if (session.user.mustChangePassword) {
+          setLoginModalInitialMode?.('force_change_password');
+          setIsLoginModalOpen(true);
+        }
 
         const perms = getUserRolePermissions(session.user);
         const [
@@ -194,6 +323,7 @@ export function useServerSync({
           users,
           labRequests,
           testCircuits,
+          adminSessions,
         ] = await Promise.all([
           zaychickApi.listFacilities(),
           zaychickApi.listLines(),
@@ -206,11 +336,14 @@ export function useServerSync({
           perms.canViewAuditLogs
             ? zaychickApi.listAuditLogs(1, 200).catch(() => [] as AuditLogEntry[])
             : Promise.resolve([] as AuditLogEntry[]),
-          perms.category === 'admin'
-            ? zaychickApi.listUsers().catch(() => [] as UserAccount[])
+          perms.canManageUsers
+            ? zaychickApi.listAdminUsers().catch(() => [] as UserAccount[])
             : Promise.resolve([session.user]),
           zaychickApi.listLabRequests().catch(() => [] as NdtLabRequest[]),
           zaychickApi.listTestCircuits().catch(() => [] as TestCircuit[]),
+          perms.canManageUsers
+            ? zaychickApi.listAdminSessions().catch(() => null)
+            : Promise.resolve(null),
         ]);
 
         isApplyingServerStateRef.current = true;
@@ -235,14 +368,33 @@ export function useServerSync({
           setUserAccounts(users);
         }
 
+        const mappedSessions =
+          adminSessions && adminSessions.length > 0
+            ? adminSessions.map((s) => ({
+                sessionId: s.id,
+                login: s.userLogin,
+                fullName: s.userFullName,
+                role: s.deviceLabel || s.userRole,
+                lastSeenAt: s.lastSeenAt,
+              }))
+            : [
+                {
+                  sessionId: session.sessionId || clientIdRef.current,
+                  login: session.user.login,
+                  fullName: session.user.fullName,
+                  role: session.user.role,
+                  lastSeenAt: new Date().toISOString(),
+                },
+              ];
+
         setServerDbMeta((prev) => ({
           engine: 'PostgreSQL 16 (SQLAlchemy Async + Asyncpg)',
           journalMode: 'MVCC / ACID Transactions',
-          dbFilePath: 'FastAPI REST + SSE Delta Bus',
+          dbFilePath: 'Сервер приложений и шина обновлений',
           globalRevision: (prev?.globalRevision ?? 0) + 1,
           lastUpdatedAt: new Date().toISOString(),
           lastUpdatedBy: session.user.fullName,
-          lastAction: 'Загрузка с сервера (REST API)',
+          lastAction: 'Загрузка с сервера',
           counts: {
             joints: joints.length,
             projectLineList: lines.length,
@@ -253,15 +405,7 @@ export function useServerSync({
             userAccounts: users.length,
             auditLogs: auditLogs.length,
           },
-          activeSessions: [
-            {
-              sessionId: clientIdRef.current,
-              login: session.user.login,
-              fullName: session.user.fullName,
-              role: session.user.role,
-              lastSeenAt: new Date().toISOString(),
-            },
-          ],
+          activeSessions: mappedSessions,
         }));
 
         setIsDbConnected(true);
@@ -272,19 +416,32 @@ export function useServerSync({
         }, 50);
         return true;
       } catch (err) {
+        sessionExpiresAtRef.current = null;
         setIsAuthenticated(false);
         setCurrentUser(ANONYMOUS_USER);
         if (err instanceof ApiError && err.status === 401) {
           setIsDbConnected(true);
           setLastSyncError(null);
+          if (!isGuestModeDismissed()) {
+            setLoginModalInitialMode?.('login');
+            setIsLoginModalOpen(true);
+          }
+          return false;
+        }
+        if (err instanceof ApiError && err.status === 403) {
+          setIsDbConnected(true);
+          setSessionExpiredNotice(err.message);
+          setLoginModalInitialMode?.('login');
           setIsLoginModalOpen(true);
           return false;
         }
         setIsDbConnected(false);
         setLastSyncError(
           err instanceof Error
-            ? (err.message.includes('fetch') ? 'Сервер FastAPI недоступен (порт 8000)' : err.message)
-            : 'Сервер FastAPI / PostgreSQL недоступен'
+            ? err.message.toLowerCase().includes('fetch') || err.message.includes('HTTP 502')
+              ? 'Сервер временно недоступен. Работа в автономном режиме просмотра.'
+              : err.message
+            : 'Сервер базы данных недоступен'
         );
         return false;
       } finally {
@@ -296,6 +453,7 @@ export function useServerSync({
       setAuditLogs,
       setCurrentUser,
       setIsLoginModalOpen,
+      setLoginModalInitialMode,
       setJoints,
       setLrvCatalog,
       setProjectLineList,
@@ -380,8 +538,8 @@ export function useServerSync({
           if (tpls.length > 0) setTemplates(tpls);
         } else if (entityType === 'user') {
           const perms = currentUser ? getUserRolePermissions(currentUser) : null;
-          if (perms?.category === 'admin') {
-            const users = await zaychickApi.listUsers();
+          if (perms?.canManageUsers) {
+            const users = await zaychickApi.listAdminUsers();
             setUserAccounts(users);
           }
         } else if (entityType === 'lab_request' && setLabRequests) {
@@ -433,11 +591,15 @@ export function useServerSync({
     if (!isAuthenticated || typeof EventSource === 'undefined') return;
 
     const es = new EventSource('/api/events/stream', { withCredentials: true });
+    let consecutiveErrors = 0;
+
     es.addEventListener('connected', () => {
+      consecutiveErrors = 0;
       setIsDbConnected(true);
     });
 
     const onDelta = (ev: MessageEvent) => {
+      consecutiveErrors = 0;
       try {
         const parsed = JSON.parse(ev.data) as SseDeltaEnvelope;
         void handleDeltaEvent(parsed);
@@ -451,13 +613,36 @@ export function useServerSync({
     }
 
     es.onerror = () => {
-      // Browser EventSource reconnects automatically
+      consecutiveErrors += 1;
+      // After repeated SSE failures, probe session once to detect revocation/expiry cleanly
+      if (consecutiveErrors === 2) {
+        void zaychickApi.getSession().catch((err) => {
+          if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+            es.close();
+            isAuthenticatedRef.current = false;
+            sessionExpiresAtRef.current = null;
+            setIsAuthenticated(false);
+            setCurrentUser(ANONYMOUS_USER);
+            setSessionExpiredNotice(
+              err.message || 'Сессия завершена или истекла. Выполните вход повторно.'
+            );
+            setLoginModalInitialMode?.('login');
+            setIsLoginModalOpen(true);
+          }
+        });
+      }
     };
 
     return () => {
       es.close();
     };
-  }, [isAuthenticated, handleDeltaEvent]);
+  }, [
+    isAuthenticated,
+    handleDeltaEvent,
+    setCurrentUser,
+    setIsLoginModalOpen,
+    setLoginModalInitialMode,
+  ]);
 
   const triggerImmediateSync = useCallback(async (): Promise<boolean> => {
     return fetchServerDbState(false);
@@ -492,6 +677,9 @@ export function useServerSync({
     lastSyncError,
     setLastSyncError,
     lastSyncAttemptAt,
+    sessionExpiredNotice,
+    setSessionExpiredNotice,
+    clearSessionExpiredNotice,
     triggerImmediateSync,
     isServerDbModalOpen,
     setIsServerDbModalOpen,

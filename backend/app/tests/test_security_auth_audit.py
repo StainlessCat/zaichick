@@ -19,6 +19,7 @@ from app.core.security import (
 from app.main import app
 from app.models.audit import AuditLog
 from app.models.enums import DepartmentEnum, RoleEnum, SystemRoleEnum
+from app.models.session import UserSession
 from app.models.user import User
 from app.services.audit_service import extract_changed_fields, sanitize_audit_snapshot
 from app.services.rbac import (
@@ -77,6 +78,7 @@ class _FakeAsyncSession:
 
     def __init__(self, users: list[User] | None = None) -> None:
         self.users: dict[uuid.UUID, User] = {u.id: u for u in (users or [])}
+        self.user_sessions: dict[uuid.UUID, UserSession] = {}
         self.audit_logs: list[AuditLog] = []
         self.committed = 0
 
@@ -94,6 +96,10 @@ class _FakeAsyncSession:
             if obj.session_number is None:
                 obj.session_number = 1
             self.users[obj.id] = obj
+        elif isinstance(obj, UserSession):
+            if obj.id is None:
+                obj.id = uuid.uuid4()
+            self.user_sessions[obj.id] = obj
         elif isinstance(obj, AuditLog):
             if obj.id is None:
                 obj.id = uuid.uuid4()
@@ -144,6 +150,29 @@ class _FakeAsyncSession:
                     return _FakeExecuteResult(scalar_one=found)
 
             return _FakeExecuteResult(scalars_all=list(self.users.values()))
+
+        if "FROM user_sessions" in sql_text:
+            uuids = [v for v in params.values() if isinstance(v, uuid.UUID)]
+            # Lookup by (id, user_id)
+            if len(uuids) >= 2:
+                sid, uid = uuids[0], uuids[1]
+                found = self.user_sessions.get(sid)
+                if found and found.user_id == uid:
+                    return _FakeExecuteResult(scalar_one=found)
+                return _FakeExecuteResult(scalar_one=None)
+            # Lookup by single id or user_id
+            if len(uuids) == 1:
+                val = uuids[0]
+                if "user_sessions.id =" in sql_text:
+                    return _FakeExecuteResult(scalar_one=self.user_sessions.get(val))
+                now = datetime.now(timezone.utc)
+                matching = [
+                    s
+                    for s in self.user_sessions.values()
+                    if s.user_id == val and s.revoked_at is None and s.expires_at > now
+                ]
+                return _FakeExecuteResult(scalars_all=matching)
+            return _FakeExecuteResult(scalars_all=list(self.user_sessions.values()))
 
         if "FROM audit_logs" in sql_text:
             if "count(" in sql_text.lower():
@@ -369,7 +398,23 @@ async def test_http_auth_cookie_query_token_ban_rbac_rate_limit_and_audit(
                 )
                 assert replay_resp.status_code == 401
 
-            # 8. Change password rotates session_number & updates cookie on PTO client
+            # 8. Refresh session extends expiry and lists active sessions; cross-origin cookie POST rejected
+            refresh_resp = await client.post("/api/auth/refresh")
+            assert refresh_resp.status_code == 200
+            assert refresh_resp.json()["session_id"] is not None
+
+            sessions_resp = await client.get("/api/auth/sessions")
+            assert sessions_resp.status_code == 200
+            assert len(sessions_resp.json()) >= 1
+            assert any(s["is_current"] is True for s in sessions_resp.json())
+
+            csrf_bad = await client.post(
+                "/api/auth/refresh",
+                headers={"Origin": "https://evil.example.com"},
+            )
+            assert csrf_bad.status_code == 403
+
+            # 9. Change password rotates session_number & updates cookie on PTO client
             cp_resp = await client.post(
                 "/api/auth/change-password",
                 json={"current_password": "PtoPassword1!", "new_password": "PtoNewPassword2!"},

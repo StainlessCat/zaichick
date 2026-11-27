@@ -28,6 +28,7 @@ export class ApiError extends Error {
   public readonly detail: unknown;
   public readonly validationErrors: ValidationIssueDto[];
   public readonly conflict?: OptimisticConflictDto;
+  public readonly retryAfterSeconds?: number;
 
   constructor(
     message: string,
@@ -37,6 +38,7 @@ export class ApiError extends Error {
       detail?: unknown;
       validationErrors?: ValidationIssueDto[];
       conflict?: OptimisticConflictDto;
+      retryAfterSeconds?: number;
     }
   ) {
     super(message);
@@ -46,7 +48,61 @@ export class ApiError extends Error {
     this.detail = options?.detail;
     this.validationErrors = options?.validationErrors || [];
     this.conflict = options?.conflict;
+    this.retryAfterSeconds = options?.retryAfterSeconds;
   }
+}
+
+export type UnauthorizedHandler = (info: {
+  url: string;
+  status: number;
+  message: string;
+}) => void;
+
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+/**
+ * Register a global callback invoked whenever an authenticated API endpoint
+ * responds with 401 Unauthorized (e.g. session expired or revoked on server).
+ */
+export function registerUnauthorizedHandler(
+  handler: UnauthorizedHandler | null
+): () => void {
+  unauthorizedHandler = handler;
+  return () => {
+    if (unauthorizedHandler === handler) {
+      unauthorizedHandler = null;
+    }
+  };
+}
+
+const AUTH_EXEMPT_401_PREFIXES = [
+  '/api/auth/login',
+  '/api/auth/token',
+  '/api/auth/session',
+  '/api/auth/me',
+  '/api/auth/logout',
+];
+
+function shouldNotifyUnauthorized(url: string, status: number): boolean {
+  if (status !== 401) return false;
+  const normalizedPath = url.split('?')[0];
+  return !AUTH_EXEMPT_401_PREFIXES.some((prefix) => normalizedPath.endsWith(prefix));
+}
+
+export function parseRetryAfterHeader(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.ceil(numeric);
+  }
+  const dateMs = Date.parse(trimmed);
+  if (Number.isFinite(dateMs)) {
+    const diffSec = Math.ceil((dateMs - Date.now()) / 1000);
+    return diffSec > 0 ? diffSec : undefined;
+  }
+  return undefined;
 }
 
 function parseErrorPayload(raw: unknown, status: number): {
@@ -125,6 +181,9 @@ export async function apiRequest<T>(
   init: RequestInit = {}
 ): Promise<T> {
   const headers = new Headers(init.headers || {});
+  if (!headers.has('X-Requested-With')) {
+    headers.set('X-Requested-With', 'XMLHttpRequest');
+  }
   if (
     init.body !== undefined &&
     !(init.body instanceof FormData) &&
@@ -151,11 +210,16 @@ export async function apiRequest<T>(
 
   if (!res.ok) {
     const errInfo = parseErrorPayload(parsedBody, res.status);
+    const retryAfterSeconds = parseRetryAfterHeader(res.headers.get('retry-after'));
+    if (shouldNotifyUnauthorized(url, res.status) && unauthorizedHandler) {
+      unauthorizedHandler({ url, status: res.status, message: errInfo.message });
+    }
     throw new ApiError(errInfo.message, res.status, {
       code: errInfo.code,
       detail: errInfo.detail,
       validationErrors: errInfo.validationErrors,
       conflict: errInfo.conflict,
+      retryAfterSeconds,
     });
   }
 
@@ -189,6 +253,7 @@ export async function apiDownloadBlob(
   const res = await fetch(url, {
     method: 'GET',
     credentials: 'include',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
   });
 
   if (!res.ok) {
@@ -197,10 +262,15 @@ export async function apiDownloadBlob(
       ? await res.json().catch(() => null)
       : await res.text().catch(() => '');
     const errInfo = parseErrorPayload(parsedBody, res.status);
+    const retryAfterSeconds = parseRetryAfterHeader(res.headers.get('retry-after'));
+    if (shouldNotifyUnauthorized(url, res.status) && unauthorizedHandler) {
+      unauthorizedHandler({ url, status: res.status, message: errInfo.message });
+    }
     throw new ApiError(errInfo.message, res.status, {
       code: errInfo.code,
       detail: errInfo.detail,
       validationErrors: errInfo.validationErrors,
+      retryAfterSeconds,
     });
   }
 

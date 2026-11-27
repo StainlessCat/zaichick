@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     cookie_samesite: Literal["lax", "strict", "none"] = Field(
         default="lax", alias="COOKIE_SAMESITE"
     )
+    cookie_partitioned: bool = Field(default=False, alias="COOKIE_PARTITIONED")
 
     # Login brute-force protection
     login_rate_limit_attempts: int = 10
@@ -57,7 +58,7 @@ class Settings(BaseSettings):
     )
 
     cors_origins_raw: str = Field(
-        default="http://localhost:5173,http://127.0.0.1:5173",
+        default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",
         alias="CORS_ORIGINS",
     )
 

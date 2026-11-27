@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  AdminUserSessionInfo,
   DepartmentCode,
   FacilityObject,
   LRVItem,
@@ -158,6 +159,9 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
   // --- Tab 3: DB & OCC ---
   const [selectedTestJointId, setSelectedTestJointId] = useState<string>(joints[0]?.id || '');
   const [isSimulating, setIsSimulating] = useState(false);
+  const [remoteSessions, setRemoteSessions] = useState<AdminUserSessionInfo[] | null>(null);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -187,9 +191,37 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
     }
   };
 
+  const loadRemoteSessions = async () => {
+    if (!isConnected || !perms.canManageUsers) return;
+    setLoadingSessions(true);
+    try {
+      const list = await zaychickApi.listAdminSessions();
+      setRemoteSessions(list);
+    } catch {
+      setRemoteSessions(null);
+    } finally {
+      setLoadingSessions(false);
+    }
+  };
+
+  const handleRevokeAdminSession = async (sessionId: string) => {
+    setRevokingSessionId(sessionId);
+    try {
+      await zaychickApi.revokeAdminSession(sessionId);
+      setRemoteSessions((prev) => (prev ? prev.filter((s) => s.id !== sessionId) : prev));
+    } catch {
+      // ignore or keep row intact
+    } finally {
+      setRevokingSessionId(null);
+    }
+  };
+
   useEffect(() => {
     if (isOpen && activeTab === 'users' && isConnected && perms.canManageUsers) {
       void loadRemoteUsers();
+    }
+    if (isOpen && activeTab === 'db' && isConnected && perms.canManageUsers) {
+      void loadRemoteSessions();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeTab, isConnected, perms.canManageUsers]);
@@ -300,8 +332,12 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
       setUserBanner({ type: 'err', text: 'Заполните логин и ФИО пользователя' });
       return;
     }
-    if (userFormMode === 'create' && formPassword.trim().length < 4) {
-      setUserBanner({ type: 'err', text: 'Пароль должен содержать не менее 4 символов' });
+    if (userFormMode === 'create' && formPassword.trim().length < 8) {
+      setUserBanner({ type: 'err', text: 'Пароль должен содержать не менее 8 символов' });
+      return;
+    }
+    if (userFormMode === 'edit' && formPassword.trim().length > 0 && formPassword.trim().length < 8) {
+      setUserBanner({ type: 'err', text: 'Новый пароль должен содержать не менее 8 символов' });
       return;
     }
     if (!onSaveManagedUser) return;
@@ -713,9 +749,10 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
                       <input
                         type="password"
                         required={userFormMode === 'create'}
+                        minLength={8}
                         value={formPassword}
                         onChange={(e) => setFormPassword(e.target.value)}
-                        placeholder={userFormMode === 'create' ? 'Минимум 4 символа' : 'Оставьте пустым'}
+                        placeholder={userFormMode === 'create' ? 'Минимум 8 символов' : 'Оставьте пустым'}
                         className="w-full h-8 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono"
                       />
                     </div>
@@ -1151,12 +1188,70 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
               </div>
 
               {/* 4. Активные пользовательские сессии */}
-              {dbMeta?.activeSessions && dbMeta.activeSessions.length > 0 && (
-                <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2">
+              <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 font-bold text-slate-800">
                     <Users className="w-4 h-4 text-[#1e3799]" />
-                    <span>Активные сессии: {dbMeta.activeSessions.length}</span>
+                    <span>
+                      Активные сессии:{' '}
+                      {remoteSessions
+                        ? remoteSessions.length
+                        : dbMeta?.activeSessions?.length ?? 0}
+                    </span>
                   </div>
+                  {isConnected && perms.canManageUsers && (
+                    <button
+                      type="button"
+                      onClick={() => void loadRemoteSessions()}
+                      disabled={loadingSessions}
+                      className="h-7 px-2.5 rounded-md border border-slate-200 hover:bg-slate-50 text-[11px] font-semibold text-slate-600 inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${loadingSessions ? 'animate-spin' : ''}`} />
+                      <span>Обновить</span>
+                    </button>
+                  )}
+                </div>
+
+                {remoteSessions && remoteSessions.length > 0 ? (
+                  <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
+                    {remoteSessions.map((sess) => (
+                      <div
+                        key={sess.id}
+                        className="px-3 py-2 flex items-center justify-between gap-2 text-[11px] bg-white hover:bg-slate-50"
+                      >
+                        <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span className="font-bold text-slate-900 truncate">
+                            {sess.userFullName}
+                          </span>
+                          <span className="font-mono text-[#1e3799]">{sess.userLogin}</span>
+                          <span className="text-slate-500">· {sess.deviceLabel}</span>
+                          {sess.ipAddress && (
+                            <span className="font-mono text-slate-400">· {sess.ipAddress}</span>
+                          )}
+                          <span className="text-slate-400 tabular-nums">
+                            · {formatTimestampDDMMYY(sess.lastSeenAt)}
+                          </span>
+                          {sess.isCurrent && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                              Текущая
+                            </span>
+                          )}
+                        </div>
+                        {!sess.isCurrent && (
+                          <button
+                            type="button"
+                            disabled={revokingSessionId === sess.id}
+                            onClick={() => void handleRevokeAdminSession(sess.id)}
+                            className="h-6 px-2 rounded border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-semibold text-[11px] cursor-pointer disabled:opacity-50 shrink-0"
+                          >
+                            {revokingSessionId === sess.id ? '...' : 'Завершить'}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : dbMeta?.activeSessions && dbMeta.activeSessions.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {dbMeta.activeSessions.map((sess) => (
                       <div
@@ -1169,8 +1264,10 @@ export const ServerDbStatusModal: React.FC<ServerDbStatusModalProps> = ({
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="text-[11px] text-slate-400">Нет данных об активных сессиях.</div>
+                )}
+              </div>
             </div>
           )}
         </div>

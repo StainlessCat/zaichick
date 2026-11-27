@@ -442,7 +442,7 @@ export const TestCircuitsView: React.FC<TestCircuitsViewProps> = ({
       {/* Compact Header Card: KPI Strip + Filter Bar (unified with Laboratory & Registry) */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-3 space-y-2.5">
         {/* 6-Cell Compact KPI Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border border-slate-200 rounded-lg bg-slate-50/70 overflow-hidden">
+        <div className="zaychick-kpi-strip grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 border border-slate-200 rounded-lg bg-slate-50/70 overflow-hidden">
           <div
             className="px-3 py-2 flex items-center justify-between gap-2"
             title={`Испытано: ${kpi.testedCount} из ${kpi.totalCircuits} контуров`}

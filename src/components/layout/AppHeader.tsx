@@ -13,9 +13,11 @@ import {
   LogIn,
   LogOut,
   MapPin,
+  MonitorSmartphone,
   Plus,
   Redo2,
   RotateCw,
+  Settings,
   Trash2,
   Undo2,
   UserCheck,
@@ -29,6 +31,7 @@ import {
   SYSTEM_ROLE_LABELS_RU,
 } from '../../utils/rbac';
 import { ZaychickLogo } from '../ZaychickLogo';
+import { AppSettingsModal } from '../AppSettingsModal';
 import { useAuth, useAppContext } from '../../context';
 
 export interface AppHeaderProps {
@@ -44,7 +47,8 @@ export interface AppHeaderProps {
   onOpenServerDbModal: () => void;
   onTriggerSync?: () => Promise<boolean>;
   onOpenLoginModal?: () => void;
-  onOpenAdminPasswordModal?: () => void;
+  onOpenPasswordChangeModal?: () => void;
+  onOpenSessionsModal?: () => void;
   onLogout?: () => Promise<void>;
   onExportAllJoints?: (format: 'xlsx' | 'csv') => void;
   onOpenFacilityLocation?: (objectName: string) => void;
@@ -131,7 +135,7 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
   const onLogoClick = props.onLogoClick;
   const isDbConnected = props.isDbConnected ?? app.isDbConnected;
   const isDbSyncing = props.isDbSyncing ?? app.isDbSyncing;
-  const isAuthenticated = props.isAuthenticated ?? auth.currentUser.login !== '';
+  const isAuthenticated = props.isAuthenticated ?? auth.isAuthenticated;
   const pendingSyncCount = props.pendingSyncCount ?? app.pendingSyncCount;
   const serverDbMeta = props.serverDbMeta ?? app.serverDbMeta;
   const currentUser = props.currentUser ?? auth.currentUser;
@@ -143,11 +147,16 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
       auth.setLoginModalInitialMode('login');
       auth.setIsLoginModalOpen(true);
     });
-  const onOpenAdminPasswordModal =
-    props.onOpenAdminPasswordModal ??
+  const onOpenPasswordChangeModal =
+    props.onOpenPasswordChangeModal ??
     (() => {
-      auth.setLoginModalInitialMode('admin_password');
+      auth.setLoginModalInitialMode('change_password');
       auth.setIsLoginModalOpen(true);
+    });
+  const onOpenSessionsModal =
+    props.onOpenSessionsModal ??
+    (() => {
+      auth.setIsSessionsModalOpen(true);
     });
   const onLogout = props.onLogout ?? auth.onLogout;
   const undoCount = props.undoCount ?? app.undoStack.length;
@@ -161,6 +170,7 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
 
   const [isFacilityMenuOpen, setIsFacilityMenuOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isCreatingObj, setIsCreatingObj] = useState(false);
   const [newObjName, setNewObjName] = useState('');
   const [confirmDeleteObj, setConfirmDeleteObj] = useState<string | null>(null);
@@ -452,11 +462,11 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
         {/* Правая зона: статус СУБД, история Undo/Redo, профиль и инструменты */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Статус СУБД и синхронизации */}
-          {isDbConnected && pendingSyncCount === 0 ? (
+          {isAuthenticated && isDbConnected && pendingSyncCount === 0 ? (
             <button
               type="button"
               onClick={onOpenServerDbModal}
-              title="Серверная СУБД PostgreSQL 16 онлайн"
+              title="Серверная СУБД PostgreSQL онлайн"
               className="hidden md:inline-flex h-8 items-center gap-2 px-2.5 rounded-md bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs font-mono tabular-nums transition-colors cursor-pointer whitespace-nowrap"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
@@ -542,6 +552,21 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
               <Redo2 className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {/* Настройки программы */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsFacilityMenuOpen(false);
+              setIsAccountMenuOpen(false);
+              setIsSettingsModalOpen(true);
+            }}
+            aria-label="Настройки программы"
+            title="Настройки программы"
+            className="h-8 w-8 inline-flex items-center justify-center rounded-md bg-white/10 hover:bg-white/15 border border-white/20 text-white/90 hover:text-white transition-colors cursor-pointer shrink-0"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
 
           {/* Профиль и меню управления / Кнопка входа */}
           {isAuthenticated ? (
@@ -681,20 +706,31 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
                       <span>Сменить пользователя</span>
                     </button>
 
-                    {perms.category === 'admin' && (
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setIsAccountMenuOpen(false);
-                          onOpenAdminPasswordModal();
-                        }}
-                        className="w-full px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-[#1e3799] flex items-center gap-2.5 transition-colors cursor-pointer"
-                      >
-                        <Lock className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Сменить пароль администратора</span>
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        onOpenPasswordChangeModal();
+                      }}
+                      className="w-full px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-[#1e3799] flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <Lock className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Сменить мой пароль</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        onOpenSessionsModal();
+                      }}
+                      className="w-full px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-[#1e3799] flex items-center gap-2.5 transition-colors cursor-pointer"
+                    >
+                      <MonitorSmartphone className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Активные сессии</span>
+                    </button>
 
                     <button
                       type="button"
@@ -752,6 +788,11 @@ export const AppHeader: React.FC<AppHeaderProps> = (props) => {
           })}
         </div>
       </nav>
+
+      <AppSettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setIsSettingsModalOpen(false)}
+      />
     </header>
   );
 };

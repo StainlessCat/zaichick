@@ -771,6 +771,24 @@ export const ANONYMOUS_USER: UserAccount = {
   sessionNumber: 0,
 };
 
+export interface UserSessionInfo {
+  id: string;
+  deviceLabel: string;
+  ipAddress?: string | null;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  isCurrent: boolean;
+}
+
+export interface AdminUserSessionInfo extends UserSessionInfo {
+  userId: string;
+  userLogin: string;
+  userFullName: string;
+  userRole: SystemRole;
+  userDepartment: DepartmentCode;
+}
+
 export type ExecutiveDocStatus = 'IN_WORK' | 'SIGNED';
 
 /**

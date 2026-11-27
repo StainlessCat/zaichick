@@ -224,7 +224,7 @@ export const LrvToolbar: React.FC<LrvToolbarProps> = ({
   return (
     <div className="space-y-3">
       {/* Сводная KPI-лента */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+      <div className="zaychick-kpi-strip grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         {kpiCards.map((card) => {
           const isActive = card.clickable && statusFilter === card.key;
           const baseClasses = `rounded-xl border px-3.5 py-2.5 text-left transition-colors ${

@@ -1,4 +1,5 @@
 import type {
+  AdminUserSessionInfo,
   AuditLogEntry,
   CircuitAssignmentResult,
   CircuitTestStatus,
@@ -20,6 +21,7 @@ import type {
   TestCircuit,
   TestCircuitDetail,
   UserAccount,
+  UserSessionInfo,
   WelderProfile,
   WeldingMaterialCertificate,
   WeldJoint,
@@ -98,6 +100,30 @@ export interface SessionInfoResponse {
   user: UserAccount;
   permissions: Record<string, unknown>;
   expiresAt?: string | null;
+  sessionId?: string | null;
+}
+
+function mapUserSessionDto(raw: Record<string, unknown>): UserSessionInfo {
+  return {
+    id: String(raw.id ?? ''),
+    deviceLabel: String(raw.device_label ?? 'Браузер'),
+    ipAddress: raw.ip_address ? String(raw.ip_address) : null,
+    createdAt: String(raw.created_at ?? ''),
+    lastSeenAt: String(raw.last_seen_at ?? ''),
+    expiresAt: String(raw.expires_at ?? ''),
+    isCurrent: Boolean(raw.is_current),
+  };
+}
+
+function mapAdminUserSessionDto(raw: Record<string, unknown>): AdminUserSessionInfo {
+  return {
+    ...mapUserSessionDto(raw),
+    userId: String(raw.user_id ?? ''),
+    userLogin: String(raw.user_login ?? ''),
+    userFullName: String(raw.user_full_name ?? ''),
+    userRole: String(raw.user_role ?? 'VIEWER') as SystemRole,
+    userDepartment: String(raw.user_department ?? 'PTO') as DepartmentCode,
+  };
 }
 
 export const zaychickApi = {
@@ -113,6 +139,7 @@ export const zaychickApi = {
       user: Record<string, unknown>;
       permissions: Record<string, unknown>;
       expires_at?: string | null;
+      session_id?: string | null;
     }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ login, password }),
@@ -121,11 +148,13 @@ export const zaychickApi = {
       user: mapUserDtoToAccount(res.user),
       permissions: res.permissions,
       expiresAt: res.expires_at,
+      sessionId: res.session_id,
     };
   },
 
-  async logout(): Promise<void> {
-    await apiRequest('/api/auth/logout', { method: 'POST' });
+  async logout(allDevices = false): Promise<void> {
+    const suffix = allDevices ? '?all_devices=true' : '';
+    await apiRequest(`/api/auth/logout${suffix}`, { method: 'POST' });
   },
 
   async getSession(): Promise<SessionInfoResponse> {
@@ -133,11 +162,13 @@ export const zaychickApi = {
       user: Record<string, unknown>;
       permissions: Record<string, unknown>;
       expires_at?: string | null;
+      session_id?: string | null;
     }>('/api/auth/session');
     return {
       user: mapUserDtoToAccount(res.user),
       permissions: res.permissions,
       expiresAt: res.expires_at,
+      sessionId: res.session_id,
     };
   },
 
@@ -146,11 +177,28 @@ export const zaychickApi = {
       user: Record<string, unknown>;
       permissions: Record<string, unknown>;
       expires_at?: string | null;
+      session_id?: string | null;
     }>('/api/auth/me');
     return {
       user: mapUserDtoToAccount(res.user),
       permissions: res.permissions,
       expiresAt: res.expires_at,
+      sessionId: res.session_id,
+    };
+  },
+
+  async refreshSession(): Promise<SessionInfoResponse> {
+    const res = await apiRequest<{
+      user: Record<string, unknown>;
+      permissions: Record<string, unknown>;
+      expires_at?: string | null;
+      session_id?: string | null;
+    }>('/api/auth/refresh', { method: 'POST' });
+    return {
+      user: mapUserDtoToAccount(res.user),
+      permissions: res.permissions,
+      expiresAt: res.expires_at,
+      sessionId: res.session_id,
     };
   },
 
@@ -162,6 +210,7 @@ export const zaychickApi = {
       user: Record<string, unknown>;
       permissions: Record<string, unknown>;
       expires_at?: string | null;
+      session_id?: string | null;
     }>('/api/auth/change-password', {
       method: 'POST',
       body: JSON.stringify({
@@ -173,7 +222,36 @@ export const zaychickApi = {
       user: mapUserDtoToAccount(res.user),
       permissions: res.permissions,
       expiresAt: res.expires_at,
+      sessionId: res.session_id,
     };
+  },
+
+  async listMySessions(): Promise<UserSessionInfo[]> {
+    const rows = await apiRequest<Record<string, unknown>[]>('/api/auth/sessions');
+    return Array.isArray(rows) ? rows.map(mapUserSessionDto) : [];
+  },
+
+  async revokeMySession(sessionId: string): Promise<void> {
+    await apiRequest(`/api/auth/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async revokeOtherSessions(): Promise<{ status: string; revoked_count: number }> {
+    return apiRequest('/api/auth/sessions/revoke-others', {
+      method: 'POST',
+    });
+  },
+
+  async listAdminSessions(): Promise<AdminUserSessionInfo[]> {
+    const rows = await apiRequest<Record<string, unknown>[]>('/api/admin/sessions');
+    return Array.isArray(rows) ? rows.map(mapAdminUserSessionDto) : [];
+  },
+
+  async revokeAdminSession(sessionId: string): Promise<void> {
+    await apiRequest(`/api/admin/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    });
   },
 
   // ---------------------------------------------------------------------------

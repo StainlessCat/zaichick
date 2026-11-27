@@ -151,6 +151,8 @@ export const App: React.FC = () => {
     setPendingSyncCount,
     lastSyncError,
     setLastSyncError,
+    sessionExpiredNotice,
+    clearSessionExpiredNotice,
     triggerImmediateSync,
     isServerDbModalOpen,
     setIsServerDbModalOpen,
@@ -162,6 +164,7 @@ export const App: React.FC = () => {
     currentUser,
     setCurrentUser,
     setIsLoginModalOpen,
+    setLoginModalInitialMode,
     setServerFacilities,
     setJoints,
     setProjectLineList,
@@ -535,8 +538,8 @@ export const App: React.FC = () => {
         try {
           let savedAccount: UserAccount;
           if (payload.mode === 'create') {
-            if (!payload.password || payload.password.length < 4) {
-              return { ok: false, message: 'Укажите пароль длиной не менее 4 символов.' };
+            if (!payload.password || payload.password.length < 8) {
+              return { ok: false, message: 'Укажите пароль длиной не менее 8 символов.' };
             }
             savedAccount = await zaychickApi.createAdminUser({
               login: trimmedLogin,
@@ -551,6 +554,9 @@ export const App: React.FC = () => {
               savedAccount,
             ]);
           } else {
+            if (payload.password && payload.password.trim().length > 0 && payload.password.trim().length < 8) {
+              return { ok: false, message: 'Новый пароль должен содержать не менее 8 символов.' };
+            }
             const targetId = payload.userId;
             if (!targetId) {
               return { ok: false, message: 'Не указан идентификатор пользователя.' };
@@ -591,8 +597,8 @@ export const App: React.FC = () => {
         if (userAccounts.some((u) => u.login.toLowerCase() === trimmedLogin.toLowerCase())) {
           return { ok: false, message: 'Пользователь с таким логином уже существует.' };
         }
-        if (!payload.password || payload.password.length < 4) {
-          return { ok: false, message: 'Укажите пароль длиной не менее 4 символов.' };
+        if (!payload.password || payload.password.length < 8) {
+          return { ok: false, message: 'Укажите пароль длиной не менее 8 символов.' };
         }
         const hashed = hashPasswordWithSalt(payload.password);
         const newAccount: UserAccount = {
@@ -644,8 +650,11 @@ export const App: React.FC = () => {
         };
       }
 
+      if (payload.password && payload.password.trim().length > 0 && payload.password.trim().length < 8) {
+        return { ok: false, message: 'Новый пароль должен содержать не менее 8 символов.' };
+      }
       const nextPasswordData =
-        payload.password && payload.password.trim().length >= 4
+        payload.password && payload.password.trim().length >= 8
           ? hashPasswordWithSalt(payload.password.trim())
           : null;
 
@@ -1110,21 +1119,25 @@ export const App: React.FC = () => {
     recordUndoSnapshot,
   });
 
+  const [isSessionsModalOpen, setIsSessionsModalOpen] = useState(false);
+
   const handleLogout = useCallback(async () => {
-    await zaychickApi.logout().catch(() => {});
+    await zaychickApi.logout(false).catch(() => {});
+    setIsSessionsModalOpen(false);
     setIsAuthenticated(false);
     setCurrentUser(ANONYMOUS_USER);
-    setIsDbConnected(false);
+    setLoginModalInitialMode('login');
     setIsLoginModalOpen(true);
-  }, [setCurrentUser, setIsAuthenticated, setIsDbConnected, setIsLoginModalOpen]);
+  }, [setCurrentUser, setIsAuthenticated, setIsLoginModalOpen, setLoginModalInitialMode]);
 
-  const handleSwitchUser = useCallback(async (login: string) => {
-    const found = userAccounts.find((u) => u.login === login);
-    if (found) {
-      setCurrentUser(found);
-      bumpRevisionMeta(`Переключение на пользователя ${found.login}`, found.fullName);
-    }
-  }, [userAccounts, setCurrentUser, bumpRevisionMeta]);
+  const handleLogoutAllDevices = useCallback(async () => {
+    await zaychickApi.logout(true).catch(() => {});
+    setIsSessionsModalOpen(false);
+    setIsAuthenticated(false);
+    setCurrentUser(ANONYMOUS_USER);
+    setLoginModalInitialMode('login');
+    setIsLoginModalOpen(true);
+  }, [setCurrentUser, setIsAuthenticated, setIsLoginModalOpen, setLoginModalInitialMode]);
 
   return (
     <AuthProvider
@@ -1132,12 +1145,17 @@ export const App: React.FC = () => {
       setCurrentUser={setCurrentUser}
       userAccounts={userAccounts}
       setUserAccounts={setUserAccounts}
+      isAuthenticated={isAuthenticated}
       isLoginModalOpen={isLoginModalOpen}
       setIsLoginModalOpen={setIsLoginModalOpen}
       loginModalInitialMode={loginModalInitialMode}
       setLoginModalInitialMode={setLoginModalInitialMode}
+      sessionExpiredNotice={sessionExpiredNotice}
+      clearSessionExpiredNotice={clearSessionExpiredNotice}
+      isSessionsModalOpen={isSessionsModalOpen}
+      setIsSessionsModalOpen={setIsSessionsModalOpen}
       onLogout={handleLogout}
-      onSwitchUser={handleSwitchUser}
+      onLogoutAllDevices={handleLogoutAllDevices}
     >
       <AppProvider
         activeSection={activeSection}
@@ -1187,10 +1205,11 @@ export const App: React.FC = () => {
         onLogoClick={handleHeaderLogoClick}
         isAuthenticated={isAuthenticated}
         onOpenServerDbModal={() => setIsServerDbModalOpen(true)}
-        onOpenAdminPasswordModal={() => {
-          setLoginModalInitialMode('admin_password');
+        onOpenPasswordChangeModal={() => {
+          setLoginModalInitialMode('change_password');
           setIsLoginModalOpen(true);
         }}
+        onOpenSessionsModal={() => setIsSessionsModalOpen(true)}
         onExportAllJoints={(fmt) => {
           if (!isDbConnected || pendingSyncCount > 0) {
             const proceed = window.confirm(
@@ -1220,8 +1239,8 @@ export const App: React.FC = () => {
             <ShieldAlert className="w-4 h-4 shrink-0 text-[#1e3799]" />
             <span className="truncate sm:whitespace-normal">
               {isDbConnected
-                ? 'Режим инспекционного просмотра: только чтение. Для внесения изменений и сохранения в СУБД выполните вход.'
-                : 'Сервер FastAPI недоступен. Проверьте запуск приложения и подключение к PostgreSQL.'}
+                ? 'Режим просмотра: только чтение. Для внесения изменений и сохранения в базу выполните вход.'
+                : 'Нет подключения к серверу. Работа доступна в автономном режиме просмотра.'}
             </span>
           </div>
           <button
@@ -1314,7 +1333,7 @@ export const App: React.FC = () => {
         onDeleteLabRequest={handleDeleteLabRequest}
         onOpenFacilityLocation={(objName: string) => setLocationModalFacilityName(objName)}
         onOpenAdminPasswordModal={() => {
-          setLoginModalInitialMode('admin_password');
+          setLoginModalInitialMode('change_password');
           setIsLoginModalOpen(true);
         }}
         onEditJointInPassport={(j: WeldJoint) => filters.handleOpenEditPassport(j)}
@@ -1370,17 +1389,15 @@ export const App: React.FC = () => {
         onSaveFacilityLocation={dirActions.handleSaveFacilityLocation}
         onBulkUpdateJointsTemperaturesFromStation={handleBulkUpdateJointsTemperaturesFromStation}
         isAuthenticated={isAuthenticated}
-        onChangeAdminPassword={dirActions.handleChangeAdminPassword}
-        onToggleAdminRights={dirActions.handleToggleAdminRights}
-        onRegisterAccount={(newAcc) => {
-          setUserAccounts((prev) => [...prev, newAcc]);
-          bumpRevisionMeta(`Создан пользователь ${newAcc.login}`, currentUser.fullName);
-        }}
-        onDeleteAccount={dirActions.handleDeleteUserAccount}
+        sessionExpiredNotice={sessionExpiredNotice}
+        onClearSessionNotice={clearSessionExpiredNotice}
+        onLogout={handleLogout}
         onAuthenticate={(acc) => {
           setCurrentUser(acc);
           setIsAuthenticated(true);
-          void fetchServerDbState(false);
+          if (!acc.mustChangePassword) {
+            void fetchServerDbState(false);
+          }
         }}
         backupModalState={backupModalState}
         onCloseBackupModal={() => setBackupModalState((prev) => ({ ...prev, isOpen: false }))}

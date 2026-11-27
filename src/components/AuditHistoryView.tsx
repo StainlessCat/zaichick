@@ -158,10 +158,10 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
               type="button"
               variant="secondary"
               onClick={onOpenAdminPasswordModal}
-              title="Изменить пароль учётной записи администратора"
+              title="Изменить пароль вашей учётной записи"
             >
               <Lock className="w-3.5 h-3.5 text-[#1e3799]" />
-              <span>Пароль админа</span>
+              <span>Сменить пароль</span>
             </Button>
           )}
 

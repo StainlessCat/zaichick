@@ -61,19 +61,39 @@ class SessionResponse(BaseModel):
     user: UserPublicSchema
     permissions: RolePermissionsSchema
     expires_at: datetime | None = None
+    session_id: uuid.UUID | None = None
+
+
+class UserSessionOut(BaseModel):
+    id: uuid.UUID
+    device_label: str
+    ip_address: str | None = None
+    created_at: datetime
+    last_seen_at: datetime
+    expires_at: datetime
+    is_current: bool = False
+
+
+class AdminUserSessionOut(UserSessionOut):
+    user_id: uuid.UUID
+    user_login: str
+    user_full_name: str
+    user_role: SystemRoleEnum
+    user_department: DepartmentEnum
 
 
 class BearerTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_at: datetime
+    session_id: uuid.UUID | None = None
     user: UserPublicSchema
     permissions: RolePermissionsSchema
 
 
 class CreateUserRequest(BaseModel):
     login: str = Field(..., min_length=2, max_length=64)
-    password: str = Field(..., min_length=6, max_length=256)
+    password: str = Field(..., min_length=8, max_length=256)
     full_name: str = Field(..., min_length=2, max_length=255)
     role: SystemRoleEnum = SystemRoleEnum.OPERATOR
     department: DepartmentEnum
@@ -106,8 +126,8 @@ class UpdateUserRequest(BaseModel):
     position_title: str | None = Field(default=None, max_length=255)
     is_active: bool | None = None
     must_change_password: bool | None = None
-    new_password: str | None = Field(default=None, min_length=6, max_length=256)
-    password: str | None = Field(default=None, min_length=6, max_length=256)
+    new_password: str | None = Field(default=None, min_length=8, max_length=256)
+    password: str | None = Field(default=None, min_length=8, max_length=256)
 
     @property
     def resolved_password(self) -> str | None:
@@ -116,7 +136,7 @@ class UpdateUserRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1, max_length=256)
-    new_password: str = Field(..., min_length=6, max_length=256)
+    new_password: str = Field(..., min_length=8, max_length=256)
 
 
 class ProjectPurgeRequest(BaseModel):

@@ -26,6 +26,7 @@ from app.models.rate_limit import LoginRateLimit
 from app.models.lab_request import NdtLabRequestModel
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
+from app.models.session import UserSession
 from app.models.settings import AppSetting, ColumnTemplate
 from app.models.test_circuit import TestCircuit
 from app.models.user import User
@@ -71,6 +72,7 @@ __all__ = [
     "TechCardPreheatRule",
     "TestCircuit",
     "User",
+    "UserSession",
     "WeatherDaily",
     "WeatherStation",
     "WeatherStationAlias",

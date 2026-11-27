@@ -118,6 +118,11 @@ export function useSystemDirectoryActions(
       const targetAcc = userAccounts.find((a) => a.login === loginToDelete);
       if (!targetAcc) return;
 
+      if (targetAcc.login.toLowerCase() === currentUser.login.toLowerCase()) {
+        notifyError('Нельзя отключить собственную учётную запись.');
+        return;
+      }
+
       try {
         if (targetAcc.id && UUID_RE.test(targetAcc.id)) {
           await zaychickApi.updateUser(targetAcc.id, {
@@ -127,9 +132,6 @@ export function useSystemDirectoryActions(
         }
         const nextAccounts = userAccounts.filter((a) => a.login !== loginToDelete);
         setUserAccounts(nextAccounts);
-        if (currentUser.login === loginToDelete && nextAccounts[0]) {
-          setCurrentUser(nextAccounts[0]);
-        }
       } catch (err) {
         reportError(err, 'Ошибка отключения пользователя');
       }

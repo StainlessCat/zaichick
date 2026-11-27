@@ -101,7 +101,7 @@ export const LabHeader: React.FC<LabHeaderProps> = ({
     <>
       <div className="bg-white rounded-xl border border-slate-200 p-2.5 shadow-2xs space-y-2">
         {/* Компактная однострочная полоса KPI над фильтром шифра РД */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 border border-slate-200 rounded-lg divide-x divide-y sm:divide-y-0 divide-slate-200 bg-slate-50/70 overflow-hidden">
+        <div className="zaychick-kpi-strip grid grid-cols-3 sm:grid-cols-6 border border-slate-200 rounded-lg divide-x divide-y sm:divide-y-0 divide-slate-200 bg-slate-50/70 overflow-hidden">
           <div
             className="px-3 py-1.5 flex items-baseline justify-between gap-2"
             title="Суммарный дефицит физических методов НК по линиям, стыков"

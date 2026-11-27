@@ -2,20 +2,39 @@
 
 @layer base {
   :root {
-    --font-display: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    --font-sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     --font-mono: 'IBM Plex Mono', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
     --font-century-gothic: 'Jost', 'Century Gothic', CenturyGothic, AppleGothic, 'Segoe UI', sans-serif;
+    --font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     --brand-navy: #1e3799;
     --brand-navy-dark: #15276e;
+    --brand-nav-bg: #162a75;
     --brand-sky: #e8f1fc;
+    --app-bg: #f4f7fb;
+  }
+
+  html {
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+    text-rendering: optimizeLegibility;
+  }
+
+  html[data-font-smoothing="subpixel"] {
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
+  }
+
+  html[data-font-smoothing="antialiased"] {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
     font-family: var(--font-sans);
-    background-color: #f4f7fb;
+    background-color: var(--app-bg, #f4f7fb) !important;
     color: #0f172a;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-feature-settings: var(--font-feature-settings);
   }
 
   h1, h2, h3, h4, .font-display {
@@ -26,10 +45,49 @@
     font-family: var(--font-century-gothic);
   }
 
-  .font-mono, .tabular-nums {
+  .font-mono {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Динамическая цветовая схема шапки, навигации и таблиц при выборе пресета в настройках */
+.bg-\[\#f4f7fb\] {
+  background-color: var(--app-bg, #f4f7fb) !important;
+}
+
+html[data-show-kpi="false"] .zaychick-kpi-strip {
+  display: none !important;
+}
+
+html[data-theme-preset]:not([data-theme-preset="navy"]) .bg-\[\#1e3799\] {
+  background-color: var(--brand-navy) !important;
+}
+
+html[data-theme-preset]:not([data-theme-preset="navy"]) .hover\:bg-\[\#15276e\]:hover,
+html[data-theme-preset]:not([data-theme-preset="navy"]) .bg-\[\#15276e\] {
+  background-color: var(--brand-navy-dark) !important;
+}
+
+html[data-theme-preset]:not([data-theme-preset="navy"]) .bg-\[\#162a75\] {
+  background-color: var(--brand-nav-bg) !important;
+}
+
+html[data-theme-preset]:not([data-theme-preset="navy"]) .text-\[\#1e3799\] {
+  color: var(--brand-navy) !important;
+}
+
+html[data-theme-preset]:not([data-theme-preset="navy"]) .border-\[\#1e3799\] {
+  border-color: var(--brand-navy) !important;
+}
+
+html[data-theme-preset]:not([data-theme-preset="navy"]) .bg-\[\#f0f5fc\],
+html[data-theme-preset]:not([data-theme-preset="navy"]) .bg-\[\#e8f1fc\] {
+  background-color: var(--brand-sky) !important;
 }
 
 /* Custom distinct scrollbars for high-density engineering tables */

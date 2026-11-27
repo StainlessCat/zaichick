@@ -25,6 +25,7 @@ import { JointPassportModal } from '../JointPassportModal';
 import { ImportJointsExcelModal } from '../ImportJointsExcelModal';
 import { FacilityLocationModal } from '../FacilityLocationModal';
 import { LoginModal, LoginModalMode } from '../LoginModal';
+import { UserSessionsModal } from '../UserSessionsModal';
 import {
   BackupAndResetModal,
   FullSystemBackupPayload,
@@ -118,18 +119,10 @@ export interface AppModalsContainerProps {
   userAccounts?: UserAccount[];
   loginModalInitialMode?: LoginModalMode;
   isAuthenticated: boolean;
-  onChangeAdminPassword: (
-    adminLogin: string,
-    cur: string,
-    next: string
-  ) => Promise<{ ok: boolean; message: string }>;
-  onToggleAdminRights: (
-    login: string,
-    grant: boolean
-  ) => Promise<{ ok: boolean; message: string }>;
-  onRegisterAccount: (newAcc: UserAccount) => void;
-  onDeleteAccount: (login: string) => Promise<void>;
+  sessionExpiredNotice?: string | null;
+  onClearSessionNotice?: () => void;
   onAuthenticate: (acc: UserAccount) => void;
+  onLogout?: () => Promise<void>;
 
   // Backup and Reset Modal
   backupModalState: {
@@ -246,11 +239,10 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => 
     onSaveFacilityLocation,
     onBulkUpdateJointsTemperaturesFromStation,
     isAuthenticated,
-    onChangeAdminPassword,
-    onToggleAdminRights,
-    onRegisterAccount,
-    onDeleteAccount,
+    sessionExpiredNotice,
+    onClearSessionNotice,
     onAuthenticate,
+    onLogout,
     backupModalState,
     onCloseBackupModal,
     currentPayload,
@@ -379,14 +371,18 @@ export const AppModalsContainer: React.FC<AppModalsContainerProps> = (props) => 
         isOpen={isLoginModalOpen}
         onClose={onCloseLoginModal}
         currentUser={currentUser}
-        accounts={userAccounts}
         initialMode={loginModalInitialMode}
         isAuthenticated={isAuthenticated}
-        onChangeAdminPassword={onChangeAdminPassword}
-        onToggleAdminRights={onToggleAdminRights}
-        onRegisterAccount={onRegisterAccount}
-        onDeleteAccount={onDeleteAccount}
+        sessionExpiredNotice={sessionExpiredNotice ?? auth.sessionExpiredNotice}
+        onClearSessionNotice={onClearSessionNotice ?? auth.clearSessionExpiredNotice}
         onAuthenticate={onAuthenticate}
+        onLogout={onLogout ?? auth.onLogout}
+      />
+
+      <UserSessionsModal
+        isOpen={auth.isSessionsModalOpen}
+        onClose={() => auth.setIsSessionsModalOpen(false)}
+        onLogoutAllDevices={auth.onLogoutAllDevices}
       />
 
       <BackupAndResetModal

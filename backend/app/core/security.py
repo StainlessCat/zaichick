@@ -37,12 +37,53 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
         return False
 
 
+def parse_device_label(user_agent: str | None) -> str:
+    """Derive a clean human-readable browser and OS label from a User-Agent string."""
+    ua = (user_agent or "").strip()
+    if not ua:
+        return "API-клиент"
+
+    lower = ua.lower()
+    if "edg/" in lower or "edge/" in lower:
+        browser = "Edge"
+    elif "yabrowser" in lower:
+        browser = "Яндекс Браузер"
+    elif "opr/" in lower or "opera" in lower:
+        browser = "Opera"
+    elif "chrome/" in lower and "chromium" not in lower:
+        browser = "Chrome"
+    elif "firefox/" in lower:
+        browser = "Firefox"
+    elif "safari/" in lower and "chrome/" not in lower:
+        browser = "Safari"
+    elif "httpx" in lower or "python" in lower or "curl" in lower:
+        browser = "API-клиент"
+    else:
+        browser = "Браузер"
+
+    if "windows" in lower:
+        os_name = "Windows"
+    elif "iphone" in lower or "ipad" in lower:
+        os_name = "iOS"
+    elif "android" in lower:
+        os_name = "Android"
+    elif "mac os x" in lower or "macintosh" in lower:
+        os_name = "macOS"
+    elif "linux" in lower:
+        os_name = "Linux"
+    else:
+        os_name = ""
+
+    return f"{browser} · {os_name}" if os_name else browser
+
+
 def create_access_token(
     *,
     user_id: uuid.UUID,
     login: str,
     role: str,
     session_number: int,
+    session_id: uuid.UUID | None = None,
     expires_delta: timedelta | None = None,
 ) -> tuple[str, datetime]:
     """Create a signed JWT access token and return (token, expires_at)."""
@@ -60,6 +101,8 @@ def create_access_token(
         "nbf": int(now.timestamp()),
         "exp": int(expires_at.timestamp()),
     }
+    if session_id is not None:
+        payload["sid"] = str(session_id)
     token = jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
     return token, expires_at
 
@@ -82,9 +125,10 @@ def decode_access_token(token: str) -> dict[str, Any]:
     return payload
 
 
-def extract_token_from_request(request: Request) -> str:
+def extract_token_with_source(request: Request) -> tuple[str, str]:
     """
     Extract JWT strictly from Authorization: Bearer header or HttpOnly Cookie.
+    Returns (token, source) where source is 'bearer' or 'cookie'.
     Explicitly rejects ?token= in URL query parameters to avoid proxy/log leaks.
     """
     if "token" in request.query_params or "access_token" in request.query_params:
@@ -97,12 +141,18 @@ def extract_token_from_request(request: Request) -> str:
     if auth_header:
         scheme, _, credentials = auth_header.partition(" ")
         if scheme.lower() == "bearer" and credentials.strip():
-            return credentials.strip()
+            return credentials.strip(), "bearer"
         raise TokenError("Некорректный формат заголовка Authorization (ожидается Bearer <token>).")
 
     settings = get_settings()
     cookie_token = request.cookies.get(settings.cookie_name)
     if cookie_token and cookie_token.strip():
-        return cookie_token.strip()
+        return cookie_token.strip(), "cookie"
 
     raise TokenError("Требуется авторизация.")
+
+
+def extract_token_from_request(request: Request) -> str:
+    """Extract JWT strictly from Authorization: Bearer header or HttpOnly Cookie."""
+    token, _ = extract_token_with_source(request)
+    return token

@@ -3,19 +3,23 @@ from __future__ import annotations
 import ipaddress
 import uuid
 from collections.abc import Callable, Sequence
+from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db_session
 from app.core.security import (
     QueryTokenForbiddenError,
     TokenError,
     decode_access_token,
-    extract_token_from_request,
+    extract_token_with_source,
 )
 from app.models.enums import DepartmentEnum, SystemRoleEnum
+from app.models.session import UserSession
 from app.models.user import User
 from app.services.rbac import (
     DEPARTMENT_LABELS_RU,
@@ -23,6 +27,65 @@ from app.services.rbac import (
     RolePermissions,
     get_role_permissions,
 )
+
+_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _normalize_origin(raw_url: str) -> str | None:
+    parsed = urlparse(raw_url.strip())
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+
+def _is_trusted_origin(origin: str, request: Request) -> bool:
+    settings = get_settings()
+    allowed = {o.rstrip("/").lower() for o in settings.cors_origins}
+    if origin in allowed:
+        return True
+    host_candidates = {
+        (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip().lower(),
+        (request.headers.get("Host") or "").strip().lower(),
+    }
+    host_candidates.discard("")
+    for host in host_candidates:
+        if origin in {f"http://{host}", f"https://{host}"}:
+            return True
+    return False
+
+
+def verify_cookie_csrf(request: Request) -> None:
+    """Reject cross-site mutating requests authenticated via HttpOnly cookies."""
+    if request.method.upper() not in _MUTATING_METHODS:
+        return
+
+    origin_header = request.headers.get("Origin")
+    if origin_header:
+        normalized = _normalize_origin(origin_header)
+        if not normalized or not _is_trusted_origin(normalized, request):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Запрос отклонён политикой безопасности (недоверенный источник Origin).",
+            )
+        return
+
+    referer_header = request.headers.get("Referer")
+    if referer_header:
+        normalized_ref = _normalize_origin(referer_header)
+        if not normalized_ref or not _is_trusted_origin(normalized_ref, request):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Запрос отклонён политикой безопасности (недоверенный Referer).",
+            )
+        return
+
+    settings = get_settings()
+    if settings.cookie_samesite == "none":
+        if request.headers.get("X-Requested-With", "").strip().lower() != "xmlhttprequest":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Для кросс-доменных cookie-запросов требуется заголовок X-Requested-With.",
+            )
 
 
 def get_client_ip(request: Request) -> str | None:
@@ -45,10 +108,16 @@ async def get_current_user(
 ) -> User:
     """Authenticate caller strictly via HttpOnly Cookie or Authorization: Bearer header."""
     try:
-        token = extract_token_from_request(request)
+        token, token_source = extract_token_with_source(request)
+        if token_source == "cookie":
+            verify_cookie_csrf(request)
         payload = decode_access_token(token)
         user_id = uuid.UUID(payload["sub"])
         token_session_number = int(payload["session_number"])
+        raw_sid = payload.get("sid")
+        session_id = uuid.UUID(raw_sid) if isinstance(raw_sid, str) and raw_sid else None
+    except HTTPException:
+        raise
     except (QueryTokenForbiddenError, TokenError, ValueError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -78,6 +147,32 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    active_session: UserSession | None = None
+    if session_id is not None:
+        active_session = (
+            await session.execute(
+                select(UserSession).where(
+                    UserSession.id == session_id,
+                    UserSession.user_id == user.id,
+                )
+            )
+        ).scalar_one_or_none()
+        now = datetime.now(timezone.utc)
+        if (
+            active_session is None
+            or active_session.revoked_at is not None
+            or active_session.expires_at <= now
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Сессия на этом устройстве была завершена или истекла. Выполните вход повторно.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if (now - active_session.last_seen_at).total_seconds() >= 60:
+            active_session.last_seen_at = now
+
+    request.state.current_session_id = session_id
+    request.state.current_session = active_session
     return user
 
 

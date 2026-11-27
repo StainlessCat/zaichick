@@ -16,9 +16,11 @@ from app.models.joint import WeldJoint
 from app.models.lab_request import NdtLabRequestModel
 from app.models.line import ProjectLine
 from app.models.lrv import LrvItem
+from app.models.session import UserSession
 from app.models.test_circuit import TestCircuit
 from app.models.user import User
 from app.schemas.auth import (
+    AdminUserSessionOut,
     CreateUserRequest,
     ProjectPurgeRequest,
     ProjectPurgeResponse,
@@ -258,6 +260,17 @@ async def update_managed_user(
 
     if should_bump_session:
         target.session_number += 1
+        now_revoke = datetime.now(timezone.utc)
+        active_sessions = (
+            await session.execute(
+                select(UserSession).where(
+                    UserSession.user_id == target.id,
+                    UserSession.revoked_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        for active_row in active_sessions:
+            active_row.revoked_at = now_revoke
 
     target.version += 1
     target.updated_at = datetime.now(timezone.utc)
@@ -318,6 +331,105 @@ async def admin_update_user(
 ) -> UserPublicSchema:
     """Update user role/department/status/password with strict hierarchy checks."""
     return await update_managed_user(user_id, payload, request, current_user, session)
+
+
+@router.get("/sessions", response_model=list[AdminUserSessionOut])
+async def admin_list_active_sessions(
+    request: Request,
+    current_user: User = Depends(
+        require_roles(SystemRoleEnum.SUPERADMIN, SystemRoleEnum.DEPT_ADMIN)
+    ),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[AdminUserSessionOut]:
+    """List active server sessions: SUPERADMIN sees all, DEPT_ADMIN sees their department."""
+    now = datetime.now(timezone.utc)
+    current_session_id: uuid.UUID | None = getattr(request.state, "current_session_id", None)
+    stmt = (
+        select(UserSession, User)
+        .join(User, UserSession.user_id == User.id)
+        .where(
+            UserSession.revoked_at.is_(None),
+            UserSession.expires_at > now,
+            User.is_active.is_(True),
+        )
+        .order_by(UserSession.last_seen_at.desc())
+    )
+    if current_user.role == SystemRoleEnum.DEPT_ADMIN:
+        stmt = stmt.where(User.department == current_user.department)
+
+    rows = (await session.execute(stmt)).all()
+    return [
+        AdminUserSessionOut(
+            id=sess.id,
+            device_label=sess.device_label or "Браузер",
+            ip_address=sess.ip_address,
+            created_at=sess.created_at,
+            last_seen_at=sess.last_seen_at,
+            expires_at=sess.expires_at,
+            is_current=current_session_id is not None and sess.id == current_session_id,
+            user_id=usr.id,
+            user_login=usr.login,
+            user_full_name=usr.full_name,
+            user_role=usr.role,
+            user_department=usr.department,
+        )
+        for sess, usr in rows
+    ]
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_200_OK)
+async def admin_revoke_session(
+    session_id: uuid.UUID,
+    request: Request,
+    current_user: User = Depends(
+        require_roles(SystemRoleEnum.SUPERADMIN, SystemRoleEnum.DEPT_ADMIN)
+    ),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, str]:
+    """Terminate an active user session respecting SUPERADMIN / DEPT_ADMIN boundaries."""
+    row = (
+        await session.execute(
+            select(UserSession, User)
+            .join(User, UserSession.user_id == User.id)
+            .where(UserSession.id == session_id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Сессия не найдена.",
+        )
+
+    target_session, target_user = row
+    if current_user.role == SystemRoleEnum.DEPT_ADMIN:
+        if (
+            target_user.department != current_user.department
+            or (target_user.id != current_user.id and target_user.role not in _DEPT_ADMIN_MANAGED_ROLES)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Администратор отдела может завершать только сессии сотрудников своего отдела.",
+            )
+
+    if target_session.revoked_at is None:
+        target_session.revoked_at = datetime.now(timezone.utc)
+        await record_audit_log(
+            session,
+            action="admin_session_revoked",
+            entity_type="auth",
+            entity_id=str(target_session.id),
+            user=current_user,
+            new_data={
+                "target_user_id": str(target_user.id),
+                "target_login": target_user.login,
+                "device": target_session.device_label,
+            },
+            ip_address=get_client_ip(request),
+            summary=f"Администратор «{current_user.login}» завершил сессию пользователя «{target_user.login}»",
+        )
+        await session.commit()
+
+    return {"status": "ok"}
 
 
 @router.post("/projects/{project_id}/purge", response_model=ProjectPurgeResponse)

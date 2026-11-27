@@ -111,7 +111,7 @@ export const ExecutiveDocsFilterBar: React.FC<ExecutiveDocsFilterBarProps> = ({
   return (
     <div className="space-y-2.5">
       {/* Компактная KPI-панель с быстрой фильтрацией по клику */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+      <div className="zaychick-kpi-strip grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         <button
           type="button"
           onClick={() => onQuickFilterChange('all')}
