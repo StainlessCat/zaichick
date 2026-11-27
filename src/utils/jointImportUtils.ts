@@ -1,11 +1,13 @@
 import { zaychickApi } from '../api';
 import { parseSpreadsheetFile, triggerBlobDownload } from './excelUtils';
 import {
+  JointKind,
   LRVItem,
   ProjectLineItem,
   TechCardItem,
   WeldJoint,
 } from '../types/welding';
+import { isAngularWeldJoint } from './journals';
 import {
   buildUniqueLineId,
   calculateEquivalentDiaInch,
@@ -28,6 +30,7 @@ export interface ParsedJointImportRow {
   lrv1Code: string;
   lrv2Code: string;
   gostJointType: string;
+  jointKind: JointKind;
 
   // Автоматически привязанные данные из других разделов
   uniqueLineId: string;
@@ -506,9 +509,13 @@ export function parseAndValidateJointsImport(
       );
     }
 
-    // 6. АВТОПРИВЯЗКА К ТЕХКАРТЕ (с учетом марки стали, диаметра и толщины)
+    const jointKind: JointKind = isAngularWeldJoint(gostJointType) ? 'Угловое' : 'Стыковое';
+
+    // 6. АВТОПРИВЯЗКА К ТЕХКАРТЕ (с учетом типа соединения, марки стали, диаметра и толщины)
+    const tcCandidates = techCards.filter((tc) => tc.jointKind === jointKind);
+    const tcPool = tcCandidates.length > 0 ? tcCandidates : techCards;
     const matchedTc =
-      techCards.find(
+      tcPool.find(
         (tc) =>
           (tc.steelGroup.includes(elem1Material) ||
             tc.title.includes(elem1Material)) &&
@@ -517,13 +524,13 @@ export function parseAndValidateJointsImport(
           finalThickness >= tc.minWallThicknessMm &&
           finalThickness <= tc.maxWallThicknessMm
       ) ||
-      techCards.find(
+      tcPool.find(
         (tc) =>
           tc.steelGroup.includes(elem1Material) ||
           tc.title.includes(elem1Material) ||
           tc.number.includes(elem1Material)
       ) ||
-      techCards[0];
+      tcPool[0];
 
     if (
       matchedTc &&
@@ -562,6 +569,7 @@ export function parseAndValidateJointsImport(
         lineNumber,
         uniqueLineId,
         jointNumber,
+        jointKind,
         jointType: 'Монтажный',
         diameterMm: finalDiameter,
         diameterInch: mmToInchDiameter(finalDiameter),
@@ -627,6 +635,7 @@ export function parseAndValidateJointsImport(
       lrv1Code,
       lrv2Code,
       gostJointType,
+      jointKind,
       uniqueLineId,
       objectName,
       contour,

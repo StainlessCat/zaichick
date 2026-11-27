@@ -62,6 +62,14 @@ describe('jointImportUtils — gostJointType import', () => {
           'Толщина стенки, мм': 8,
           'Тип сварного соединения': 'Т1',
         },
+        {
+          'Шифр РД': '0092.049-ТХ3',
+          'Номер линии': 'ФП1.2/1',
+          'Номер стыка': '040',
+          'Диаметр, мм': 159,
+          'Толщина стенки, мм': 8,
+          'Тип соединения (ГОСТ 16037-80)': 'С17',
+        },
       ],
       [sampleLine],
       [],
@@ -72,12 +80,19 @@ describe('jointImportUtils — gostJointType import', () => {
     );
 
     expect(result.errorCount).toBe(0);
-    expect(result.rows).toHaveLength(3);
+    expect(result.rows).toHaveLength(4);
     expect(result.rows[0].gostJointType).toBe('У4');
+    expect(result.rows[0].jointKind).toBe('Угловое');
     expect(result.rows[0].jointToImport?.gostJointType).toBe('У4');
+    expect(result.rows[0].jointToImport?.jointKind).toBe('Угловое');
     expect(result.rows[1].gostJointType).toBe('У4');
+    expect(result.rows[1].jointKind).toBe('Угловое');
     expect(result.rows[1].jointToImport?.gostJointType).toBe('У4');
+    expect(result.rows[1].jointToImport?.jointKind).toBe('Угловое');
     expect(result.rows[2].gostJointType).toBe('Т1');
     expect(result.rows[2].jointToImport?.gostJointType).toBe('Т1');
+    expect(result.rows[3].gostJointType).toBe('С17');
+    expect(result.rows[3].jointKind).toBe('Стыковое');
+    expect(result.rows[3].jointToImport?.jointKind).toBe('Стыковое');
   });
 });
