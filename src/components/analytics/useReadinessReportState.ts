@@ -23,6 +23,7 @@ import { listExecutiveDocsApi } from '../../api/executiveDocsApi';
 import { zaychickApi } from '../../api/zaychickApi';
 import {
   buildWelderAnalyticsRows,
+  filterJointsAndLinesByReadinessScope,
   getContourBlockerSummary,
   matchesContourQuickFilter,
   type ContourQuickFilterId,
@@ -76,6 +77,7 @@ export function useReadinessReportState(joints: WeldJoint[]) {
 
   const [activeTab, setActiveTab] = useState<'readiness' | 'welders'>('readiness');
   const [condition, setCondition] = useState<ReadinessGroupCondition>('objectName');
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
   const [contourQuickFilter, setContourQuickFilter] = useState<ContourQuickFilterId>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [datePreset, setDatePreset] = useState<DatePresetId>('all');
@@ -469,10 +471,53 @@ export function useReadinessReportState(joints: WeldJoint[]) {
     setSortConfig({ key: colKey, direction });
   };
 
+  // Сброс выбранного элемента при смене разреза
+  useEffect(() => {
+    setSelectedGroupKey(null);
+  }, [condition]);
+
+  // Актуальный выбранный элемент (если отфильтрован из таблицы — считаем невыбранным)
+  const effectiveSelectedGroupKey = useMemo(() => {
+    if (!selectedGroupKey) return null;
+    return rows.some((r) => r.groupKey === selectedGroupKey) ? selectedGroupKey : null;
+  }, [rows, selectedGroupKey]);
+
+  const hasTableSubsetFilter =
+    Object.keys(columnFilters).length > 0 ||
+    searchQuery.trim().length > 0 ||
+    (condition === 'contour' && contourQuickFilter !== 'all') ||
+    rows.length !== baseRows.length;
+
+  const allowedGroupKeys = useMemo(() => {
+    if (!hasTableSubsetFilter && !hasDateRangeFilter) return null;
+    return new Set(rows.map((r) => r.groupKey));
+  }, [hasDateRangeFilter, hasTableSubsetFilter, rows]);
+
+  const dynamicsScope = useMemo(
+    () =>
+      filterJointsAndLinesByReadinessScope({
+        joints: periodJoints,
+        lines: scopedLines,
+        testCircuits: scopedTestCircuits,
+        condition,
+        selectedGroupKey: effectiveSelectedGroupKey,
+        allowedGroupKeys,
+      }),
+    [
+      allowedGroupKeys,
+      condition,
+      effectiveSelectedGroupKey,
+      periodJoints,
+      scopedLines,
+      scopedTestCircuits,
+    ]
+  );
+
   const hasActiveFilters =
     Object.keys(columnFilters).length > 0 ||
     searchQuery.trim().length > 0 ||
     hasDateRangeFilter ||
+    Boolean(effectiveSelectedGroupKey) ||
     (condition === 'contour' && contourQuickFilter !== 'all');
 
   const handleResetAllFilters = () => {
@@ -482,6 +527,7 @@ export function useReadinessReportState(joints: WeldJoint[]) {
     setWeldingDateFrom('');
     setWeldingDateTo('');
     setContourQuickFilter('all');
+    setSelectedGroupKey(null);
   };
 
   const summary = useMemo<ReadinessSummaryTotals>(() => {
@@ -837,6 +883,10 @@ export function useReadinessReportState(joints: WeldJoint[]) {
     welders,
     periodJoints,
     scopedLines,
+    selectedGroupKey: effectiveSelectedGroupKey,
+    setSelectedGroupKey,
+    dynamicsJoints: dynamicsScope.joints,
+    dynamicsLines: dynamicsScope.lines,
     lineMetaByUniqueId,
     baseRows,
     rows,

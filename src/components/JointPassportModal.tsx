@@ -93,6 +93,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     activeTab,
     setActiveTab,
     validationError,
+    isSubmitting,
     isSupplementaryMode,
     setIsSupplementaryMode,
     allowCrossRdLrv,
@@ -166,7 +167,11 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     handleSelectTechCard,
     handleRdCodeChangeInCreate,
     handleSubmit,
+    saveCurrentJointForNavigation,
     handleSafeClose,
+    showDiscardConfirm,
+    confirmDiscardAndClose,
+    cancelDiscardClose,
   } = useJointPassportForm({
     isOpen,
     mode,
@@ -181,9 +186,7 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
     defaultObjectName,
     defaultRdCode,
     currentUser,
-    onSave: (joint) => {
-      onSave(joint, isSupplementaryMode, allowCrossRdLrv);
-    },
+    onSave: (joint, isSupp, crossRd) => onSave(joint, isSupp, crossRd),
     onClose,
   });
 
@@ -193,19 +196,23 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
       if (e.key === 'Escape') {
         if (e.defaultPrevented) return;
         e.preventDefault();
-        handleSafeClose();
+        if (showDiscardConfirm) {
+          cancelDiscardClose();
+        } else {
+          handleSafeClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleSafeClose]);
+  }, [isOpen, handleSafeClose, showDiscardConfirm, cancelDiscardClose]);
 
   if (!isOpen) return null;
 
-  const handleNavigateToJoint = (targetJoint: WeldJoint) => {
-    if (canSaveAnyField) {
-      onSave(form, isSupplementaryMode, allowCrossRdLrv);
-    }
+  const handleNavigateToJoint = async (targetJoint: WeldJoint) => {
+    if (isSubmitting) return;
+    const ok = await saveCurrentJointForNavigation();
+    if (!ok) return;
     if (onNavigateJoint) {
       onNavigateJoint(targetJoint);
     }
@@ -431,17 +438,18 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
               {mode === 'edit' && nextJoint && (
                 <button
                   type="button"
-                  onClick={() => handleNavigateToJoint(nextJoint)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] text-xs font-semibold hover:bg-sky-100 transition-colors cursor-pointer"
+                  disabled={isSubmitting || Boolean(duplicateJointOnLine)}
+                  onClick={() => void handleNavigateToJoint(nextJoint)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-[#1e3799] bg-[#e8f1fc] text-[#1e3799] text-xs font-semibold hover:bg-sky-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
                   title={`Сохранить текущий стык и сразу перейти к следующему стыку № ${nextJoint.jointNumber}`}
                 >
-                  <span>Сохранить и перейти далее</span>
+                  <span>{isSubmitting ? 'Сохранение...' : 'Сохранить и перейти далее'}</span>
                   <ChevronRight className="w-4 h-4" />
                 </button>
               )}
               <button
                 type="submit"
-                disabled={!canSaveAnyField || Boolean(duplicateJointOnLine)}
+                disabled={!canSaveAnyField || Boolean(duplicateJointOnLine) || isSubmitting}
                 title={
                   Boolean(duplicateJointOnLine)
                     ? `Сохранение заблокировано: номер стыка «${form.jointNumber}» уже занят на этой линии`
@@ -455,7 +463,9 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
                   <Lock className="w-4 h-4" />
                 )}
                 <span>
-                  {!canSaveAnyField
+                  {isSubmitting
+                    ? 'Сохранение...'
+                    : !canSaveAnyField
                     ? form.recordStatus === 'LOCKED'
                       ? 'Запись закрыта'
                       : 'Только чтение'
@@ -467,6 +477,42 @@ export const JointPassportModal: React.FC<JointPassportModalProps> = ({
             </div>
           </div>
         </form>
+
+        {showDiscardConfirm && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-900/50 backdrop-blur-[1px] p-4">
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-label="Подтверждение закрытия паспорта"
+              className="w-full max-w-md bg-white rounded-xl border border-slate-200 shadow-2xl p-5 space-y-4"
+            >
+              <div className="space-y-1.5">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Несохранённые изменения в паспорте стыка
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  В форме паспорта есть несохранённые правки. Закрыть окно без сохранения изменений?
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={cancelDiscardClose}
+                  className="px-3.5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-xs font-semibold cursor-pointer"
+                >
+                  Вернуться к правке
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDiscardAndClose}
+                  className="px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer"
+                >
+                  Закрыть без сохранения
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

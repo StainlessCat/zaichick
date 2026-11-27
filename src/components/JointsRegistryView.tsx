@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import { CheckCircle2, X } from 'lucide-react';
 import {
   ColumnDefinition,
@@ -6,16 +6,24 @@ import {
   NdtLabRequest,
   ProjectLineItem,
   RecordStatus,
+  TestCircuit,
   WelderProfile,
   WeldJoint,
   WeldJointFieldKey,
 } from '../types/welding';
-import { ALL_COLUMNS } from '../utils/weldingLogic';
-import { getUserRolePermissions } from '../utils/rbac';
+import {
+  ALL_COLUMNS,
+  buildDuplicateJointIdsSet,
+  computeRegistryQuickFilterCounts,
+  RegistryQuickFilter,
+  RegistryQuickFilterCounts,
+} from '../utils/weldingLogic';
+import { exportFilteredRegistryToXlsx } from '../utils/excelUtils';
 import {
   RegistryActiveFilterBar,
   RegistryFooter,
   RegistryLabRequestModal,
+  RegistryQuickFilterBar,
   RegistryTable,
   RegistryToolbar,
   UserRolePermissions,
@@ -28,12 +36,21 @@ export interface JointsRegistryViewProps {
   lines?: ProjectLineItem[];
   welders?: WelderProfile[];
   labRequests?: NdtLabRequest[];
+  testCircuits?: TestCircuit[];
   currentUserFullName?: string;
   onCreateLabRequest?: (newReq: NdtLabRequest) => Promise<boolean> | boolean | void;
   selectedJointIds: string[];
   onToggleSelectRow: (jointId: string) => void;
   onToggleSelectAll: () => void;
   onClearSelection: () => void;
+
+  // Быстрый поиск и быстрые фильтры
+  globalSearch?: string;
+  onGlobalSearchChange?: (val: string) => void;
+  quickFilter?: RegistryQuickFilter;
+  onQuickFilterChange?: (next: RegistryQuickFilter) => void;
+  quickFilterCounts?: RegistryQuickFilterCounts;
+  duplicateJointIds?: Set<string>;
 
   // Диапазон дат сварки
   weldingDateFrom: string;
@@ -102,7 +119,9 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
   const lines = props.lines ?? app.projectLineList ?? [];
   const welders = props.welders ?? app.welders ?? [];
   const labRequests = props.labRequests ?? app.labRequests ?? [];
-  const currentUserFullName = props.currentUserFullName ?? auth.currentUser?.fullName ?? 'Инженер ПТО';
+  const testCircuits = props.testCircuits ?? app.testCircuits ?? [];
+  const currentUserFullName =
+    props.currentUserFullName ?? auth.currentUser?.fullName ?? 'Инженер ПТО';
   const userPermissions = props.userPermissions ?? auth.userPermissions;
 
   const {
@@ -111,6 +130,10 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
     onToggleSelectRow,
     onToggleSelectAll,
     onClearSelection,
+    globalSearch = '',
+    onGlobalSearchChange,
+    quickFilter = 'all',
+    onQuickFilterChange,
     weldingDateFrom,
     weldingDateTo,
     onWeldingDateFromChange,
@@ -148,6 +171,13 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
     onHideColumnInline,
     onChangeJointStatus,
   } = props;
+
+  // Заявки в ЛНК доступны только пользователям с правом редактирования (не в режиме просмотра)
+  const canSubmitLabRequest =
+    Boolean(onCreateLabRequest) &&
+    (userPermissions.canEditPrepAndWeldingFields ||
+      userPermissions.canEditNdtFields);
+
   // Состояние модального окна подачи заявки на НК из Реестра стыков
   const [isLabReqModalOpen, setIsLabReqModalOpen] = useState(false);
   const [labReqCandidateIds, setLabReqCandidateIds] = useState<string[]>([]);
@@ -156,6 +186,7 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
   );
 
   const openSubmitLabRequestModal = (targetJointIds?: string[]) => {
+    if (!canSubmitLabRequest) return;
     const baseIds =
       targetJointIds && targetJointIds.length > 0
         ? targetJointIds
@@ -167,33 +198,41 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
     setIsLabReqModalOpen(true);
   };
 
-  // Карта дубликатов номеров стыков на технологических линиях (п. 6 аудита)
+  // Карта дубликатов номеров стыков на технологических линиях
   const duplicateJointIds = useMemo(() => {
-    const keyMap = new Map<string, string[]>();
-    for (const j of joints) {
-      const lineKey = (
-        j.uniqueLineId ||
-        `${j.rdCode || ''}__${j.lineNumber || ''}`
-      ).trim().toLowerCase();
-      const numNorm = (j.jointNumber || '').trim().toLowerCase();
-      const composite = `${lineKey}:::${numNorm}`;
-      const list = keyMap.get(composite) || [];
-      list.push(j.id);
-      keyMap.set(composite, list);
-    }
-    const dupIds = new Set<string>();
-    for (const ids of keyMap.values()) {
-      if (ids.length > 1) {
-        for (const id of ids) dupIds.add(id);
-      }
-    }
-    return dupIds;
-  }, [joints]);
+    if (props.duplicateJointIds) return props.duplicateJointIds;
+    return buildDuplicateJointIdsSet(joints);
+  }, [props.duplicateJointIds, joints]);
+
+  const quickFilterCounts = useMemo(() => {
+    if (props.quickFilterCounts) return props.quickFilterCounts;
+    return computeRegistryQuickFilterCounts(joints, {
+      labRequests,
+      welders,
+      duplicateJointIds,
+    });
+  }, [props.quickFilterCounts, joints, labRequests, welders, duplicateJointIds]);
 
   const activeTemplate = templates.find((t) => t.id === activeTemplateId);
 
+  const handleExportExcel = useCallback(() => {
+    exportFilteredRegistryToXlsx({
+      joints: filteredAndSortedJoints,
+      columns: activeColumnDefs,
+      labRequests,
+      testCircuits,
+      templateName: activeTemplate?.name,
+    });
+  }, [
+    filteredAndSortedJoints,
+    activeColumnDefs,
+    labRequests,
+    testCircuits,
+    activeTemplate?.name,
+  ]);
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       {labReqSuccessBanner && (
         <div className="bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs font-semibold shadow-2xs">
           <div className="flex items-center gap-2">
@@ -210,8 +249,10 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
         </div>
       )}
 
-      {/* Верхняя полоса: Диапазон дат сварки, действия и выбор шаблона таблицы */}
+      {/* Верхняя полоса: Поиск, диапазон дат сварки, действия и выбор шаблона таблицы */}
       <RegistryToolbar
+        globalSearch={globalSearch}
+        onGlobalSearchChange={(v) => onGlobalSearchChange?.(v)}
         weldingDateFrom={weldingDateFrom}
         weldingDateTo={weldingDateTo}
         onWeldingDateFromChange={onWeldingDateFromChange}
@@ -225,9 +266,10 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
         onOpenBulkEdit={onOpenBulkEdit}
         onQuickAddSupplementaryJoint={onQuickAddSupplementaryJoint}
         onOpenImportExcel={onOpenImportExcel}
+        onExportExcel={handleExportExcel}
         onOpenCreatePassport={onOpenCreatePassport}
         onOpenSubmitLabRequestModal={() => openSubmitLabRequestModal()}
-        canCreateLabRequest={Boolean(onCreateLabRequest)}
+        canCreateLabRequest={canSubmitLabRequest}
         activeTemplateId={activeTemplateId}
         templates={templates}
         onApplyTemplate={onApplyTemplate}
@@ -235,13 +277,31 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
         totalColumnsCount={ALL_COLUMNS.length}
         onOpenColumnsModal={onOpenColumnsModal}
         hasActiveFilters={Boolean(
-          weldingDateFrom || weldingDateTo || onlyActiveRepairs || activeFilterKeys.length > 0
+          globalSearch.trim() ||
+            quickFilter !== 'all' ||
+            weldingDateFrom ||
+            weldingDateTo ||
+            onlyActiveRepairs ||
+            activeFilterKeys.length > 0
         )}
         onResetAllFilters={onResetAllFilters}
       />
 
-      {/* Полоса активных фильтров (даты сварки + Excel-фильтры) */}
+      {/* Быстрые оперативные срезы реестра */}
+      {onQuickFilterChange && (
+        <RegistryQuickFilterBar
+          quickFilter={quickFilter}
+          onQuickFilterChange={onQuickFilterChange}
+          counts={quickFilterCounts}
+        />
+      )}
+
+      {/* Полоса активных фильтров (поиск + быстрые фильтры + даты сварки + Excel-фильтры) */}
       <RegistryActiveFilterBar
+        globalSearch={globalSearch}
+        onResetGlobalSearch={() => onGlobalSearchChange?.('')}
+        quickFilter={quickFilter}
+        onResetQuickFilter={() => onQuickFilterChange?.('all')}
         weldingDateFrom={weldingDateFrom}
         weldingDateTo={weldingDateTo}
         onResetDateRange={onResetDateRange}
@@ -279,22 +339,23 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
         onOpenEditPassport={onOpenEditPassport}
         onOpenSubmitLabRequestForJoint={(jId) => openSubmitLabRequestModal([jId])}
         labRequests={labRequests}
+        testCircuits={testCircuits}
         welders={welders}
         duplicateJointIds={duplicateJointIds}
-        canCreateLabRequest={Boolean(onCreateLabRequest)}
+        canCreateLabRequest={canSubmitLabRequest}
         onChangeJointStatus={onChangeJointStatus}
       />
 
       {/* Подвал таблицы со статистикой и подсказками */}
       <RegistryFooter
         filteredCount={filteredAndSortedJoints.length}
-        totalCount={joints.length}
+        totalCount={quickFilterCounts.all}
         activeTemplateName={activeTemplate?.name}
         selectedCount={selectedJointIds.length}
       />
 
       {/* Модальное окно подачи заявки в Лабораторию НК */}
-      {onCreateLabRequest && (
+      {canSubmitLabRequest && onCreateLabRequest && (
         <RegistryLabRequestModal
           isOpen={isLabReqModalOpen}
           onClose={() => setIsLabReqModalOpen(false)}

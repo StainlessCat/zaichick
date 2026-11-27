@@ -81,6 +81,21 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     return allTestCircuits;
   }, [allTestCircuits, selectedObjectNames]);
 
+  const getTodayIso = () => new Date().toISOString().slice(0, 10);
+  const isSingleJointMode = selectedJoints.length === 1;
+  const singleJoint = isSingleJointMode ? selectedJoints[0] : null;
+
+  // Полный ряд стандартных наружных диаметров трубопроводов
+  const STANDARD_OUTER_DIAMETERS_MM = useMemo(
+    () => [
+      12, 14, 16, 18, 20, 21.3, 25, 26, 28, 32, 33.7, 38, 42, 45, 48.3, 57,
+      60.3, 76, 89, 102, 108, 114.3, 133, 159, 165, 168.3, 180, 219, 245, 273,
+      325, 355.6, 377, 426, 457, 508, 530, 610, 630, 720, 820, 920, 1020, 1120,
+      1220, 1320, 1420, 1520, 1620, 1720, 1820,
+    ],
+    []
+  );
+
   // Флаги включения конкретных полей для массовой замены
   const [enableDiameter, setEnableDiameter] = useState(false);
   const [diameterMm, setDiameterMm] = useState<number>(159);
@@ -97,8 +112,8 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   );
 
   const [enableWeldingDate, setEnableWeldingDate] = useState(false);
-  const [weldingDate, setWeldingDate] = useState<string>('2026-10-28');
-  const [ambientTemp, setAmbientTemp] = useState<string>('-6');
+  const [weldingDate, setWeldingDate] = useState<string>(() => getTodayIso());
+  const [ambientTemp, setAmbientTemp] = useState<string>('');
   const [weatherSource, setWeatherSource] = useState<string>('');
   const [loadingWeather, setLoadingWeather] = useState(false);
 
@@ -115,7 +130,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     !rbac.canEditPrepAndWeldingFields && rbac.canEditNdtFields
   );
   const [vikResult, setVikResult] = useState<ControlResult>('Годен');
-  const [vikDate, setVikDate] = useState<string>('2026-10-28');
+  const [vikDate, setVikDate] = useState<string>(() => getTodayIso());
   const [vikInspector, setVikInspector] = useState<string>(
     inspectors[0]?.fullName || 'Лебедев К.М.'
   );
@@ -123,7 +138,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   const [enableNdt, setEnableNdt] = useState(false);
   const [ndtType, setNdtType] = useState<NdtMethod>('РК');
   const [ndtResult, setNdtResult] = useState<ControlResult>('Годен');
-  const [ndtDate, setNdtDate] = useState<string>('2026-10-28');
+  const [ndtDate, setNdtDate] = useState<string>(() => getTodayIso());
   const [ndtInspector, setNdtInspector] = useState<string>(
     inspectors[0]?.fullName || 'Лебедев К.М.'
   );
@@ -137,6 +152,16 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+    const today = getTodayIso();
+    setWeldingDate(singleJoint?.weldingDate || today);
+    setVikDate(singleJoint?.vikDate || today);
+    setNdtDate(singleJoint?.ndtDate || today);
+    setAmbientTemp(singleJoint?.ambientTemp || '');
+    setWeatherSource(singleJoint?.weatherSource || '');
+    if (singleJoint?.diameterMm) setDiameterMm(singleJoint.diameterMm);
+    if (singleJoint?.wallThickness) setWallThickness(singleJoint.wallThickness);
+    if (singleJoint?.welderStamp) setSelectedStamp(singleJoint.welderStamp);
+
     if (!rbac.canEditPrepAndWeldingFields) {
       setEnableDiameter(false);
       setEnableJointType(false);
@@ -158,10 +183,31 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
     }
   }, [
     isOpen,
+    singleJoint,
     rbac.canEditPrepAndWeldingFields,
     rbac.canEditNdtFields,
     rbac.canManageTestCircuits,
   ]);
+
+  // Автоподстановка температуры из архива метеостанции объекта при смене даты сварки
+  useEffect(() => {
+    if (!isOpen || !enableWeldingDate || !weldingDate) return;
+    const archivedVal = facilityCoords.weatherArchive?.[weldingDate];
+    if (archivedVal !== undefined && String(archivedVal).trim() !== '') {
+      const raw = String(archivedVal).trim();
+      const num = Number(raw);
+      const fmt =
+        !raw.startsWith('+') && !raw.startsWith('-') && !Number.isNaN(num) && num > 0
+          ? `+${num}`
+          : raw;
+      setAmbientTemp(fmt);
+      setWeatherSource(
+        facilityCoords.weatherStation
+          ? `Архив метеостанции ${facilityCoords.weatherStation}`
+          : 'Архив метеостанции объекта'
+      );
+    }
+  }, [isOpen, enableWeldingDate, weldingDate, facilityCoords.weatherArchive, facilityCoords.weatherStation]);
 
   const isDirty = Boolean(
     enableDiameter ||
@@ -234,7 +280,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
       if (enableWeldingDate) {
         rawPatch.weldingDate = weldingDate;
-        rawPatch.ambientTemp = ambientTemp;
+        if (ambientTemp.trim() !== '') {
+          rawPatch.ambientTemp = ambientTemp.trim();
+        }
         if (weatherSource) {
           rawPatch.weatherSource = weatherSource;
         }
@@ -304,10 +352,14 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
             <Layers className="w-5 h-5 text-sky-300" />
             <div>
               <h2 className="font-display text-base font-bold">
-                Массовое редактирование стыков ({selectedJoints.length} шт.)
+                {isSingleJointMode && singleJoint
+                  ? `Быстрое редактирование стыка № ${singleJoint.jointNumber}`
+                  : `Массовое редактирование стыков · ${selectedJoints.length} шт.`}
               </h2>
               <p className="text-xs text-sky-200">
-                Групповое изменение полей с учётом Field-Level RBAC ({rbac.categoryLabel})
+                {isSingleJointMode
+                  ? `Правка параметров выбранного стыка · ${rbac.categoryLabel}`
+                  : `Групповое изменение полей с учётом прав доступа · ${rbac.categoryLabel}`}
               </p>
             </div>
           </div>
@@ -457,7 +509,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
                 className="w-4 h-4 rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
               />
               <span className="text-sm font-bold text-slate-900">
-                Изменить диаметр (мм / дюймы) и толщину стенки
+                Изменить диаметр и толщину стенки
               </span>
             </label>
 
@@ -470,19 +522,19 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
                   <select
                     value={diameterMm}
                     onChange={(e) => setDiameterMm(Number(e.target.value))}
-                    aria-label="Диаметр в мм"
+                    aria-label="Диаметр, мм"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#1e3799]"
                   >
-                    {[57, 89, 108, 159, 219, 273, 325, 426, 530, 720, 1020, 1420].map((d) => (
+                    {STANDARD_OUTER_DIAMETERS_MM.map((d) => (
                       <option key={d} value={d}>
-                        {d} мм ({mmToInchDiameter(d)})
+                        {d} мм · {mmToInchDiameter(d)}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Дюйм-диаметр (авто)
+                    Дюйм-диаметр
                   </label>
                   <input
                     type="text"
@@ -507,13 +559,13 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Экв. дюйм EDI (Метод А)
+                    Экв. дюйм
                   </label>
                   <input
                     type="text"
                     readOnly
-                    value={`${calculateEquivalentDiaInch(diameterMm, wallThickness)}" (K=${getEpcWallThicknessFactor(wallThickness)})`}
-                    title="Эквивалентный дюйм-диаметр по отраслевой шкале EPC с учетом толщины стенки"
+                    value={`${calculateEquivalentDiaInch(diameterMm, wallThickness)}" · K=${getEpcWallThicknessFactor(wallThickness)}`}
+                    title="Эквивалентный дюйм-диаметр по отраслевой шкале с учётом толщины стенки"
                     className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-md text-xs font-mono font-semibold text-[#1e3799]"
                   />
                 </div>
@@ -844,7 +896,9 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
               <Check className="w-4 h-4" />
               <span>
                 {canSaveAnyBulk
-                  ? `Применить ко всем (${selectedJoints.length} ст.)`
+                  ? isSingleJointMode
+                    ? 'Применить изменения'
+                    : `Применить ко всем · ${selectedJoints.length} ст.`
                   : 'Редактирование недоступно для вашей роли'}
               </span>
             </button>

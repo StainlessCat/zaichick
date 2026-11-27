@@ -1,10 +1,23 @@
 import React from 'react';
-import { AlertTriangle, Calendar, Filter, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Calendar, Filter, RotateCcw, Search } from 'lucide-react';
 import { FIELD_LABELS_MAP, formatDateDDMMYY } from '../../utils/weldingLogic';
+import { RegistryQuickFilter } from '../../utils/filters';
 import { WeldJointFieldKey } from '../../types/welding';
 import { RegistryActiveFilterBarProps } from './types';
 
+const QUICK_FILTER_LABELS: Record<Exclude<RegistryQuickFilter, 'all'>, string> = {
+  unwelded: 'Не сварены',
+  ready_for_lab: 'Готовы к ЛНК',
+  incomplete: 'Неполный паспорт',
+  in_repair: 'В ремонте',
+  duplicates: 'Дубли',
+};
+
 export const RegistryActiveFilterBar: React.FC<RegistryActiveFilterBarProps> = ({
+  globalSearch = '',
+  onResetGlobalSearch,
+  quickFilter = 'all',
+  onResetQuickFilter,
   weldingDateFrom,
   weldingDateTo,
   onResetDateRange,
@@ -17,11 +30,15 @@ export const RegistryActiveFilterBar: React.FC<RegistryActiveFilterBarProps> = (
   onClearSelection,
   onResetAllFilters,
 }) => {
+  const hasQuickFilter = quickFilter !== 'all';
+  const hasSearch = Boolean(globalSearch.trim());
   const hasFilters =
     activeFilterKeys.length > 0 ||
     Boolean(weldingDateFrom) ||
     Boolean(weldingDateTo) ||
-    onlyActiveRepairs;
+    onlyActiveRepairs ||
+    hasQuickFilter ||
+    hasSearch;
 
   if (!hasFilters && selectedJointIdsCount === 0) {
     return null;
@@ -33,7 +50,39 @@ export const RegistryActiveFilterBar: React.FC<RegistryActiveFilterBarProps> = (
         <span className="font-semibold text-[#1e3799]">
           Активные фильтры:
         </span>
-        {onlyActiveRepairs && (
+        {hasSearch && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-white border border-sky-300 text-[#1e3799] font-medium">
+            <Search className="w-3 h-3" />
+            <span>Поиск: «{globalSearch.trim()}»</span>
+            {onResetGlobalSearch && (
+              <button
+                type="button"
+                onClick={onResetGlobalSearch}
+                aria-label="Сбросить строку поиска"
+                className="text-slate-400 hover:text-red-600 font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </span>
+        )}
+        {hasQuickFilter && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-50 border border-amber-300 text-amber-900 font-semibold">
+            <AlertTriangle className="w-3 h-3 text-amber-700" />
+            <span>{QUICK_FILTER_LABELS[quickFilter]}</span>
+            {onResetQuickFilter && (
+              <button
+                type="button"
+                onClick={onResetQuickFilter}
+                aria-label="Сбросить быстрый фильтр"
+                className="text-amber-600 hover:text-red-600 font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </span>
+        )}
+        {onlyActiveRepairs && !hasQuickFilter && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-amber-50 border border-amber-300 text-amber-900 font-semibold">
             <AlertTriangle className="w-3 h-3 text-amber-700" />
             <span>Только в ремонте</span>
@@ -99,7 +148,7 @@ export const RegistryActiveFilterBar: React.FC<RegistryActiveFilterBarProps> = (
             onClick={onClearSelection}
             className="text-slate-600 hover:text-slate-900 underline font-medium cursor-pointer"
           >
-            Снять выделение ({selectedJointIdsCount})
+            Снять выделение · {selectedJointIdsCount}
           </button>
         )}
         {hasFilters && (

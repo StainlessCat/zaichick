@@ -3,13 +3,34 @@
  * Изолированные чистые функции без привязки к React для тестирования и переиспользования.
  */
 
-import { FacilityObject, LRVItem, NdtLabRequest, TestCircuit, WeldJoint, WeldJointFieldKey } from '../types/welding';
+import { FacilityObject, LRVItem, NdtLabRequest, TestCircuit, WelderProfile, WeldJoint, WeldJointFieldKey } from '../types/welding';
 import { ALL_COLUMNS } from './columns';
 import { formatDateDDMMYY } from './formatting';
 import { isDateColumnKey, isWeldingDateInRange } from './dates';
 import { getJointEquivDiaInch } from './pipeCalc';
-import { getJointLabRequestStatus } from './laboratoryLogic';
-import { isJointCurrentlyInRepair } from './readiness';
+import {
+  getJointLabRequestStatus,
+  validateJointForLabRequestSubmission,
+} from './laboratoryLogic';
+import { isJointCurrentlyInRepair, isJointFullyAccepted } from './readiness';
+import { getMissingPassportFields } from './normativeValidation';
+
+export type RegistryQuickFilter =
+  | 'all'
+  | 'unwelded'
+  | 'ready_for_lab'
+  | 'incomplete'
+  | 'in_repair'
+  | 'duplicates';
+
+export interface RegistryQuickFilterCounts {
+  all: number;
+  unwelded: number;
+  ready_for_lab: number;
+  incomplete: number;
+  in_repair: number;
+  duplicates: number;
+}
 
 export interface FilterJointsOptions {
   selectedObjectName?: string;
@@ -22,6 +43,9 @@ export interface FilterJointsOptions {
   labRequests?: NdtLabRequest[];
   testCircuits?: TestCircuit[];
   onlyActiveRepairs?: boolean;
+  quickFilter?: RegistryQuickFilter;
+  welders?: WelderProfile[];
+  duplicateJointIds?: Set<string>;
 }
 
 /**
@@ -177,6 +201,123 @@ export function sortJointsChronologically(joints: WeldJoint[]): WeldJoint[] {
 }
 
 /**
+ * Строит множество ID стыков, у которых совпадает пара (uniqueLineId + jointNumber)
+ */
+export function buildDuplicateJointIdsSet(joints: WeldJoint[]): Set<string> {
+  const keyToIds = new Map<string, string[]>();
+  for (const j of joints) {
+    const lineKey = (j.uniqueLineId || '').trim().toLowerCase();
+    const numKey = (j.jointNumber || '').trim().toLowerCase();
+    if (!lineKey || !numKey) continue;
+    const composite = `${lineKey}::${numKey}`;
+    const list = keyToIds.get(composite);
+    if (list) {
+      list.push(j.id);
+    } else {
+      keyToIds.set(composite, [j.id]);
+    }
+  }
+  const dupes = new Set<string>();
+  for (const ids of keyToIds.values()) {
+    if (ids.length > 1) {
+      for (const id of ids) dupes.add(id);
+    }
+  }
+  return dupes;
+}
+
+export interface QuickFilterContext {
+  labRequests?: NdtLabRequest[];
+  welders?: WelderProfile[];
+  duplicateJointIds?: Set<string>;
+}
+
+/**
+ * Проверка соответствия стыка выбранному быстрому срезу реестра
+ */
+export function matchesRegistryQuickFilter(
+  joint: WeldJoint,
+  quickFilter: RegistryQuickFilter,
+  ctx: QuickFilterContext = {}
+): boolean {
+  if (quickFilter === 'all') return true;
+
+  if (quickFilter === 'unwelded') {
+    return !joint.weldingDate || !joint.weldingDate.trim();
+  }
+
+  if (quickFilter === 'in_repair') {
+    return isJointCurrentlyInRepair(joint);
+  }
+
+  if (quickFilter === 'incomplete') {
+    return getMissingPassportFields(joint).length > 0;
+  }
+
+  if (quickFilter === 'duplicates') {
+    return Boolean(ctx.duplicateJointIds && ctx.duplicateJointIds.has(joint.id));
+  }
+
+  if (quickFilter === 'ready_for_lab') {
+    if (isJointFullyAccepted(joint)) return false;
+    const validation = validateJointForLabRequestSubmission(joint, ctx.welders ?? []);
+    if (!validation.canSubmit) return false;
+    const labStatus = getJointLabRequestStatus(joint, ctx.labRequests ?? []);
+    return labStatus === 'Заявка не подана';
+  }
+
+  return true;
+}
+
+/**
+ * Расчёт счётчиков быстрых фильтров реестра стыков
+ */
+export function computeRegistryQuickFilterCounts(
+  joints: WeldJoint[],
+  ctx: QuickFilterContext = {}
+): RegistryQuickFilterCounts {
+  const duplicateJointIds = ctx.duplicateJointIds ?? buildDuplicateJointIdsSet(joints);
+  const effectiveCtx: QuickFilterContext = {
+    labRequests: ctx.labRequests ?? [],
+    welders: ctx.welders ?? [],
+    duplicateJointIds,
+  };
+
+  let unwelded = 0;
+  let ready_for_lab = 0;
+  let incomplete = 0;
+  let in_repair = 0;
+  let duplicates = 0;
+
+  for (const joint of joints) {
+    if (!joint.weldingDate || !joint.weldingDate.trim()) {
+      unwelded += 1;
+    }
+    if (isJointCurrentlyInRepair(joint)) {
+      in_repair += 1;
+    }
+    if (getMissingPassportFields(joint).length > 0) {
+      incomplete += 1;
+    }
+    if (duplicateJointIds.has(joint.id)) {
+      duplicates += 1;
+    }
+    if (matchesRegistryQuickFilter(joint, 'ready_for_lab', effectiveCtx)) {
+      ready_for_lab += 1;
+    }
+  }
+
+  return {
+    all: joints.length,
+    unwelded,
+    ready_for_lab,
+    incomplete,
+    in_repair,
+    duplicates,
+  };
+}
+
+/**
  * Сводный пайплайн фильтрации и сортировки стыков
  */
 export function filterAndSortJoints(
@@ -194,13 +335,30 @@ export function filterAndSortJoints(
     labRequests = [],
     testCircuits,
     onlyActiveRepairs = false,
+    quickFilter = 'all',
+    welders = [],
+    duplicateJointIds,
   } = options;
 
   let result = filterJointsByScope(joints, selectedObjectName, selectedRdCode);
+  const resolvedDupes =
+    quickFilter === 'duplicates'
+      ? duplicateJointIds ?? buildDuplicateJointIdsSet(result)
+      : duplicateJointIds;
+
   result = filterJointsByDateRange(result, weldingDateFrom, weldingDateTo);
   result = filterJointsByColumnFilters(result, columnFilters, labRequests, testCircuits);
   if (onlyActiveRepairs) {
     result = result.filter((j) => isJointCurrentlyInRepair(j));
+  }
+  if (quickFilter && quickFilter !== 'all') {
+    result = result.filter((j) =>
+      matchesRegistryQuickFilter(j, quickFilter, {
+        labRequests,
+        welders,
+        duplicateJointIds: resolvedDupes,
+      })
+    );
   }
   result = filterJointsByGlobalSearch(result, globalSearch, labRequests, testCircuits);
 

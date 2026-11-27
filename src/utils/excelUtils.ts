@@ -1,9 +1,12 @@
 import { zaychickApi } from '../api';
 import {
+  ColumnDefinition,
   JournalStandard,
   LRVItem,
+  NdtLabRequest,
   ProjectLineItem,
   ReadinessGroupCondition,
+  TestCircuit,
   WeldingMaterialCertificate,
   WeldJoint,
 } from '../types/welding';
@@ -11,10 +14,13 @@ import {
   ALL_COLUMNS,
   formatDateDDMMYY,
   getJointEquivDiaInch,
+  getJointFieldValue,
   isDateColumnKey,
   parseLrvCatalogRecords,
   parseProjectLineListRecords,
 } from './weldingLogic';
+import { normalizeCorporateJointNumber } from '../api/mappers';
+import { buildXlsxBinary } from './xlsxBuilder';
 
 export function triggerBlobDownload(blob: Blob, filename: string): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -29,6 +35,60 @@ export function triggerBlobDownload(blob: Blob, filename: string): void {
   window.setTimeout(() => {
     URL.revokeObjectURL(url);
   }, 2500);
+}
+
+/**
+ * Клиентский экспорт отфильтрованной выборки Реестра стыков по активным столбцам текущего шаблона в .xlsx.
+ * Гарантирует точное совпадение с тем, что видит инженер в таблице, и не включает закрытые поля ЛНК.
+ */
+export function exportFilteredRegistryToXlsx(params: {
+  joints: WeldJoint[];
+  columns: ColumnDefinition[];
+  labRequests?: NdtLabRequest[];
+  testCircuits?: TestCircuit[];
+  templateName?: string;
+}): void {
+  const { joints, columns, labRequests = [], testCircuits, templateName } = params;
+  const exportCols = columns.length > 0 ? columns : ALL_COLUMNS;
+  const headers = exportCols.map((c) => c.label);
+  const columnWidths = exportCols.map((c) => Math.max(12, Math.round(c.minWidth / 7)));
+
+  const rows: Array<Array<string | number>> = joints.map((joint) =>
+    exportCols.map((col) => {
+      if (col.key === 'jointNumber') {
+        const corp = normalizeCorporateJointNumber(
+          joint.jointNumber,
+          joint.uniqueLineId,
+          joint.isSupplementary
+        );
+        return corp.jointNumber;
+      }
+      const raw = getJointFieldValue(joint, col.key, labRequests, testCircuits);
+      if (raw === '' || raw === null || raw === undefined) return '';
+      if (isDateColumnKey(col.key)) {
+        return formatDateDDMMYY(String(raw));
+      }
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return raw;
+      }
+      return String(raw);
+    })
+  );
+
+  const bytes = buildXlsxBinary([
+    {
+      name: templateName ? templateName.slice(0, 31) : 'Реестр стыков',
+      headers,
+      rows,
+      columnWidths,
+    },
+  ]);
+
+  const dateStamp = formatDateDDMMYY(new Date().toISOString().slice(0, 10));
+  const blob = new Blob([bytes.buffer as ArrayBuffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  triggerBlobDownload(blob, `ZAYCHICK_Reestr_Stykov_${dateStamp}.xlsx`);
 }
 
 /**

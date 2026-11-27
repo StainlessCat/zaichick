@@ -45,6 +45,8 @@ interface ReadinessTableProps {
     idReadinessPct: number;
   };
   canOpenExecutiveDocs: boolean;
+  selectedGroupKey?: string | null;
+  onSelectGroupKey?: (groupKey: string | null) => void;
   onDrillDownRegistry: (groupKey: string, onlyActiveRepairs?: boolean) => void;
   onDrillDownExecutiveDocs: (row: ReadinessSummaryRow) => void;
 }
@@ -68,6 +70,8 @@ export const ReadinessTable: React.FC<ReadinessTableProps> = ({
   summary,
   tableFooterTotals,
   canOpenExecutiveDocs,
+  selectedGroupKey,
+  onSelectGroupKey,
   onDrillDownRegistry,
   onDrillDownExecutiveDocs,
 }) => {
@@ -313,13 +317,35 @@ export const ReadinessTable: React.FC<ReadinessTableProps> = ({
                   const row = rows[virtualRow.index];
                   const canOpenId = canOpenExecutiveDocs && row.totalLinesCount > 0;
                   const isEven = virtualRow.index % 2 === 1;
+                  const isSelected = selectedGroupKey === row.groupKey;
+                  const handleRowClick = (e: React.MouseEvent<HTMLTableRowElement>) => {
+                    if (!onSelectGroupKey) return;
+                    const target = e.target as HTMLElement | null;
+                    if (target?.closest('button, a, input, select')) return;
+                    onSelectGroupKey(isSelected ? null : row.groupKey);
+                  };
                   return (
                     <tr
                       key={row.groupKey}
                       data-index={virtualRow.index}
                       ref={rowVirtualizer.measureElement}
-                      className={`hover:bg-[#e8f1fc]/50 transition-colors ${
-                        isEven ? 'bg-slate-50/60' : 'bg-white'
+                      onClick={handleRowClick}
+                      aria-selected={isSelected}
+                      title={
+                        onSelectGroupKey
+                          ? isSelected
+                            ? 'Нажмите повторно для сброса выбора'
+                            : 'Нажмите для отображения динамики и воронки по строке'
+                          : undefined
+                      }
+                      className={`transition-colors ${
+                        onSelectGroupKey ? 'cursor-pointer' : ''
+                      } ${
+                        isSelected
+                          ? 'bg-[#e8f1fc] hover:bg-[#dce9fb]'
+                          : isEven
+                            ? 'bg-slate-50/60 hover:bg-[#e8f1fc]/50'
+                            : 'bg-white hover:bg-[#e8f1fc]/50'
                       }`}
                     >
                       <td
@@ -327,7 +353,9 @@ export const ReadinessTable: React.FC<ReadinessTableProps> = ({
                           width: getColumnWidth('groupKey'),
                           minWidth: getColumnWidth('groupKey'),
                         }}
-                        className="py-3 px-4 border-r border-slate-200"
+                        className={`py-3 px-4 border-r border-slate-200 ${
+                          isSelected ? 'border-l-4 border-l-[#1e3799] pl-3' : ''
+                        }`}
                       >
                         <div className="font-mono font-bold text-slate-900">
                           {row.groupKey}
@@ -726,7 +754,7 @@ export const ReadinessTable: React.FC<ReadinessTableProps> = ({
           )}
         </div>
         <div>
-          Ширина столбцов регулируется перетаскиванием правой границы заголовка, двойной клик — автоподбор
+          Клик по строке фиксирует динамику и воронку по выбранному элементу · ширина столбцов регулируется перетаскиванием границы
         </div>
       </div>
     </div>

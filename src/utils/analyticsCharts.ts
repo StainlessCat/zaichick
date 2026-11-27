@@ -1,6 +1,8 @@
 import type {
   ProjectLineItem,
+  ReadinessGroupCondition,
   ReadinessSummaryRow,
+  TestCircuit,
   WeldJoint,
   WelderProfile,
 } from '../types/welding';
@@ -16,6 +18,7 @@ import {
 } from './readiness';
 
 export type DynamicsGranularity = 'day' | 'week';
+export type DynamicsChartMode = 'day' | 'week' | 'group';
 export type DynamicsMetric = 'joints' | 'edi';
 
 export interface DynamicsBucket {
@@ -475,3 +478,246 @@ export function matchesContourQuickFilter(
   }
   return true;
 }
+
+export interface FilterReadinessScopeParams {
+  joints: WeldJoint[];
+  lines: ProjectLineItem[];
+  testCircuits?: TestCircuit[];
+  condition: ReadinessGroupCondition;
+  selectedGroupKey?: string | null;
+  allowedGroupKeys?: ReadonlySet<string> | string[] | null;
+}
+
+export interface FilteredReadinessScopeResult {
+  joints: WeldJoint[];
+  lines: ProjectLineItem[];
+}
+
+function cleanScopeContourText(raw?: string | null): string {
+  const trimmed = (raw || '').trim();
+  if (!trimmed || trimmed === '—' || trimmed === '-') return '';
+  return trimmed;
+}
+
+/**
+ * Фильтрует стыки и линии для панели «Динамика и воронка» в точном соответствии с правилами
+ * группировки calculateReadinessReport (объект, контур испытаний, шифр РД, линия).
+ */
+export function filterJointsAndLinesByReadinessScope(
+  params: FilterReadinessScopeParams
+): FilteredReadinessScopeResult {
+  const {
+    joints,
+    lines,
+    testCircuits = [],
+    condition,
+    selectedGroupKey,
+    allowedGroupKeys,
+  } = params;
+
+  let targetKeys: ReadonlySet<string> | null = null;
+  if (selectedGroupKey && selectedGroupKey.trim().length > 0) {
+    targetKeys = new Set([selectedGroupKey]);
+  } else if (allowedGroupKeys) {
+    targetKeys =
+      allowedGroupKeys instanceof Set
+        ? allowedGroupKeys
+        : new Set(allowedGroupKeys);
+  }
+
+  if (!targetKeys) {
+    return { joints, lines };
+  }
+
+  if (targetKeys.size === 0) {
+    return { joints: [], lines: [] };
+  }
+
+  // Быстрый путь для простых разрезов без контуров
+  if (condition !== 'contour') {
+    const filteredJoints = joints.filter((j) => {
+      const key = j[condition] || 'Не указано';
+      return targetKeys!.has(key);
+    });
+    const filteredLines = lines.filter((line) => {
+      let key = 'Не указано';
+      if (condition === 'objectName') {
+        key = line.objectName || 'Не указано';
+      } else if (condition === 'rdCode') {
+        key = line.rdCode || 'Не указано';
+      } else if (condition === 'uniqueLineId') {
+        key =
+          line.uniqueLineId ||
+          (line.rdCode && line.lineNumber ? `${line.rdCode}::${line.lineNumber}` : '') ||
+          'Не указано';
+      }
+      return targetKeys!.has(key);
+    });
+    return { joints: filteredJoints, lines: filteredLines };
+  }
+
+  // Разрез «Контур испытаний»: повторяем точные индексы calculateReadinessReport
+  const circuitById = new Map<string, TestCircuit>();
+  const contoursByLineId = new Map<string, Set<string>>();
+  const contoursByUniqueLineId = new Map<string, Set<string>>();
+  const contoursByRdLine = new Map<string, Set<string>>();
+
+  const registerLineContour = (
+    map: Map<string, Set<string>>,
+    key: string | undefined | null,
+    contourName: string
+  ) => {
+    if (!key || !contourName) return;
+    let set = map.get(key);
+    if (!set) {
+      set = new Set<string>();
+      map.set(key, set);
+    }
+    set.add(contourName);
+  };
+
+  for (const circuit of testCircuits) {
+    const cleanName = cleanScopeContourText(circuit.name);
+    if (!cleanName) continue;
+    circuitById.set(circuit.id, circuit);
+    for (const ls of circuit.linesSummary || []) {
+      registerLineContour(contoursByLineId, ls.lineId, cleanName);
+      registerLineContour(contoursByUniqueLineId, ls.uniqueLineId, cleanName);
+      if (ls.rdCode && ls.lineNumber) {
+        registerLineContour(contoursByRdLine, `${ls.rdCode}::${ls.lineNumber}`, cleanName);
+      }
+    }
+  }
+
+  const lineById = new Map<string, ProjectLineItem>();
+  const lineByUniqueId = new Map<string, ProjectLineItem>();
+  const lineByRdNumber = new Map<string, ProjectLineItem>();
+  for (const line of lines) {
+    if (line.id) lineById.set(line.id, line);
+    if (line.uniqueLineId) lineByUniqueId.set(line.uniqueLineId, line);
+    if (line.rdCode && line.lineNumber) {
+      lineByRdNumber.set(`${line.rdCode}::${line.lineNumber}`, line);
+    }
+  }
+
+  const findMatchedLine = (joint: WeldJoint): ProjectLineItem | undefined => {
+    if (joint.lineId && lineById.has(joint.lineId)) {
+      return lineById.get(joint.lineId);
+    }
+    if (joint.uniqueLineId && lineByUniqueId.has(joint.uniqueLineId)) {
+      return lineByUniqueId.get(joint.uniqueLineId);
+    }
+    if (joint.rdCode && joint.lineNumber) {
+      return lineByRdNumber.get(`${joint.rdCode}::${joint.lineNumber}`);
+    }
+    return undefined;
+  };
+
+  const resolveContoursForLine = (line: ProjectLineItem): string[] => {
+    const result = new Set<string>();
+    const fromId = contoursByLineId.get(line.id);
+    if (fromId) fromId.forEach((c) => result.add(c));
+    const fromUnique = contoursByUniqueLineId.get(line.uniqueLineId);
+    if (fromUnique) fromUnique.forEach((c) => result.add(c));
+    const fromRdNum = contoursByRdLine.get(`${line.rdCode}::${line.lineNumber}`);
+    if (fromRdNum) fromRdNum.forEach((c) => result.add(c));
+    if (result.size === 0) {
+      const fallback = cleanScopeContourText(line.testContour);
+      if (fallback) result.add(fallback);
+    }
+    return Array.from(result);
+  };
+
+  const resolveJointContour = (joint: WeldJoint, matchedLine?: ProjectLineItem): string => {
+    if (joint.testCircuitId) {
+      const circuit = circuitById.get(joint.testCircuitId);
+      const cName = cleanScopeContourText(circuit?.name);
+      if (cName) return cName;
+    }
+    const directContour = cleanScopeContourText(joint.contour);
+    if (directContour) return directContour;
+    if (matchedLine) {
+      const lineContours = resolveContoursForLine(matchedLine);
+      if (lineContours.length > 0) return lineContours[0];
+    }
+    return 'Без контура';
+  };
+
+  const extraContoursByLineKey = new Map<string, Set<string>>();
+  const filteredJoints: WeldJoint[] = [];
+
+  for (const j of joints) {
+    const matched = findMatchedLine(j);
+    const contourName = resolveJointContour(j, matched);
+    if (contourName && contourName !== 'Без контура') {
+      const canonicalKey = matched
+        ? matched.id || matched.uniqueLineId
+        : j.uniqueLineId || `${j.rdCode}::${j.lineNumber}`;
+      registerLineContour(extraContoursByLineKey, canonicalKey, contourName);
+    }
+    if (targetKeys.has(contourName)) {
+      filteredJoints.push(j);
+    }
+  }
+
+  const filteredLines = lines.filter((line) => {
+    const canonicalLineKey =
+      line.id || line.uniqueLineId || `${line.rdCode}::${line.lineNumber}`;
+    const lineContours = new Set<string>(resolveContoursForLine(line));
+    const extraContours = extraContoursByLineKey.get(canonicalLineKey);
+    if (extraContours) extraContours.forEach((c) => lineContours.add(c));
+    const targetContours = lineContours.size > 0 ? Array.from(lineContours) : ['Без контура'];
+    return targetContours.some((c) => targetKeys!.has(c));
+  });
+
+  return { joints: filteredJoints, lines: filteredLines };
+}
+
+export interface GroupComparisonItem {
+  groupKey: string;
+  shortLabel: string;
+  subLabel: string;
+  totalJoints: number;
+  weldedJoints: number;
+  acceptedJoints: number;
+  repairJoints: number;
+  totalEdi: number;
+  weldedEdi: number;
+  weldingPct: number;
+  readinessPct: number;
+  totalLinesCount: number;
+  signedIdLinesCount: number;
+  idReadinessPct: number;
+}
+
+function truncateAxisLabel(text: string, maxLen = 14): string {
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 1)}…`;
+}
+
+/**
+ * Формирует серию столбцов для сравнительного графика по текущему разрезу
+ * (контуры испытаний, шифры РД, линии).
+ */
+export function buildReadinessGroupComparisonSeries(
+  rows: ReadinessSummaryRow[],
+  maxBars = 24
+): GroupComparisonItem[] {
+  return rows.slice(0, maxBars).map((r) => ({
+    groupKey: r.groupKey,
+    shortLabel: truncateAxisLabel(r.groupKey, 14),
+    subLabel: r.subLabel,
+    totalJoints: r.totalJoints,
+    weldedJoints: r.weldedCount,
+    acceptedJoints: r.fullyCompletedCount,
+    repairJoints: r.repairCount,
+    totalEdi: r.totalEquivInches,
+    weldedEdi: r.weldedEquivInches,
+    weldingPct: r.weldingPct,
+    readinessPct: r.readinessPct,
+    totalLinesCount: r.totalLinesCount,
+    signedIdLinesCount: r.signedIdLinesCount,
+    idReadinessPct: r.idReadinessPct,
+  }));
+}
+

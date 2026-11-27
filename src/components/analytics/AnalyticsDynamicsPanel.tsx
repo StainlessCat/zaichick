@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -7,24 +7,71 @@ import {
   ChevronUp,
   FileCheck2,
   TrendingUp,
+  X,
 } from 'lucide-react';
-import type { ProjectLineItem, WeldJoint } from '../../types/welding';
+import type {
+  ProjectLineItem,
+  ReadinessGroupCondition,
+  ReadinessSummaryRow,
+  WeldJoint,
+} from '../../types/welding';
 import type { ExecutiveDocStatusLike } from '../../utils/readiness';
 import {
   buildControlFunnelData,
+  buildReadinessGroupComparisonSeries,
   buildWeldingDynamicsSeries,
   type DynamicsBucket,
-  type DynamicsGranularity,
+  type DynamicsChartMode,
   type DynamicsMetric,
+  type GroupComparisonItem,
 } from '../../utils/analyticsCharts';
 
 interface AnalyticsDynamicsPanelProps {
+  condition: ReadinessGroupCondition;
+  rows: ReadinessSummaryRow[];
+  selectedGroupKey: string | null;
+  onSelectGroupKey: (groupKey: string | null) => void;
   joints: WeldJoint[];
   lines: ProjectLineItem[];
   docByLineId?: Record<string, ExecutiveDocStatusLike>;
   onClickRepairsShortcut?: () => void;
   onClickExecDocsShortcut?: () => void;
 }
+
+const SCOPE_LABELS: Record<
+  ReadinessGroupCondition,
+  {
+    shortLabel: string;
+    allLabel: string;
+    groupModeLabel: string;
+    selectAriaLabel: string;
+  }
+> = {
+  objectName: {
+    shortLabel: 'Объект',
+    allLabel: 'Все объекты',
+    groupModeLabel: 'По объектам',
+    selectAriaLabel: 'Выбор объекта для динамики и воронки',
+  },
+  contour: {
+    shortLabel: 'Контур',
+    allLabel: 'Все контуры',
+    groupModeLabel: 'По контурам',
+    selectAriaLabel: 'Выбор контура испытаний для динамики и воронки',
+  },
+  rdCode: {
+    shortLabel: 'Шифр РД',
+    allLabel: 'Все шифры РД',
+    groupModeLabel: 'По шифрам РД',
+    selectAriaLabel: 'Выбор шифра РД для динамики и воронки',
+  },
+  uniqueLineId: {
+    shortLabel: 'Линия',
+    allLabel: 'Все линии',
+    groupModeLabel: 'По линиям',
+    selectAriaLabel: 'Выбор линии для динамики и воронки',
+  },
+};
 
 const FUNNEL_BAR_COLORS: Record<string, string> = {
   slate: 'bg-slate-400',
@@ -43,6 +90,10 @@ const FUNNEL_TEXT_COLORS: Record<string, string> = {
 };
 
 export const AnalyticsDynamicsPanel: React.FC<AnalyticsDynamicsPanelProps> = ({
+  condition,
+  rows,
+  selectedGroupKey,
+  onSelectGroupKey,
   joints,
   lines,
   docByLineId,
@@ -50,14 +101,46 @@ export const AnalyticsDynamicsPanel: React.FC<AnalyticsDynamicsPanelProps> = ({
   onClickExecDocsShortcut,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const [granularity, setGranularity] = useState<DynamicsGranularity>('day');
+  const [chartMode, setChartMode] = useState<DynamicsChartMode>('day');
   const [metric, setMetric] = useState<DynamicsMetric>('joints');
   const [showSCurve, setShowSCurve] = useState<boolean>(true);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
+  const scopeMeta = SCOPE_LABELS[condition];
+  const canShowGroupComparison = condition !== 'objectName' && !selectedGroupKey;
+
+  // При переключении разреза на Контур / Шифр РД / Линию сразу показываем разбивку по разрезу;
+  // при возврате на Объект — дневную динамику.
+  useEffect(() => {
+    setHoveredIdx(null);
+    if (condition === 'objectName') {
+      setChartMode('day');
+    } else {
+      setChartMode('group');
+    }
+  }, [condition]);
+
+  // При выборе конкретного контура / шифра РД / линии переключаемся на временную динамику этого элемента
+  useEffect(() => {
+    setHoveredIdx(null);
+    if (selectedGroupKey) {
+      setChartMode((prev) => (prev === 'group' ? 'day' : prev));
+    }
+  }, [selectedGroupKey]);
+
+  const effectiveChartMode: DynamicsChartMode =
+    chartMode === 'group' && !canShowGroupComparison ? 'day' : chartMode;
+
+  const timeGranularity = effectiveChartMode === 'week' ? 'week' : 'day';
+
   const dynamics = useMemo(
-    () => buildWeldingDynamicsSeries(joints, granularity),
-    [joints, granularity]
+    () => buildWeldingDynamicsSeries(joints, timeGranularity),
+    [joints, timeGranularity]
+  );
+
+  const groupBars: GroupComparisonItem[] = useMemo(
+    () => buildReadinessGroupComparisonSeries(rows, 24),
+    [rows]
   );
 
   const funnel = useMemo(
@@ -86,23 +169,44 @@ export const AnalyticsDynamicsPanel: React.FC<AnalyticsDynamicsPanelProps> = ({
     };
   }, [visibleBuckets, metric]);
 
+  const groupMaxBar = useMemo(() => {
+    const maxVal = groupBars.reduce((m, item) => {
+      const v = metric === 'joints' ? item.totalJoints : item.totalEdi;
+      return v > m ? v : m;
+    }, 0);
+    return maxVal > 0 ? maxVal : 1;
+  }, [groupBars, metric]);
+
   const hoveredBucket =
-    hoveredIdx !== null && hoveredIdx >= 0 && hoveredIdx < visibleBuckets.length
+    effectiveChartMode !== 'group' &&
+    hoveredIdx !== null &&
+    hoveredIdx >= 0 &&
+    hoveredIdx < visibleBuckets.length
       ? visibleBuckets[hoveredIdx]
+      : null;
+
+  const hoveredGroup =
+    effectiveChartMode === 'group' &&
+    hoveredIdx !== null &&
+    hoveredIdx >= 0 &&
+    hoveredIdx < groupBars.length
+      ? groupBars[hoveredIdx]
       : null;
 
   // Геометрия SVG-графика
   const svgWidth = 640;
   const svgHeight = 200;
   const padLeft = 40;
-  const padRight = showSCurve ? 46 : 16;
+  const padRight = effectiveChartMode !== 'group' && showSCurve ? 46 : 16;
   const padTop = 14;
   const padBottom = 30;
   const plotW = svgWidth - padLeft - padRight;
   const plotH = svgHeight - padTop - padBottom;
 
-  const stepX = visibleBuckets.length > 0 ? plotW / visibleBuckets.length : plotW;
-  const barWidth = Math.max(4, Math.min(28, stepX * 0.62));
+  const activeBarsCount =
+    effectiveChartMode === 'group' ? groupBars.length : visibleBuckets.length;
+  const stepX = activeBarsCount > 0 ? plotW / activeBarsCount : plotW;
+  const barWidth = Math.max(4, Math.min(34, stepX * 0.62));
 
   const cumWeldedPoints = useMemo(() => {
     if (visibleBuckets.length === 0) return '';
@@ -128,33 +232,92 @@ export const AnalyticsDynamicsPanel: React.FC<AnalyticsDynamicsPanelProps> = ({
       .join(' ');
   }, [visibleBuckets, stepX, metric, chartStats.maxCum, padLeft, padTop, plotH]);
 
-  const labelStep = Math.max(1, Math.ceil(visibleBuckets.length / 8));
+  const labelStep = Math.max(1, Math.ceil(activeBarsCount / 8));
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
       <div className="px-3.5 py-2 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setCollapsed((v) => !v)}
-          className="inline-flex items-center gap-2 text-xs font-bold text-slate-800 hover:text-[#1e3799] transition-colors cursor-pointer"
-        >
-          <TrendingUp className="w-4 h-4 text-[#1e3799]" />
-          <span>Динамика сварки и воронка контроля</span>
-          {collapsed ? (
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          ) : (
-            <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+          <button
+            type="button"
+            onClick={() => setCollapsed((v) => !v)}
+            className="inline-flex items-center gap-2 text-xs font-bold text-slate-800 hover:text-[#1e3799] transition-colors cursor-pointer shrink-0"
+          >
+            <TrendingUp className="w-4 h-4 text-[#1e3799]" />
+            <span>Динамика сварки и воронка контроля</span>
+            {collapsed ? (
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            ) : (
+              <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+            )}
+          </button>
+
+          {!collapsed && rows.length > 0 && (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+                {scopeMeta.shortLabel}:
+              </span>
+              <select
+                aria-label={scopeMeta.selectAriaLabel}
+                value={selectedGroupKey ?? ''}
+                onChange={(e) => onSelectGroupKey(e.target.value || null)}
+                className={`h-7 max-w-[240px] rounded-md border px-2 text-[11px] font-semibold outline-none transition-colors cursor-pointer ${
+                  selectedGroupKey
+                    ? 'bg-[#e8f1fc] border-[#1e3799]/40 text-[#1e3799]'
+                    : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                <option value="">
+                  {scopeMeta.allLabel} · {rows.length}
+                </option>
+                {rows.map((r) => (
+                  <option key={r.groupKey} value={r.groupKey}>
+                    {r.groupKey} · {r.totalJoints} шт.
+                  </option>
+                ))}
+              </select>
+              {selectedGroupKey && (
+                <button
+                  type="button"
+                  onClick={() => onSelectGroupKey(null)}
+                  title="Сбросить выбор и показать весь разрез"
+                  aria-label="Сбросить выбранный элемент"
+                  className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           )}
-        </button>
+        </div>
 
         {!collapsed && (
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center p-0.5 bg-slate-100 rounded border border-slate-200">
+              {canShowGroupComparison && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHoveredIdx(null);
+                    setChartMode('group');
+                  }}
+                  className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
+                    effectiveChartMode === 'group'
+                      ? 'bg-white text-[#1e3799] shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {scopeMeta.groupModeLabel}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setGranularity('day')}
+                onClick={() => {
+                  setHoveredIdx(null);
+                  setChartMode('day');
+                }}
                 className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  granularity === 'day'
+                  effectiveChartMode === 'day'
                     ? 'bg-white text-[#1e3799] shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
@@ -163,9 +326,12 @@ export const AnalyticsDynamicsPanel: React.FC<AnalyticsDynamicsPanelProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setGranularity('week')}
+                onClick={() => {
+                  setHoveredIdx(null);
+                  setChartMode('week');
+                }}
                 className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                  granularity === 'week'
+                  effectiveChartMode === 'week'
                     ? 'bg-white text-[#1e3799] shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
@@ -199,83 +365,274 @@ export const AnalyticsDynamicsPanel: React.FC<AnalyticsDynamicsPanelProps> = ({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowSCurve((v) => !v)}
-              className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
-                showSCurve
-                  ? 'bg-sky-50 border-sky-300 text-[#1e3799]'
-                  : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              S-кривая
-            </button>
+            {effectiveChartMode !== 'group' && (
+              <button
+                type="button"
+                onClick={() => setShowSCurve((v) => !v)}
+                className={`px-2.5 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
+                  showSCurve
+                    ? 'bg-sky-50 border-sky-300 text-[#1e3799]'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                S-кривая
+              </button>
+            )}
           </div>
         )}
       </div>
 
       {!collapsed && (
         <div className="p-3.5 grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Левая колонка: Темпы сварки и S-кривая */}
+          {/* Левая колонка: Разбивка по разрезу ИЛИ темпы сварки и S-кривая */}
           <div className="lg:col-span-7 flex flex-col justify-between space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="inline-flex items-center gap-1.5 text-slate-600">
-                  <span className="w-2.5 h-2.5 rounded-xs bg-[#1e3799]/80 inline-block" />
-                  Сварено за период
-                </span>
-                <span className="inline-flex items-center gap-1.5 text-slate-600">
-                  <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500 inline-block" />
-                  Принято
-                </span>
-                {showSCurve && (
-                  <>
+            {effectiveChartMode === 'group' ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <span className="inline-flex items-center gap-1.5 text-slate-600">
-                      <span className="w-3 h-0.5 bg-sky-600 inline-block" />
-                      Накоп. сварка
+                      <span className="w-2.5 h-2.5 rounded-xs bg-slate-200 border border-slate-300 inline-block" />
+                      Всего по плану
                     </span>
                     <span className="inline-flex items-center gap-1.5 text-slate-600">
-                      <span className="w-3 h-0.5 bg-emerald-600 border-b border-dashed border-emerald-700 inline-block" />
-                      Накоп. принято
+                      <span className="w-2.5 h-2.5 rounded-xs bg-[#1e3799]/85 inline-block" />
+                      Сварено
                     </span>
-                  </>
-                )}
-              </div>
+                    {metric === 'joints' && (
+                      <span className="inline-flex items-center gap-1.5 text-slate-600">
+                        <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500 inline-block" />
+                        Принято
+                      </span>
+                    )}
+                  </div>
 
-              <div className="text-[11px] text-slate-500 font-medium">
-                {dynamics.activePeriodsCount > 0 ? (
-                  <span>
-                    Средний темп:{' '}
-                    <strong className="text-slate-800">
-                      {metric === 'joints'
-                        ? `${dynamics.avgJointsPerPeriod} шт.`
-                        : `${dynamics.avgEdiPerPeriod} EDI`}
-                    </strong>{' '}
-                    / {granularity === 'day' ? 'день' : 'нед.'}
-                    {dynamics.peakJointsCount > 0 && (
+                  <div className="text-[11px] text-slate-500 font-medium">
+                    <span>
+                      Групп в разрезе:{' '}
+                      <strong className="text-slate-800">{rows.length}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {groupBars.length === 0 ? (
+                  <div className="h-[200px] rounded-lg border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-slate-400 text-xs gap-1.5">
+                    <BarChart3 className="w-6 h-6 text-slate-300" />
+                    <span>Нет данных для выбранного разреза и фильтров</span>
+                  </div>
+                ) : (
+                  <div className="relative rounded-lg border border-slate-100 bg-slate-50/40 p-1.5">
+                    <svg
+                      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+                      className="w-full h-[200px] select-none overflow-visible"
+                      onMouseLeave={() => setHoveredIdx(null)}
+                    >
+                      {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                        const y = padTop + plotH - ratio * plotH;
+                        const leftVal = Math.round(groupMaxBar * ratio * 10) / 10;
+                        return (
+                          <g key={ratio}>
+                            <line
+                              x1={padLeft}
+                              y1={y}
+                              x2={padLeft + plotW}
+                              y2={y}
+                              stroke="#e2e8f0"
+                              strokeDasharray={ratio === 0 ? undefined : '2 3'}
+                              strokeWidth="1"
+                            />
+                            <text
+                              x={padLeft - 6}
+                              y={y + 3}
+                              textAnchor="end"
+                              className="fill-slate-400 text-[9px] font-medium"
+                            >
+                              {metric === 'joints' ? Math.round(leftVal) : leftVal}
+                            </text>
+                          </g>
+                        );
+                      })}
+
+                      {groupBars.map((item, i) => {
+                        const valTotal = metric === 'joints' ? item.totalJoints : item.totalEdi;
+                        const valWelded = metric === 'joints' ? item.weldedJoints : item.weldedEdi;
+                        const valAccepted = metric === 'joints' ? item.acceptedJoints : 0;
+                        const hTotal = (valTotal / groupMaxBar) * plotH;
+                        const hWelded = (valWelded / groupMaxBar) * plotH;
+                        const hAccepted = (valAccepted / groupMaxBar) * plotH;
+                        const cx = padLeft + i * stepX + stepX / 2;
+                        const x = cx - barWidth / 2;
+                        const isHovered = hoveredIdx === i;
+
+                        return (
+                          <g
+                            key={item.groupKey}
+                            onMouseEnter={() => setHoveredIdx(i)}
+                            onClick={() => onSelectGroupKey(item.groupKey)}
+                            className="cursor-pointer"
+                          >
+                            <rect
+                              x={padLeft + i * stepX}
+                              y={padTop}
+                              width={stepX}
+                              height={plotH}
+                              fill={isHovered ? 'rgba(30,55,153,0.07)' : 'transparent'}
+                            />
+                            {hTotal > 0 && (
+                              <rect
+                                x={x}
+                                y={padTop + plotH - hTotal}
+                                width={barWidth}
+                                height={Math.max(1, hTotal)}
+                                rx="2"
+                                fill={isHovered ? '#cbd5e1' : '#e2e8f0'}
+                              />
+                            )}
+                            {hWelded > 0 && (
+                              <rect
+                                x={x}
+                                y={padTop + plotH - hWelded}
+                                width={barWidth}
+                                height={Math.max(1, hWelded)}
+                                rx="2"
+                                fill={isHovered ? '#15276e' : '#1e3799'}
+                                fillOpacity={isHovered ? 0.96 : 0.82}
+                              />
+                            )}
+                            {hAccepted > 0 && (
+                              <rect
+                                x={x}
+                                y={padTop + plotH - hAccepted}
+                                width={barWidth}
+                                height={Math.max(1, hAccepted)}
+                                rx="2"
+                                fill="#10b981"
+                                fillOpacity={isHovered ? 0.98 : 0.88}
+                              />
+                            )}
+                            {(i % labelStep === 0 || i === groupBars.length - 1) && (
+                              <text
+                                x={cx}
+                                y={svgHeight - 8}
+                                textAnchor="middle"
+                                className={`text-[9px] font-medium ${
+                                  isHovered ? 'fill-[#1e3799] font-bold' : 'fill-slate-500'
+                                }`}
+                              >
+                                {item.shortLabel}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })}
+                    </svg>
+
+                    <div className="mt-1 px-2 py-1 rounded bg-white border border-slate-200/80 text-[11px] flex flex-wrap items-center justify-between gap-2 min-h-[26px]">
+                      {hoveredGroup ? (
+                        <>
+                          <span className="font-bold text-slate-800 truncate max-w-[200px]">
+                            {hoveredGroup.groupKey}
+                          </span>
+                          <div className="flex flex-wrap items-center gap-3 text-slate-600">
+                            <span>
+                              Всего:{' '}
+                              <strong className="text-slate-900">
+                                {metric === 'joints'
+                                  ? `${hoveredGroup.totalJoints} шт.`
+                                  : `${hoveredGroup.totalEdi} EDI`}
+                              </strong>
+                            </span>
+                            <span>
+                              Сварено:{' '}
+                              <strong className="text-[#1e3799]">
+                                {metric === 'joints'
+                                  ? `${hoveredGroup.weldedJoints} шт.`
+                                  : `${hoveredGroup.weldedEdi} EDI`}
+                              </strong>
+                            </span>
+                            <span>
+                              Принято:{' '}
+                              <strong className="text-emerald-700">
+                                {hoveredGroup.acceptedJoints} шт. · {hoveredGroup.readinessPct}%
+                              </strong>
+                            </span>
+                            {hoveredGroup.repairJoints > 0 && (
+                              <span className="text-rose-700 font-semibold">
+                                Ремонт: {hoveredGroup.repairJoints}
+                              </span>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-slate-500">
+                          Нажмите на столбец или выберите элемент выше для просмотра динамики и воронки.
+                          {rows.length > groupBars.length &&
+                            ` Показаны первые ${groupBars.length} из ${rows.length}.`}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 text-slate-600">
+                      <span className="w-2.5 h-2.5 rounded-xs bg-[#1e3799]/80 inline-block" />
+                      Сварено за период
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-slate-600">
+                      <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500 inline-block" />
+                      Принято
+                    </span>
+                    {showSCurve && (
                       <>
-                        {' · '}Пик:{' '}
-                        <strong className="text-[#1e3799]">
-                          {metric === 'joints'
-                            ? `${dynamics.peakJointsCount} шт.`
-                            : `${dynamics.peakEdiValue} EDI`}
-                        </strong>
+                        <span className="inline-flex items-center gap-1.5 text-slate-600">
+                          <span className="w-3 h-0.5 bg-sky-600 inline-block" />
+                          Накоп. сварка
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 text-slate-600">
+                          <span className="w-3 h-0.5 bg-emerald-600 border-b border-dashed border-emerald-700 inline-block" />
+                          Накоп. принято
+                        </span>
                       </>
                     )}
-                  </span>
-                ) : (
-                  <span>Нет сваренных стыков с датой сварки</span>
-                )}
-              </div>
-            </div>
+                  </div>
 
-            {visibleBuckets.length === 0 ? (
-              <div className="h-[200px] rounded-lg border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-slate-400 text-xs gap-1.5">
-                <BarChart3 className="w-6 h-6 text-slate-300" />
-                <span>Недостаточно данных с заполненной датой сварки и клеймом</span>
-              </div>
-            ) : (
-              <div className="relative rounded-lg border border-slate-100 bg-slate-50/40 p-1.5">
+                  <div className="text-[11px] text-slate-500 font-medium">
+                    {dynamics.activePeriodsCount > 0 ? (
+                      <span>
+                        Средний темп:{' '}
+                        <strong className="text-slate-800">
+                          {metric === 'joints'
+                            ? `${dynamics.avgJointsPerPeriod} шт.`
+                            : `${dynamics.avgEdiPerPeriod} EDI`}
+                        </strong>{' '}
+                        / {timeGranularity === 'day' ? 'день' : 'нед.'}
+                        {dynamics.peakJointsCount > 0 && (
+                          <>
+                            {' · '}Пик:{' '}
+                            <strong className="text-[#1e3799]">
+                              {metric === 'joints'
+                                ? `${dynamics.peakJointsCount} шт.`
+                                : `${dynamics.peakEdiValue} EDI`}
+                            </strong>
+                          </>
+                        )}
+                      </span>
+                    ) : (
+                      <span>Нет сваренных стыков с датой сварки</span>
+                    )}
+                  </div>
+                </div>
+
+                {visibleBuckets.length === 0 ? (
+                  <div className="h-[200px] rounded-lg border border-dashed border-slate-200 bg-slate-50/50 flex flex-col items-center justify-center text-slate-400 text-xs gap-1.5">
+                    <BarChart3 className="w-6 h-6 text-slate-300" />
+                    <span>Недостаточно данных с заполненной датой сварки и клеймом</span>
+                  </div>
+                ) : (
+                  <div className="relative rounded-lg border border-slate-100 bg-slate-50/40 p-1.5">
                 <svg
                   viewBox={`0 0 ${svgWidth} ${svgHeight}`}
                   className="w-full h-[200px] select-none overflow-visible"
@@ -475,7 +832,7 @@ export const AnalyticsDynamicsPanel: React.FC<AnalyticsDynamicsPanelProps> = ({
                     </>
                   ) : (
                     <span className="text-slate-500">
-                      Наведите курсор на столбец для детализации по {granularity === 'day' ? 'дню' : 'неделе'}.
+                      Наведите курсор на столбец для детализации по {timeGranularity === 'day' ? 'дню' : 'неделе'}.
                       {dynamics.buckets.length > 42 &&
                         ` Показаны последние 42 из ${dynamics.buckets.length} периодов.`}
                     </span>
@@ -483,20 +840,31 @@ export const AnalyticsDynamicsPanel: React.FC<AnalyticsDynamicsPanelProps> = ({
                 </div>
               </div>
             )}
+              </>
+            )}
           </div>
 
           {/* Правая колонка: Воронка этапов и узкие места */}
           <div className="lg:col-span-5 flex flex-col justify-between space-y-3 lg:border-l lg:border-slate-100 lg:pl-4">
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600 flex items-center gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600 flex items-center gap-1.5 shrink-0">
                   <Activity className="w-3.5 h-3.5 text-[#1e3799]" />
                   Воронка готовности стыков
                 </span>
-                {funnel.ndtNotRequiredCount > 0 && (
-                  <span className="text-[10px] text-slate-500">
-                    Без НК по проекту: {funnel.ndtNotRequiredCount}
+                {selectedGroupKey ? (
+                  <span
+                    className="text-[11px] font-bold text-[#1e3799] truncate max-w-[200px]"
+                    title={`${scopeMeta.shortLabel}: ${selectedGroupKey}`}
+                  >
+                    {selectedGroupKey}
                   </span>
+                ) : (
+                  funnel.ndtNotRequiredCount > 0 && (
+                    <span className="text-[10px] text-slate-500">
+                      Без НК по проекту: {funnel.ndtNotRequiredCount}
+                    </span>
+                  )
                 )}
               </div>
 

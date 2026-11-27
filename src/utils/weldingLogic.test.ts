@@ -2566,7 +2566,7 @@ test('Эквивалентные дюймы (Метод А / EDI): расчет 
   // 5. Проверка наличия столбца equivDiameterInch в ALL_COLUMNS
   const ediCol = ALL_COLUMNS.find((c) => c.key === 'equivDiameterInch');
   assert.ok(ediCol, 'Столбец equivDiameterInch должен присутствовать в ALL_COLUMNS');
-  assert.equal(ediCol?.label, 'Экв. дюйм (EDI)');
+  assert.equal(ediCol?.label, 'Экв. дюйм');
   assert.equal(ediCol?.isNumeric, true);
 
   // 6. Проверка расчета готовности по эквивалентным дюймам в calculateReadinessReport

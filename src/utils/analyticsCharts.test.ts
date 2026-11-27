@@ -2,16 +2,20 @@ import { describe, expect, it } from 'vitest';
 import type {
   ProjectLineItem,
   ReadinessSummaryRow,
+  TestCircuit,
   WeldJoint,
   WelderProfile,
 } from '../types/welding';
 import {
   buildControlFunnelData,
+  buildReadinessGroupComparisonSeries,
   buildWelderAnalyticsRows,
   buildWeldingDynamicsSeries,
+  filterJointsAndLinesByReadinessScope,
   getContourBlockerSummary,
   matchesContourQuickFilter,
 } from './analyticsCharts';
+import { calculateReadinessReport } from './readiness';
 
 function makeJoint(overrides: Partial<WeldJoint>): WeldJoint {
   return {
@@ -166,4 +170,172 @@ describe('analyticsCharts Stage 2 calculations', () => {
     expect(matchesContourQuickFilter(rowPendingId, 'allowed')).toBe(false);
     expect(matchesContourQuickFilter(rowPendingId, 'has_repairs')).toBe(false);
   });
+
+  it('scopes joints and lines accurately across contour, rdCode, uniqueLineId, and objectName with calculateReadinessReport parity', () => {
+    const lines: ProjectLineItem[] = [
+      makeLine({
+        id: 'l-1',
+        objectName: 'КС-1',
+        rdCode: 'РД-01',
+        lineNumber: '101',
+        uniqueLineId: 'РД-01::101',
+        testContour: 'КИ-1',
+      }),
+      makeLine({
+        id: 'l-2',
+        objectName: 'КС-1',
+        rdCode: 'РД-02',
+        lineNumber: '201',
+        uniqueLineId: 'РД-02::201',
+        testContour: 'КИ-2',
+      }),
+      makeLine({
+        id: 'l-3',
+        objectName: 'КС-2',
+        rdCode: 'РД-03',
+        lineNumber: '301',
+        uniqueLineId: 'РД-03::301',
+        testContour: '',
+      }),
+    ];
+
+    const testCircuits: TestCircuit[] = [
+      {
+        id: 'tc-1',
+        name: 'КИ-1',
+        objectName: 'КС-1',
+        linesSummary: [
+          { lineId: 'l-1', uniqueLineId: 'РД-01::101', rdCode: 'РД-01', lineNumber: '101' },
+        ],
+      } as unknown as TestCircuit,
+      {
+        id: 'tc-2',
+        name: 'КИ-2',
+        objectName: 'КС-1',
+        linesSummary: [
+          { lineId: 'l-2', uniqueLineId: 'РД-02::201', rdCode: 'РД-02', lineNumber: '201' },
+        ],
+      } as unknown as TestCircuit,
+    ];
+
+    const joints: WeldJoint[] = [
+      makeJoint({
+        id: 'j-1',
+        objectName: 'КС-1',
+        rdCode: 'РД-01',
+        lineNumber: '101',
+        uniqueLineId: 'РД-01::101',
+        lineId: 'l-1',
+        testCircuitId: 'tc-1',
+        jointNumber: '010',
+        weldingDate: '2026-06-08',
+      }),
+      makeJoint({
+        id: 'j-2',
+        objectName: 'КС-1',
+        rdCode: 'РД-01',
+        lineNumber: '101',
+        uniqueLineId: 'РД-01::101',
+        lineId: 'l-1',
+        contour: 'КИ-1',
+        jointNumber: '020',
+        weldingDate: '2026-06-09',
+        ndtResult: 'Ремонт',
+      }),
+      makeJoint({
+        id: 'j-3',
+        objectName: 'КС-1',
+        rdCode: 'РД-02',
+        lineNumber: '201',
+        uniqueLineId: 'РД-02::201',
+        lineId: 'l-2',
+        jointNumber: '010',
+        weldingDate: '2026-06-10',
+      }),
+      makeJoint({
+        id: 'j-4',
+        objectName: 'КС-2',
+        rdCode: 'РД-03',
+        lineNumber: '301',
+        uniqueLineId: 'РД-03::301',
+        lineId: 'l-3',
+        jointNumber: '010',
+        weldingDate: '',
+        welderStamp: '',
+      }),
+    ];
+
+    const docByLineId = {
+      'l-1': { idStatus: 'SIGNED' },
+      'l-2': { idStatus: 'IN_WORK' },
+      'l-3': { idStatus: 'IN_WORK' },
+    };
+
+    // 1. Parity across every condition & every generated row
+    for (const condition of ['objectName', 'contour', 'rdCode', 'uniqueLineId'] as const) {
+      const reportRows = calculateReadinessReport(joints, condition, {
+        lines,
+        testCircuits,
+        docByLineId,
+      });
+      expect(reportRows.length).toBeGreaterThan(0);
+
+      for (const row of reportRows) {
+        const scoped = filterJointsAndLinesByReadinessScope({
+          joints,
+          lines,
+          testCircuits,
+          condition,
+          selectedGroupKey: row.groupKey,
+        });
+        const funnel = buildControlFunnelData(scoped.joints, scoped.lines, docByLineId);
+        expect(funnel.stages.find((s) => s.id === 'total')?.count).toBe(row.totalJoints);
+        expect(funnel.stages.find((s) => s.id === 'welded')?.count).toBe(row.weldedCount);
+        expect(funnel.stages.find((s) => s.id === 'accepted')?.count).toBe(row.fullyCompletedCount);
+        expect(funnel.inRepairCount).toBe(row.repairCount);
+        expect(funnel.totalLinesCount).toBe(row.totalLinesCount);
+        expect(funnel.signedIdLinesCount).toBe(row.signedIdLinesCount);
+      }
+    }
+
+    // 2. Subset filtering via allowedGroupKeys (e.g., search / contour quick filter)
+    const subset = filterJointsAndLinesByReadinessScope({
+      joints,
+      lines,
+      testCircuits,
+      condition: 'contour',
+      allowedGroupKeys: ['КИ-1', 'Без контура'],
+    });
+    expect(subset.joints.map((j) => j.id)).toEqual(['j-1', 'j-2', 'j-4']);
+    expect(subset.lines.map((l) => l.id)).toEqual(['l-1', 'l-3']);
+
+    // 3. Dynamics series changes when scoped to КИ-1 vs КИ-2
+    const k1Scope = filterJointsAndLinesByReadinessScope({
+      joints,
+      lines,
+      testCircuits,
+      condition: 'contour',
+      selectedGroupKey: 'КИ-1',
+    });
+    const k2Scope = filterJointsAndLinesByReadinessScope({
+      joints,
+      lines,
+      testCircuits,
+      condition: 'contour',
+      selectedGroupKey: 'КИ-2',
+    });
+    expect(buildWeldingDynamicsSeries(k1Scope.joints, 'day').totalWeldedJoints).toBe(2);
+    expect(buildWeldingDynamicsSeries(k2Scope.joints, 'day').totalWeldedJoints).toBe(1);
+
+    // 4. Group comparison series preserves row values and truncates long labels cleanly
+    const rdRows = calculateReadinessReport(joints, 'rdCode', { lines, testCircuits, docByLineId });
+    const cmpSeries = buildReadinessGroupComparisonSeries(rdRows);
+    expect(cmpSeries).toHaveLength(rdRows.length);
+    const rd01Bar = cmpSeries.find((b) => b.groupKey === 'РД-01');
+    expect(rd01Bar?.totalJoints).toBe(2);
+    expect(rd01Bar?.weldedJoints).toBe(2);
+    expect(rd01Bar?.acceptedJoints).toBe(1);
+    expect(rd01Bar?.repairJoints).toBe(1);
+  });
 });
+

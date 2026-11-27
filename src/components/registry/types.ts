@@ -4,15 +4,19 @@ import {
   NdtLabRequest,
   ProjectLineItem,
   RecordStatus,
+  TestCircuit,
   WelderProfile,
   WeldJoint,
   WeldJointFieldKey,
 } from '../../types/welding';
+import { RegistryQuickFilter } from '../../utils/filters';
 import { getUserRolePermissions } from '../../utils/rbac';
 
 export type UserRolePermissions = ReturnType<typeof getUserRolePermissions>;
 
 export interface RegistryToolbarProps {
+  globalSearch: string;
+  onGlobalSearchChange: (val: string) => void;
   weldingDateFrom: string;
   weldingDateTo: string;
   onWeldingDateFromChange: (val: string) => void;
@@ -26,6 +30,7 @@ export interface RegistryToolbarProps {
   onOpenBulkEdit: () => void;
   onQuickAddSupplementaryJoint?: () => void;
   onOpenImportExcel: () => void;
+  onExportExcel?: () => void;
   onOpenCreatePassport: () => void;
   onOpenSubmitLabRequestModal: () => void;
   canCreateLabRequest: boolean;
@@ -40,6 +45,10 @@ export interface RegistryToolbarProps {
 }
 
 export interface RegistryActiveFilterBarProps {
+  globalSearch?: string;
+  onResetGlobalSearch?: () => void;
+  quickFilter?: RegistryQuickFilter;
+  onResetQuickFilter?: () => void;
   weldingDateFrom: string;
   weldingDateTo: string;
   onResetDateRange: () => void;
@@ -84,6 +93,7 @@ export interface RegistryTableProps {
   onOpenEditPassport: (joint: WeldJoint) => void;
   onOpenSubmitLabRequestForJoint: (jointId: string) => void;
   labRequests: NdtLabRequest[];
+  testCircuits?: TestCircuit[];
   welders: WelderProfile[];
   duplicateJointIds: Set<string>;
   canCreateLabRequest: boolean;

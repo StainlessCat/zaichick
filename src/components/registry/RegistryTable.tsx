@@ -1,5 +1,5 @@
 import { normalizeCorporateJointNumber } from '../../api/mappers';
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   AlertTriangle,
@@ -13,9 +13,12 @@ import {
 import {
   JointLabRequestStatus,
   WeldJoint,
+  WeldJointFieldKey,
 } from '../../types/welding';
 import {
   formatDateDDMMYY,
+  getJointEquivDiaInch,
+  getJointFieldValue,
   isDateColumnKey,
   getMissingPassportFields,
 } from '../../utils/weldingLogic';
@@ -26,6 +29,8 @@ import {
 import { ExcelColumnFilter } from '../ExcelColumnFilter';
 import { RecordStatusBadge } from '../RecordStatusControls';
 import { RegistryTableProps } from './types';
+
+const CHECKBOX_COL_WIDTH = 40;
 
 export const RegistryTable: React.FC<RegistryTableProps> = ({
   filteredAndSortedJoints,
@@ -49,11 +54,59 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
   onOpenEditPassport,
   onOpenSubmitLabRequestForJoint,
   labRequests,
+  testCircuits,
   welders,
   duplicateJointIds,
   canCreateLabRequest,
 }) => {
   const parentRef = useRef<HTMLDivElement>(null);
+
+  const selectedSet = useMemo(() => new Set(selectedJointIds), [selectedJointIds]);
+
+  const allVisibleSelected = useMemo(
+    () =>
+      filteredAndSortedJoints.length > 0 &&
+      filteredAndSortedJoints.every((j) => selectedSet.has(j.id)),
+    [filteredAndSortedJoints, selectedSet]
+  );
+
+  // Динамический расчёт точных left-координат всех закреплённых столбцов (№ стыка, ID линии и т.д.)
+  const stickyLayout = useMemo(() => {
+    const leftMap = new Map<WeldJointFieldKey, number>();
+    let offset = CHECKBOX_COL_WIDTH;
+    let lastStickyKey: WeldJointFieldKey | null = null;
+
+    for (const col of activeColumnDefs) {
+      if (col.isSticky) {
+        leftMap.set(col.key, offset);
+        const w = columnWidths[col.key] ?? col.minWidth;
+        offset += w;
+        lastStickyKey = col.key;
+      }
+    }
+
+    return { leftMap, lastStickyKey };
+  }, [activeColumnDefs, columnWidths]);
+
+  // Мемоизация тяжёлых вычислений статусов и проверки паспортов, чтобы клик по чекбоксу не пересчитывал таблицу
+  const rowMetaMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        missingFields: string[];
+        labStatus: JointLabRequestStatus;
+        labValidation: { canSubmit: boolean; reasons: string[] };
+      }
+    >();
+    for (const joint of filteredAndSortedJoints) {
+      map.set(joint.id, {
+        missingFields: getMissingPassportFields(joint),
+        labStatus: getJointLabRequestStatus(joint, labRequests),
+        labValidation: validateJointForLabRequestSubmission(joint, welders),
+      });
+    }
+    return map;
+  }, [filteredAndSortedJoints, labRequests, welders]);
 
   const rowVirtualizer = useVirtualizer({
     count: filteredAndSortedJoints.length,
@@ -109,13 +162,11 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
     return <span className="text-slate-400 font-mono">{val || '—'}</span>;
   };
 
-  const renderLabRequestStatusCell = (joint: WeldJoint) => {
-    const status: JointLabRequestStatus = getJointLabRequestStatus(
-      joint,
-      labRequests
-    );
-    const validation = validateJointForLabRequestSubmission(joint, welders);
-
+  const renderLabRequestStatusCell = (
+    joint: WeldJoint,
+    status: JointLabRequestStatus,
+    validation: { canSubmit: boolean; reasons: string[] }
+  ) => {
     if (status === 'Заявка исполнена') {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs">
@@ -155,27 +206,28 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
         >
           <span>Заявка не подана</span>
         </span>
-        {validation.canSubmit && canCreateLabRequest ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenSubmitLabRequestForJoint(joint.id);
-            }}
-            title="Направить заявку в Лабораторию НК по данному стыку (дата и клеймо без замечаний)"
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#1e3799] hover:bg-[#15276e] text-white text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
-          >
-            <Send className="w-2.5 h-2.5" />
-            <span>Подать</span>
-          </button>
-        ) : (
-          <span
-            className="text-[10px] text-amber-700 font-medium cursor-help"
-            title={`Подача заявки заблокирована: ${validation.reasons.join('; ')}`}
-          >
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-500 inline" />
-          </span>
-        )}
+        {canCreateLabRequest &&
+          (validation.canSubmit ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenSubmitLabRequestForJoint(joint.id);
+              }}
+              title="Направить заявку в Лабораторию НК по данному стыку"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#1e3799] hover:bg-[#15276e] text-white text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
+            >
+              <Send className="w-2.5 h-2.5" />
+              <span>Подать</span>
+            </button>
+          ) : (
+            <span
+              className="text-[10px] text-amber-700 font-medium cursor-help"
+              title={`Подача заявки заблокирована: ${validation.reasons.join('; ')}`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 inline" />
+            </span>
+          ))}
       </div>
     );
   };
@@ -184,23 +236,26 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
       <div
         ref={parentRef}
-        className="overflow-x-auto min-h-[460px] max-h-[calc(100vh-270px)] overflow-y-auto table-scroll-container"
+        className="overflow-x-auto min-h-[340px] max-h-[calc(100vh-315px)] overflow-y-auto table-scroll-container"
       >
-        <table className="w-full text-xs border-collapse">
+        <table className="w-max min-w-full text-xs border-separate border-spacing-0">
           <thead>
             {/* Строка заголовков столбцов строго цвета #1e3799, липкая при вертикальном скролле */}
-            <tr className="bg-[#1e3799] text-white select-none sticky top-0 z-20 shadow-xs">
+            <tr className="bg-[#1e3799] text-white select-none">
               {/* Чекбокс массового выбора */}
-              <th className="py-3 px-2.5 border-r border-white/15 w-9 text-center sticky left-0 z-30 bg-[#1e3799]">
+              <th
+                style={{
+                  width: `${CHECKBOX_COL_WIDTH}px`,
+                  minWidth: `${CHECKBOX_COL_WIDTH}px`,
+                  maxWidth: `${CHECKBOX_COL_WIDTH}px`,
+                  left: '0px',
+                }}
+                className="box-border py-3 px-2 border-r border-b border-white/15 text-center sticky top-0 z-30 bg-[#1e3799]"
+              >
                 <input
                   type="checkbox"
                   aria-label="Выбрать все стыки в таблице"
-                  checked={
-                    filteredAndSortedJoints.length > 0 &&
-                    filteredAndSortedJoints.every((j) =>
-                      selectedJointIds.includes(j.id)
-                    )
-                  }
+                  checked={allVisibleSelected}
                   onChange={onToggleSelectAll}
                   className="rounded border-white/40 text-sky-400 focus:ring-sky-300 cursor-pointer"
                 />
@@ -211,20 +266,25 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                 const isSorted = sortConfig?.key === col.key;
                 const isFilterOpen = openFilterColumnKey === col.key;
                 const colWidth = columnWidths[col.key] ?? col.minWidth;
-                const isJointNumber = col.key === 'jointNumber';
+                const stickyLeft = stickyLayout.leftMap.get(col.key);
+                const isSticky = stickyLeft !== undefined;
+                const isLastSticky = stickyLayout.lastStickyKey === col.key;
 
                 return (
                   <th
                     key={col.key}
                     style={{
                       width: `${colWidth}px`,
-                      minWidth: `${col.minWidth}px`,
-                      ...(isJointNumber ? { left: '36px' } : {}),
+                      minWidth: `${colWidth}px`,
+                      maxWidth: `${colWidth}px`,
+                      ...(isSticky ? { left: `${stickyLeft}px` } : {}),
                     }}
-                    className={`relative py-3 px-2.5 font-bold text-left whitespace-nowrap select-none ${
-                      isJointNumber
-                        ? 'sticky left-9 z-30 bg-[#1e3799] border-r-2 border-sky-400/50 shadow-[2px_0_5px_rgba(0,0,0,0.15)]'
-                        : 'border-r border-white/15'
+                    className={`box-border py-3 px-2.5 font-bold text-left whitespace-nowrap select-none sticky top-0 bg-[#1e3799] border-b border-white/15 ${
+                      isSticky
+                        ? isLastSticky
+                          ? 'z-30 border-r-2 border-r-sky-400/60 shadow-[2px_0_6px_rgba(0,0,0,0.22)]'
+                          : 'z-30 border-r border-r-white/20'
+                        : 'z-20 border-r border-r-white/15'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-1.5">
@@ -308,7 +368,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-slate-200">
+          <tbody>
             {filteredAndSortedJoints.length === 0 ? (
               <tr>
                 <td
@@ -320,7 +380,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                       По заданным условиям фильтрации стыков не найдено
                     </div>
                     <p className="text-xs text-slate-500">
-                      Сбросьте активные фильтры столбцов или добавьте новый сварной стык в базу.
+                      Сбросьте активные фильтры или добавьте новый сварной стык в базу.
                     </p>
                     <button
                       type="button"
@@ -334,7 +394,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
               </tr>
             ) : (
               <>
-                {/* Верхняя распорка виртуализатора для сохранения естественного скроллбара */}
+                {/* Верхняя распорка виртуализатора */}
                 {paddingTop > 0 && (
                   <tr style={{ height: `${paddingTop}px` }}>
                     <td colSpan={activeColumnDefs.length + 1} className="p-0 border-0" />
@@ -345,9 +405,15 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                 {virtualRows.map((virtualRow) => {
                   const joint = filteredAndSortedJoints[virtualRow.index];
                   if (!joint) return null;
-                  const isSelected = selectedJointIds.includes(joint.id);
+                  const isSelected = selectedSet.has(joint.id);
                   const isSupp = joint.isSupplementary;
-                  const missingFields = getMissingPassportFields(joint);
+                  const meta = rowMetaMap.get(joint.id);
+                  const missingFields = meta?.missingFields ?? [];
+                  const labStatus = meta?.labStatus ?? 'Заявка не подана';
+                  const labValidation = meta?.labValidation ?? {
+                    canSubmit: false,
+                    reasons: [],
+                  };
                   const isIncomplete =
                     Boolean(joint.weldingDate) && missingFields.length > 0;
                   const stickyCellBgClass = isSelected
@@ -370,8 +436,14 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                     >
                       {/* Чекбокс строки (липкий) */}
                       <td
+                        style={{
+                          width: `${CHECKBOX_COL_WIDTH}px`,
+                          minWidth: `${CHECKBOX_COL_WIDTH}px`,
+                          maxWidth: `${CHECKBOX_COL_WIDTH}px`,
+                          left: '0px',
+                        }}
                         onClick={(e) => e.stopPropagation()}
-                        className={`py-2 px-2.5 border-r border-slate-200 text-center sticky left-0 z-10 ${stickyCellBgClass}`}
+                        className={`box-border py-2 px-2 border-r border-b border-slate-200 text-center sticky z-10 ${stickyCellBgClass}`}
                       >
                         <input
                           type="checkbox"
@@ -384,33 +456,51 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
 
                       {/* Ячейки строки */}
                       {activeColumnDefs.map((col) => {
-                        const rawVal = joint[col.key];
-                        const strVal = String(rawVal ?? '');
                         const colWidth = columnWidths[col.key] ?? col.minWidth;
+                        const stickyLeft = stickyLayout.leftMap.get(col.key);
+                        const isSticky = stickyLeft !== undefined;
+                        const isLastSticky = stickyLayout.lastStickyKey === col.key;
+
                         const cellStyle: React.CSSProperties = {
                           width: `${colWidth}px`,
+                          minWidth: `${colWidth}px`,
                           maxWidth: `${colWidth}px`,
-                          minWidth: `${col.minWidth}px`,
+                          ...(isSticky ? { left: `${stickyLeft}px` } : {}),
                         };
+
+                        const stickyBorderClass = isSticky
+                          ? isLastSticky
+                            ? `sticky z-10 border-r-2 border-r-slate-300 shadow-[2px_0_6px_rgba(15,23,42,0.09)] ${stickyCellBgClass}`
+                            : `sticky z-10 border-r border-r-slate-200 ${stickyCellBgClass}`
+                          : 'border-r border-r-slate-200';
 
                         if (col.key === 'labRequestStatus') {
                           return (
                             <td
                               key={col.key}
                               style={cellStyle}
-                              className="py-1.5 px-2.5 border-r border-slate-200 whitespace-nowrap"
+                              className={`box-border py-1.5 px-2.5 border-b border-slate-200 whitespace-nowrap ${stickyBorderClass}`}
                             >
-                              {renderLabRequestStatusCell(joint)}
+                              {renderLabRequestStatusCell(
+                                joint,
+                                labStatus,
+                                labValidation
+                              )}
                             </td>
                           );
                         }
 
                         if (col.key === 'jointNumber') {
+                          const corp = normalizeCorporateJointNumber(
+                            joint.jointNumber,
+                            joint.uniqueLineId,
+                            joint.isSupplementary
+                          );
                           return (
                             <td
                               key={col.key}
-                              style={{ ...cellStyle, left: '36px' }}
-                              className={`py-2 px-2.5 border-r-2 border-slate-300 font-mono font-bold text-slate-900 whitespace-nowrap overflow-hidden text-ellipsis sticky left-9 z-10 shadow-[2px_0_5px_rgba(0,0,0,0.08)] ${stickyCellBgClass}`}
+                              style={cellStyle}
+                              className={`box-border py-2 px-2.5 border-b border-slate-200 font-mono font-bold text-slate-900 whitespace-nowrap overflow-hidden text-ellipsis ${stickyBorderClass}`}
                             >
                               <button
                                 type="button"
@@ -418,33 +508,22 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                                   e.stopPropagation();
                                   onOpenEditPassport(joint);
                                 }}
-                                aria-label={`Открыть паспорт стыка ${joint.jointNumber}`}
+                                aria-label={`Открыть паспорт стыка ${corp.jointNumber}`}
                                 title="Нажмите на номер стыка, чтобы открыть паспорт стыка"
                                 className="inline-flex items-center font-mono font-bold text-[#1e3799] hover:text-[#15276e] underline decoration-[#1e3799]/40 hover:decoration-[#1e3799] underline-offset-2 transition-colors cursor-pointer truncate max-w-full"
                               >
-                                {(() => {
-                                  const corp = normalizeCorporateJointNumber(
-                                    joint.jointNumber,
-                                    joint.uniqueLineId,
-                                    joint.isSupplementary
-                                  );
-                                  return (
-                                    <>
-                                      <span className="truncate">{corp.jointNumber}</span>
-                                      {(isSupp || corp.isSupplementary) && (
-                                        <span
-                                          className="ml-1.5 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 text-[#1e3799] shrink-0"
-                                          title="Доборный стык"
-                                        >
-                                          доб.
-                                        </span>
-                                      )}
-                                    </>
-                                  );
-                                })()}
+                                <span className="truncate">{corp.jointNumber}</span>
+                                {(isSupp || corp.isSupplementary) && (
+                                  <span
+                                    className="ml-1.5 px-1 py-0.2 rounded text-[10px] font-semibold bg-sky-100 text-[#1e3799] shrink-0"
+                                    title="Доборный стык"
+                                  >
+                                    доб.
+                                  </span>
+                                )}
                                 {duplicateJointIds.has(joint.id) && (
                                   <span
-                                    className="ml-1.5 px-1.5 py-0.5 rounded bg-red-100 text-red-800 text-[10px] font-bold border border-red-300 shrink-0 animate-pulse"
+                                    className="ml-1.5 px-1.5 py-0.5 rounded bg-red-100 text-red-800 text-[10px] font-bold border border-red-300 shrink-0"
                                     title="Критическая ошибка: номер этого стыка дублируется на данной линии!"
                                   >
                                     ДУБЛЬ
@@ -474,13 +553,49 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                             <td
                               key={col.key}
                               style={cellStyle}
-                              className="py-2 px-2.5 border-r border-slate-200 font-mono font-semibold text-[#1e3799] whitespace-nowrap overflow-hidden text-ellipsis"
+                              className={`box-border py-2 px-2.5 border-b border-slate-200 font-mono font-semibold text-[#1e3799] whitespace-nowrap overflow-hidden text-ellipsis ${stickyBorderClass}`}
                               title={joint.uniqueLineId}
                             >
                               {joint.uniqueLineId}
                             </td>
                           );
                         }
+
+                        if (col.key === 'equivDiameterInch') {
+                          const edi = getJointEquivDiaInch(joint);
+                          const formatted =
+                            edi > 0 ? Number(edi.toFixed(2)).toString() : '';
+                          return (
+                            <td
+                              key={col.key}
+                              style={cellStyle}
+                              className={`box-border py-2 px-2.5 border-b border-slate-200 font-mono tabular-nums text-right text-slate-800 whitespace-nowrap overflow-hidden text-ellipsis ${stickyBorderClass}`}
+                              title={formatted || '—'}
+                            >
+                              {formatted || <span className="text-slate-300">—</span>}
+                            </td>
+                          );
+                        }
+
+                        if (col.key === 'contour') {
+                          const contourVal = String(
+                            getJointFieldValue(joint, 'contour', labRequests, testCircuits) ||
+                              ''
+                          );
+                          return (
+                            <td
+                              key={col.key}
+                              style={cellStyle}
+                              className={`box-border py-2 px-2.5 border-b border-slate-200 text-slate-700 whitespace-nowrap overflow-hidden text-ellipsis ${stickyBorderClass}`}
+                              title={contourVal}
+                            >
+                              {contourVal || <span className="text-slate-300">—</span>}
+                            </td>
+                          );
+                        }
+
+                        const rawVal = joint[col.key];
+                        const strVal = String(rawVal ?? '');
 
                         if (
                           col.key === 'lrv1Code' ||
@@ -490,7 +605,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                             <td
                               key={col.key}
                               style={cellStyle}
-                              className="py-2 px-2.5 border-r border-slate-200 font-mono text-slate-800 whitespace-nowrap overflow-hidden text-ellipsis"
+                              className={`box-border py-2 px-2.5 border-b border-slate-200 font-mono text-slate-800 whitespace-nowrap overflow-hidden text-ellipsis ${stickyBorderClass}`}
                               title={strVal || '—'}
                             >
                               {strVal || '—'}
@@ -511,7 +626,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                             <td
                               key={col.key}
                               style={cellStyle}
-                              className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap overflow-hidden text-ellipsis"
+                              className={`box-border py-2 px-2.5 border-b border-slate-200 whitespace-nowrap overflow-hidden text-ellipsis ${stickyBorderClass}`}
                             >
                               {renderStatusText(strVal)}
                             </td>
@@ -523,7 +638,7 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                             <td
                               key={col.key}
                               style={cellStyle}
-                              className="py-2 px-2.5 border-r border-slate-200 font-mono text-slate-700 whitespace-nowrap overflow-hidden text-ellipsis"
+                              className={`box-border py-2 px-2.5 border-b border-slate-200 font-mono tabular-nums text-slate-700 whitespace-nowrap overflow-hidden text-ellipsis ${stickyBorderClass}`}
                             >
                               {strVal ? (
                                 formatDateDDMMYY(strVal)
@@ -538,9 +653,9 @@ export const RegistryTable: React.FC<RegistryTableProps> = ({
                           <td
                             key={col.key}
                             style={cellStyle}
-                            className={`py-2 px-2.5 border-r border-slate-200 whitespace-nowrap overflow-hidden text-ellipsis ${
+                            className={`box-border py-2 px-2.5 border-b border-slate-200 whitespace-nowrap overflow-hidden text-ellipsis ${stickyBorderClass} ${
                               col.isNumeric
-                                ? 'font-mono text-right'
+                                ? 'font-mono tabular-nums text-right text-slate-800'
                                 : 'text-slate-700'
                             }`}
                             title={strVal}

@@ -260,6 +260,7 @@ export const App: React.FC = () => {
     selectedRdCode,
     labRequests,
     testCircuits,
+    welders,
     visibleColumns,
     setVisibleColumns,
     setColumnOrder,
@@ -1264,6 +1265,12 @@ export const App: React.FC = () => {
         dynamicInspectors={dynamicInspectors}
         isLoadingDemoDataset={isLoadingDemoDataset}
         onLoadKharasaveyDemo={handleLoadKharasaveyDemo}
+        globalSearch={filters.globalSearch}
+        onGlobalSearchChange={filters.setGlobalSearch}
+        quickFilter={filters.quickFilter}
+        onQuickFilterChange={filters.setQuickFilter}
+        quickFilterCounts={filters.quickFilterCounts}
+        duplicateJointIds={filters.duplicateJointIds}
         selectedJointIds={filters.selectedJointIds}
         onToggleSelectRow={filters.toggleSelectRow}
         onToggleSelectAll={filters.toggleSelectAllVisible}

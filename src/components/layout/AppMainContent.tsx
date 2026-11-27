@@ -20,6 +20,10 @@ import {
   WeldJointFieldKey,
 } from '../../types/welding';
 import { RolePermissions } from '../../utils/rbac';
+import {
+  RegistryQuickFilter,
+  RegistryQuickFilterCounts,
+} from '../../utils/filters';
 import { JointsRegistryView } from '../JointsRegistryView';
 import { LaboratoryView } from '../LaboratoryView';
 import { ProjectLineListView } from '../ProjectLineListView';
@@ -68,6 +72,12 @@ export interface AppMainContentProps {
   isLoadingDemoDataset: boolean;
   onLoadKharasaveyDemo: () => Promise<void>;
   // Реестр стыков
+  globalSearch: string;
+  onGlobalSearchChange: (v: string) => void;
+  quickFilter: RegistryQuickFilter;
+  onQuickFilterChange: (next: RegistryQuickFilter) => void;
+  quickFilterCounts: RegistryQuickFilterCounts;
+  duplicateJointIds: Set<string>;
   selectedJointIds: string[];
   onToggleSelectRow: (id: string) => void;
   onToggleSelectAll: () => void;
@@ -205,6 +215,12 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
     dynamicInspectors,
     isLoadingDemoDataset,
     onLoadKharasaveyDemo,
+    globalSearch,
+    onGlobalSearchChange,
+    quickFilter,
+    onQuickFilterChange,
+    quickFilterCounts,
+    duplicateJointIds,
     selectedJointIds,
     onToggleSelectRow,
     onToggleSelectAll,
@@ -305,6 +321,12 @@ export const AppMainContent: React.FC<AppMainContentProps> = (props) => {
         <JointsRegistryView
           filteredAndSortedJoints={filteredAndSortedJoints}
           onCreateLabRequest={onCreateLabRequest}
+          globalSearch={globalSearch}
+          onGlobalSearchChange={onGlobalSearchChange}
+          quickFilter={quickFilter}
+          onQuickFilterChange={onQuickFilterChange}
+          quickFilterCounts={quickFilterCounts}
+          duplicateJointIds={duplicateJointIds}
           selectedJointIds={selectedJointIds}
           onToggleSelectRow={onToggleSelectRow}
           onToggleSelectAll={onToggleSelectAll}

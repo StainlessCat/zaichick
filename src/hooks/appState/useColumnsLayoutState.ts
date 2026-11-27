@@ -13,49 +13,122 @@ export const STORAGE_KEYS = {
   COLUMN_WIDTHS: 'zaychick_column_widths_v1',
 };
 
-export function useColumnsLayoutState() {
-  // Шаблоны столбцов
-  const [templates, setTemplates] = useState<ColumnTemplate[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((tpl: ColumnTemplate) => {
-            const order: WeldJointFieldKey[] = Array.isArray(tpl.columnOrder)
-              ? [...tpl.columnOrder]
-              : [...DEFAULT_COLUMN_KEYS];
-            const vis: WeldJointFieldKey[] = Array.isArray(tpl.visibleColumns)
-              ? [...tpl.visibleColumns]
-              : [...DEFAULT_COLUMN_KEYS];
-            if (!order.includes('labRequestStatus')) {
-              const stampIdx = order.indexOf('welderStamp');
-              if (stampIdx !== -1) order.splice(stampIdx + 1, 0, 'labRequestStatus');
-              else order.push('labRequestStatus');
-            }
-            if (!vis.includes('labRequestStatus')) {
-              const stampVisIdx = vis.indexOf('welderStamp');
-              if (stampVisIdx !== -1) vis.splice(stampVisIdx + 1, 0, 'labRequestStatus');
-              else vis.push('labRequestStatus');
-            }
-            return { ...tpl, columnOrder: order, visibleColumns: vis };
-          });
-        }
+const DEFAULT_ACTIVE_TEMPLATE_ID = 'tpl-operational-15';
+
+function normalizeTemplateColumns(tpl: ColumnTemplate): ColumnTemplate {
+  const order: WeldJointFieldKey[] = Array.isArray(tpl.columnOrder)
+    ? [...tpl.columnOrder]
+    : [...DEFAULT_COLUMN_KEYS];
+  const vis: WeldJointFieldKey[] = Array.isArray(tpl.visibleColumns)
+    ? [...tpl.visibleColumns]
+    : [...DEFAULT_COLUMN_KEYS];
+  if (!order.includes('labRequestStatus')) {
+    const stampIdx = order.indexOf('welderStamp');
+    if (stampIdx !== -1) order.splice(stampIdx + 1, 0, 'labRequestStatus');
+    else order.push('labRequestStatus');
+  }
+  if (tpl.id === 'tpl-full-30' && !vis.includes('labRequestStatus')) {
+    const stampVisIdx = vis.indexOf('welderStamp');
+    if (stampVisIdx !== -1) vis.splice(stampVisIdx + 1, 0, 'labRequestStatus');
+    else vis.push('labRequestStatus');
+  }
+  return { ...tpl, columnOrder: order, visibleColumns: vis };
+}
+
+export function mergeSystemTemplates(incoming: ColumnTemplate[]): ColumnTemplate[] {
+  const systemById = new Map(INITIAL_COLUMN_TEMPLATES.map((t) => [t.id, t]));
+  const customTemplates: ColumnTemplate[] = [];
+  const seenIds = new Set<string>();
+
+  for (const raw of incoming) {
+    if (!raw || !raw.id || seenIds.has(raw.id)) continue;
+    seenIds.add(raw.id);
+    if (!systemById.has(raw.id)) {
+      customTemplates.push(normalizeTemplateColumns(raw));
+    }
+  }
+
+  return [...INITIAL_COLUMN_TEMPLATES.map(normalizeTemplateColumns), ...customTemplates];
+}
+
+function loadInitialTemplates(): ColumnTemplate[] {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return mergeSystemTemplates(parsed);
       }
+    }
+  } catch {
+    // ignore
+  }
+  return INITIAL_COLUMN_TEMPLATES.map(normalizeTemplateColumns);
+}
+
+function loadInitialActiveTemplateId(templates: ColumnTemplate[]): string {
+  try {
+    const savedId = localStorage.getItem(STORAGE_KEYS.ACTIVE_TPL);
+    if (savedId && templates.some((t) => t.id === savedId)) {
+      return savedId;
+    }
+  } catch {
+    // ignore
+  }
+  const preferred = templates.find((t) => t.id === DEFAULT_ACTIVE_TEMPLATE_ID);
+  return preferred ? preferred.id : templates[0]?.id || 'tpl-full-30';
+}
+
+export function useColumnsLayoutState() {
+  const initialStateRef = useRef<{
+    templates: ColumnTemplate[];
+    activeTemplateId: string;
+    activeTemplate: ColumnTemplate;
+  } | null>(null);
+
+  if (!initialStateRef.current) {
+    const loadedTemplates = loadInitialTemplates();
+    const initialId = loadInitialActiveTemplateId(loadedTemplates);
+    const activeTemplate =
+      loadedTemplates.find((t) => t.id === initialId) || loadedTemplates[0];
+    initialStateRef.current = {
+      templates: loadedTemplates,
+      activeTemplateId: initialId,
+      activeTemplate,
+    };
+  }
+
+  // Шаблоны столбцов
+  const [templates, setTemplatesRaw] = useState<ColumnTemplate[]>(
+    () => initialStateRef.current!.templates
+  );
+
+  const setTemplates: React.Dispatch<React.SetStateAction<ColumnTemplate[]>> =
+    useCallback((updater) => {
+      setTemplatesRaw((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        return mergeSystemTemplates(next);
+      });
+    }, []);
+
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(
+    () => initialStateRef.current!.activeTemplateId
+  );
+  const [columnOrder, setColumnOrder] = useState<WeldJointFieldKey[]>(() => [
+    ...initialStateRef.current!.activeTemplate.columnOrder,
+  ]);
+  const [visibleColumns, setVisibleColumns] = useState<WeldJointFieldKey[]>(() => [
+    ...initialStateRef.current!.activeTemplate.visibleColumns,
+  ]);
+  const [isColumnsModalOpen, setIsColumnsModalOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_TPL, activeTemplateId);
     } catch {
       // ignore
     }
-    return INITIAL_COLUMN_TEMPLATES;
-  });
-
-  const [activeTemplateId, setActiveTemplateId] = useState<string>('tpl-full-30');
-  const [columnOrder, setColumnOrder] = useState<WeldJointFieldKey[]>([
-    ...DEFAULT_COLUMN_KEYS,
-  ]);
-  const [visibleColumns, setVisibleColumns] = useState<WeldJointFieldKey[]>([
-    ...DEFAULT_COLUMN_KEYS,
-  ]);
-  const [isColumnsModalOpen, setIsColumnsModalOpen] = useState(false);
+  }, [activeTemplateId]);
 
   // Пользовательские ширины столбцов
   const [columnWidths, setColumnWidths] = useState<

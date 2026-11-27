@@ -203,7 +203,9 @@ export function useJointPassportForm({
   const [elem2SizeFilter, setElem2SizeFilter] = useState<string>('all');
   const [elem1AutoSelectedCode, setElem1AutoSelectedCode] = useState<string | null>(null);
   const [elem2AutoSelectedCode, setElem2AutoSelectedCode] = useState<string | null>(null);
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const initialSnapshotRef = useRef<string>('');
+  const prevWeldingDateRef = useRef<string>('');
 
   const [form, setForm] = useState<WeldJoint>(() => {
     if (initialJoint) return { ...initialJoint };
@@ -351,6 +353,7 @@ export function useJointPassportForm({
 
     setValidationError('');
     setConfirmDeleteStep(false);
+    setShowDiscardConfirm(false);
     setAllowCrossRdLrv(false);
     setFilterLrvBySameDiameter(true);
     setElem1SearchQuery('');
@@ -361,6 +364,7 @@ export function useJointPassportForm({
     if (mode === 'edit' && initialJoint) {
       setForm({ ...initialJoint });
       initialSnapshotRef.current = JSON.stringify(initialJoint);
+      prevWeldingDateRef.current = initialJoint.weldingDate || '';
       setIsSupplementaryMode(Boolean(initialJoint.isSupplementary));
       const synced = resolveFiltersFromJoint(initialJoint);
       setElem1TypeFilter(synced.type1);
@@ -377,6 +381,8 @@ export function useJointPassportForm({
         setActiveTab('control');
       } else if (isJointDefective(initialJoint)) {
         setActiveTab('repair');
+      } else {
+        setActiveTab('welding');
       }
       return;
     }
@@ -403,23 +409,36 @@ export function useJointPassportForm({
       updatedBy: currentUser?.login || 'engineer',
     });
     initialSnapshotRef.current = JSON.stringify(createdJoint);
+    prevWeldingDateRef.current = createdJoint.weldingDate || '';
     setForm(createdJoint);
   }, [isOpen, mode, initialJoint]);
 
-  // Ambient temp auto-fill
+  // Автоподстановка температуры из архива метеостанции объекта (работает и при создании, и при редактировании даты)
   useEffect(() => {
-    if (!isOpen || !form.weldingDate || mode === 'edit') return;
+    if (!isOpen) return;
+    const prevDate = prevWeldingDateRef.current;
+    if (form.weldingDate === prevDate) return;
+    prevWeldingDateRef.current = form.weldingDate;
+
+    if (!form.weldingDate) return;
     const fac = facilities.find((f) => f.name === form.objectName) || facilities[0];
     if (!fac) return;
     const archivedVal = fac.weatherArchive?.[form.weldingDate];
-    if (archivedVal !== undefined) {
+    if (archivedVal !== undefined && String(archivedVal).trim() !== '') {
       const raw = String(archivedVal).trim();
       const num = Number(raw);
-      const fmt = !raw.startsWith('+') && !raw.startsWith('-') && !Number.isNaN(num) && num > 0 ? `+${num}` : raw;
-      setForm((prev) => (prev.ambientTemp === fmt ? prev : { ...prev, ambientTemp: fmt }));
+      const fmt =
+        !raw.startsWith('+') && !raw.startsWith('-') && !Number.isNaN(num) && num > 0
+          ? `+${num}`
+          : raw;
+      setForm((prev) =>
+        prev.ambientTemp === fmt ? prev : { ...prev, ambientTemp: fmt }
+      );
       return;
     }
-    setForm((prev) => (prev.ambientTemp === '' ? prev : { ...prev, ambientTemp: '' }));
+    if (mode === 'create') {
+      setForm((prev) => (prev.ambientTemp === '' ? prev : { ...prev, ambientTemp: '' }));
+    }
   }, [form.objectName, form.weldingDate, facilities, isOpen, mode]);
 
   // Navigation across line joints (edit mode)
@@ -463,12 +482,19 @@ export function useJointPassportForm({
     const isDirty =
       initialSnapshotRef.current !== '' && currentSnapshot !== initialSnapshotRef.current;
     if (isDirty) {
-      const confirmDiscard = window.confirm(
-        'В паспорте стыка есть несохранённые изменения. Закрыть без сохранения?'
-      );
-      if (!confirmDiscard) return;
+      setShowDiscardConfirm(true);
+      return;
     }
     onClose();
+  };
+
+  const confirmDiscardAndClose = () => {
+    setShowDiscardConfirm(false);
+    onClose();
+  };
+
+  const cancelDiscardClose = () => {
+    setShowDiscardConfirm(false);
   };
 
   const selectedTechCard = techCards.find((tc) => tc.number === form.techCardNumber);
@@ -915,22 +941,21 @@ export function useJointPassportForm({
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const persistCurrentJoint = async (): Promise<boolean> => {
     setValidationError('');
 
-    const duplicateJointOnLine = allJoints.find(
+    const duplicateJointOnLineFound = allJoints.find(
       (j) =>
         j.uniqueLineId === form.uniqueLineId &&
         j.jointNumber.toLowerCase() === form.jointNumber.trim().toLowerCase() &&
         j.id !== form.id
     );
 
-    if (duplicateJointOnLine) {
+    if (duplicateJointOnLineFound) {
       setValidationError(
         `Стык с номером «${form.jointNumber}» уже зарегистрирован на линии ${form.uniqueLineId}. Дублирование номеров стыков на одной линии запрещено правилами нормативного учёта.`
       );
-      return;
+      return false;
     }
 
     const sanitized = sanitizeWeldJointRecord(form);
@@ -944,16 +969,35 @@ export function useJointPassportForm({
       const res = await onSave(guardedJoint, isSupplementaryMode, allowCrossRdLrv);
       if (res && !res.ok) {
         setValidationError(res.message || 'Ошибка сохранения данных');
-        return;
+        return false;
       }
       initialSnapshotRef.current = JSON.stringify(guardedJoint);
-      onClose();
+      return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Ошибка сохранения данных';
       setValidationError(msg);
+      return false;
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const ok = await persistCurrentJoint();
+    if (ok) {
+      onClose();
+    }
+  };
+
+  const saveCurrentJointForNavigation = async (): Promise<boolean> => {
+    if (!canSaveAnyField) return true;
+    const currentSnapshot = JSON.stringify(form);
+    const isDirty =
+      initialSnapshotRef.current !== '' &&
+      currentSnapshot !== initialSnapshotRef.current;
+    if (!isDirty) return true;
+    return persistCurrentJoint();
   };
 
   return {
@@ -1039,6 +1083,10 @@ export function useJointPassportForm({
     handleSelectTechCard,
     handleRdCodeChangeInCreate,
     handleSubmit,
+    saveCurrentJointForNavigation,
     handleSafeClose,
+    showDiscardConfirm,
+    confirmDiscardAndClose,
+    cancelDiscardClose,
   };
 }

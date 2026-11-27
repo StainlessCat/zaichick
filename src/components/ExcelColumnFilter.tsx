@@ -81,7 +81,7 @@ export const ExcelColumnFilter: React.FC<ExcelColumnFilterProps> = ({
   const isDateCol = isDateColumnKey(column.key);
 
   const formatOptionLabel = (val: string) => {
-    if (val === '') return '(Пустые ячейки)';
+    if (val === '') return 'Пустые ячейки';
     return isDateCol ? formatDateDDMMYY(val) : val;
   };
 
@@ -252,7 +252,7 @@ export const ExcelColumnFilter: React.FC<ExcelColumnFilterProps> = ({
             autoFocus
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Поиск (курсор активен)..."
+            placeholder="Поиск значений..."
             aria-label={`Поиск значений в столбце ${column.label}`}
             className="w-full pl-8 pr-7 py-1.5 bg-sky-50/60 border border-[#1e3799]/40 rounded text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1e3799] focus:bg-white"
           />
@@ -280,7 +280,7 @@ export const ExcelColumnFilter: React.FC<ExcelColumnFilterProps> = ({
                 onChange={toggleAllFiltered}
                 className="rounded border-slate-300 text-[#1e3799] focus:ring-[#1e3799]"
               />
-              <span>(Выделить все)</span>
+              <span>Выделить все</span>
             </div>
             <span className="text-[10px] font-mono text-slate-400">{filteredOptions.length}</span>
           </label>
@@ -335,7 +335,7 @@ export const ExcelColumnFilter: React.FC<ExcelColumnFilterProps> = ({
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-[#1e3799] text-white font-semibold hover:bg-[#15276e] transition-colors"
           >
             <Check className="w-3.5 h-3.5" />
-            <span>ОК (Применить)</span>
+            <span>Применить</span>
           </button>
         </div>
       </form>

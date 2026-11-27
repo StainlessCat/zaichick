@@ -115,11 +115,13 @@ export const ColumnTemplatesModal: React.FC<ColumnTemplatesModalProps> = ({
   const groups = [
     { id: 'ALL', label: 'Все группы' },
     { id: 'project_id', label: 'Идентификация' },
-    { id: 'prep', label: 'Подготовка (Проект)' },
-    { id: 'welding', label: 'Сварка (Производство)' },
+    { id: 'prep', label: 'Подготовка' },
+    { id: 'welding', label: 'Сварка' },
     { id: 'vik', label: 'Контроль ВИК' },
     { id: 'ndt', label: 'Контроль НК' },
     { id: 'dup_ndt', label: 'Дублирующий НК' },
+    { id: 'repair', label: 'Сведения о ремонте' },
+    { id: 'repair_ndt', label: 'Контроль после ремонта' },
   ];
 
   const displayedDefs =
@@ -260,7 +262,7 @@ export const ColumnTemplatesModal: React.FC<ColumnTemplatesModalProps> = ({
                 className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md bg-[#1e3799] text-white text-xs font-semibold hover:bg-[#15276e] transition-colors"
               >
                 <Plus className="w-4 h-4" />
-                <span>Сохранить как шаблон ({visibleColumns.length} ст.)</span>
+                <span>Сохранить как шаблон · {visibleColumns.length} ст.</span>
               </button>
             </form>
           </div>
@@ -269,8 +271,7 @@ export const ColumnTemplatesModal: React.FC<ColumnTemplatesModalProps> = ({
           <div className="lg:col-span-7 p-5 flex flex-col space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-bold text-slate-800">
-                Порядок и видимость столбцов ({visibleColumns.length} из {ALL_COLUMNS.length}{' '}
-                активно)
+                Порядок и видимость столбцов · {visibleColumns.length} из {ALL_COLUMNS.length}
               </div>
               <div className="flex items-center gap-3">
                 {onResetColumnWidths && (

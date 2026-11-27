@@ -98,6 +98,7 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
         onSelectCondition={(next) => {
           state.setActiveTab('readiness');
           state.setCondition(next);
+          state.setSelectedGroupKey(null);
           state.setColumnFilters({});
           state.setSortConfig(null);
           if (next !== 'contour') state.setContourQuickFilter('all');
@@ -152,16 +153,35 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
           />
 
           <AnalyticsDynamicsPanel
-            joints={state.periodJoints}
-            lines={state.scopedLines}
+            condition={state.condition}
+            rows={state.rows}
+            selectedGroupKey={state.selectedGroupKey}
+            onSelectGroupKey={state.setSelectedGroupKey}
+            joints={state.dynamicsJoints}
+            lines={state.dynamicsLines}
             docByLineId={state.docByLineId}
-            onClickRepairsShortcut={() =>
+            onClickRepairsShortcut={() => {
+              if (state.selectedGroupKey) {
+                handleDrillDownRegistry(state.selectedGroupKey, true);
+                return;
+              }
               onOpenRegistryActiveRepairs?.({
                 weldingDateFrom: state.weldingDateFrom || undefined,
                 weldingDateTo: state.weldingDateTo || undefined,
-              })
-            }
-            onClickExecDocsShortcut={onOpenExecutiveDocs}
+              });
+            }}
+            onClickExecDocsShortcut={() => {
+              if (state.selectedGroupKey) {
+                const selectedRow = state.rows.find(
+                  (r) => r.groupKey === state.selectedGroupKey
+                );
+                if (selectedRow && selectedRow.totalLinesCount > 0 && onOpenExecutiveDocsByCondition) {
+                  handleDrillDownExecutiveDocs(selectedRow);
+                  return;
+                }
+              }
+              onOpenExecutiveDocs?.();
+            }}
           />
 
           {state.condition === 'contour' && (
@@ -191,6 +211,8 @@ export const ReadinessReportView: React.FC<ReadinessReportViewProps> = ({
             summary={state.summary}
             tableFooterTotals={state.tableFooterTotals}
             canOpenExecutiveDocs={Boolean(onOpenExecutiveDocsByCondition)}
+            selectedGroupKey={state.selectedGroupKey}
+            onSelectGroupKey={state.setSelectedGroupKey}
             onDrillDownRegistry={handleDrillDownRegistry}
             onDrillDownExecutiveDocs={handleDrillDownExecutiveDocs}
           />

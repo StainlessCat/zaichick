@@ -1,14 +1,18 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   NdtLabRequest,
   TestCircuit,
+  WelderProfile,
   WeldJoint,
   WeldJointFieldKey,
 } from '../types/welding';
 import {
+  buildDuplicateJointIdsSet,
   computeColumnUniqueValues,
+  computeRegistryQuickFilterCounts,
   filterAndSortJoints,
   filterJointsByScope,
+  RegistryQuickFilter,
 } from '../utils/filters';
 
 export interface UseRegistryFiltersParams {
@@ -17,6 +21,7 @@ export interface UseRegistryFiltersParams {
   selectedRdCode: string;
   labRequests: NdtLabRequest[];
   testCircuits?: TestCircuit[];
+  welders?: WelderProfile[];
   visibleColumns: WeldJointFieldKey[];
   setVisibleColumns: React.Dispatch<React.SetStateAction<WeldJointFieldKey[]>>;
   setColumnOrder: React.Dispatch<React.SetStateAction<WeldJointFieldKey[]>>;
@@ -30,6 +35,7 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
     selectedRdCode,
     labRequests,
     testCircuits,
+    welders = [],
     visibleColumns,
     setVisibleColumns,
     setColumnOrder,
@@ -39,7 +45,8 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
   const [globalSearch, setGlobalSearch] = useState('');
   const [weldingDateFrom, setWeldingDateFrom] = useState('');
   const [weldingDateTo, setWeldingDateTo] = useState('');
-  const [onlyActiveRepairs, setOnlyActiveRepairs] = useState(false);
+  const [onlyActiveRepairs, setOnlyActiveRepairsState] = useState(false);
+  const [quickFilter, setQuickFilterState] = useState<RegistryQuickFilter>('all');
   const [columnFilters, setColumnFilters] = useState<
     Partial<Record<WeldJointFieldKey, string[]>>
   >({});
@@ -65,9 +72,41 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
 
   const [isImportExcelOpen, setIsImportExcelOpen] = useState(false);
 
+  const setOnlyActiveRepairs = useCallback(
+    (value: React.SetStateAction<boolean>) => {
+      setOnlyActiveRepairsState((prev) => {
+        const next = typeof value === 'function' ? value(prev) : value;
+        if (next) {
+          setQuickFilterState('in_repair');
+        } else {
+          setQuickFilterState((qf) => (qf === 'in_repair' ? 'all' : qf));
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  const setQuickFilter = useCallback((next: RegistryQuickFilter) => {
+    setQuickFilterState(next);
+    setOnlyActiveRepairsState(next === 'in_repair');
+  }, []);
+
   const scopedJoints = useMemo(() => {
     return filterJointsByScope(joints, selectedObjectName, selectedRdCode);
   }, [joints, selectedObjectName, selectedRdCode]);
+
+  const duplicateJointIds = useMemo(() => {
+    return buildDuplicateJointIdsSet(scopedJoints);
+  }, [scopedJoints]);
+
+  const quickFilterCounts = useMemo(() => {
+    return computeRegistryQuickFilterCounts(scopedJoints, {
+      labRequests,
+      welders,
+      duplicateJointIds,
+    });
+  }, [scopedJoints, labRequests, welders, duplicateJointIds]);
 
   const filteredAndSortedJoints = useMemo(() => {
     return filterAndSortJoints(scopedJoints, {
@@ -79,6 +118,9 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
       labRequests,
       testCircuits,
       onlyActiveRepairs,
+      quickFilter,
+      welders,
+      duplicateJointIds,
     });
   }, [
     scopedJoints,
@@ -90,7 +132,20 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
     labRequests,
     testCircuits,
     onlyActiveRepairs,
+    quickFilter,
+    welders,
+    duplicateJointIds,
   ]);
+
+  // Автоматическая очистка скрытых выделенных строк при изменении фильтров
+  useEffect(() => {
+    if (selectedJointIds.length === 0) return;
+    const visibleIdSet = new Set(filteredAndSortedJoints.map((j) => j.id));
+    setSelectedJointIds((prev) => {
+      const pruned = prev.filter((id) => visibleIdSet.has(id));
+      return pruned.length === prev.length ? prev : pruned;
+    });
+  }, [filteredAndSortedJoints, selectedJointIds.length]);
 
   const getUniqueValuesForColumn = useCallback(
     (colKey: WeldJointFieldKey) => {
@@ -114,12 +169,19 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
   }, []);
 
   const toggleSelectAllVisible = useCallback(() => {
-    if (selectedJointIds.length === filteredAndSortedJoints.length) {
+    const visibleIds = filteredAndSortedJoints.map((j) => j.id);
+    if (visibleIds.length === 0) {
+      setSelectedJointIds([]);
+      return;
+    }
+    const selectedSet = new Set(selectedJointIds);
+    const allVisibleSelected = visibleIds.every((id) => selectedSet.has(id));
+    if (allVisibleSelected) {
       setSelectedJointIds([]);
     } else {
-      setSelectedJointIds(filteredAndSortedJoints.map((j) => j.id));
+      setSelectedJointIds(visibleIds);
     }
-  }, [filteredAndSortedJoints, selectedJointIds.length]);
+  }, [filteredAndSortedJoints, selectedJointIds]);
 
   const handleClearSelection = useCallback(() => {
     setSelectedJointIds([]);
@@ -157,7 +219,8 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
     setGlobalSearch('');
     setWeldingDateFrom('');
     setWeldingDateTo('');
-    setOnlyActiveRepairs(false);
+    setOnlyActiveRepairsState(false);
+    setQuickFilterState('all');
   }, []);
 
   const handleSetOpenFilterColumnKey = useCallback(
@@ -225,6 +288,10 @@ export function useRegistryFilters(params: UseRegistryFiltersParams) {
     weldingDateTo,
     onlyActiveRepairs,
     setOnlyActiveRepairs,
+    quickFilter,
+    setQuickFilter,
+    quickFilterCounts,
+    duplicateJointIds,
     columnFilters,
     setColumnFilters,
     openFilterColumnKey,
