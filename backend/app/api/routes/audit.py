@@ -22,6 +22,7 @@ async def get_audit_logs(
     entity_type: str | None = Query(default=None),
     entity_id: str | None = Query(default=None),
     user_login: str | None = Query(default=None),
+    search: str | None = Query(default=None),
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     _user: User = Depends(require_permission("can_view_audit_logs")),
@@ -36,6 +37,7 @@ async def get_audit_logs(
         entity_type=entity_type,
         entity_id=entity_id,
         user_login=user_login,
+        search=search,
         date_from=date_from,
         date_to=date_to,
     )

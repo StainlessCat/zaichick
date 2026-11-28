@@ -835,12 +835,35 @@ export const zaychickApi = {
     await apiRequest(`/api/templates/${templateId}`, { method: 'DELETE' });
   },
 
-  async listAuditLogs(page = 1, pageSize = 150): Promise<AuditLogEntry[]> {
+  async listAuditLogsPage(
+    page = 1,
+    pageSize = 50,
+    filters?: { search?: string }
+  ): Promise<{ items: AuditLogEntry[]; total: number; page: number; pageSize: number }> {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    if (filters?.search && filters.search.trim()) {
+      params.set('search', filters.search.trim());
+    }
     const res = await apiRequest<{
       items: Record<string, unknown>[];
       total: number;
-    }>(`/api/audit-logs?page=${page}&page_size=${pageSize}`);
-    return (res.items || []).map(mapAuditLogDto);
+      page: number;
+      page_size: number;
+    }>(`/api/audit-logs?${params.toString()}`);
+    return {
+      items: (res.items || []).map(mapAuditLogDto),
+      total: res.total ?? 0,
+      page: res.page ?? page,
+      pageSize: res.page_size ?? pageSize,
+    };
+  },
+
+  async listAuditLogs(page = 1, pageSize = 150): Promise<AuditLogEntry[]> {
+    const res = await this.listAuditLogsPage(page, pageSize);
+    return res.items;
   },
 
   // ---------------------------------------------------------------------------

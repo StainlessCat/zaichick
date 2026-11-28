@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import AuditLog
@@ -117,6 +117,7 @@ async def list_audit_logs(
     entity_type: str | None = None,
     entity_id: str | None = None,
     user_login: str | None = None,
+    search: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
 ) -> tuple[list[AuditLog], int]:
@@ -136,6 +137,16 @@ async def list_audit_logs(
     if user_login:
         stmt = stmt.where(func.lower(AuditLog.user_login) == user_login.strip().lower())
         count_stmt = count_stmt.where(func.lower(AuditLog.user_login) == user_login.strip().lower())
+    if search and search.strip():
+        pat = f"%{search.strip()}%"
+        search_cond = or_(
+            AuditLog.user_login.ilike(pat),
+            AuditLog.entity_id.ilike(pat),
+            AuditLog.summary.ilike(pat),
+            AuditLog.action.ilike(pat),
+        )
+        stmt = stmt.where(search_cond)
+        count_stmt = count_stmt.where(search_cond)
     if date_from:
         stmt = stmt.where(AuditLog.timestamp >= date_from)
         count_stmt = count_stmt.where(AuditLog.timestamp >= date_from)

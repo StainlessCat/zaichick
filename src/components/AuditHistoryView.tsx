@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { zaychickApi } from '../api';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { History, Lock, RotateCcw, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { AuditLogEntry } from '../types/welding';
@@ -28,7 +29,14 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
   const app = useAppContext();
   const auth = useAuth();
 
-  const logs = propLogs ?? app.auditLogs ?? [];
+  const isServerPaginated = Boolean(app.isDbConnected && !propLogs);
+  const [serverPage, setServerPage] = usePersistentState<number>('audit:page', 1);
+  const [serverTotal, setServerTotal] = useState<number>(0);
+  const [serverLogs, setServerLogs] = useState<AuditLogEntry[] | null>(null);
+  const [isLoadingPage, setIsLoadingPage] = useState(false);
+
+  const logs =
+    isServerPaginated && serverLogs !== null ? serverLogs : (propLogs ?? app.auditLogs ?? []);
   const isAdmin = propIsAdmin ?? (auth.userPermissions.category === 'admin');
   const onClearAuditLog = propOnClearAuditLog ?? (() => app.setAuditLogs([]));
   const [search, setSearch] = usePersistentState('audit:search', '');
@@ -42,6 +50,31 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
     direction: 'asc' | 'desc';
   } | null>('audit:sortConfig', null);
   const [confirmClear, setConfirmClear] = useState(false);
+
+  useEffect(() => {
+    if (!isServerPaginated) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setIsLoadingPage(true);
+      zaychickApi
+        .listAuditLogsPage(serverPage, 50, { search })
+        .then((res) => {
+          if (cancelled) return;
+          setServerLogs(res.items);
+          setServerTotal(res.total);
+        })
+        .catch(() => {
+          // Keep fallback logs if network call fails
+        })
+        .finally(() => {
+          if (!cancelled) setIsLoadingPage(false);
+        });
+    }, search ? 250 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isServerPaginated, serverPage, search]);
 
   // Регулирование ширины столбцов журнала аудита с сохранением в localStorage
   const {
@@ -245,7 +278,10 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
             <Input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setServerPage(1);
+              }}
               placeholder="ФИО, линия, стык, поле..."
               className="w-full pl-8"
             />
@@ -458,8 +494,31 @@ export const AuditHistoryView: React.FC<AuditHistoryViewProps> = ({
               <span className="font-mono font-bold text-slate-800">
                 {filtered.length}
               </span>{' '}
-              из <span className="font-mono">{logs.length}</span>
+              из <span className="font-mono">{isServerPaginated ? serverTotal : logs.length}</span>
             </div>
+            {isServerPaginated && serverTotal > 50 && (
+              <div className="inline-flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={serverPage <= 1 || isLoadingPage}
+                  onClick={() => setServerPage((p) => Math.max(1, p - 1))}
+                  className="px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                >
+                  Назад
+                </button>
+                <span className="font-mono text-[11px]">
+                  {serverPage} / {Math.max(1, Math.ceil(serverTotal / 50))}
+                </span>
+                <button
+                  type="button"
+                  disabled={serverPage >= Math.ceil(serverTotal / 50) || isLoadingPage}
+                  onClick={() => setServerPage((p) => p + 1)}
+                  className="px-2 py-0.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                >
+                  Вперёд
+                </button>
+              </div>
+            )}
             {hasCustomWidths && (
               <button
                 type="button"
