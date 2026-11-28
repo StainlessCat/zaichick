@@ -59,3 +59,34 @@ class WeatherStationRefreshResponse(BaseModel):
     latest_date: date | None = None
     latest_t_mean: float | None = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SiteWeatherDailyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    coord_key: str
+    latitude: float
+    longitude: float
+    obs_date: date
+    t_min: float | None = None
+    t_max: float | None = None
+    t_mean: float | None = None
+    source: str
+    updated_at: datetime | None = None
+
+
+class SiteWeatherRefreshResponse(BaseModel):
+    coord_key: str
+    status: str
+    refreshed_count: int
+    latest_date: date | None = None
+    latest_t_mean: float | None = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class WeatherHealthOut(BaseModel):
+    status: str
+    source: str
+    response_time_ms: int | None = None
+    error_message: str | None = None

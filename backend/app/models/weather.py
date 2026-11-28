@@ -120,3 +120,30 @@ class WeatherDaily(Base):
     )
 
     station: Mapped[WeatherStation] = relationship(back_populates="daily_records")
+
+
+class SiteWeatherDaily(Base):
+    """Daily temperature archive by rounded site coordinates (~5 km grid, Open-Meteo / local)."""
+
+    __tablename__ = "site_weather_daily"
+    __table_args__ = (
+        UniqueConstraint("coord_key", "obs_date", name="uq_site_weather_coord_date"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    coord_key: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    obs_date: Mapped[date] = mapped_column(Date, index=True, nullable=False)
+    t_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    t_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    t_mean: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

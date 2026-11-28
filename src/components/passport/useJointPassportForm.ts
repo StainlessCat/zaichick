@@ -1,4 +1,5 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { fetchSiteWeatherObservations, formatObservationTemp } from '../../utils/weatherService';
 import {
   FacilityObject,
   InspectorProfile,
@@ -438,6 +439,38 @@ export function useJointPassportForm({
     }
     if (mode === 'create') {
       setForm((prev) => (prev.ambientTemp === '' ? prev : { ...prev, ambientTemp: '' }));
+    }
+
+    const targetDate = form.weldingDate;
+    if (fac.latitude != null && fac.longitude != null) {
+      let cancelled = false;
+      fetchSiteWeatherObservations(
+        fac.latitude,
+        fac.longitude,
+        targetDate,
+        targetDate,
+        fac.name
+      )
+        .then((obsMap) => {
+          if (cancelled) return;
+          const obs = obsMap[targetDate];
+          if (obs && obs.status === 'available' && obs.tavg !== undefined) {
+            const fmt = formatObservationTemp(obs.tavg);
+            if (fmt) {
+              setForm((prev) => {
+                if (prev.weldingDate !== targetDate) return prev;
+                if (prev.ambientTemp && prev.ambientTemp.trim() !== '') return prev;
+                return { ...prev, ambientTemp: fmt };
+              });
+            }
+          }
+        })
+        .catch(() => {
+          // Offline or unauthenticated fallback: leave manual entry
+        });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [form.objectName, form.weldingDate, facilities, isOpen, mode]);
 

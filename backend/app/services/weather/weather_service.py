@@ -10,9 +10,13 @@ from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.weather import WeatherDaily, WeatherStation, WeatherStationAlias
+from app.models.weather import SiteWeatherDaily, WeatherDaily, WeatherStation, WeatherStationAlias
 from app.services.weather.geo import haversine_distance_km
 from app.services.weather.gsod_loader import fetch_gsod_for_station
+from app.services.weather.open_meteo_loader import (
+    fetch_open_meteo_archive,
+    fetch_open_meteo_recent,
+)
 from app.services.weather.reference_stations import get_deterministic_station_uuid
 from app.services.weather.synop_parser import fetch_synop_daily
 
@@ -429,6 +433,171 @@ async def refresh_station_weather(
 
     return {
         "station_id": station_id,
+        "status": "ok",
+        "refreshed_count": saved_count,
+        "latest_date": latest_date,
+        "latest_t_mean": latest_t_mean,
+        "updated_at": datetime.now(timezone.utc),
+    }
+
+
+def make_coord_key(latitude: float, longitude: float) -> str:
+    """Round coordinates to 0.05 deg (~5 km grid) for shared site weather caching."""
+    lat_r = round(round(latitude / 0.05) * 0.05, 2)
+    lon_r = round(round(longitude / 0.05) * 0.05, 2)
+    return f"{lat_r:.2f}_{lon_r:.2f}"
+
+
+async def upsert_site_weather_records(
+    session: AsyncSession,
+    coord_key: str,
+    latitude: float,
+    longitude: float,
+    records: list[dict[str, Any]],
+) -> int:
+    """Upsert coordinate-based daily temperature records into site_weather_daily."""
+    if not records:
+        return 0
+
+    now_utc = datetime.now(timezone.utc)
+    count = 0
+    for rec in records:
+        obs_date = rec.get("obs_date")
+        if not obs_date:
+            continue
+        stmt = pg_insert(SiteWeatherDaily).values(
+            id=uuid.uuid4(),
+            coord_key=coord_key,
+            latitude=round(latitude, 4),
+            longitude=round(longitude, 4),
+            obs_date=obs_date,
+            t_min=rec.get("t_min"),
+            t_max=rec.get("t_max"),
+            t_mean=rec.get("t_mean"),
+            source=rec.get("source", "OPEN_METEO_LIVE"),
+            updated_at=now_utc,
+        )
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_site_weather_coord_date",
+            set_={
+                "t_min": stmt.excluded.t_min,
+                "t_max": stmt.excluded.t_max,
+                "t_mean": stmt.excluded.t_mean,
+                "source": stmt.excluded.source,
+                "updated_at": now_utc,
+            },
+        )
+        await session.execute(stmt)
+        count += 1
+
+    await session.commit()
+    return count
+
+
+async def get_or_fetch_site_weather(
+    session: AsyncSession,
+    latitude: float,
+    longitude: float,
+    date_from: date,
+    date_to: date,
+) -> list[SiteWeatherDaily]:
+    """Retrieve site daily temperatures from own DB archive, backfilling via Open-Meteo."""
+    coord_key = make_coord_key(latitude, longitude)
+    today = date.today()
+    effective_to = min(date_to, today)
+    if date_from > effective_to:
+        return []
+
+    stmt = (
+        select(SiteWeatherDaily)
+        .where(
+            SiteWeatherDaily.coord_key == coord_key,
+            SiteWeatherDaily.obs_date >= date_from,
+            SiteWeatherDaily.obs_date <= effective_to,
+        )
+        .order_by(SiteWeatherDaily.obs_date.asc())
+    )
+    res = await session.execute(stmt)
+    cached_records = {r.obs_date: r for r in res.scalars().all()}
+
+    all_dates: list[date] = []
+    curr = date_from
+    while curr <= effective_to:
+        all_dates.append(curr)
+        curr += timedelta(days=1)
+
+    recent_threshold = today - timedelta(days=7)
+    missing_recent = [d for d in all_dates if d >= recent_threshold and d not in cached_records]
+
+    if today in cached_records and today >= date_from:
+        cached_today = cached_records[today]
+        if cached_today.updated_at:
+            age = (datetime.now(timezone.utc) - cached_today.updated_at).total_seconds()
+            if age > 10800:
+                missing_recent.append(today)
+
+    missing_archive = [d for d in all_dates if d < recent_threshold and d not in cached_records]
+
+    new_records: list[dict[str, Any]] = []
+    if missing_recent:
+        recent_data = await fetch_open_meteo_recent(latitude, longitude, past_days=7)
+        wanted_recent = set(missing_recent)
+        for item in recent_data:
+            if item["obs_date"] in wanted_recent:
+                new_records.append(item)
+
+    if missing_archive:
+        archive_data = await fetch_open_meteo_archive(
+            latitude,
+            longitude,
+            min(missing_archive),
+            max(missing_archive),
+        )
+        wanted_archive = set(missing_archive)
+        for item in archive_data:
+            if item["obs_date"] in wanted_archive:
+                new_records.append(item)
+
+    if new_records:
+        await upsert_site_weather_records(
+            session,
+            coord_key,
+            latitude,
+            longitude,
+            new_records,
+        )
+
+    res_final = await session.execute(stmt)
+    return list(res_final.scalars().all())
+
+
+async def refresh_site_weather(
+    session: AsyncSession,
+    latitude: float,
+    longitude: float,
+    *,
+    past_days: int = 2,
+) -> dict[str, Any]:
+    """Force refresh of current and recent temperatures for exact site coordinates."""
+    coord_key = make_coord_key(latitude, longitude)
+    recent_records = await fetch_open_meteo_recent(latitude, longitude, past_days=past_days)
+    saved_count = await upsert_site_weather_records(
+        session,
+        coord_key,
+        latitude,
+        longitude,
+        recent_records,
+    )
+
+    latest_date: date | None = None
+    latest_t_mean: float | None = None
+    if recent_records:
+        latest = sorted(recent_records, key=lambda r: r["obs_date"])[-1]
+        latest_date = latest["obs_date"]
+        latest_t_mean = latest["t_mean"]
+
+    return {
+        "coord_key": coord_key,
         "status": "ok",
         "refreshed_count": saved_count,
         "latest_date": latest_date,

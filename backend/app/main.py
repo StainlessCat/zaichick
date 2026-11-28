@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -41,6 +42,7 @@ from app.core.metrics import PrometheusMetrics
 from app.services.baseline_seed import ensure_baseline_domain_data_seeded
 from app.services.event_bus import event_bus, start_postgres_listener, stop_postgres_listener
 from app.services.weather.reference_stations import ensure_baseline_weather_stations_seeded
+from app.services.weather.scheduler import weather_scheduler_loop
 from sqlalchemy.exc import IntegrityError
 
 settings = get_settings()
@@ -55,9 +57,18 @@ async def lifespan(_app: FastAPI):
     await ensure_baseline_weather_stations_seeded()
     await ensure_baseline_domain_data_seeded()
     await start_postgres_listener(settings.database_url)
+    weather_task: asyncio.Task | None = None
+    if settings.environment != "test" and not os.environ.get("PYTEST_CURRENT_TEST"):
+        weather_task = asyncio.create_task(weather_scheduler_loop())
     try:
         yield
     finally:
+        if weather_task is not None:
+            weather_task.cancel()
+            try:
+                await weather_task
+            except asyncio.CancelledError:
+                pass
         await stop_postgres_listener()
         await engine.dispose()
 

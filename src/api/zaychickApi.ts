@@ -1236,5 +1236,64 @@ export const zaychickApi = {
       body: JSON.stringify(payload),
     });
   },
+
+  // Weather (server coordinate archive + health check)
+  async getWeatherHealth(): Promise<{
+    status: 'online' | 'offline';
+    source: string;
+    response_time_ms?: number | null;
+    error_message?: string | null;
+  }> {
+    return apiRequest('/api/weather/health');
+  },
+
+  async getSiteWeatherDaily(
+    lat: number,
+    lon: number,
+    dateFrom: string,
+    dateTo: string
+  ): Promise<
+    Array<{
+      id: string;
+      coord_key: string;
+      latitude: number;
+      longitude: number;
+      obs_date: string;
+      t_min?: number | null;
+      t_max?: number | null;
+      t_mean?: number | null;
+      source: string;
+      updated_at?: string | null;
+    }>
+  > {
+    const q = new URLSearchParams({
+      lat: String(lat),
+      lon: String(lon),
+      date_from: dateFrom,
+      date_to: dateTo,
+    });
+    return apiRequest(`/api/weather/site-daily?${q.toString()}`);
+  },
+
+  async refreshSiteWeather(
+    lat: number,
+    lon: number,
+    pastDays = 2
+  ): Promise<{
+    coord_key: string;
+    status: string;
+    refreshed_count: number;
+    latest_date?: string | null;
+    latest_t_mean?: number | null;
+  }> {
+    const q = new URLSearchParams({
+      lat: String(lat),
+      lon: String(lon),
+      past_days: String(pastDays),
+    });
+    return apiRequest(`/api/weather/site-refresh?${q.toString()}`, {
+      method: 'POST',
+    });
+  },
 };
 

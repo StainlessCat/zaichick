@@ -11,6 +11,7 @@
 export { ROSGIDROMET_STATIONS, ROSHIDROMET_STATIONS } from '../data/rosgidrometStations';
 import { ROSGIDROMET_STATIONS } from '../data/rosgidrometStations';
 import type { CustomWeatherStation, WeatherStationMetadata } from '../types/welding';
+import { zaychickApi } from '../api';
 export type { WeatherStationMetadata };
 
 export type WeatherDataSourceType =
@@ -952,4 +953,79 @@ export function formatObservationTemp(temp?: number | null): string {
   if (temp === undefined || temp === null || Number.isNaN(temp)) return '';
   const rounded = Math.round(temp * 10) / 10;
   return rounded > 0 ? `+${rounded}` : `${rounded}`;
+}
+
+/**
+ * Проверка связи с серверным модулем погоды (без браузерного CORS).
+ */
+export async function checkServerWeatherHealth(): Promise<WeatherServiceHealth> {
+  const lastCheckedAt = new Date().toISOString();
+  try {
+    const res = await zaychickApi.getWeatherHealth();
+    return {
+      source: 'open-meteo-era5',
+      status: res.status === 'online' ? 'online' : 'offline',
+      lastCheckedAt,
+      responseTimeMs: res.response_time_ms ?? undefined,
+      errorMessage: res.error_message ?? undefined,
+    };
+  } catch (err: unknown) {
+    return {
+      source: 'open-meteo-era5',
+      status: 'offline',
+      lastCheckedAt,
+      errorMessage: err instanceof Error ? err.message : 'Сервер погоды недоступен',
+    };
+  }
+}
+
+/**
+ * Загрузка точечных метеоданных по координатам объекта из собственного серверного архива PostgreSQL
+ * (с автоматической дозагрузкой через Open-Meteo Forecast / ERA5-Land на бэкенде).
+ */
+export async function fetchSiteWeatherObservations(
+  latitude: number,
+  longitude: number,
+  startDate: string,
+  endDate: string,
+  label = 'Координаты объекта'
+): Promise<Record<string, DailyWeatherObservation>> {
+  const result: Record<string, DailyWeatherObservation> = {};
+  const records = await zaychickApi.getSiteWeatherDaily(latitude, longitude, startDate, endDate);
+  const fetchedAt = new Date().toISOString();
+  const coordsLabel = `${latitude.toFixed(2)}°N, ${longitude.toFixed(2)}°E`;
+
+  for (const rec of records) {
+    const isLive = rec.source === 'OPEN_METEO_LIVE';
+    const sourceDescription = isLive
+      ? `Серверный архив (${coordsLabel}) · оперативные данные`
+      : `Серверный архив (${coordsLabel}) · ERA5-Land`;
+
+    if (rec.t_mean !== undefined && rec.t_mean !== null) {
+      result[rec.obs_date] = {
+        date: rec.obs_date,
+        tavg: Math.round(rec.t_mean * 10) / 10,
+        stationId: rec.coord_key,
+        stationName: label,
+        sourceType: 'open-meteo-era5',
+        sourceDescription,
+        status: 'available',
+        statusMessage: 'Данные доступны (серверный архив по координатам)',
+        fetchedAt,
+      };
+    } else {
+      result[rec.obs_date] = {
+        date: rec.obs_date,
+        stationId: rec.coord_key,
+        stationName: label,
+        sourceType: 'open-meteo-era5',
+        sourceDescription,
+        status: 'not_found',
+        statusMessage: 'За дату данных нет',
+        fetchedAt,
+      };
+    }
+  }
+
+  return result;
 }

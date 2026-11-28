@@ -7,8 +7,13 @@ from typing import Any
 from sqlalchemy import select
 
 from app.core.database import async_session_factory
+from app.models.facility import Facility
 from app.models.line import ProjectLine
-from app.services.weather.weather_service import refresh_station_weather
+from app.services.weather.weather_service import (
+    make_coord_key,
+    refresh_site_weather,
+    refresh_station_weather,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +39,33 @@ async def refresh_active_stations_weather() -> dict[str, Any]:
             except Exception as exc:
                 logger.warning("Error auto-refreshing weather for station %s: %s", sid, exc)
 
+        # Refresh coordinate-based archive for all facilities with valid coordinates
+        fac_stmt = select(Facility.latitude, Facility.longitude).where(
+            Facility.latitude.is_not(None),
+            Facility.longitude.is_not(None),
+        )
+        fac_res = await session.execute(fac_stmt)
+        seen_coord_keys: set[str] = set()
+        refreshed_sites: list[dict[str, Any]] = []
+        for lat, lon in fac_res.all():
+            if lat is None or lon is None:
+                continue
+            ck = make_coord_key(float(lat), float(lon))
+            if ck in seen_coord_keys:
+                continue
+            seen_coord_keys.add(ck)
+            try:
+                site_info = await refresh_site_weather(session, float(lat), float(lon), past_days=2)
+                refreshed_sites.append(site_info)
+            except Exception as exc:
+                logger.warning("Error auto-refreshing site weather for %s: %s", ck, exc)
+
         return {
             "status": "ok",
             "active_stations_count": len(station_ids),
             "refreshed_count": len(refreshed_stations),
+            "active_sites_count": len(seen_coord_keys),
+            "refreshed_sites_count": len(refreshed_sites),
         }
 
 

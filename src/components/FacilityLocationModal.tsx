@@ -27,9 +27,11 @@ import {
 import { CustomWeatherStation, FacilityLocationPreset, FacilityObject, WeldJoint } from '../types/welding';
 import {
   calculateHaversineDistanceKm,
+  checkServerWeatherHealth,
   checkWeatherServiceHealth,
   determineDateObservationStatus,
   fetchAmbientTemperatureAuto,
+  fetchSiteWeatherObservations,
   fetchStationDailyObservations,
   findNearbyWeatherStations,
   formatDateDDMMYY,
@@ -155,8 +157,13 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
   const performHealthCheck = async (src: WeatherDataSourceType = sourceType) => {
     setIsCheckingHealth(true);
     try {
-      const health = await checkWeatherServiceHealth(src);
-      setServiceHealth(health);
+      const serverHealth = await checkServerWeatherHealth();
+      if (serverHealth.status === 'online' || src === 'open-meteo-era5') {
+        setServiceHealth(serverHealth);
+      } else {
+        const health = await checkWeatherServiceHealth(src);
+        setServiceHealth(health);
+      }
     } finally {
       setIsCheckingHealth(false);
     }
@@ -398,12 +405,28 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
     }
 
     try {
-      const obsMap = await fetchStationDailyObservations(
-        { id: weatherStationId, name: weatherStation, latitude, longitude },
-        testDate,
-        testDate,
-        { sourceType }
-      );
+      let obsMap: Record<string, import('../utils/weatherService').DailyWeatherObservation> = {};
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        try {
+          obsMap = await fetchSiteWeatherObservations(
+            latitude,
+            longitude,
+            testDate,
+            testDate,
+            weatherStation || selectedObjName
+          );
+        } catch {
+          obsMap = {};
+        }
+      }
+      if (!obsMap[testDate]) {
+        obsMap = await fetchStationDailyObservations(
+          { id: weatherStationId || 'site', name: weatherStation, latitude, longitude },
+          testDate,
+          testDate,
+          { sourceType }
+        );
+      }
       const obs = obsMap[testDate];
       if (obs && obs.status === 'available' && obs.tavg !== undefined) {
         const fmt = formatObservationTemp(obs.tavg);
@@ -446,12 +469,28 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
     setIsLoadingArchive(true);
     setArchiveLoadMessage(null);
     try {
-      const obsMap = await fetchStationDailyObservations(
-        { id: weatherStationId, name: weatherStation, latitude, longitude },
-        periodStart,
-        periodEnd,
-        { sourceType }
-      );
+      let obsMap: Record<string, import('../utils/weatherService').DailyWeatherObservation> = {};
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+        try {
+          obsMap = await fetchSiteWeatherObservations(
+            latitude,
+            longitude,
+            periodStart,
+            periodEnd,
+            weatherStation || selectedObjName
+          );
+        } catch {
+          obsMap = {};
+        }
+      }
+      if (Object.keys(obsMap).length === 0) {
+        obsMap = await fetchStationDailyObservations(
+          { id: weatherStationId || 'site', name: weatherStation, latitude, longitude },
+          periodStart,
+          periodEnd,
+          { sourceType }
+        );
+      }
       const newArchive: Record<string, string> = { ...weatherArchive };
       let loadedCount = 0;
       let missingCount = 0;
@@ -667,10 +706,10 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
                 />
                 <div>
                   <span className="font-bold text-slate-900 block">
-                    Meteostat Daily / Росгидромет (Основной)
+                    Серверный архив по координатам объекта
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    Фактические наблюдения выбранной станции сети Росгидромета/WMO (без синтетических данных).
+                    Ежедневный сбор и архив температур по точным координатам стройки без удалённых станций.
                   </span>
                 </div>
               </label>
@@ -742,7 +781,7 @@ export const FacilityLocationModal: React.FC<FacilityLocationModalProps> = ({
                 />
                 <div>
                   <span className="font-bold text-slate-900 block">
-                    Open-Meteo ERA5 (Опция)
+                    Open-Meteo ERA5
                   </span>
                   <span className="text-[11px] text-amber-800 font-medium">
                     «реанализ, не наблюдения метеостанции» (модельная сетка по координатам).

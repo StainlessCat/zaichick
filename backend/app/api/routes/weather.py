@@ -8,16 +8,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_client_ip, get_current_user, get_db_session
 from app.models.user import User
 from app.schemas.weather import (
+    SiteWeatherDailyOut,
+    SiteWeatherRefreshResponse,
     WeatherDailyOut,
+    WeatherHealthOut,
     WeatherStationAliasCreate,
     WeatherStationAliasOut,
     WeatherStationOut,
     WeatherStationRefreshResponse,
 )
 from app.services.audit_service import record_audit_log
+from app.services.weather.open_meteo_loader import check_open_meteo_health
 from app.services.weather.weather_service import (
     get_or_fetch_daily_weather,
+    get_or_fetch_site_weather,
     get_station_by_id,
+    refresh_site_weather,
     refresh_station_weather,
     save_or_update_station_alias,
     search_weather_stations,
@@ -165,3 +171,69 @@ async def refresh_weather_for_station(
     )
 
     return WeatherStationRefreshResponse.model_validate(result)
+
+
+@router.get("/health", response_model=WeatherHealthOut)
+async def weather_service_health(
+    _: User = Depends(get_current_user),
+) -> WeatherHealthOut:
+    """Check server-side connectivity to Open-Meteo (no browser CORS)."""
+    is_ok, elapsed_ms, err = await check_open_meteo_health()
+    return WeatherHealthOut(
+        status="online" if is_ok else "offline",
+        source="open-meteo",
+        response_time_ms=elapsed_ms,
+        error_message=err,
+    )
+
+
+@router.get("/site-daily", response_model=list[SiteWeatherDailyOut])
+async def get_site_weather_daily(
+    lat: float = Query(..., ge=-90.0, le=90.0),
+    lon: float = Query(..., ge=-180.0, le=180.0),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    date: date | None = Query(default=None, alias="date"),
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[SiteWeatherDailyOut]:
+    """Retrieve coordinate-based daily temperature archive, backfilling via Open-Meteo."""
+    if date is not None:
+        if date_from is None:
+            date_from = date
+        if date_to is None:
+            date_to = date
+
+    if date_from is None or date_to is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать диапазон дат date_from и date_to (или дату date).",
+        )
+
+    if date_from > date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Дата начала (date_from) не может быть позже даты окончания (date_to).",
+        )
+
+    if (date_to - date_from).days > 730:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Максимальный диапазон запроса метеоданных составляет 730 дней (2 года).",
+        )
+
+    records = await get_or_fetch_site_weather(session, lat, lon, date_from, date_to)
+    return [SiteWeatherDailyOut.model_validate(r) for r in records]
+
+
+@router.post("/site-refresh", response_model=SiteWeatherRefreshResponse)
+async def refresh_site_weather_endpoint(
+    lat: float = Query(..., ge=-90.0, le=90.0),
+    lon: float = Query(..., ge=-180.0, le=180.0),
+    past_days: int = Query(default=2, ge=1, le=14),
+    _: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> SiteWeatherRefreshResponse:
+    """Force refresh of current and recent temperatures for exact site coordinates."""
+    result = await refresh_site_weather(session, lat, lon, past_days=past_days)
+    return SiteWeatherRefreshResponse.model_validate(result)
