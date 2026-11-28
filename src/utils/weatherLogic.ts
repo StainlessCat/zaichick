@@ -9,36 +9,6 @@ import { formatDateDDMMYY } from './dates';
 import { determineDateObservationStatus } from './weatherService';
 
 /**
- * Детерминированная оценка температуры воздуха по широте/долготе и дате (СП 131.13330 Строительная климатология).
- * Для Северо-Запада / умеренных широт (широта < 62.5° с.ш., долгота < 50° в.д., например г. Волхов Ленинградской обл. 59.93° N, 32.34° E)
- * использует среднемесячную кривую умеренно-континентального климата, а для северных и сибирских широт — арктическую кривую.
- */
-export function estimateAmbientTempByCoordsAndDate(
-  latitude: number,
-  longitude: number,
-  dateStr: string
-): number {
-  const d = dateStr ? new Date(dateStr) : new Date();
-  const month = Number.isNaN(d.getTime()) ? 9 : d.getUTCMonth(); // 0..11
-  const day = Number.isNaN(d.getTime()) ? 15 : d.getUTCDate();
-  const dailyVariation = ((day * 7 + Math.round(longitude)) % 7) - 3;
-
-  // Умеренно-континентальный климат Северо-Запада РФ (Ленинградская обл., г. Волхов, Выборг и др.)
-  if (latitude < 62.5 && longitude < 50) {
-    const temperateCurve = [-7, -6, -1, 6, 13, 17, 20, 18, 12, 6, 0, -4];
-    const base = temperateCurve[month] ?? 6;
-    const latAdj = Math.round((60 - latitude) * 0.9);
-    return base + latAdj + dailyVariation;
-  }
-
-  // Среднемесячная кривая для северных нефтегазовых широт (65..71 с.ш.)
-  const seasonalCurve = [-26, -24, -18, -9, -2, 7, 14, 11, 4, -5, -16, -23];
-  const base = seasonalCurve[month] ?? -5;
-  const latAdjustment = Math.round((67 - latitude) * 1.4);
-  return base + latAdjustment + dailyVariation;
-}
-
-/**
  * Формирует посуточный архив температур воздуха (°C) за период (startDateIso .. endDateIso)
  * строго на основе фактических наблюдений реальной метеостанции.
  * КАТЕГОРИЧЕСКИЙ ЗАПРЕТ: климатические формулы исключены из роли источника архива.

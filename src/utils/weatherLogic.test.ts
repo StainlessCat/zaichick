@@ -1,24 +1,11 @@
 import { test, assert } from 'vitest';
 import {
   bulkUpdateJointsTemperaturesFromArchive,
-  estimateAmbientTempByCoordsAndDate,
   fetchAmbientTemperatureAuto,
   generatePeriodWeatherArchive,
   getFacilityWeatherStationName,
 } from './weatherLogic';
 import type { WeldJoint } from '../types/welding';
-
-test('weatherLogic: estimateAmbientTempByCoordsAndDate differentiates temperate vs arctic climate curves', () => {
-  // Волхов (59.93° с.ш., 32.34° в.д.) — Северо-Запад
-  const tempVolkhovSummer = estimateAmbientTempByCoordsAndDate(59.93, 32.34, '2026-07-15');
-  assert.equal(typeof tempVolkhovSummer, 'number');
-  assert.equal(tempVolkhovSummer > 10, true, 'Летом в Волхове должна быть положительная умеренная температура');
-
-  // Ямал / Харасавэй (71.18° с.ш., 66.78° в.д.) — Арктика
-  const tempYamalWinter = estimateAmbientTempByCoordsAndDate(71.18, 66.78, '2026-01-15');
-  assert.equal(typeof tempYamalWinter, 'number');
-  assert.equal(tempYamalWinter < -20, true, 'Зимой на Ямале должна быть арктическая температура ниже -20°C');
-});
 
 test('weatherLogic: generatePeriodWeatherArchive respects actual observations and never synthesizes', () => {
   const known = {

@@ -14,7 +14,6 @@ import {
   DN_TO_INCH_MAP,
   dnToInchDiameter,
   dnToOuterDiameterMm,
-  estimateAmbientTempByCoordsAndDate,
   extractRdSuffix,
   extractSurnameOnly,
   filterLrvByDiameter,
@@ -323,10 +322,7 @@ test('applyBulkUpdateToJoints updates selected joints, ignores jointNumber, and 
   assert.equal(auditEntries.length, 6); // 3 changed fields * 2 joints
 });
 
-test('calculateReadinessReport computes completion percentages and estimateAmbientTempByCoordsAndDate works', () => {
-  const temp = estimateAmbientTempByCoordsAndDate(70.37, 68.43, '2026-10-20');
-  assert.equal(typeof temp, 'number');
-
+test('calculateReadinessReport computes completion percentages', () => {
   const rows = calculateReadinessReport([], 'objectName');
   assert.equal(rows.length, 0);
 });
@@ -1454,7 +1450,7 @@ test('COMPREHENSIVE 10-USER SIMULATION: registration of 10 users, collaborative 
     [joints[0].id, suppJoint011.id, joints[1].id],
     {
       weldingDate: '2026-10-14',
-      ambientTemp: String(estimateAmbientTempByCoordsAndDate(70.37, 68.44, '2026-10-14')),
+      ambientTemp: '-8',
       welderStamp: resolvedSingle.welderStamp,
       welderFullName: resolvedSingle.welderFullName,
       welderCertNumber: resolvedSingle.welderCertNumber,

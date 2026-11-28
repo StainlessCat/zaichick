@@ -185,7 +185,7 @@ async def get_current_user(
                 detail="Сессия на этом устройстве была завершена или истекла. Выполните вход повторно.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        if (now - active_session.last_seen_at).total_seconds() >= 60:
+        if (now - active_session.last_seen_at).total_seconds() >= 900:
             active_session.last_seen_at = now
 
     request.state.current_session_id = session_id
