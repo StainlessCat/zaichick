@@ -43,12 +43,21 @@ def test_json_log_formatter():
 
 
 @pytest.mark.asyncio
-async def test_metrics_endpoint_integration():
+async def test_metrics_endpoint_integration(monkeypatch):
+    from app.main import settings
+
+    monkeypatch.setattr(settings, "metrics_bearer_token", "test-metrics-secret")
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
-        resp = await client.get("/metrics")
+        unauth_resp = await client.get("/metrics")
+        assert unauth_resp.status_code == 401
+
+        resp = await client.get(
+            "/metrics",
+            headers={"Authorization": "Bearer test-metrics-secret"},
+        )
         assert resp.status_code == 200
         assert "text/plain" in resp.headers["content-type"]
         body = resp.text

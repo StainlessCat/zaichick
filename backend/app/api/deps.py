@@ -38,15 +38,32 @@ def _normalize_origin(raw_url: str) -> str | None:
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
 
+def _is_trusted_proxy(request: Request) -> bool:
+    settings = get_settings()
+    if settings.trust_all_proxies:
+        return True
+    peer_host = request.client.host if request.client else None
+    if not peer_host:
+        return False
+    try:
+        peer_ip = ipaddress.ip_address(peer_host)
+    except ValueError:
+        return False
+    return any(peer_ip in net for net in settings.trusted_proxy_networks)
+
+
 def _is_trusted_origin(origin: str, request: Request) -> bool:
     settings = get_settings()
     allowed = {o.rstrip("/").lower() for o in settings.cors_origins}
     if origin in allowed:
         return True
     host_candidates = {
-        (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip().lower(),
         (request.headers.get("Host") or "").strip().lower(),
     }
+    if _is_trusted_proxy(request):
+        forwarded_host = (request.headers.get("X-Forwarded-Host") or "").split(",")[0].strip().lower()
+        if forwarded_host:
+            host_candidates.add(forwarded_host)
     host_candidates.discard("")
     for host in host_candidates:
         if origin in {f"http://{host}", f"https://{host}"}:
@@ -79,19 +96,19 @@ def verify_cookie_csrf(request: Request) -> None:
             )
         return
 
-    settings = get_settings()
-    if settings.cookie_samesite == "none":
-        if request.headers.get("X-Requested-With", "").strip().lower() != "xmlhttprequest":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Для кросс-доменных cookie-запросов требуется заголовок X-Requested-With.",
-            )
-
+    if request.headers.get("X-Requested-With", "").strip().lower() != "xmlhttprequest":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="X-Requested-With header is required for cookie-authenticated requests without Origin/Referer.",
+        )
 
 def get_client_ip(request: Request) -> str | None:
-    """Safely parse client IP (for PostgreSQL INET column and rate limiting)."""
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    candidate = forwarded_for.split(",")[0].strip() if forwarded_for else ""
+    """Safely parse client IP, trusting X-Forwarded-For only from configured proxies."""
+    candidate = ""
+    if _is_trusted_proxy(request):
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            candidate = forwarded_for.split(",")[0].strip()
     if not candidate and request.client:
         candidate = request.client.host
     if not candidate:

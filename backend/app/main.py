@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,7 +31,10 @@ from app.api.routes.users import router as users_router
 from app.api.routes.weather import router as weather_router
 from app.api.routes.welding_journals import router as welding_journals_router
 from app.api.routes.wps import router as wps_router
+from app.api.deps import get_current_user
 from app.core.config import get_settings
+from app.core.database import async_session_factory
+from app.models.enums import SystemRoleEnum
 from app.core.database import (
     engine,
     verify_postgres_connection,
@@ -83,8 +87,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"],
 )
 
 
@@ -94,6 +98,10 @@ async def prometheus_metrics_middleware(request: Request, call_next) -> Response
     response = await call_next(request)
     duration = time.perf_counter() - start_time
     PrometheusMetrics.record_request(request.method, request.url.path, response.status_code, duration)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     return response
 
 
@@ -129,7 +137,24 @@ async def healthcheck() -> dict[str, str]:
 
 
 @app.get("/metrics", response_class=PlainTextResponse, tags=["system"])
-async def get_prometheus_metrics() -> PlainTextResponse:
+async def get_prometheus_metrics(request: Request) -> PlainTextResponse:
+    auth_header = request.headers.get("Authorization") or ""
+    if settings.metrics_bearer_token and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+        if hmac.compare_digest(token, settings.metrics_bearer_token):
+            return PlainTextResponse(
+                content=PrometheusMetrics.render(event_bus.active_subscribers_count),
+                media_type="text/plain; version=0.0.4; charset=utf-8",
+            )
+
+    async with async_session_factory() as session:
+        user = await get_current_user(request=request, session=session)
+        if user.system_role != SystemRoleEnum.SUPERADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access to /metrics requires SUPERADMIN or METRICS_BEARER_TOKEN.",
+            )
+
     return PlainTextResponse(
         content=PrometheusMetrics.render(event_bus.active_subscribers_count),
         media_type="text/plain; version=0.0.4; charset=utf-8",

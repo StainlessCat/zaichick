@@ -399,7 +399,10 @@ async def test_http_auth_cookie_query_token_ban_rbac_rate_limit_and_audit(
                 assert replay_resp.status_code == 401
 
             # 8. Refresh session extends expiry and lists active sessions; cross-origin cookie POST rejected
-            refresh_resp = await client.post("/api/auth/refresh")
+            refresh_resp = await client.post(
+                "/api/auth/refresh",
+                headers={"X-Requested-With": "XMLHttpRequest"},
+            )
             assert refresh_resp.status_code == 200
             assert refresh_resp.json()["session_id"] is not None
 
@@ -418,6 +421,7 @@ async def test_http_auth_cookie_query_token_ban_rbac_rate_limit_and_audit(
             cp_resp = await client.post(
                 "/api/auth/change-password",
                 json={"current_password": "PtoPassword1!", "new_password": "PtoNewPassword2!"},
+                headers={"X-Requested-With": "XMLHttpRequest"},
             )
             assert cp_resp.status_code == 200
             assert pto_user.session_number == 2

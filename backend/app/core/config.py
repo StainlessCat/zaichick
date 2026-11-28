@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 from functools import lru_cache
 from typing import Any, Literal
@@ -65,6 +66,32 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_origins_raw.split(",") if o.strip()]
+
+    trusted_proxy_ips_raw: str = Field(
+        default="127.0.0.1,::1",
+        alias="TRUSTED_PROXY_IPS",
+    )
+    metrics_bearer_token: str | None = Field(
+        default=None,
+        alias="METRICS_BEARER_TOKEN",
+    )
+
+    @property
+    def trust_all_proxies(self) -> bool:
+        return any(item.strip() == "*" for item in self.trusted_proxy_ips_raw.split(","))
+
+    @property
+    def trusted_proxy_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+        for raw in self.trusted_proxy_ips_raw.split(","):
+            token = raw.strip()
+            if not token or token == "*":
+                continue
+            try:
+                nets.append(ipaddress.ip_network(token, strict=False))
+            except ValueError:
+                continue
+        return nets
 
     @model_validator(mode="before")
     @classmethod
