@@ -108,6 +108,14 @@ export interface RegistryFooterProps {
   totalCount: number;
   activeTemplateName?: string;
   selectedCount: number;
+  serverPagination?: {
+    page: number;
+    totalPages: number;
+    totalItems: number;
+    isLoading: boolean;
+    onPrev: () => void;
+    onNext: () => void;
+  };
 }
 
 export interface RegistryLabRequestModalProps {

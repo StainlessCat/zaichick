@@ -149,7 +149,7 @@ async def get_prometheus_metrics(request: Request) -> PlainTextResponse:
 
     async with async_session_factory() as session:
         user = await get_current_user(request=request, session=session)
-        if user.system_role != SystemRoleEnum.SUPERADMIN:
+        if user.role != SystemRoleEnum.SUPERADMIN:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access to /metrics requires SUPERADMIN or METRICS_BEARER_TOKEN.",

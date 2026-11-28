@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -483,10 +483,14 @@ async def list_joints(
     line_id: uuid.UUID | None = Query(default=None),
     facility_id: uuid.UUID | None = Query(default=None),
     unique_line_id: str | None = Query(default=None),
+    object_name: str | None = Query(default=None),
     rd_code: str | None = Query(default=None),
     welder_stamp: str | None = Query(default=None),
     vik_result: ControlResultEnum | None = Query(default=None),
     ndt_result: ControlResultEnum | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    only_active_repairs: bool = Query(default=False),
     search: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
@@ -500,7 +504,9 @@ async def list_joints(
         stmt = stmt.where(WeldJoint.facility_id == facility_id)
     if unique_line_id:
         stmt = stmt.where(WeldJoint.unique_line_id == unique_line_id.strip())
-    if rd_code:
+    if object_name and object_name.strip().upper() != "ALL":
+        stmt = stmt.where(WeldJoint.object_name == object_name.strip())
+    if rd_code and rd_code.strip().upper() != "ALL":
         stmt = stmt.where(WeldJoint.rd_code == rd_code.strip())
     if welder_stamp:
         stmt = stmt.where(WeldJoint.welder_stamp.ilike(f"%{welder_stamp.strip()}%"))
@@ -508,6 +514,19 @@ async def list_joints(
         stmt = stmt.where(WeldJoint.vik_result == vik_result)
     if ndt_result is not None:
         stmt = stmt.where(WeldJoint.ndt_result == ndt_result)
+    if date_from is not None:
+        stmt = stmt.where(WeldJoint.welding_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(WeldJoint.welding_date <= date_to)
+    if only_active_repairs:
+        defect_outcomes = (ControlResultEnum.REPAIR, ControlResultEnum.CUT_OUT)
+        stmt = stmt.where(
+            or_(
+                WeldJoint.vik_result.in_(defect_outcomes),
+                WeldJoint.ndt_result.in_(defect_outcomes),
+                WeldJoint.dup_ndt_result.in_(defect_outcomes),
+            )
+        )
     if search:
         pat = f"%{search.strip()}%"
         stmt = stmt.where(

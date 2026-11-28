@@ -569,6 +569,51 @@ export const zaychickApi = {
   // ---------------------------------------------------------------------------
   // Weld Joints (Granular REST + OCC + Server Validation)
   // ---------------------------------------------------------------------------
+  async listJointsPage(params?: {
+    objectName?: string;
+    rdCode?: string;
+    search?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    onlyActiveRepairs?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: WeldJoint[]; total: number; limit: number; offset: number }> {
+    const q = new URLSearchParams();
+    q.set('limit', String(params?.limit ?? 200));
+    q.set('offset', String(params?.offset ?? 0));
+    if (params?.objectName && params.objectName !== 'ALL') {
+      q.set('object_name', params.objectName);
+    }
+    if (params?.rdCode && params.rdCode !== 'ALL') {
+      q.set('rd_code', params.rdCode);
+    }
+    if (params?.search && params.search.trim()) {
+      q.set('search', params.search.trim());
+    }
+    if (params?.dateFrom) {
+      q.set('date_from', params.dateFrom);
+    }
+    if (params?.dateTo) {
+      q.set('date_to', params.dateTo);
+    }
+    if (params?.onlyActiveRepairs) {
+      q.set('only_active_repairs', 'true');
+    }
+    const res = await apiRequest<{
+      items: Record<string, unknown>[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/api/joints?${q.toString()}`);
+    return {
+      items: (res.items || []).map(mapJointDto),
+      total: res.total ?? 0,
+      limit: res.limit ?? (params?.limit ?? 200),
+      offset: res.offset ?? (params?.offset ?? 0),
+    };
+  },
+
   async listJoints(): Promise<WeldJoint[]> {
     return fetchAllPaginated('/api/joints', mapJointDto, 500);
   },

@@ -329,16 +329,23 @@ export function useReadinessReportState(joints: WeldJoint[]) {
     });
   }, [joints, scopedLines, selectedObjectName, selectedRdCode, testCircuits]);
 
-  const localBaseRows = useMemo(
-    () =>
-      calculateReadinessReport(periodJoints, condition, {
-        lines: scopedLines,
-        testCircuits: scopedTestCircuits,
-        docByLineId,
-        excludeEmptyGroups: hasDateRangeFilter,
-      }),
-    [periodJoints, condition, scopedLines, scopedTestCircuits, docByLineId, hasDateRangeFilter]
-  );
+  const localBaseRows = useMemo(() => {
+    if (serverBaseRows !== null) return [];
+    return calculateReadinessReport(periodJoints, condition, {
+      lines: scopedLines,
+      testCircuits: scopedTestCircuits,
+      docByLineId,
+      excludeEmptyGroups: hasDateRangeFilter,
+    });
+  }, [
+    serverBaseRows,
+    periodJoints,
+    condition,
+    scopedLines,
+    scopedTestCircuits,
+    docByLineId,
+    hasDateRangeFilter,
+  ]);
 
   // Используем серверные строки, если они получены и синхронизированы с БД, иначе локальный расчёт
   const baseRows = serverBaseRows ?? localBaseRows;

@@ -1,4 +1,6 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { zaychickApi } from '../api';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { CheckCircle2, X } from 'lucide-react';
 import {
   ColumnDefinition,
@@ -171,6 +173,83 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
   } = props;
 
   // Заявки в ЛНК доступны только пользователям с правом редактирования (не в режиме просмотра)
+  const REGISTRY_PAGE_SIZE = 200;
+  const canUseServerPagination = Boolean(
+    app.isDbConnected &&
+      !props.joints &&
+      activeFilterKeys.length === 0 &&
+      quickFilter === 'all' &&
+      !sortConfig
+  );
+  const [serverPage, setServerPage] = usePersistentState<number>('registry:page', 1);
+  const [serverPageJoints, setServerPageJoints] = useState<WeldJoint[] | null>(null);
+  const [serverTotal, setServerTotal] = useState<number>(0);
+  const [isLoadingServerPage, setIsLoadingServerPage] = useState(false);
+
+  useEffect(() => {
+    setServerPage(1);
+  }, [
+    app.selectedObjectName,
+    app.selectedRdCode,
+    globalSearch,
+    weldingDateFrom,
+    weldingDateTo,
+    onlyActiveRepairs,
+    setServerPage,
+  ]);
+
+  useEffect(() => {
+    if (!canUseServerPagination) {
+      setServerPageJoints(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setIsLoadingServerPage(true);
+      zaychickApi
+        .listJointsPage({
+          objectName: app.selectedObjectName,
+          rdCode: app.selectedRdCode,
+          search: globalSearch,
+          dateFrom: weldingDateFrom || undefined,
+          dateTo: weldingDateTo || undefined,
+          onlyActiveRepairs,
+          limit: REGISTRY_PAGE_SIZE,
+          offset: (serverPage - 1) * REGISTRY_PAGE_SIZE,
+        })
+        .then((res) => {
+          if (cancelled) return;
+          setServerPageJoints(res.items);
+          setServerTotal(res.total);
+        })
+        .catch(() => {
+          if (!cancelled) setServerPageJoints(null);
+        })
+        .finally(() => {
+          if (!cancelled) setIsLoadingServerPage(false);
+        });
+    }, globalSearch ? 200 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    canUseServerPagination,
+    app.selectedObjectName,
+    app.selectedRdCode,
+    globalSearch,
+    weldingDateFrom,
+    weldingDateTo,
+    onlyActiveRepairs,
+    serverPage,
+    joints.length,
+  ]);
+
+  const displayedJoints =
+    canUseServerPagination && serverPageJoints !== null && serverTotal > REGISTRY_PAGE_SIZE
+      ? serverPageJoints
+      : filteredAndSortedJoints;
+
   const canSubmitLabRequest =
     Boolean(onCreateLabRequest) &&
     (userPermissions.canEditPrepAndWeldingFields ||
@@ -315,7 +394,7 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
       {/* Основная виртуализированная таблица сварных стыков */}
       <RegistryTable
         joints={joints}
-        filteredAndSortedJoints={filteredAndSortedJoints}
+        filteredAndSortedJoints={displayedJoints}
         selectedJointIds={selectedJointIds}
         onToggleSelectRow={onToggleSelectRow}
         onToggleSelectAll={onToggleSelectAll}
@@ -345,10 +424,22 @@ const JointsRegistryViewComponent: React.FC<JointsRegistryViewProps> = (props) =
 
       {/* Подвал таблицы со статистикой и подсказками */}
       <RegistryFooter
-        filteredCount={filteredAndSortedJoints.length}
+        filteredCount={displayedJoints.length}
         totalCount={quickFilterCounts.all}
         activeTemplateName={activeTemplate?.name}
         selectedCount={selectedJointIds.length}
+        serverPagination={
+          canUseServerPagination && serverTotal > REGISTRY_PAGE_SIZE
+            ? {
+                page: serverPage,
+                totalPages: Math.max(1, Math.ceil(serverTotal / REGISTRY_PAGE_SIZE)),
+                totalItems: serverTotal,
+                isLoading: isLoadingServerPage,
+                onPrev: () => setServerPage((p) => Math.max(1, p - 1)),
+                onNext: () => setServerPage((p) => p + 1),
+              }
+            : undefined
+        }
       />
 
       {/* Модальное окно подачи заявки в Лабораторию НК */}

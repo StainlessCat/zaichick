@@ -228,7 +228,7 @@ async def test_baseline_domain_data_seeding():
 
     async with db_session_factory() as session:
         await session.execute(
-            text("TRUNCATE TABLE weld_joints, project_lines, facilities, lrv_items, test_circuits CASCADE")
+            text("TRUNCATE TABLE weld_joints, project_lines, facilities, lrv_items, test_circuits, welders, welding_materials, tech_cards CASCADE")
         )
         await session.commit()
 
